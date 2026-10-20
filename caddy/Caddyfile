@@ -1,0 +1,70 @@
+# Tun — the only thing the phone talks to.
+#
+# P1 serves everything device-facing straight off disk (D55). Python/Node is
+# never in the path of the 6 MB bundle or the audio blobs.
+#
+# Frozen-contract rules enforced here — see tun/docs/11-ota-contract.md:
+#   D49  gzip is TRANSPORT-level only. sha256/size in current.json describe
+#        the UNCOMPRESSED bundle. Never serve a pre-gzipped file as an opaque
+#        body: the hash would never match and native can never be fixed.
+#   P23  the /ota/* token is GET-only.
+#   D26  rollback = rewriting current.json. So it must never be cached.
+
+# No global options block: `email` with an empty value is a parse error, and
+# Let's Encrypt does not require one. To get expiry warnings, add by hand:
+#     { email you@example.net }
+
+{$TUN_SITE_ADDRESS} {
+	log {
+		output stdout
+		format console
+	}
+
+	encode gzip
+
+	# ---- /ota/* : token-gated, read-only -------------------------------
+	handle /ota/* {
+		@bad_token not header Authorization "Bearer {$OTA_TOKEN}"
+		respond @bad_token "unauthorized" 401 {
+			close
+		}
+
+		@not_read not method GET HEAD
+		respond @not_read "method not allowed" 405 {
+			close
+		}
+
+		# Rollback must take effect on the next launch, never later.
+		header /ota/current.json Cache-Control "no-store"
+
+		# A buildId is permanent and its bundle is immutable.
+		header /ota/bundle/* Cache-Control "public, max-age=31536000, immutable"
+
+		root * /srv
+		# No `precompressed`: D49 requires transport-level gzip only, so the
+		# body native hashes is always the uncompressed bundle.
+		file_server
+	}
+
+	# ---- /blob/<sha256> : content-addressed, immutable ------------------
+	# Unguessable by construction; the hash in the url IS the capability.
+	handle /blob/* {
+		@not_read not method GET HEAD
+		respond @not_read "method not allowed" 405 {
+			close
+		}
+		header Cache-Control "public, max-age=31536000, immutable"
+		root * /srv
+		file_server
+	}
+
+	# ---- service UIs, mounted as each is written (D46) ------------------
+	# reverse_proxy /stabbur/* stabbur:8000
+	# reverse_proxy /smia/*    smia:8000
+	# reverse_proxy /mjolnir/* mjolnir-hub:8000
+	# reverse_proxy /phonexa/* phonexa:8000
+
+	handle {
+		respond "tun" 404
+	}
+}

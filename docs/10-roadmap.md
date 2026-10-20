@@ -41,13 +41,21 @@ Minimum for the device to have something to talk to. **No application code**
 (D55) — every device-facing path is a static file served by Caddy. Postgres and
 `hub` arrive with P4/P5.
 
-- [ ] Caddy on the Contabo VPS, HTTPS working
-- [ ] `/ota/current.json`, `/ota/bundle/<buildId>.js`, `/blob/<sha256>` served
-      off disk; transport gzip only, never a pre-gzipped opaque body (D49)
-- [ ] Token gate on `/ota/*`, **GET only**
-- [ ] Publish the *current unmodified* bundle as build #1 — proves the path
-- [ ] Verify end to end: correct token fetches, wrong/absent token 401s, the
-      downloaded bytes hash to the `sha256` in `current.json`
+Written and **proven locally against the real image** (2026-10-20); what is
+left is provisioning. See `DEPLOY.md`.
+
+- [x] `compose.yaml` (caddy now, postgres behind a profile, the rest commented)
+- [x] `caddy/Caddyfile`: `/ota/*` token-gated and GET-only, `current.json`
+      `no-store`, bundles and blobs `immutable`, transport gzip only (D49)
+- [x] `bin/ota-publish.sh` — publish and rollback, with the guards that matter:
+      no buildId reuse for different bytes, filename-safe ids, magic-prefix
+      check, https-only
+- [x] `bin/ota-verify.sh` — the acceptance test, 16 assertions, all passing
+      against `caddy:2-alpine` with the stock 6 MB bundle as `b000001`
+- [ ] Provision the Contabo box, point DNS, open 80/443
+- [ ] `docker compose up -d`; confirm the certificate is issued
+- [ ] Publish the stock bundle as build #1 and run `bin/ota-verify.sh` **on the
+      VPS** — it must print 16/16 before any native code depends on this
 
 ## P2 — The one APK build
 
@@ -134,8 +142,9 @@ mandatory config escape hatch and hash-not-signing. ADRs D48–D55.
 
 Next, in order:
 
-1. **P1 on the Contabo box (~1h).** Caddy + a directory + a token; publish the
-   unmodified bundle as build #1. No code to write (D55).
+1. **Deploy P1 to the Contabo box (~1h).** The stack is written and passes
+   locally; `DEPLOY.md` is the procedure. Provision, point DNS, `up -d`,
+   publish build #1, run `bin/ota-verify.sh` on the box.
 2. **Q17 on the phone.** Log `FileSystem.documentDirectory` from a dev build and
    compare it to `getFilesDir()`. This gates the native patch and nothing else
    can substitute for it — the answer gets frozen into the APK.

@@ -52,6 +52,13 @@ state write.
   the only arrangement where that stays true. (Caddy's `encode gzip` is fine;
   pre-compressed `.js.gz` served as `Content-Encoding: gzip` is fine. Serving a
   `.gz` as an opaque body is **not** — the hash would never match.)
+- **Native never trusts `Content-Length`.** Measured against the real Caddy
+  config (2026-10-20): when gzip is negotiated the bundle arrives
+  `Transfer-Encoding: chunked` with *no* `Content-Length` header at all. So the
+  64 MiB ceiling cannot be a header pre-check — native applies it to the `size`
+  field of `current.json` *before* connecting, and then enforces it again while
+  streaming, aborting the moment bytes written exceed `size`. A server that
+  streams forever must not be able to fill the device's disk.
 - Auth header: `Authorization: Bearer <token>` on `/ota/*`.
 - Timeouts: connect 10 s, read 30 s, overall refresh wall-clock cap 120 s.
 - Everything happens on a background thread. `getJSBundleFile()` performs **no
@@ -123,6 +130,7 @@ Two different tests, deliberately:
 
 | when | test | cost |
 |---|---|---|
+| **while downloading** | abort if bytes written exceed `size` | free |
 | **after download**, before rename | exact `size` ∧ exact `sha256` ∧ prefix | one full pass over 6 MB, on a background thread |
 | **at activation**, every launch | file length > 0 ∧ first 26 bytes are `var __BUNDLE_START_TIME__=` | one `read(26)` |
 
@@ -214,9 +222,15 @@ exist yet.
 - Blobs stay ungated or share the gate; they are content-addressed and
   unguessable either way.
 
-P1's acceptance test is the roadmap's: publish the *current unmodified* bundle
-as build #1 and fetch it over HTTPS with the token. That proves the path before
-any native code depends on it.
+P1's acceptance test is `bin/ota-verify.sh` in the repo root: 16 assertions
+covering the token gate, GET-only, the `current.json` field contract, the
+no-store/immutable headers, and — the one that matters most — that the sha256
+of the downloaded bytes is **identical with and without transport gzip**. If
+that last one ever fails, native rejects every build and cannot be fixed.
+
+Run it against the VPS immediately after deploying, and again after any Caddy
+change. It passed end to end against the real `caddy:2-alpine` config on
+2026-10-20 with the stock 6 MB bundle published as `b000001`.
 
 ---
 
