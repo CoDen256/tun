@@ -8,7 +8,7 @@ Date of this batch: **2026-10-20**.
 
 | # | Decision | Why | Status |
 |---|---|---|---|
-| D01 | Host publicly on Strato; auth is a long random shared token, not an identity system | Single user; the phone must reach the server from anywhere | accepted |
+| D01 | Host publicly on a VPS (see D35); auth is a long random shared token, not an identity system | Single user; the phone must reach the server from anywhere | accepted |
 | D02 | Drop Anki entirely; no migration | phonexa/stabbur replaces it; nothing worth migrating | accepted |
 | D03 | New cards ship by **regenerating the whole bundle**, not by runtime card fetching | The deck/card modules are read synchronously at import; making them async has unknown blast radius inside a reverse-engineered bundle. Regeneration is a build-step problem, already solved by bundle-tool | accepted |
 | D04 | **One APK build, forever.** The native patch does the smallest possible job | Native is frozen and unfixable after shipping; JS is redeployable. Anything that could need a bug fix must live in JS | accepted |
@@ -52,6 +52,6 @@ Date of this batch: **2026-10-20**.
 | D29 | Capture is **raw and unclassified**; typing/enrichment/trimming happen later in a triage UI | One keystroke mid-video; classification mid-video is hostile | accepted |
 | D30 | Publishing is **manual (a button) + nightly auto-if-dirty** | A publish is a release and the irreversible moment card IDs are minted. Never on capture | accepted |
 | D31 | Device status **piggybacks** on the existing sync PATCH; version selection is a **server-side** control | No new Mjølnir UI needed; rollback works from your laptop | accepted |
-| D32 | Extension translates **fast-local first, then async-enriches from smia** | Hover must be instant; also means the extension keeps working when Strato is down | accepted |
+| D32 | Extension translates **fast-local first, then async-enriches from smia** | Hover must be instant; also means the extension keeps working when the server is down | accepted |
 | D33 | Grammar rule HTML is **duplicated into every card** that uses it; editing a rule republishes those cards | `X` is a per-card string in the bundle; there is no shared-reference mechanism | accepted |
 | D34 | Sources: Norsk ordbank (inflections), naob → ipa-lookup/nb → espeak (IPA), Forvo → dict.cc → cloud TTS → piper (audio) | Named by the user; ordbank is freely licensed and exhaustive | accepted |

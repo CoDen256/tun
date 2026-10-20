@@ -39,7 +39,7 @@ phonemic-only and often unavailable; espeak always answers but is mediocre).
 
 ## Translation in the extension: fast-then-enrich
 
-Hover must feel instant, and a round-trip to Strato is not instant.
+Hover must feel instant, and a round-trip to the VPS is not instant.
 
 ```
 hover → render tooltip from the FAST local translator      (immediate)
@@ -49,5 +49,5 @@ save  → the capture carries whatever has arrived
 ```
 
 This resolves the "extension depends on the server for its core feature"
-problem outright: if Strato is down, hover still translates; only enrichment is
+problem outright: if the server is down, hover still translates; only enrichment is
 missing. It also means capture never waits on enrichment.

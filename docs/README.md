@@ -8,6 +8,17 @@ ecosystem: **tun** (this repo) + **mjolnir** + **stabbur** + **smia** +
 It is written to survive between sessions: if you remember nothing else,
 read this file and `07-decisions.md`.
 
+## Starting a session
+
+Open Claude Code in **`/home/coden/dev/tun`** for design/architecture work, or
+in **`/home/coden/dev/mjolnir`** when working on the bundle, patches or the hub.
+Add the other repos as additional working directories as needed.
+
+Opening line that works: *"Read tun/docs/README.md and 07-decisions.md, then
+<task>."*
+
+Then: **`10-roadmap.md` → "Right now"** always holds the current next step.
+
 ## The one-sentence goal
 
 Hover a sentence in Norwegian video → it becomes a spaced-repetition card with

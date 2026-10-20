@@ -29,7 +29,7 @@ Severity: **🔴 will bite you** · **🟡 annoying** · **🔵 ops**
 | P16 | NAOB has no public API (scraping) and is often unavailable | Cache hard; degrade to ipa-lookup → espeak; always record which provider answered |
 | P17 | Norsk ordbank: one surface form, several lemmas (`skinner` = verb or noun pl.) | `/inflect` returns **candidates**; triage picks; never auto-pick |
 | P18 | Duplicate captures of the same word | Dedup key (lemma + pos + type); extension shows "already have this" |
-| P19 | The extension depending on Strato for its core feature | Fast local translator first, smia enriches async (D32) |
+| P19 | The extension depending on the server for its core feature | Fast local translator first, smia enriches async (D32) |
 | P20 | Editing a grammar rule requires republishing every card carrying it | Builder tracks rule → cards and marks them dirty |
 | P21 | Blob refcounting — a re-trimmed clip orphans its old blob | Refcount or periodic GC; never delete a blob referenced by a published build |
 | P22 | Non-premium code path filters `Cards[]` to `P === "N"` **before** slicing, so `PullCounter` indexes a different array | The paywall patch keeps you on the premium branch; still set `P:"N"` on all custom occurrences for consistency |
@@ -40,5 +40,5 @@ Severity: **🔴 will bite you** · **🟡 annoying** · **🔵 ops**
 |---|---|---|
 | P23 | The OTA token is baked into the APK and **frozen forever** | Scope it to `GET /ota/*` only. Every other token is carried in the bundle — and is therefore rotatable by republishing |
 | P24 | Backups must cover Postgres **and** the blob store | Blobs are content-addressed → incremental sync is trivial. Easy to forget |
-| P25 | Strato product type | Docker compose needs a VPS/root server, not shared hosting |
+| ~~P25~~ | ~~Hosting product type~~ | **RESOLVED: Contabo VPS, 8 GB / 100 GB** — Docker-capable |
 | P26 | Rebasing onto a newer APK's bundle renumbers module ids | bundle-tool already locates modules by shape, not id — preserve that property in every new patch |
