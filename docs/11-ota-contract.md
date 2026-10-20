@@ -133,7 +133,19 @@ and the device would never fetch again.
 
 On the background thread only, never on the startup path: delete every `.tmp`,
 and every `bundle-*.js` outside {`active`, `pending`, the two newest bundles
-carrying a `boot-ok` marker}, along with that build's markers.
+carrying a `boot-ok` marker}, along with that build's `boot-ok-<id>` and
+`attempt-<id>-*` markers.
+
+> **`bad-<id>` is deliberately NOT swept (D65).** It is a permanent 0-byte
+> tombstone and outlives the bundle it quarantined. An earlier wording here
+> said "along with that build's markers", which contradicted §4's "never
+> cleared automatically" and D52's signed-off semantics — and sweeping it
+> reopens the re-fetch loop the §1 guard exists to close: with both the bundle
+> and its tombstone gone, a `current.json` still naming that id looks brand new,
+> so it is downloaded, crashes twice, is re-quarantined, swept again, forever.
+> `bad-<id>` is the **only** record of "never fetch this id again". Cost: one
+> empty inode per ever-quarantined buildId. Never cap or expire them — any cap
+> reintroduces the loop.
 
 ---
 
