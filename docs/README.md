@@ -54,9 +54,9 @@ repo as `docs/findings.md` — that is the authority on how the stock app behave
 | `phonexa` | phonetics lab (existing) |
 | `hover-translate` | capture client (existing fork) |
 
-Working copies live under `/home/coden/dev/` (`tun`, `mjolnir`, `phonexa`,
-`hover-translate`; `stabbur` and `smia` not created yet). The APK build
-workspace at `/home/coden/rev/mjolnir/` is disposable scratch, not a source repo.
+All six working copies live under `/home/coden/dev/`: `tun`, `mjolnir`,
+`stabbur`, `smia`, `phonexa`, `hover-translate`. The APK build workspace at
+`/home/coden/rev/mjolnir/` is disposable scratch, not a source repo.
 
 ## Status
 

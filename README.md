@@ -25,7 +25,8 @@ scripts/         backups                              (not written yet)
 | **phonexa** | phonetics lab (existing) |
 | **hover-translate** | capture client (existing fork) |
 
-`stabbur` and `smia` do not exist yet.
+All six repos now exist under `/home/coden/dev/`. `stabbur` and `smia` are
+scaffolded but not implemented.
 
 ## Status
 

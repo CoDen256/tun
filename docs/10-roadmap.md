@@ -126,11 +126,10 @@ of them is frozen forever once the APK ships.
 
 ### Prerequisites still open
 
-- `mjolnir/` has no `patches/`, `apk/`, `builder/` or `hub/` directories yet —
-  the native patch source has nowhere to live until they exist.
 - `/home/coden/rev/mjolnir/smali.merged.mjolnir/assets/.git` holds 4 commits
   (`07b26ed`, `101a0be`, `b5cc8df`, `f6c42e7`) whose hashes do **not** match the
   three paywall patches recorded in `mjolnir/docs/findings.md` §7
   (`0f6f580`, `b962691`, `a1f8f1f`). There are two patch histories in that
   workspace. **Untangle which is authoritative before building on either.**
-- `stabbur` and `smia` repos do not exist (not needed until P4/P6).
+- `stabbur` and `smia` are scaffolded (README + CLAUDE.md only); no
+  implementation until P4/P6.

@@ -13,8 +13,8 @@ Sibling repos (all under `/home/coden/dev/`):
 | repo | owns |
 |---|---|
 | `mjolnir` | bundle tool, JS + native patches, APK pipeline, builder, device hub, `docs/findings.md` |
-| `stabbur` | learning content: captures, items, enrichment, triage UI, audio blobs *(not created yet)* |
-| `smia` | linguistics: inflect / ipa / tts / stt / translate *(not created yet)* |
+| `stabbur` | learning content: captures, items, enrichment, triage UI, audio blobs |
+| `smia` | linguistics: inflect / ipa / tts / stt / translate |
 | `phonexa` | phonetics lab |
 | `hover-translate` | capture client |
 
