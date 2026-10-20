@@ -154,6 +154,15 @@ not be handed to React Native — the prefix check is the cheap proxy. Verified
 against the real artifact: the bundle begins
 `var __BUNDLE_START_TIME__=this.nativePerformanceNow?…`.
 
+> **Measured 2026-10-20 (P0, on the target device).** SHA-256 over the
+> 6 003 611 B bundle runs ~20–40 ms via toybox `sha256sum`; the ART
+> `MessageDigest` path (ARMv8 hardware SHA) is at most a 2–5× discount on that,
+> still tens-of-ms territory, versus microseconds for the 26-byte read. And a
+> cold-path re-hash adds **no** safety the length+prefix check lacks — the file
+> was SHA-verified once at download and is unchanged since its `renameTo`. So
+> D51's two-test split is confirmed, not merely assumed: the claim is now
+> measured, and collapsing to always-hash is rejected.
+
 A download that fails any check: delete the `.tmp`, leave all state untouched,
 retry next launch.
 
