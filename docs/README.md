@@ -39,6 +39,7 @@ and editable by you.
 | `08-pitfalls.md` | Known traps, with handling | Before implementing any phase |
 | `09-open-questions.md` | Unresolved, with enough context to resume | When picking up again |
 | `10-roadmap.md` | Phases, ordering, what to do first | Deciding what to work on |
+| `11-ota-contract.md` | **The frozen native contract** — wire format, on-device layout, validity, watchdog, escape hatch | Before writing any native patch code |
 
 Mjølnir app internals (reverse-engineering findings) live in the **mjolnir**
 repo as `docs/findings.md` — that is the authority on how the stock app behaves.
@@ -62,3 +63,8 @@ All six working copies live under `/home/coden/dev/`: `tun`, `mjolnir`,
 
 Design phase. Nothing implemented yet. No OpenSpec change created yet.
 See `10-roadmap.md` for the proposed first unit of work.
+
+The P2 native contract is **designed and frozen on paper** (`11-ota-contract.md`,
+ADRs D48–D55). One verification, **Q17**, blocks writing it: whether
+`FileSystem.documentDirectory` and `context.getFilesDir()` are the same
+directory on the device.

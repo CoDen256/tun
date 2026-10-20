@@ -12,16 +12,24 @@ Each carries enough context to resume cold.
 | Q04 | **Does the content service get its own repo?** | Under discussion. Mjølnir is now a self-contained repo (tool+patches+builder+hub); content/smia either fold into phonexa (3 repos) or split out (4). See `02-services.md` |
 | Q05 | **Cineby audio** — is the player DRM-protected? | Unknown. If not, it joins YouTube in the "real audio" tier; if yes, it joins Netflix in the TTS/Forvo tier |
 
-### Native-patch decisions (must be settled BEFORE the one APK build)
+### Native-patch decisions — **RESOLVED 2026-10-20**
 
-| # | Question |
-|---|---|
-| Q11 | Exact `current.json` contract — native parses it forever. Minimum `{buildId, url, sha256, size}` |
-| Q12 | On-device layout: bundle directory, naming, where attempt counters and `boot-ok` markers live |
-| Q13 | Validity test: size + sha256 + magic prefix `var __BUNDLE_START_TIME__` — sufficient? |
-| Q14 | Watchdog semantics: when does the attempt counter increment, when does it reset, threshold 2? |
-| Q15 | **Config escape hatch (recommended mandatory):** native reads `ota-config.json` (url + token) from `documentDirectory` if present, else baked-in defaults. Without it a domain or token change means a reinstall |
-| Q16 | Signature vs sha256-over-TLS for bundle validation. Hash is adequate for single-user; signing also covers a compromised server. Unfixable later |
+All six are settled in **`11-ota-contract.md`**, which is the authority. Do not
+re-derive them; change them only before the APK is built.
+
+| # | Question | Resolution |
+|---|---|---|
+| ~~Q11~~ | `current.json` contract | `{schema, buildId, url, sha256, size, label}`; native reads four, ignores unknowns, additive-only forever (D48, D49). §1 |
+| ~~Q12~~ | On-device layout | `<filesDir>/mjolnir-ota/`; marker files carry their own values; 4-tier selection; GC on the background thread (D50, D54). §2 |
+| ~~Q13~~ | Validity test | Two tests: size + sha256 + prefix after download, prefix + non-empty at every activation (D51). §3 |
+| ~~Q14~~ | Watchdog semantics | Marker written before handing over the path; `boot-ok` wins forever; threshold 2; `bad-<id>` never auto-cleared; JS writes `boot-ok` 3 s after mount (D52). §4 |
+| ~~Q15~~ | Config escape hatch | Mandatory. Consequence: JS can write it, so URL **and token** are rotatable by republishing (D39). §5 |
+| ~~Q16~~ | Signature vs sha256 | sha256 over TLS affirmed; residual stated; `https` enforced everywhere as the free hedge (D47, D53). §6 |
+
+**One prerequisite the contract depends on (Q17, below): confirm that
+`FileSystem.documentDirectory` and `context.getFilesDir()` resolve to the same
+directory on the real device.** Native reads `boot-ok-*` and `config.json`
+where JS writes them; if that path is wrong it is wrong forever.
 
 ## Needs a spike / verification
 
@@ -32,6 +40,7 @@ Each carries enough context to resume cold.
 | Q08 | **Does the paywall patch keep `drawNewCards` on the unfiltered branch** in all paths? | mod 2110 branches on a premium flag before slicing; verify the patched Redux state reaches it |
 | Q09 | **Exact `Stage` → interval mapping** | mod 2133 holds `GraduationStage` / `CFStage` (minutes) and `CF4` (ease-factor percentages). Tables are known; the exact transition logic in mod 2119 is not fully traced. Needed only to replicate scheduling in the phonexa dashboard |
 | Q10 | **Norsk ordbank import size and shape** | Drives Q01 disk sizing and the `/inflect` schema |
+| Q17 | **Does `FileSystem.documentDirectory` equal `context.getFilesDir()`?** 🔴 Blocks the native patch | Log the literal value of `documentDirectory` on the real device. If it is nested (e.g. `…/ExponentExperienceData/…`), native must read `boot-ok-*` and `config.json` from *that* path — and that path is then frozen. A mismatch means the watchdog quarantines every build after two launches and OTA silently never works |
 
 ## Deferred by decision (do not re-open casually)
 

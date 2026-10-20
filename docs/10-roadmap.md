@@ -37,22 +37,34 @@ first moment you can put your own card on your phone. Push through to there.
 
 ## P1 — Server skeleton
 
-Minimum for the device to have something to talk to.
+Minimum for the device to have something to talk to. **No application code**
+(D55) — every device-facing path is a static file served by Caddy. Postgres and
+`hub` arrive with P4/P5.
 
-- [ ] Caddy + Postgres + `mjolnir-hub` on the Contabo VPS, HTTPS working
-- [ ] `/ota/current.json`, static bundle + `/blob/<sha256>` serving, gzip
-- [ ] Token gate on `/ota/*`
+- [ ] Caddy on the Contabo VPS, HTTPS working
+- [ ] `/ota/current.json`, `/ota/bundle/<buildId>.js`, `/blob/<sha256>` served
+      off disk; transport gzip only, never a pre-gzipped opaque body (D49)
+- [ ] Token gate on `/ota/*`, **GET only**
 - [ ] Publish the *current unmodified* bundle as build #1 — proves the path
+- [ ] Verify end to end: correct token fetches, wrong/absent token 401s, the
+      downloaded bytes hash to the `sha256` in `current.json`
 
 ## P2 — The one APK build
 
 **Irreversible. Everything that will ever need native must be in this build.**
+The contract it implements is frozen in **`11-ota-contract.md`** — Q11–Q16 are
+settled there. Build against that document, not against memory.
 
+- [ ] **Q17 first**: confirm `FileSystem.documentDirectory` == `getFilesDir()`
+      on the real device. A mismatch is silently fatal and unfixable later
 - [ ] 6th `Package` in `ExpoModulesPackageList$LazyHolder` →
       `ReactNativeHostHandler.getJSBundleFile()`
-- [ ] Stale-while-revalidate fetch, `.tmp` → verify → atomic rename
+- [ ] Stale-while-revalidate fetch, `.tmp` → verify → atomic rename, all on a
+      background thread; `getJSBundleFile()` does zero network I/O
 - [ ] Three-tier fallback: fetched → cached → `assets://index.android.bundle`
-- [ ] Boot watchdog (`boot-ok-<buildId>`, skip after 2 failed attempts)
+- [ ] Boot watchdog per §4: attempt marker written before handover, `bad-<id>`
+      never auto-cleared, `active` rewritten whenever a tier is skipped (D54)
+- [ ] `config.json` escape hatch (D39) and `https`-only enforcement (D53)
 - [ ] Rebuild / re-sign / install via the existing `0306.orig/` pipeline
 - [ ] Verify rollback works by pointing `current.json` at an older build
 
@@ -116,13 +128,19 @@ After this: **every future change is a file on the server.**
 
 ## Right now
 
-**P1 → P2.** Stand up a minimal `/ota/current.json` + bundle on the Contabo box
-(~1h), then design and ship the native patch.
+**Q11–Q16 are settled** (2026-10-20) in `11-ota-contract.md` — the wire
+contract, on-device layout, the two validity tests, watchdog semantics, the
+mandatory config escape hatch and hash-not-signing. ADRs D48–D55.
 
-Before writing any smali, settle **Q11–Q16** in `09-open-questions.md` — the
-`current.json` contract, on-device layout, validity test, watchdog semantics,
-the `ota-config.json` escape hatch (D39) and hash-not-signing (D47). Every one
-of them is frozen forever once the APK ships.
+Next, in order:
+
+1. **P1 on the Contabo box (~1h).** Caddy + a directory + a token; publish the
+   unmodified bundle as build #1. No code to write (D55).
+2. **Q17 on the phone.** Log `FileSystem.documentDirectory` from a dev build and
+   compare it to `getFilesDir()`. This gates the native patch and nothing else
+   can substitute for it — the answer gets frozen into the APK.
+3. **Untangle the two patch histories** in `/home/coden/rev/mjolnir/` (below).
+4. **Then write smali**, against `11-ota-contract.md` §2–§5.
 
 ### Prerequisites still open
 
@@ -133,3 +151,4 @@ of them is frozen forever once the APK ships.
   workspace. **Untangle which is authoritative before building on either.**
 - `stabbur` and `smia` are scaffolded (README + CLAUDE.md only); no
   implementation until P4/P6.
+- **Q17** (`documentDirectory` vs `getFilesDir()`) is unanswered and blocks P2.

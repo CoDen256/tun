@@ -38,7 +38,7 @@ Severity: **🔴 will bite you** · **🟡 annoying** · **🔵 ops**
 
 | # | Pitfall | Handling |
 |---|---|---|
-| P23 | The OTA token is baked into the APK and **frozen forever** | Scope it to `GET /ota/*` only. Every other token is carried in the bundle — and is therefore rotatable by republishing |
+| P23 | ~~The OTA token is baked into the APK and **frozen forever**~~ ⚠️ **CORRECTED 2026-10-20** — the baked-in pair is only the *bootstrap*. Because a JS bundle can write `config.json` (D39), the OTA URL **and** token are rotatable by publishing, as long as one good bundle is live | Scope the token to `GET /ota/*` only. Rotation procedure: publish a bundle that writes the new `config.json`, confirm the device picked it up via the heartbeat, *then* retire the old token |
 | P24 | Backups must cover Postgres **and** the blob store | Blobs are content-addressed → incremental sync is trivial. Easy to forget |
 | ~~P25~~ | ~~Hosting product type~~ | **RESOLVED: Contabo VPS, 8 GB / 100 GB** — Docker-capable |
 | P26 | Rebasing onto a newer APK's bundle renumbers module ids | bundle-tool already locates modules by shape, not id — preserve that property in every new patch |

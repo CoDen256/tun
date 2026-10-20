@@ -1,0 +1,23 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../mjolnir"
+		},
+		{
+			"path": "../hover-translate"
+		},
+		{
+			"path": "../phonexa"
+		},
+		{
+			"path": "../smia"
+		},
+		{
+			"path": "../stabbur"
+		}
+	],
+	"settings": {}
+}
