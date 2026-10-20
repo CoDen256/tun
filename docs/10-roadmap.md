@@ -165,8 +165,10 @@ as-is, and the baked-in URL/token are placeholders substituted at build time
    failing the build if either survives (D64). Then acceptance §9: all four
    selection tiers, watchdog quarantine, rollback, `config.json` rotation.
 
-⚠️ P2 is the only irreversible step in the project. Everything else is fixed by
-redeploying a file. Do not ship the APK the same day you write it.
+⚠️ P2 is the step that is *expensive* to get wrong — but not irreversible for
+this operator, who rebuilds and reinstalls freely (D66). The watchdog, config
+escape hatch and placeholder gate stay; the one-shot ceremony does not. Install
+it, run the §9 acceptance list, and rebuild if something is wrong.
 
 ### Still open
 
