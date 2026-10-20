@@ -176,28 +176,27 @@ bad bundle is quarantined), rollback, `config.json` rotation, tier 3
 
 ## Right now
 
-**P1 is live** (16/16 on the VPS). **Q11–Q17 settled**, the build base is
-untangled and pinned (D58/D59/D60), the paywall patch is deferred (D61), and
-**both operator sign-offs are done** — D52's watchdog parameters accepted
-as-is, and the baked-in URL/token are placeholders substituted at build time
-(D64). **Nothing blocks the native patch.**
+**P2 is done and proven** (see `12-p2-results.md`). The device fetches its
+bundle over the air. Everything from here is a file on the server.
 
-1. **Publish `b000002`** = v1.5.12 base + boot-ok companion. Built and proven
-   locally (`sha256 35c2cd71…65ed`, 6 006 994 B, 16/16 against the real
-   `caddy:2-alpine`); what remains is `scp` + `ota-publish.sh` on the VPS.
-   The patched APK must not first fetch `b000001` — it has no companion, so it
-   writes no `boot-ok` and is quarantined on its third launch.
-2. **Implement `p2-native-ota` tasks 2–6** in the `mjolnir` repo, against
-   `11-ota-contract.md` §1–§6. The contract is frozen; implement it, do not
-   relitigate it. Tasks 1 and 7 are done.
-3. **Build, sign, install** — substituting the URL/token placeholders and
-   failing the build if either survives (D64). Then acceptance §9: all four
-   selection tiers, watchdog quarantine, rollback, `config.json` rotation.
+**Next: apply the paywall patch over the air (P3, tasks §10).** This is the
+first real payoff and the cheapest possible proof of the whole premise — a
+behaviour change with no APK and no reinstall.
 
-⚠️ P2 is the step that is *expensive* to get wrong — but not irreversible for
-this operator, who rebuilds and reinstalls freely (D66). The watchdog, config
-escape hatch and placeholder gate stay; the one-shot ceremony does not. Install
-it, run the §9 acceptance list, and rebuild if something is wrong.
+1. Re-derive the paywall patch against the **v1.5.12** base bundle. The June
+   technique (`0f6f580`/`b962691`/`a1f8f1f`, Redux `SET_PAYWALL_VISIBLE`
+   injection, fingerprint `27/07/2040`) is authoritative but was written
+   against v1.5.10 — **re-derive, do not cherry-pick**. The anchor
+   `case e.SET_PAYWALL_VISIBLE:return Object.assign({},_,{paywall_visible:t.payload})`
+   is present verbatim in v1.5.12.
+2. `bundle-tool companion --build-id b000003` — without the companion the
+   watchdog quarantines it on the third launch.
+3. `ota-publish.sh … b000003` on the VPS, then force-stop and launch twice:
+   expect `tier=pending` → `tier=active`, paywall gone.
+
+Then the remaining acceptance items (§9.3 watchdog positive, §9.4 rollback,
+§9.5 config rotation) — all recoverable, none risk the install. Run §9.3 last;
+it leaves a permanent tombstone by design.
 
 ### Still open
 

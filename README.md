@@ -32,16 +32,15 @@ scaffolded but not implemented.
 
 ## Status
 
-**P1 is live.** The device-facing OTA path is deployed on the Contabo VPS and
-verified end to end — `bin/ota-verify.sh` prints **16 passed, 0 failed** against
-the live host (2026-10-20), including the assertion that would otherwise be
-discovered too late: the bundle's sha256 is identical with and without transport
-gzip (D49). The hostname is DNS-only, never proxied (D57) — a CDN in the body
-path would break that invariant permanently.
+**P1 and P2 are done.** The device fetches its JS bundle over the air: the OTA
+endpoint is live on the VPS (`bin/ota-verify.sh` 16/16), and the one-time native
+patch is built, signed, installed and **proven on device** — `asset` →
+`pending` → `active` → `active` across four launches, with no false quarantine.
+See [`docs/12-p2-results.md`](docs/12-p2-results.md) for exactly what was tested
+and what remains unproven.
 
-**P2 is unblocked and is the next step.** Its contract is frozen in
-[`docs/11-ota-contract.md`](docs/11-ota-contract.md); Q11–Q17 are all settled.
-It is the only irreversible step in the project.
+**From here, every change is a file on the server.** Next is the first real
+payoff: shipping the paywall patch over the air with no APK rebuild.
 
 See [`docs/10-roadmap.md`](docs/10-roadmap.md) for what to do next, and
 [`docs/07-decisions.md`](docs/07-decisions.md) before changing any decision.

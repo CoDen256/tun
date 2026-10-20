@@ -39,6 +39,7 @@ and editable by you.
 | `08-pitfalls.md` | Known traps, with handling | Before implementing any phase |
 | `09-open-questions.md` | Unresolved, with enough context to resume | When picking up again |
 | `10-roadmap.md` | Phases, ordering, what to do first | Deciding what to work on |
+| `12-p2-results.md` | what P2 built, tested and proved on device; bugs found; what is still unproven |
 | `11-ota-contract.md` | **The frozen native contract** — wire format, on-device layout, validity, watchdog, escape hatch | Before writing any native patch code |
 
 Mjølnir app internals (reverse-engineering findings) live in the **mjolnir**
