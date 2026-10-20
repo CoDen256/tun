@@ -63,8 +63,8 @@ left is provisioning. See `DEPLOY.md`.
 The contract it implements is frozen in **`11-ota-contract.md`** — Q11–Q16 are
 settled there. Build against that document, not against memory.
 
-- [ ] **Q17 first**: confirm `FileSystem.documentDirectory` == `getFilesDir()`
-      on the real device. A mismatch is silently fatal and unfixable later
+- [x] **Q17 resolved statically (D56)** — `documentDirectory` *is*
+      `getFilesDir()`; no device check needed. Native uses `getFilesDir()`
 - [ ] 6th `Package` in `ExpoModulesPackageList$LazyHolder` →
       `ReactNativeHostHandler.getJSBundleFile()`
 - [ ] Stale-while-revalidate fetch, `.tmp` → verify → atomic rename, all on a

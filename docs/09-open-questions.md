@@ -26,10 +26,10 @@ re-derive them; change them only before the APK is built.
 | ~~Q15~~ | Config escape hatch | Mandatory. Consequence: JS can write it, so URL **and token** are rotatable by republishing (D39). §5 |
 | ~~Q16~~ | Signature vs sha256 | sha256 over TLS affirmed; residual stated; `https` enforced everywhere as the free hedge (D47, D53). §6 |
 
-**One prerequisite the contract depends on (Q17, below): confirm that
-`FileSystem.documentDirectory` and `context.getFilesDir()` resolve to the same
-directory on the real device.** Native reads `boot-ok-*` and `config.json`
-where JS writes them; if that path is wrong it is wrong forever.
+**Q17 is RESOLVED (2026-10-20, statically — see the table below) and the native
+patch is unblocked.** `documentDirectory` is built as
+`Uri.fromFile(context.getFilesDir()).toString() + "/"`, so JS and native address
+the same directory. No device verification is required.
 
 ## Needs a spike / verification
 
@@ -40,7 +40,7 @@ where JS writes them; if that path is wrong it is wrong forever.
 | Q08 | **Does the paywall patch keep `drawNewCards` on the unfiltered branch** in all paths? | mod 2110 branches on a premium flag before slicing; verify the patched Redux state reaches it |
 | Q09 | **Exact `Stage` → interval mapping** | mod 2133 holds `GraduationStage` / `CFStage` (minutes) and `CF4` (ease-factor percentages). Tables are known; the exact transition logic in mod 2119 is not fully traced. Needed only to replicate scheduling in the phonexa dashboard |
 | Q10 | **Norsk ordbank import size and shape** | Drives Q01 disk sizing and the `/inflect` schema |
-| Q17 | **Does `FileSystem.documentDirectory` equal `context.getFilesDir()`?** 🔴 Blocks the native patch | Log the literal value of `documentDirectory` on the real device. If it is nested (e.g. `…/ExponentExperienceData/…`), native must read `boot-ok-*` and `config.json` from *that* path — and that path is then frozen. A mismatch means the watchdog quarantines every build after two launches and OTA silently never works |
+| ~~Q17~~ | ~~`FileSystem.documentDirectory` vs `context.getFilesDir()`~~ | **RESOLVED 2026-10-20 statically (D56).** `FileSystemModule.smali:2784` builds it as `Uri.fromFile(context.getFilesDir()).toString() + "/"` — it *is* `getFilesDir()`, no `ExponentExperienceData/` nesting. Native uses `getFilesDir()` directly; mind only the `file://` scheme and trailing slash on the JS side. **No device verification needed; P2 is unblocked** |
 
 ## Deferred by decision (do not re-open casually)
 

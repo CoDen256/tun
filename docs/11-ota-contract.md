@@ -87,12 +87,25 @@ mjolnir-ota/
 `.tmp` → rename. Unreadable or invalid ⇒ treated as absent (safe: falls back
 one tier).
 
-> ⚠️ **Verify before freezing.** JS writes `boot-ok-*` and `config.json`
-> through `FileSystem.documentDirectory`. Native reads them under `getFilesDir()`.
-> These must resolve to the same directory. Confirm the literal value of
-> `documentDirectory` on the real device first — if it is nested (e.g. under
-> `ExponentExperienceData/`), native must look there instead, and that path is
-> frozen too. This is a P0 verification item, not an assumption.
+> ✅ **RESOLVED 2026-10-20, statically — no device needed (D56).**
+> `FileSystemModule`'s module definition builds the constant as:
+>
+> ```smali
+> Uri.fromFile(context.getFilesDir()).toString() + "/"     // smali_classes4/expo/modules/filesystem/FileSystemModule.smali:2784
+> ```
+>
+> So `documentDirectory` **is** `getFilesDir()` — no `ExponentExperienceData/`
+> nesting (that only applies to Expo Go, not a standalone build):
+>
+> ```
+> JS     documentDirectory = "file:///data/user/0/com.lightblitzlearning.mjolnir/files/"
+> native getFilesDir()     = "/data/user/0/com.lightblitzlearning.mjolnir/files"
+> ```
+>
+> Native uses `getFilesDir()` directly. The only care needed is cosmetic: JS
+> sees a `file://` scheme **and a trailing slash**, native sees a bare path.
+> When both name the same file (`boot-ok-*`, `config.json`), strip the scheme
+> and avoid doubling the separator.
 
 ### Selection order at launch
 
