@@ -61,10 +61,7 @@ All six working copies live under `/home/coden/dev/`: `tun`, `mjolnir`,
 
 ## Status
 
-Design phase. Nothing implemented yet. No OpenSpec change created yet.
-See `10-roadmap.md` for the proposed first unit of work.
-
-The P2 native contract is **designed and frozen on paper** (`11-ota-contract.md`,
-ADRs D48–D55). One verification, **Q17**, blocks writing it: whether
-`FileSystem.documentDirectory` and `context.getFilesDir()` are the same
-directory on the device.
+**P1 live** — OTA path deployed on the Contabo VPS, `bin/ota-verify.sh` 16/16
+(2026-10-20). **P2 next** — the one irreversible APK build; contract frozen in
+`11-ota-contract.md`, Q11–Q17 all settled. No OpenSpec change is open yet;
+`p2-native-ota` belongs in the `mjolnir` repo.

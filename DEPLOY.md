@@ -1,5 +1,14 @@
 # Deploying tun
 
+> **Status: deployed and verified on the VPS, 2026-10-20** — `bin/ota-verify.sh`
+> printed 16 passed, 0 failed against the live host. Re-run it after any Caddy
+> or DNS change.
+>
+> **The DNS record must stay grey-clouded (DNS only), never proxied (D57).**
+> A CDN in the body path re-encodes responses and breaks D49's sha256
+> invariant, which the frozen native patch can never recover from; it also
+> intercepts the ACME HTTP-01 challenge so no certificate can be issued.
+
 One Contabo VPS, 8 GB / 100 GB (D35). Everything runs in one `docker compose`
 stack.
 

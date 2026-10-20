@@ -41,8 +41,8 @@ Minimum for the device to have something to talk to. **No application code**
 (D55) — every device-facing path is a static file served by Caddy. Postgres and
 `hub` arrive with P4/P5.
 
-Written and **proven locally against the real image** (2026-10-20); what is
-left is provisioning. See `DEPLOY.md`.
+**DONE — deployed and verified on the Contabo VPS, 2026-10-20.**
+`bin/ota-verify.sh` printed 16/16 against the live host. See `DEPLOY.md`.
 
 - [x] `compose.yaml` (caddy now, postgres behind a profile, the rest commented)
 - [x] `caddy/Caddyfile`: `/ota/*` token-gated and GET-only, `current.json`
@@ -52,10 +52,13 @@ left is provisioning. See `DEPLOY.md`.
       check, https-only
 - [x] `bin/ota-verify.sh` — the acceptance test, 16 assertions, all passing
       against `caddy:2-alpine` with the stock 6 MB bundle as `b000001`
-- [ ] Provision the Contabo box, point DNS, open 80/443
-- [ ] `docker compose up -d`; confirm the certificate is issued
-- [ ] Publish the stock bundle as build #1 and run `bin/ota-verify.sh` **on the
-      VPS** — it must print 16/16 before any native code depends on this
+- [x] Provision the Contabo box, point DNS (**grey cloud / DNS-only — D57**),
+      open 80/443
+- [x] `docker compose up -d`; certificate issued
+- [x] Published the stock bundle as build #1; `bin/ota-verify.sh` printed
+      **16 passed, 0 failed on the VPS**
+- [x] Hardened the test itself: it no longer reports PASS on empty values
+      (P27) and warns when a proxying CDN answers (P28)
 
 ## P2 — The one APK build
 
@@ -136,20 +139,26 @@ After this: **every future change is a file on the server.**
 
 ## Right now
 
-**Q11–Q16 are settled** (2026-10-20) in `11-ota-contract.md` — the wire
-contract, on-device layout, the two validity tests, watchdog semantics, the
-mandatory config escape hatch and hash-not-signing. ADRs D48–D55.
+**P1 is live.** The device-facing path is deployed on the Contabo VPS and
+verified 16/16 (2026-10-20). **Q11–Q17 are all settled** — the wire contract,
+on-device layout, both validity tests, watchdog semantics, the config escape
+hatch, hash-not-signing (D48–D57) and `documentDirectory` == `getFilesDir()`
+(D56, resolved statically).
 
-Next, in order:
+**Nothing blocks P2 except one housekeeping item.**
 
-1. **Deploy P1 to the Contabo box (~1h).** The stack is written and passes
-   locally; `DEPLOY.md` is the procedure. Provision, point DNS, `up -d`,
-   publish build #1, run `bin/ota-verify.sh` on the box.
-2. **Q17 on the phone.** Log `FileSystem.documentDirectory` from a dev build and
-   compare it to `getFilesDir()`. This gates the native patch and nothing else
-   can substitute for it — the answer gets frozen into the APK.
-3. **Untangle the two patch histories** in `/home/coden/rev/mjolnir/` (below).
-4. **Then write smali**, against `11-ota-contract.md` §2–§5.
+1. **Untangle the two patch histories** in `/home/coden/rev/mjolnir/` (below).
+   Ten minutes, and the native patch is applied on top of whichever is
+   authoritative — getting this wrong means building the frozen APK on the
+   wrong base.
+2. **Open `p2-native-ota` as an OpenSpec change in the `mjolnir` repo**, built
+   against `11-ota-contract.md` §2–§5 — not against memory. The contract is
+   frozen; implement it, do not relitigate it.
+3. **Write, build, sign, install.** Then verify all three fallback tiers, the
+   watchdog, and rollback by repointing `current.json` at an older buildId.
+
+⚠️ P2 is the only irreversible step in the project. Everything else is fixed by
+redeploying a file. Do not ship the APK the same day you write it.
 
 ### Prerequisites still open
 
@@ -160,4 +169,3 @@ Next, in order:
   workspace. **Untangle which is authoritative before building on either.**
 - `stabbur` and `smia` are scaffolded (README + CLAUDE.md only); no
   implementation until P4/P6.
-- **Q17** (`documentDirectory` vs `getFilesDir()`) is unanswered and blocks P2.

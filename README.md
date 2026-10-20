@@ -32,15 +32,16 @@ scaffolded but not implemented.
 
 ## Status
 
-**P1 is built and proven locally, not yet deployed.** The stack and the OTA
-path pass end to end against the real `caddy:2-alpine` image — 16 assertions,
-including the one that would otherwise be discovered too late: the bundle's
-sha256 is identical with and without transport gzip (D49). What remains is
-provisioning the VPS, pointing DNS, and running [`DEPLOY.md`](DEPLOY.md).
+**P1 is live.** The device-facing OTA path is deployed on the Contabo VPS and
+verified end to end — `bin/ota-verify.sh` prints **16 passed, 0 failed** against
+the live host (2026-10-20), including the assertion that would otherwise be
+discovered too late: the bundle's sha256 is identical with and without transport
+gzip (D49). The hostname is DNS-only, never proxied (D57) — a CDN in the body
+path would break that invariant permanently.
 
-The P2 native contract is frozen on paper in
-[`docs/11-ota-contract.md`](docs/11-ota-contract.md). One verification, **Q17**,
-blocks writing it.
+**P2 is unblocked and is the next step.** Its contract is frozen in
+[`docs/11-ota-contract.md`](docs/11-ota-contract.md); Q11–Q17 are all settled.
+It is the only irreversible step in the project.
 
 See [`docs/10-roadmap.md`](docs/10-roadmap.md) for what to do next, and
 [`docs/07-decisions.md`](docs/07-decisions.md) before changing any decision.
