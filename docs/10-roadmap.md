@@ -55,8 +55,16 @@ Minimum for the device to have something to talk to. **No application code**
 - [x] Provision the Contabo box, point DNS (**grey cloud / DNS-only — D57**),
       open 80/443
 - [x] `docker compose up -d`; certificate issued
-- [x] Published the stock bundle as build #1; `bin/ota-verify.sh` printed
-      **16 passed, 0 failed on the VPS**
+- [x] Published build #1 and `bin/ota-verify.sh` printed **16 passed, 0 failed
+      on the VPS**. Re-published 2026-10-20 from the **v1.5.12 base**
+      (`sha256 b3ad6aee…5741`, 6 003 611 B) after the earlier artifact was
+      found to be the v1.5.10 patched bundle — wrong app version for the APK
+      being built (D60)
+- [ ] ⚠️ `b000001` is a **placeholder**: the plain base bundle with **no JS
+      companion**, so once the native patch exists it writes no
+      `boot-ok-<buildId>` and is quarantined on its third launch. It must be
+      replaced by *base bundle + companion* under a **new** buildId before the
+      patched APK is installed
 - [x] Hardened the test itself: it no longer reports PASS on empty values
       (P27) and warns when a proxying CDN answers (P28)
 
