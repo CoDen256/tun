@@ -165,6 +165,11 @@ hatch, hash-not-signing (D48–D57) and `documentDirectory` == `getFilesDir()`
 3. **Write, build, sign, install.** Then verify all three fallback tiers, the
    watchdog, and rollback by repointing `current.json` at an older buildId.
 
+**Operator sign-offs complete (2026-10-20):** D52's watchdog parameters
+accepted as-is; the baked-in URL/token are placeholders substituted at build
+time (D64), so the native patch can be written and reviewed now. Nothing
+blocks tasks 2–6.
+
 ⚠️ P2 is the only irreversible step in the project. Everything else is fixed by
 redeploying a file. Do not ship the APK the same day you write it.
 
