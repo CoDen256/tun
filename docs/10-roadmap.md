@@ -147,38 +147,32 @@ After this: **every future change is a file on the server.**
 
 ## Right now
 
-**P1 is live.** The device-facing path is deployed on the Contabo VPS and
-verified 16/16 (2026-10-20). **Q11–Q17 are all settled** — the wire contract,
-on-device layout, both validity tests, watchdog semantics, the config escape
-hatch, hash-not-signing (D48–D57) and `documentDirectory` == `getFilesDir()`
-(D56, resolved statically).
+**P1 is live** (16/16 on the VPS). **Q11–Q17 settled**, the build base is
+untangled and pinned (D58/D59/D60), the paywall patch is deferred (D61), and
+**both operator sign-offs are done** — D52's watchdog parameters accepted
+as-is, and the baked-in URL/token are placeholders substituted at build time
+(D64). **Nothing blocks the native patch.**
 
-**Nothing blocks P2 except one housekeeping item.**
-
-1. **Untangle the two patch histories** in `/home/coden/rev/mjolnir/` (below).
-   Ten minutes, and the native patch is applied on top of whichever is
-   authoritative — getting this wrong means building the frozen APK on the
-   wrong base.
-2. **Open `p2-native-ota` as an OpenSpec change in the `mjolnir` repo**, built
-   against `11-ota-contract.md` §2–§5 — not against memory. The contract is
-   frozen; implement it, do not relitigate it.
-3. **Write, build, sign, install.** Then verify all three fallback tiers, the
-   watchdog, and rollback by repointing `current.json` at an older buildId.
-
-**Operator sign-offs complete (2026-10-20):** D52's watchdog parameters
-accepted as-is; the baked-in URL/token are placeholders substituted at build
-time (D64), so the native patch can be written and reviewed now. Nothing
-blocks tasks 2–6.
+1. **Publish `b000002`** = v1.5.12 base + boot-ok companion. Built and proven
+   locally (`sha256 35c2cd71…65ed`, 6 006 994 B, 16/16 against the real
+   `caddy:2-alpine`); what remains is `scp` + `ota-publish.sh` on the VPS.
+   The patched APK must not first fetch `b000001` — it has no companion, so it
+   writes no `boot-ok` and is quarantined on its third launch.
+2. **Implement `p2-native-ota` tasks 2–6** in the `mjolnir` repo, against
+   `11-ota-contract.md` §1–§6. The contract is frozen; implement it, do not
+   relitigate it. Tasks 1 and 7 are done.
+3. **Build, sign, install** — substituting the URL/token placeholders and
+   failing the build if either survives (D64). Then acceptance §9: all four
+   selection tiers, watchdog quarantine, rollback, `config.json` rotation.
 
 ⚠️ P2 is the only irreversible step in the project. Everything else is fixed by
 redeploying a file. Do not ship the APK the same day you write it.
 
-### Prerequisites still open
+### Still open
 
-- `/home/coden/rev/mjolnir/smali.merged.mjolnir/assets/.git` holds 4 commits
-  (`07b26ed`, `101a0be`, `b5cc8df`, `f6c42e7`) whose hashes do **not** match the
-  three paywall patches recorded in `mjolnir/docs/findings.md` §7
-  (`0f6f580`, `b962691`, `a1f8f1f`). There are two patch histories in that
-  workspace. **Untangle which is authoritative before building on either.**
+- **Q07 cold-start parse time** is *not* yet measured. The P0 reading taken
+  2026-10-20 was SHA-256 cost over the bundle (which settled D51); Q07 is the
+  different question of launch time with a bundle padded by ~5 MB of cards.
+  Cheap once the native patch ships — it becomes a file copy to the VPS.
 - `stabbur` and `smia` are scaffolded (README + CLAUDE.md only); no
   implementation until P4/P6.
