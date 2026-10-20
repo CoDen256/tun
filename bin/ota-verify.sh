@@ -20,7 +20,30 @@ ok()   { printf '  \033[32mPASS\033[0m %s\n' "$1"; PASS=$((PASS+1)); }
 bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$1"; FAIL=$((FAIL+1)); }
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 
+# An empty value must NEVER satisfy an assertion. Comparing two unset strings
+# with [ "$a" = "$b" ] reports PASS when nothing was downloaded at all, which
+# is how a totally failed run once reported five passes -- including the D49
+# check that is unfixable after the APK ships.
+eq() { # eq <label> <got> <want>
+	if [ -z "$2" ] || [ -z "$3" ]; then bad "$1 (empty value: got='$2' want='$3')"; return 1; fi
+	[ "$2" = "$3" ] && ok "$1" || bad "$1: got '$2' want '$3'"
+}
+body() { # body <file> <label>  -- a downloaded body must exist and be non-empty
+	[ -s "$1" ] || { bad "$2 (nothing was downloaded)"; return 1; }
+}
+
 echo "verifying ${BASE}"
+
+# An intermediary that re-encodes bodies breaks D49 -- the sha256 native
+# computes would differ from the one current.json publishes, and native can
+# never be fixed. Warn loudly; this is also why the DNS record must be
+# grey-clouded (DNS only), not proxied.
+SRV=$(curl -sSI --max-time 15 "$BASE/ota/current.json" 2>/dev/null | tr -d '\r' | grep -i '^server:' | cut -d' ' -f2-)
+case "$(printf '%s' "$SRV" | tr 'A-Z' 'a-z')" in
+	*cloudflare*|*akamai*|*fastly*|*cloudfront*)
+		printf '  \033[33mWARN\033[0m an intermediary is answering (Server: %s).\n' "$SRV"
+		printf '         A proxy that re-encodes bodies violates D49. Use DNS-only (grey cloud).\n' ;;
+esac
 
 echo "token gate"
 [ "$(code "$BASE/ota/current.json")" = 401 ] \
@@ -56,35 +79,50 @@ esac
 	&& ok "current.json is no-store (rollback takes effect, D26)" \
 	|| bad "current.json must be no-store"
 
+if [ -z "$BUILD_ID" ] || [ -z "$SHA" ] || [ -z "$SIZE" ] || [ -z "$URL" ]; then
+	echo
+	printf '\033[31mcurrent.json is unusable - aborting before the bundle checks.\033[0m\n'
+	printf 'Everything below depends on it; running those checks would report meaningless passes.\n'
+	printf 'Got: %s\n' "$(head -c 200 "$TMP/current.json" 2>/dev/null || echo '<nothing>')"
+	printf '\033[31m%s passed, %s FAILED (aborted early)\033[0m\n' "$PASS" "$FAIL"
+	exit 1
+fi
+
 echo "bundle"
 # Exactly what native does: no Accept-Encoding set by hand (D49).
 curl -sS -H "$AUTH" "$URL" -o "$TMP/plain.js"
-GOT_SHA=$(sha256sum "$TMP/plain.js" | cut -d' ' -f1)
-GOT_SIZE=$(stat -c%s "$TMP/plain.js")
-[ "$GOT_SHA" = "$SHA" ] && ok "sha256 of downloaded bytes matches" \
-	|| bad "sha256 MISMATCH: got $GOT_SHA want $SHA"
-[ "$GOT_SIZE" = "$SIZE" ] && ok "byte count matches size" \
-	|| bad "size MISMATCH: got $GOT_SIZE want $SIZE"
-[ "$(head -c 26 "$TMP/plain.js")" = 'var __BUNDLE_START_TIME__=' ] \
-	&& ok "magic prefix present (D51)" || bad "magic prefix missing"
+if body "$TMP/plain.js" "bundle download"; then
+	eq "sha256 of downloaded bytes matches" "$(sha256sum "$TMP/plain.js" | cut -d' ' -f1)" "$SHA"
+	eq "byte count matches size"            "$(stat -c%s "$TMP/plain.js")"                  "$SIZE"
+	[ "$(head -c 26 "$TMP/plain.js")" = 'var __BUNDLE_START_TIME__=' ] \
+		&& ok "magic prefix present (D51)" || bad "magic prefix missing"
+else
+	bad "sha256 of downloaded bytes matches (skipped)"
+	bad "byte count matches size (skipped)"
+	bad "magic prefix present (skipped)"
+fi
 
 # The Java HTTP stack negotiates gzip transparently. The hash must be
 # identical either way, or D49 is violated and native can never be fixed.
 curl -sS --compressed -H "$AUTH" "$URL" -o "$TMP/gz.js"
-[ "$(sha256sum "$TMP/gz.js" | cut -d' ' -f1)" = "$SHA" ] \
-	&& ok "sha256 identical with transport gzip (D49)" \
-	|| bad "gzip path changes the bytes — native would reject every build"
+if body "$TMP/gz.js" "gzip download"; then
+	eq "sha256 identical with transport gzip (D49)" "$(sha256sum "$TMP/gz.js" | cut -d' ' -f1)" "$SHA"
+else
+	bad "sha256 identical with transport gzip (D49) (skipped)"
+fi
 # Under gzip, Caddy sends the bundle CHUNKED with no Content-Length at all.
 # Native therefore cannot pre-check the size from headers: it must enforce the
 # cap while streaming, aborting once bytes written exceed `size` (D49).
 GZ_CL=$(curl -sS --compressed -D - -o /dev/null -H "$AUTH" "$URL" | tr -d ' \r' | grep -i '^content-length:' | cut -d: -f2)
-[ -z "$GZ_CL" ] \
-	&& ok "gzip GET has no Content-Length (chunked) — native must cap while streaming" \
-	|| bad "unexpected Content-Length '$GZ_CL' under gzip; re-check the D49 assumption"
+if [ -s "$TMP/gz.js" ]; then
+	[ -z "$GZ_CL" ] \
+		&& ok "gzip GET has no Content-Length (chunked) — native must cap while streaming" \
+		|| bad "unexpected Content-Length '$GZ_CL' under gzip; re-check the D49 assumption"
+else
+	bad "gzip Content-Length check (skipped: nothing downloaded)"
+fi
 PLAIN_CL=$(curl -sS -H 'Accept-Encoding:' -D - -o /dev/null -H "$AUTH" "$URL" | tr -d ' \r' | grep -i '^content-length:' | cut -d: -f2)
-[ "$PLAIN_CL" = "$SIZE" ] \
-	&& ok "ungzipped GET Content-Length == size" \
-	|| bad "ungzipped Content-Length '$PLAIN_CL' != size '$SIZE'"
+eq "ungzipped GET Content-Length == size" "$PLAIN_CL" "$SIZE"
 
 echo
 if [ "$FAIL" -eq 0 ]; then

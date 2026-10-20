@@ -42,3 +42,6 @@ Severity: **🔴 will bite you** · **🟡 annoying** · **🔵 ops**
 | P24 | Backups must cover Postgres **and** the blob store | Blobs are content-addressed → incremental sync is trivial. Easy to forget |
 | ~~P25~~ | ~~Hosting product type~~ | **RESOLVED: Contabo VPS, 8 GB / 100 GB** — Docker-capable |
 | P26 | Rebasing onto a newer APK's bundle renumbers module ids | bundle-tool already locates modules by shape, not id — preserve that property in every new patch |
+| P27 | **An assertion comparing two empty strings reports PASS.** `ota-verify.sh` once reported *5 passed* on a run where nothing downloaded at all — including the D49 gzip check that is unfixable after the APK ships | Fixed 2026-10-20: `eq()` rejects empty operands, `body()` requires a non-empty download, and the script aborts before the bundle section if `current.json` is unusable. **Any future assertion must fail closed on missing data** |
+| P28 | **A proxying CDN in front of `/ota/*` breaks D49.** Cloudflare's orange cloud re-encodes bodies (Brotli, content modification on some plans), so the sha256 native computes would differ from the published one — permanently rejecting every build. It also intercepts the HTTP-01 challenge, so Caddy can never issue a certificate | The DNS record must be **grey-clouded (DNS only)**. `ota-verify.sh` now WARNs when an intermediary answers |
+
