@@ -65,6 +65,12 @@ bin/ota-publish.sh index.android.bundle b000001 "base 6.0.3 · logic 0 · data 0
 bin/ota-verify.sh
 ```
 
+`ota-publish.sh` refuses a bundle with no boot-ok companion, and refuses one
+whose baked `BUILD_ID` differs from the id you publish under — both would be
+quarantined on the device's third launch, silently. `ALLOW_NO_COMPANION=1`
+overrides the first, and is only correct for a bundle no patched device will
+ever fetch.
+
 `ota-verify.sh` must print **16 passed, 0 failed**. It is the P1 acceptance
 test and it checks the things that are unfixable once the APK ships — above
 all that the sha256 is identical with and without transport gzip (D49). Re-run

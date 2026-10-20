@@ -38,6 +38,30 @@ if [ "$(head -c 26 "$BUNDLE_SRC")" != 'var __BUNDLE_START_TIME__=' ]; then
 	exit 1
 fi
 
+# The companion bakes the buildId into the JS (`BUILD_ID = '<id>'`); this script
+# publishes under a buildId given on the command line. Nothing else couples the
+# two, and a mismatch is silent AND frozen: native looks for `boot-ok-<active>`,
+# the companion writes `boot-ok-<other>`, so every build is quarantined on its
+# third launch. Same failure class as D64, on the JS side.
+# `|| true` is required: under `set -euo pipefail` a grep that matches nothing
+# fails the pipeline and kills the script at this assignment, silently.
+BAKED=$( { grep -ao "BUILD_ID *= *'[A-Za-z0-9._-]\{1,64\}'" "$BUNDLE_SRC" 2>/dev/null || true; } | head -1 | sed "s/.*'\(.*\)'/\1/")
+if [ -n "$BAKED" ]; then
+	if [ "$BAKED" != "$BUILD_ID" ]; then
+		echo "refusing: companion bakes BUILD_ID '$BAKED' but you are publishing as '$BUILD_ID'." >&2
+		echo "          boot-ok-$BAKED would never match bundle-$BUILD_ID.js —" >&2
+		echo "          native would quarantine this build on its third launch." >&2
+		exit 1
+	fi
+	echo "companion buildId '$BAKED' matches"
+elif [ "${ALLOW_NO_COMPANION:-0}" != 1 ]; then
+	echo "refusing: no boot-ok companion found in '$BUNDLE_SRC'." >&2
+	echo "          Without it native writes no boot-ok and quarantines this" >&2
+	echo "          build on its third launch. Set ALLOW_NO_COMPANION=1 only for" >&2
+	echo "          a bundle no patched device will ever fetch." >&2
+	exit 1
+fi
+
 SIZE=$(stat -c%s "$BUNDLE_SRC")
 SHA=$(sha256sum "$BUNDLE_SRC" | cut -d' ' -f1)
 [ "$SIZE" -gt 0 ] || { echo "refusing: empty bundle" >&2; exit 1; }
