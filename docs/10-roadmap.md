@@ -84,7 +84,8 @@ settled there. Build against that document, not against memory.
 - [ ] Boot watchdog per §4: attempt marker written before handover, `bad-<id>`
       never auto-cleared, `active` rewritten whenever a tier is skipped (D54)
 - [ ] `config.json` escape hatch (D39) and `https`-only enforcement (D53)
-- [ ] Rebuild / re-sign / install via the existing `0306.orig/` pipeline
+- [x] Rebuild / re-sign / install — `mjolnir/apk/build.sh` (stage base →
+      substitute D64 placeholders → overlay patch → `at bl -fvazs` → dex gate)
 - [ ] Verify rollback works by pointing `current.json` at an older build
 
 After this: **every future change is a file on the server.**
@@ -142,6 +143,34 @@ After this: **every future change is a file on the server.**
 - Promote capture clips into phonexa `Sample`s for formant work
 - Promote `ShadowingSegment`s into items
 - Revisit D14 (linking recall and pronunciation progress)
+
+---
+
+## P2 — PROVEN ON DEVICE, 2026-10-20
+
+The OTA path works end to end. Observed tier sequence across four launches:
+
+```
+L1  select tier=asset   path=null                     embedded fallback; dex sound
+L2  select tier=pending path=…/bundle-b000002.js      fetched, verified, promoted
+L3  select tier=active  path=…/bundle-b000002.js      promotion persisted
+L4  select tier=active  path=…/bundle-b000002.js      NOT quarantined → boot-ok written
+```
+
+L4 is the load-bearing one: had the JS companion failed to write
+`boot-ok-b000002`, the watchdog would have quarantined the build on exactly
+that launch and fallen back to `asset`. It did not. **Every future change is
+now a file on the server.**
+
+What this proves: the `LazyHolder` 5→6 edit (no `VerifyError`, no
+`AbstractMethodError`, no `ArrayIndexOutOfBounds`), D66's lazy Context,
+`current.json` fetch/parse/validate, the D49 download rules, size+sha256+prefix
+verification, atomic rename, pending→active promotion, and the companion's
+`boot-ok` write.
+
+Still unproven (acceptance §9 remainder): watchdog *positive* (a deliberately
+bad bundle is quarantined), rollback, `config.json` rotation, tier 3
+(newest-boot-ok'd), and GC.
 
 ---
 
