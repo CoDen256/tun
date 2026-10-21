@@ -264,7 +264,7 @@ that last one ever fails, native rejects every build and cannot be fixed.
 
 Run it against the VPS immediately after deploying, and again after any Caddy
 change. It passed end to end against the real `caddy:2-alpine` config on
-2026-10-20. First measured against the v1.5.10 paywall-patched bundle
+2026-10-20. First measured against an earlier v1.5.10 bundle
 (`cfa9da16…c22e`, 6 003 468 B), then re-verified 16/16 against the **v1.5.12
 base** (`b3ad6aee…5741`, 6 003 611 B) now published as `b000001`. Nothing in
 the contract depends on a particular bundle size.

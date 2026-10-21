@@ -32,7 +32,7 @@ Severity: **🔴 will bite you** · **🟡 annoying** · **🔵 ops**
 | P19 | The extension depending on the server for its core feature | Fast local translator first, smia enriches async (D32) |
 | P20 | Editing a grammar rule requires republishing every card carrying it | Builder tracks rule → cards and marks them dirty |
 | P21 | Blob refcounting — a re-trimmed clip orphans its old blob | Refcount or periodic GC; never delete a blob referenced by a published build |
-| P22 | Non-premium code path filters `Cards[]` to `P === "N"` **before** slicing, so `PullCounter` indexes a different array | The paywall patch keeps you on the premium branch; still set `P:"N"` on all custom occurrences for consistency |
+| P22 | Non-premium code path filters `Cards[]` to `P === "N"` **before** slicing, so `PullCounter` indexes a different array | The app ships unpatched (D68 — no paywall bypass is planned), so this is the branch every build runs: set `P:"N"` on all custom occurrences, or they are silently invisible to `PullCounter` |
 
 ## 🔵 Ops
 
@@ -44,5 +44,5 @@ Severity: **🔴 will bite you** · **🟡 annoying** · **🔵 ops**
 | P26 | Rebasing onto a newer APK's bundle renumbers module ids | bundle-tool already locates modules by shape, not id — preserve that property in every new patch |
 | P27 | **An assertion comparing two empty strings reports PASS.** `ota-verify.sh` once reported *5 passed* on a run where nothing downloaded at all — including the D49 gzip check that is unfixable after the APK ships | Fixed 2026-10-20: `eq()` rejects empty operands, `body()` requires a non-empty download, and the script aborts before the bundle section if `current.json` is unusable. **Any future assertion must fail closed on missing data** |
 | P28 | **A proxying CDN in front of `/ota/*` breaks D49.** Cloudflare's orange cloud re-encodes bodies (Brotli, content modification on some plans), so the sha256 native computes would differ from the published one — permanently rejecting every build. It also intercepts the HTTP-01 challenge, so Caddy can never issue a certificate | The DNS record must be **grey-clouded (DNS only)**. `ota-verify.sh` now WARNs when an intermediary answers |
-| P29 | **Expo constructs `Package`s from the Application constructor, before `attachBaseContext()`.** Any `Context` *method call* at registration time NPEs and kills the process before launch — and it happens outside the native patch's own try/catch, so the embedded-asset fallback never runs | Store the `Context`, call nothing on it until `getJSBundleFile`/daemon time (D66). The fallback tiers protect against a bad *bundle*, never against a bad *registration* |
+| P29 | **Expo constructs `Package`s from the Application constructor, before `attachBaseContext()`.** Any `Context` *method call* at registration time NPEs and kills the process before launch — and it happens outside the native patch's own try/catch, so the embedded-asset fallback never runs | Store the `Context`, call nothing on it until `getJSBundleFile`/daemon time (D69). The fallback tiers protect against a bad *bundle*, never against a bad *registration* |
 

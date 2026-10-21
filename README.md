@@ -40,7 +40,8 @@ See [`docs/12-p2-results.md`](docs/12-p2-results.md) for exactly what was tested
 and what remains unproven.
 
 **From here, every change is a file on the server.** Next is the first real
-payoff: shipping the paywall patch over the air with no APK rebuild.
+payoff: shipping a small UI patch (the running `buildId` on the "My account"
+screen, D68) over the air with no APK rebuild.
 
 See [`docs/10-roadmap.md`](docs/10-roadmap.md) for what to do next, and
 [`docs/07-decisions.md`](docs/07-decisions.md) before changing any decision.

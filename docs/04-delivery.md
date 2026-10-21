@@ -23,7 +23,7 @@ ever need a bug fix lives in the JS bundle, which is redeployable.
 │ mod 2080       sync (via shim)       ← our REST, no Firebase      │
 │ NEW module     audio prefetcher      ← ExponentFileSystem         │
 │ NEW module     boot-ok marker + restore hook                      │
-│ mod 2119       (already patched: paywall)                         │
+│ mod 2176       "My account" build-version row (D68, P3 first ship) │
 └───────────────────────────────────────────────────────────────────┘
 ```
 

@@ -50,7 +50,7 @@ Recovery paths only — all recoverable by publishing a new buildId:
 
 | | what | why it mattered |
 |---|---|---|
-| **D66 / P29** | `createReactNativeHostHandlers` called `c.getApplicationContext()` | Expo constructs `Package`s from the Application **constructor**, before `attachBaseContext()` — `mBase` is null, NPE, `Unable to instantiate application`. The app could not start. **Outside** every try/catch in `getJSBundleFile`, so the three-tier fallback could not save it: the tiers protect against a bad *bundle*, never a bad *registration*. Fixed by storing the `Context` raw and resolving lazily in `baseDir()` |
+| **D69 / P29** | `createReactNativeHostHandlers` called `c.getApplicationContext()` | Expo constructs `Package`s from the Application **constructor**, before `attachBaseContext()` — `mBase` is null, NPE, `Unable to instantiate application`. The app could not start. **Outside** every try/catch in `getJSBundleFile`, so the three-tier fallback could not save it: the tiers protect against a bad *bundle*, never a bad *registration*. Fixed by storing the `Context` raw and resolving lazily in `baseDir()` |
 | **D65** | GC swept `bad-<id>` along with the bundle | A `current.json` still naming a quarantined id would re-download ~6 MB every launch forever, re-quarantine, and repeat. The tombstone must outlive the bundle |
 | — | refresh re-fetched quarantined builds | Same data burn from the other direction; `refresh()` now skips an id with a `bad-<id>` marker |
 | **P27** | `ota-verify.sh` reported PASS on empty values | A totally failed run printed *5 passed*, including the D49 check. `[ "$a" = "$b" ]` is true when both are unset. Now fails closed and aborts early |

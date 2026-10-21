@@ -163,7 +163,7 @@ that launch and fallen back to `asset`. It did not. **Every future change is
 now a file on the server.**
 
 What this proves: the `LazyHolder` 5→6 edit (no `VerifyError`, no
-`AbstractMethodError`, no `ArrayIndexOutOfBounds`), D66's lazy Context,
+`AbstractMethodError`, no `ArrayIndexOutOfBounds`), D69's lazy Context,
 `current.json` fetch/parse/validate, the D49 download rules, size+sha256+prefix
 verification, atomic rename, pending→active promotion, and the companion's
 `boot-ok` write.
@@ -179,20 +179,19 @@ bad bundle is quarantined), rollback, `config.json` rotation, tier 3
 **P2 is done and proven** (see `12-p2-results.md`). The device fetches its
 bundle over the air. Everything from here is a file on the server.
 
-**Next: apply the paywall patch over the air (P3, tasks §10).** This is the
-first real payoff and the cheapest possible proof of the whole premise — a
-behaviour change with no APK and no reinstall.
+**Next: ship a UI patch over the air (P3, `mjolnir` tasks §10).** The paywall
+patch is **not** part of the plan (D68 supersedes D61) — instead, the first
+real payoff is the cheapest possible proof of the whole premise: a small,
+low-stakes behaviour change with no APK and no reinstall, chosen because it
+makes OTA state observable from the app itself.
 
-1. Re-derive the paywall patch against the **v1.5.12** base bundle. The June
-   technique (`0f6f580`/`b962691`/`a1f8f1f`, Redux `SET_PAYWALL_VISIBLE`
-   injection, fingerprint `27/07/2040`) is authoritative but was written
-   against v1.5.10 — **re-derive, do not cherry-pick**. The anchor
-   `case e.SET_PAYWALL_VISIBLE:return Object.assign({},_,{paywall_visible:t.payload})`
-   is present verbatim in v1.5.12.
+1. Add a "Bundle" row to the "My account" screen (mod **2176**) showing the
+   running `buildId` — see `mjolnir` tasks §10.1 for the anchor and the two
+   ways to source the value.
 2. `bundle-tool companion --build-id b000003` — without the companion the
    watchdog quarantines it on the third launch.
 3. `ota-publish.sh … b000003` on the VPS, then force-stop and launch twice:
-   expect `tier=pending` → `tier=active`, paywall gone.
+   expect `tier=pending` → `tier=active`, and "My account" shows `b000003`.
 
 Then the remaining acceptance items (§9.3 watchdog positive, §9.4 rollback,
 §9.5 config rotation) — all recoverable, none risk the install. Run §9.3 last;
