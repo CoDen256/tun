@@ -1,41 +1,60 @@
 # smia — the linguistics service
 
 *Smia* = "the forge". One service for everything that turns raw text/audio into
-enriched linguistic data, because all five operations have the same shape:
-**input in → enriched out, several providers, chain with fallback, expensive
-enough to cache.**
+enriched linguistic data. All five operations share one shape: **input in →
+one provider called → cached → enriched out.**
+
+> **Updated by `smia-service-foundation` (2026-10-21):** this doc originally
+> described every endpoint as a "provider chain with fallback" (try provider A,
+> fall back to B on failure). That model is gone — see D-S1 below. It also
+> undersold the real provider landscape once `providers/`'s downloaded data was
+> inspected (richer than naob/Forvo/piper); see D-S7 for the finalized lists.
 
 It also removes duplicated provider code: translators currently live inside
 hover-translate's content script, STT config inside phonexa's Shadowing page.
 
 ## Endpoints
 
-| Endpoint | In | Out | Provider chain |
-|---|---|---|---|
-| `POST /inflect` | `{word, lang}` | `{candidates: [{lemma, pos, paradigm}]}` | Norsk ordbank (local Postgres import) |
-| `POST /ipa` | `{text, variety}` | `{phonemic?, phonetic?, source}` | naob.no (priority) → open-dict-data ipa-lookup/nb → espeak-ng g2p |
-| `POST /tts` | `{text, voice}` | `{blob: sha256}` | Forvo (words, real humans) → deno.dict.cc → cloud TTS free tier → piper |
-| `POST /stt` | `{audio}` | `{text, segments[]}` | cloud only (whisper dropped — too heavy to host) |
-| `POST /translate` | `{text, from, to[]}` | `[{provider, lang, text}]` | lifted from hover-translate's `TranslatorFactory` + DeepL / LibreTranslate |
-| `GET /ui` | — | provider health, cache hit rate, quota, manual try-it, re-run with a different chain | — |
+Every endpoint is REST-ified around a content-addressed resource: `POST
+/<kind>` creates-or-fetches (idempotent, id = `sha256(kind, provider, input)`),
+`GET /<kind>/{id}` fetches without recomputation. The caller **names exactly
+one provider per call** — no chain, no fallback, no fan-out (D-S1). `provider`
+is required whenever a kind has 2+ providers configured, optional (defaulted)
+when it has exactly one.
 
-Both phonemic and phonetic transcriptions are acceptable; the response always
-records **which provider answered**, because quality varies a lot (naob is
-phonemic-only and often unavailable; espeak always answers but is mediocre).
+| Endpoint | In | Out | Providers (no particular order — caller's choice) |
+|---|---|---|---|
+| `POST /inflections` | `{word, lang, provider}` | `{provider, candidates: [{lemma, pos, paradigm}]}` | `ordbank` (Norsk Ordbank, local Postgres import, primary), `kaikki` (kaikki.org/Wiktionary `forms[]`, secondary) |
+| `POST /ipa` | `{text, lang, provider}` | `{provider, candidates: [{phonemic?, phonetic?, variety}]}` | `nst` (NST NOFABET lexicon, dialect-aware), `kaikki` (`sounds[].ipa`), `ordbokene` (ordbokene.no API), `ipadict` (ipa-dict/nb), `wikipron` |
+| `POST /tts` | `{text, lang, provider}` | `{provider, candidates: [{sha256, ...metadata}]}` | `kaikki` (`sounds[].mp3_url`); `forvo`/`elevenlabs`/`filmot`/`dictcc` registered but not yet live — each needs something this environment couldn't get itself (API key signup, or in dict.cc's case, cracking an obfuscated anti-bot JS loader) |
+| `POST /stt` | audio body (multipart) + `{provider}` (always required, even with one configured) | `{provider, text}` | `hf_whisper` (Hugging Face Inference, whisper; cloud-only, self-hosted whisper dropped as too heavy) |
+| `POST /translations` | `{text, from, to, provider}` | `{provider, text, context?}` | `google`/`bing` (ported from hover-translate's `TranslatorFactory`), `deepl`, `libretranslate`; `dictcc` registered but not yet live (same anti-bot blocker as `/tts`) |
+| `GET /providers` | — | full catalog, all kinds | — |
+| `GET /health` | — | per-provider last-success/last-failure/quota (informational only — never changes routing) | — |
+| `GET /ui` | — | provider health, cache hit rate, manual try-it (bypasses cache) | — |
+
+The response always records **which provider answered**, because quality
+varies a lot — this is now a required top-level `provider` field on every
+response, not an aside.
 
 ## Design rules
 
-- **Provider chains are declarative config**, not code paths. Reordering a chain
-  is a config edit.
-- **Everything is cached** on `(kind, provider, sha256(input))`. NAOB has no
-  public API (scraping), Forvo is rate-limited, cloud TTS costs money.
-- **Audio output goes into the shared content-addressed blob store**, the same
-  one serving phonexa samples and Mjølnir device audio. A TTS render and a
-  YouTube slice are both just `blob/<sha256>`.
-- **`/inflect` returns candidates, never one answer.** Norwegian surface forms
-  are ambiguous (`skinner` = verb *or* noun plural). Triage picks; nothing
-  auto-picks.
-- STT is cloud-only but the interface stays open for a local backend later.
+- **No endpoint picks a winner among providers.** The caller names one
+  provider; smia calls it, cache-first, and returns exactly what it got —
+  including its failure, with no retry against a different provider (D-S1).
+- **Candidates, not a single winner, wherever a provider's own data is
+  inherently multi-valued** — not just `/inflections`' long-standing
+  ambiguity (`skinner` = verb *or* noun plural), but also `/ipa` (a provider
+  can hold several dialect/variety pronunciations) and `/tts` (several
+  recordings/speakers).
+- **Provider sets are declarative config**, not code paths — adding a
+  provider is a new adapter module + a registry call, never a branch in the
+  request-handling code (see smia's own `registry.py`/`adapters/`).
+- **Everything is cached** on `(kind, provider, sha256(input))`.
+- **`/tts`'s audio cache is smia's own, private, content-addressed, and NOT
+  canonical** — distinct from any shared blob store. Callers (e.g. stabbur)
+  that need durable audio copy bytes into their own storage.
+- STT is cloud-only; the interface stays open for a local backend later (D17).
 
 ## Translation in the extension: fast-then-enrich
 
@@ -43,7 +62,7 @@ Hover must feel instant, and a round-trip to the VPS is not instant.
 
 ```
 hover → render tooltip from the FAST local translator      (immediate)
-      → async: GET smia /translate + /ipa + "already in your deck?"
+      → async: GET smia /translations + /ipa + "already in your deck?"
       → enrich the tooltip in place                        (a moment later)
 save  → the capture carries whatever has arrived
 ```
