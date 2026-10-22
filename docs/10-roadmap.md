@@ -176,32 +176,21 @@ bad bundle is quarantined), rollback, `config.json` rotation, tier 3
 
 ## Right now
 
-**P2 is done and proven** (see `12-p2-results.md`). The device fetches its
-bundle over the air. Everything from here is a file on the server.
+**P2 and P3 are both fully done.** The native OTA patch is live, its entire
+acceptance gate (happy path + all recovery paths) is proven on-device, and the
+first real content payoff shipped as a file with no APK rebuild. See
+`12-p2-results.md` for the full trace, D73 for the closing record.
 
-**Next: ship a UI patch over the air (P3, `mjolnir` tasks §10).** The paywall
-patch is **not** part of the plan (D68 supersedes D61) — instead, the first
-real payoff is the cheapest possible proof of the whole premise: a small,
-low-stakes behaviour change with no APK and no reinstall, chosen because it
-makes OTA state observable from the app itself.
+**Next: P4 — the content spine**, the first moment content is published through
+a real pipeline rather than a hand-built test bundle:
 
-1. Add a "Bundle" row to the "My account" screen (mod **2176**) showing the
-   running `buildId` — see `mjolnir` tasks §10.1 for the anchor and the two
-   ways to source the value.
-2. `bundle-tool companion --build-id b000003` — without the companion the
-   watchdog quarantines it on the third launch.
-3. `ota-publish.sh … b000003` on the VPS, then force-stop and launch twice:
-   expect `tier=pending` → `tier=active`, and "My account" shows `b000003`.
+1. `stabbur` schema: items, decks, `card_slots`, publications, `build_jobs`.
+2. Projector: item → `{N,E,X,D,A}` + occurrences, per the five card types.
+3. `builder` worker invoking `bundle-tool` as a library.
+4. Hand-write 10 cards, publish, study them on the phone.
 
-Then the remaining acceptance items (§9.3 watchdog positive, §9.4 rollback,
-§9.5 config rotation) — all recoverable, none risk the install. Run §9.3 last;
-it leaves a permanent tombstone by design.
+### Standing operational rule (D72/P31)
 
-### Still open
-
-- **Q07 cold-start parse time** is *not* yet measured. The P0 reading taken
-  2026-10-20 was SHA-256 cost over the bundle (which settled D51); Q07 is the
-  different question of launch time with a bundle padded by ~5 MB of cards.
-  Cheap once the native patch ships — it becomes a file copy to the VPS.
-- `stabbur` and `smia` are scaffolded (README + CLAUDE.md only); no
-  implementation until P4/P6.
+Never let the baked-in OTA token go stale relative to the server. If you ever
+rotate it again, rebuild with the new value as the baked-in default in the
+same sitting — don't leave a window where the only fallback is already dead.

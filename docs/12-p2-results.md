@@ -34,17 +34,34 @@ failure mode that would kill every future build.
 | Companion isolation | appends 3 383 bytes; stripping the block reproduces the base bundle byte-for-byte |
 | Server contract | `bin/ota-verify.sh` 16/16 against the VPS |
 
-## Not yet proven
+## Now fully proven (2026-10-22)
 
-Recovery paths only — all recoverable by publishing a new buildId:
+All five acceptance items, each with a device logcat trace:
 
-- **Watchdog positive** (§9.3): a genuinely bad bundle is quarantined. The
-  negative case is proven (no false quarantine); the positive is not.
-- **Rollback** (§9.4), **`config.json` rotation** (§9.5), **tier 3**
-  (newest-boot-ok'd), **GC**.
-- **Q07** cold-start parse time with a padded bundle — still unmeasured. The
-  2026-10-20 reading was SHA-256 *cost* (~20–40 ms over 6 MB), which settled
-  D51; Q07 is the different question and it gates D03.
+- **9.1/9.2** (2026-10-20): asset → pending → active → active, L4 load-bearing
+  (no false quarantine).
+- **9.3 watchdog positive**: a bundle crafted to pass the cheap validity check
+  but crash before `__r(0)` — five launches, `pending→CRASH→CRASH→quarantine+
+  fallback→active`, confirmed via `mjolnir-ota` logcat.
+- **9.4 rollback**: repointed `current.json` at an older buildId; device
+  fetched it. Found and fixed a real bug en route — **D71/P30**: GC's "two
+  newest boot-ok'd" retention could leave an old bundle on disk that
+  `refresh()`'s existing-file check never promoted, silently defeating
+  rollback. Retested after the fix: PASS.
+- **9.5 config rotation**, both halves: a live token rotation (device writes
+  new token via `config-rotate.js`, server swaps to match, device fetches
+  under the new token exclusively) and a malformed-config fallback (bad
+  non-https config left on disk, next cold start rejects it, no crash).
+  **Found and recovered D72/P31**: testing the malformed case *after* the
+  token rotation left the compiled-in fallback token dead too, bricking the
+  OTA channel (not the app) until a rebuild with the rotated token as the new
+  baked-in default. Native behaved correctly throughout — the lockout was an
+  operational ordering mistake.
+
+Not yet proven: **tier 3** (newest-boot-ok'd, exercised only incidentally) and
+GC under real load. **Q07** cold-start parse time with a padded bundle is
+still unmeasured — the 2026-10-20 reading was SHA-256 *cost* (~20–40 ms over
+6 MB), which settled D51; Q07 is the different question and it gates D03.
 
 ## Bugs found and fixed during P2
 
