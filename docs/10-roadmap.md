@@ -74,12 +74,21 @@ real audio blobs to serve — not scheduled as its own phase.
 
 ## P4 — Content spine *(first visible payoff)*
 
-- [ ] `stabbur` schema: items, decks, `card_slots`, publications, `build_jobs`
-- [ ] Projector: item → `{N,E,X,D,A}` + occurrences, per the five types
+- [ ] `stabbur` schema: `notes` (language-agnostic, no decks/ids/occurrences — D74)
+- [ ] `mjolnir/hub` schema: `card_slots`, `decks`, `publications`, `build_jobs`,
+      plus its own ledger of which note ids it has already minted
+- [ ] `bundle-tool inject-deck`: new data-injection primitive (append
+      deck/card objects by shape-match, not an AST diff — distinct from
+      `patchback`)
+- [ ] Projector: note → `{N,E,X,A}` + occurrences, per the five types
+      (`builder`-side; stabbur never computes this)
 - [ ] Interleaver: append-only, min lag 11
-- [ ] `builder` worker invoking bundle-tool as a library
+- [ ] `builder` worker: pull ready+audio'd notes, assign deck by type, mint
+      `card_slots`, regenerate all content fresh each publish (positions frozen)
+- [ ] mod 1440 audio resolver patch + prefetcher companion (prerequisite —
+      every Mjølnir card requires audio, no exceptions; see `03-data-model.md`)
 - [ ] C20–C29 decks appended after C17
-- [ ] **Hand-write 10 cards, publish, study them on the phone**
+- [ ] **Hand-write 10 notes with audio, publish, study them on the phone**
 
 ## P5 — Sync swap
 
@@ -116,7 +125,7 @@ real audio blobs to serve — not scheduled as its own phase.
 
 - Migrate phonexa sample audio onto the blob store (D09)
 - Promote capture clips into phonexa `Sample`s for formant work
-- Promote `ShadowingSegment`s into items
+- Promote `ShadowingSegment`s into notes
 - Revisit D14 (linking recall and pronunciation progress)
 
 ---
@@ -128,15 +137,11 @@ its entire acceptance gate (happy path + all recovery paths) is proven on
 device, and the first real content payoff shipped as a file with no APK
 rebuild. See `12-p2-results.md` for the full trace, D73 for the closing record.
 
-**Designing P4 — the content spine**, the first moment content is published
-through a real pipeline rather than a hand-built test bundle. Not yet an
-OpenSpec change — still working out the data model and what `builder` actually
-does before writing a proposal:
-
-1. `stabbur` schema: items, decks, `card_slots`, publications, `build_jobs`.
-2. Projector: item → `{N,E,X,D,A}` + occurrences, per the five card types.
-3. `builder` worker invoking `bundle-tool` as a library.
-4. Hand-write 10 cards, publish, study them on the phone.
+**Designing P4 — the content spine.** The data model and the stabbur/mjolnir
+boundary are now settled (D74) — `notes` in stabbur, `cards` in Mjølnir, zero
+overlap. Not yet an OpenSpec change — `builder`'s exact mechanics (the
+`inject-deck` primitive, deck rollover, the minted-ledger) are still being
+worked out before writing a proposal. See `03-data-model.md`.
 
 ### Standing operational rule (D72/P31)
 

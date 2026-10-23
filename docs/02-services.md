@@ -9,7 +9,7 @@ family is a Norwegian farm — `smia` the forge, `stabbur` the storehouse.
 |---|---|---|
 | **tun** | `compose.yaml`, Caddyfile, backup scripts, **ecosystem docs (this directory)**, shared UI shell | — |
 | **mjolnir** | `docs/findings.md`, `tool/`, `patches/js/`, `patches/native/`, `apk/`, `builder/`, `hub/` | stabbur |
-| **stabbur** | captures, items, enrichment orchestration, triage UI, audio blobs | smia |
+| **stabbur** | captures, notes, enrichment orchestration, triage UI, audio blobs | smia |
 | **smia** | `/inflect` `/ipa` `/tts` `/stt` `/translate`, provider chains, `/ui` | nothing |
 | **phonexa** | phonetics lab (unchanged) | smia (optional), stabbur (optional import) |
 | **hover-translate** | capture client (fork, store releases) | stabbur, smia |
@@ -26,7 +26,7 @@ and the device-facing hub. It is not coupled to phonexa.
 ```
 hover-translate ──capture──► stabbur ──enrich──► smia        (smia depends on nothing)
                                  ▲
-                                 │ pull: GET /api/items?status=ready&since=…
+                                 │ pull: GET /api/notes?source_lang=no&status=ready&since=…
                                  │       + blobs by sha256
                             mjolnir/hub ──OTA + sync──► device
                             mjolnir/builder
@@ -40,7 +40,7 @@ One-directional. stabbur does not know hub exists. smia is a leaf.
 
 | | stabbur | mjolnir/hub |
 |---|---|---|
-| knows | text, translations, context, audio, pos, inflections, transcription, kind (`word`/`phrase`/`sentence`/`grammar-rule`), status | `card_slots` (permanent 6-char ids), deck assignment C20–C29, card types a–e, projection to N/E/X/A, occurrences, lag-11 interleave, bundle assembly, audio manifest, device sync |
+| knows | text, source_lang, translations (any languages), context, audio, pos, inflections, transcription, type (`word`/`expression`/`listening`/`pronunciation`/`grammar`), status (`draft`/`ready`) | `card_slots` (permanent 6-char ids), deck assignment C20–C29, projection to N/E/X/A, occurrences, lag-11 interleave, bundle assembly, audio manifest, device sync, **which notes it has already minted (its own ledger — never pushed back to stabbur)** |
 | does NOT know | decks, card ids, occurrences, N/E/X/A, anything Mjølnir | how content was captured or enriched |
 
 stabbur would survive switching to a different SRS app entirely.

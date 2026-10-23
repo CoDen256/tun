@@ -9,7 +9,7 @@ Each carries enough context to resume cold.
 | ~~Q01~~ | ~~Hosting plan~~ | **RESOLVED 2026-10-20: Contabo VPS, 8 GB RAM, 100 GB disk.** Comfortably above the 4 GB floor. Strato dropped |
 | Q02 | **Interleave lag: fixed 11 or scaled?** | Decided: fixed 11, justified by the 5-per-pull block size. Revisit only if observed clustering is wrong in practice |
 | Q03 | **Device heartbeat: piggyback or separate endpoint?** | Piggyback chosen (D31). Split into `POST /device/heartbeat` if the shim gets muddy |
-| Q04 | **Does the content service get its own repo?** | Under discussion. Mjølnir is now a self-contained repo (tool+patches+builder+hub); content/smia either fold into phonexa (3 repos) or split out (4). See `02-services.md` |
+| ~~Q04~~ | ~~Does the content service get its own repo?~~ | **RESOLVED**: split out. `stabbur` and `smia` are their own repos, both scaffolded. Six repos total. |
 | Q05 | **Cineby audio** — is the player DRM-protected? | Unknown. If not, it joins YouTube in the "real audio" tier; if yes, it joins Netflix in the TTS/Forvo tier |
 
 ### Native-patch decisions — **RESOLVED 2026-10-20**

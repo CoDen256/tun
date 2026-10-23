@@ -31,7 +31,7 @@ and editable by you.
 |---|---|---|
 | `01-vision-and-scope.md` | The five modules, what each does, the primary loop | Orienting / onboarding |
 | `02-services.md` | Service boundaries, deployment, hosting sizing | Designing or deploying anything |
-| `03-data-model.md` | capture / item / deck / card types, projection, ID scheme | Touching content or the DB |
+| `03-data-model.md` | capture / note / deck / card types, projection, ID scheme | Touching content or the DB |
 | `04-delivery.md` | OTA bundle fetch, audio cache, versioning, rollback | Working on the device pipeline |
 | `05-sync.md` | Progress backup, the Firestore shim, restore | Working on progress data |
 | `06-smia.md` | Linguistics service (inflect/ipa/tts/stt/translate) | Working on enrichment |
@@ -51,7 +51,7 @@ repo as `docs/findings.md` — that is the authority on how the stock app behave
 |---|---|
 | `tun` | deployment (compose, Caddy, backups), **these docs**, shared UI shell |
 | `mjolnir` | `docs/findings.md`, tool, JS + native patches, apk pipeline, builder, hub |
-| `stabbur` | captures, items, enrichment, triage UI, audio blobs |
+| `stabbur` | captures, notes, enrichment, triage UI, audio blobs |
 | `smia` | linguistics providers (inflect / ipa / tts / stt / translate) |
 | `phonexa` | phonetics lab (existing) |
 | `hover-translate` | capture client (existing fork) |

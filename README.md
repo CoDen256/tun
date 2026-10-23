@@ -22,7 +22,7 @@ ui/              shared header/nav shell              (not written yet)
 | repo | owns |
 |---|---|
 | **mjolnir** | everything that knows the Mjølnir bundle format or talks to the device: bundle tool, JS patches, native patch, APK pipeline, builder, hub |
-| **stabbur** | learning content: captures, items, enrichment, triage UI, audio blobs |
+| **stabbur** | learning content: captures, notes, enrichment, triage UI, audio blobs |
 | **smia** | linguistics providers: inflect / ipa / tts / stt / translate |
 | **phonexa** | phonetics lab (existing) |
 | **hover-translate** | capture client (existing fork) |
