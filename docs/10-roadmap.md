@@ -10,92 +10,67 @@ the cold-start answer, and once OTA works, testing a padded bundle is a file cop
 to the VPS instead of a full APK rebuild — so doing it first makes P0 *cheaper*.
 
 ```
-  P1 minimal OTA ──► P2 APK (ONCE) ──► P0 cold-start ──► P3 JS ──► P4 content ──► usable
-     endpoint          native OTA       (now a file        patches     spine       with
-     + /ota static     + watchdog        copy)                                     manual
-                                                             │                     cards
-                              P5 sync swap ◄─────────────────┘
+  P1 ✅ ──► P2 ✅ ──► P3 ✅ ──► P0 (open) ──► P4 content ──► usable
+  OTA     native OTA    first         cold-start     spine       with
+  server  + watchdog   payoff         (cheap now:                manual
+                       (UI patch)     file copy)                 cards
+                                            │
+                              P5 sync swap ◄┘
                                    │
                               P6 smia ──► P7 capture ──► P8 triage UI ──► the full loop
 ```
 
-Everything before P4 is **infrastructure with no visible payoff**. P4 is the
-first moment you can put your own card on your phone. Push through to there.
+**P1–P3 are done** (2026-10-20 → 2026-10-22). Everything before P4 was
+**infrastructure with no visible payoff** — P4 is the first moment you put
+your own card on your phone. That's next.
 
 ---
 
-## P0 — Verify (after P2, because OTA makes it cheap)
+## P0 — Verify (open; not blocking P4)
+
+Genuinely unmeasured — nothing here has been run. Doesn't block starting P4,
+but should land before C20–C29 grows the deck enough to matter.
 
 - [ ] **Q07 Cold-start parse time.** Push a bundle padded with synthetic cards
-      (+5 MB) via OTA, measure launch time on the real phone. If this is bad,
-      D03 (bundle regeneration) has a ceiling and needs rethinking.
-- [ ] **Runtime check of `ExponentFileSystem` + `playUrl("file://…")`** in a dev
-      build. Both are confirmed present statically; confirm they work at runtime
-      before freezing the native patch.
-- [ ] **Q06 Type (d) behaviour.** Find one of the 58 stock `E`-only cards, run it,
-      confirm front/flip/audio behaves as the type (d) design assumes.
+      (+5 MB) via OTA, measure launch time on the real phone — now a file copy,
+      not a rebuild. If bad, D03 (bundle regeneration) has a ceiling.
+- [ ] **Runtime check of `ExponentFileSystem` + `playUrl("file://…")`** — both
+      confirmed present statically only; P4's audio delivery depends on this.
+- [ ] **Q06 Type (d) behaviour.** Find one of the 58 stock `E`-only cards, run
+      it, confirm front/flip/audio behaves as the type (d) design assumes.
 
-## P1 — Server skeleton
+## ~~P1 — Server skeleton~~ ✅ DONE (2026-10-20)
 
 Minimum for the device to have something to talk to. **No application code**
 (D55) — every device-facing path is a static file served by Caddy. Postgres and
-`hub` arrive with P4/P5.
+`hub` arrive with P4/P5. Deployed and verified on the Contabo VPS; the
+original `b000001` placeholder-without-companion issue (D60) was superseded
+once the companion pipeline existed — every build since `b000002` carries one.
+See `DEPLOY.md`.
 
-**DONE — deployed and verified on the Contabo VPS, 2026-10-20.**
-`bin/ota-verify.sh` printed 16/16 against the live host. See `DEPLOY.md`.
+## ~~P2 — The one APK build~~ ✅ DONE, proven on device (2026-10-22)
 
-- [x] `compose.yaml` (caddy now, postgres behind a profile, the rest commented)
-- [x] `caddy/Caddyfile`: `/ota/*` token-gated and GET-only, `current.json`
-      `no-store`, bundles and blobs `immutable`, transport gzip only (D49)
-- [x] `bin/ota-publish.sh` — publish and rollback, with the guards that matter:
-      no buildId reuse for different bytes, filename-safe ids, magic-prefix
-      check, https-only
-- [x] `bin/ota-verify.sh` — the acceptance test, 16 assertions, all passing
-      against `caddy:2-alpine` with the stock 6 MB bundle as `b000001`
-- [x] Provision the Contabo box, point DNS (**grey cloud / DNS-only — D57**),
-      open 80/443
-- [x] `docker compose up -d`; certificate issued
-- [x] Published build #1 and `bin/ota-verify.sh` printed **16 passed, 0 failed
-      on the VPS**. Re-published 2026-10-20 from the **v1.5.12 base**
-      (`sha256 b3ad6aee…5741`, 6 003 611 B) after the earlier artifact was
-      found to be the v1.5.10 patched bundle — wrong app version for the APK
-      being built (D60)
-- [ ] ⚠️ `b000001` is a **placeholder**: the plain base bundle with **no JS
-      companion**, so once the native patch exists it writes no
-      `boot-ok-<buildId>` and is quarantined on its third launch. It must be
-      replaced by *base bundle + companion* under a **new** buildId before the
-      patched APK is installed
-- [x] Hardened the test itself: it no longer reports PASS on empty values
-      (P27) and warns when a proxying CDN answers (P28)
+**Was irreversible; now shipped.** Implements the contract frozen in
+**`11-ota-contract.md`**. Full acceptance gate (happy path + watchdog positive
++ rollback + config rotation, both halves) proven with device logcat traces —
+see `12-p2-results.md` and **D73**. Two real bugs found and fixed along the
+way (**D71/P30**, **D65**), neither a contract defect. Archived OpenSpec
+change: `mjolnir/openspec/changes/archive/2026-10-22-p2-native-ota/`.
 
-## P2 — The one APK build
+**Every future change is now a file on the server.**
 
-**Irreversible. Everything that will ever need native must be in this build.**
-The contract it implements is frozen in **`11-ota-contract.md`** — Q11–Q16 are
-settled there. Build against that document, not against memory.
+## ~~P3 — first OTA-shipped payoff~~ ✅ DONE (2026-10-22)
 
-- [x] **Q17 resolved statically (D56)** — `documentDirectory` *is*
-      `getFilesDir()`; no device check needed. Native uses `getFilesDir()`
-- [ ] 6th `Package` in `ExpoModulesPackageList$LazyHolder` →
-      `ReactNativeHostHandler.getJSBundleFile()`
-- [ ] Stale-while-revalidate fetch, `.tmp` → verify → atomic rename, all on a
-      background thread; `getJSBundleFile()` does zero network I/O
-- [ ] Three-tier fallback: fetched → cached → `assets://index.android.bundle`
-- [ ] Boot watchdog per §4: attempt marker written before handover, `bad-<id>`
-      never auto-cleared, `active` rewritten whenever a tier is skipped (D54)
-- [ ] `config.json` escape hatch (D39) and `https`-only enforcement (D53)
-- [x] Rebuild / re-sign / install — `mjolnir/apk/build.sh` (stage base →
-      substitute D64 placeholders → overlay patch → `at bl -fvazs` → dex gate)
-- [ ] Verify rollback works by pointing `current.json` at an older build
+The original plan here (mod 1440 audio resolver, a prefetcher module) needs
+real audio content to test against, which doesn't exist until P4 builds
+`stabbur`. **D68** replaced it with a cheaper, more useful proof: a UI patch on
+the "My account" screen showing the running `buildId`, shipped with zero APK
+rebuild. Proves the whole premise — a bundle-only content change reaching the
+device — and the observability it adds (`MJOLNIR_BUILD_ID` + the My-account
+row) is reused by every OTA bundle from here on, not a one-off.
 
-After this: **every future change is a file on the server.**
-
-## P3 — JS patches
-
-- [ ] mod 1440 audio resolver (cached → stream → `res/raw`), stock path untouched
-- [ ] New prefetcher module (manifest diff → `downloadAsync` → verify → rename)
-- [ ] New boot-ok marker module
-- [ ] Verify by serving a replacement clip for one stock card
+The deferred audio-resolver/prefetcher work resurfaces naturally once P4 has
+real audio blobs to serve — not scheduled as its own phase.
 
 ## P4 — Content spine *(first visible payoff)*
 
@@ -146,43 +121,17 @@ After this: **every future change is a file on the server.**
 
 ---
 
-## P2 — PROVEN ON DEVICE, 2026-10-20
-
-The OTA path works end to end. Observed tier sequence across four launches:
-
-```
-L1  select tier=asset   path=null                     embedded fallback; dex sound
-L2  select tier=pending path=…/bundle-b000002.js      fetched, verified, promoted
-L3  select tier=active  path=…/bundle-b000002.js      promotion persisted
-L4  select tier=active  path=…/bundle-b000002.js      NOT quarantined → boot-ok written
-```
-
-L4 is the load-bearing one: had the JS companion failed to write
-`boot-ok-b000002`, the watchdog would have quarantined the build on exactly
-that launch and fallen back to `asset`. It did not. **Every future change is
-now a file on the server.**
-
-What this proves: the `LazyHolder` 5→6 edit (no `VerifyError`, no
-`AbstractMethodError`, no `ArrayIndexOutOfBounds`), D69's lazy Context,
-`current.json` fetch/parse/validate, the D49 download rules, size+sha256+prefix
-verification, atomic rename, pending→active promotion, and the companion's
-`boot-ok` write.
-
-Still unproven (acceptance §9 remainder): watchdog *positive* (a deliberately
-bad bundle is quarantined), rollback, `config.json` rotation, tier 3
-(newest-boot-ok'd), and GC.
-
----
-
 ## Right now
 
-**P2 and P3 are both fully done.** The native OTA patch is live, its entire
-acceptance gate (happy path + all recovery paths) is proven on-device, and the
-first real content payoff shipped as a file with no APK rebuild. See
-`12-p2-results.md` for the full trace, D73 for the closing record.
+**P1–P3 are all done.** The server is live, the native OTA patch is live and
+its entire acceptance gate (happy path + all recovery paths) is proven on
+device, and the first real content payoff shipped as a file with no APK
+rebuild. See `12-p2-results.md` for the full trace, D73 for the closing record.
 
-**Next: P4 — the content spine**, the first moment content is published through
-a real pipeline rather than a hand-built test bundle:
+**Designing P4 — the content spine**, the first moment content is published
+through a real pipeline rather than a hand-built test bundle. Not yet an
+OpenSpec change — still working out the data model and what `builder` actually
+does before writing a proposal:
 
 1. `stabbur` schema: items, decks, `card_slots`, publications, `build_jobs`.
 2. Projector: item → `{N,E,X,D,A}` + occurrences, per the five card types.
