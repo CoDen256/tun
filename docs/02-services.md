@@ -7,8 +7,8 @@ family is a Norwegian farm — `smia` the forge, `stabbur` the storehouse.
 
 | repo | contains | depends on |
 |---|---|---|
-| **tun** | `compose.yaml`, Caddyfile, backup scripts, **ecosystem docs (this directory)**, shared UI shell | — |
-| **mjolnir** | `docs/findings.md`, `tool/`, `patches/js/`, `patches/native/`, `apk/`, `builder/`, `hub/` | stabbur |
+| **tun** | minimal shared `compose.yaml`/`Caddyfile` skeleton (no OTA content — D75), backup scripts, **ecosystem docs (this directory)**, shared UI shell | — |
+| **mjolnir** | `docs/findings.md`, `tool/` (bundle-tool, Node — D76), `patches/js/`, `patches/native/`, `apk/`, `builder/` (Node, imports `tool/` as a library), `hub/`, its own `/ota/*` Caddy block + `ota-publish.sh`/`ota-verify.sh` (D75) | stabbur |
 | **stabbur** | captures, notes, enrichment orchestration, triage UI, audio blobs | smia |
 | **smia** | `/inflect` `/ipa` `/tts` `/stt` `/translate`, provider chains, `/ui` | nothing |
 | **phonexa** | phonetics lab (unchanged) | smia (optional), stabbur (optional import) |
