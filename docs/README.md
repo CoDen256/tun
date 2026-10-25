@@ -41,6 +41,7 @@ and editable by you.
 | `10-roadmap.md` | Phases, ordering, what to do first | Deciding what to work on |
 | `12-p2-results.md` | what P2 built, tested and proved on device; bugs found; what is still unproven |
 | `11-ota-contract.md` | **The frozen native contract** — wire format, on-device layout, validity, watchdog, escape hatch | Before writing any native patch code |
+| `13-operator-console-ux.md` | Deployment unification (`include:`, one adminer), the operator UI direction for stabbur/hub/builder, the batches-are-occurrences-not-cards correction | Building any operator-facing UI, or the deploy/compose setup |
 
 Mjølnir app internals (reverse-engineering findings) live in the **mjolnir**
 repo as `docs/findings.md` — that is the authority on how the stock app behaves.
