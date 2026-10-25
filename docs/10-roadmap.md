@@ -153,11 +153,28 @@ its entire acceptance gate (happy path + all recovery paths) is proven on
 device, and the first real content payoff shipped as a file with no APK
 rebuild. See `12-p2-results.md` for the full trace, D73 for the closing record.
 
-**Designing P4 — the content spine.** The data model and the stabbur/mjolnir
-boundary are now settled (D74) — `notes` in stabbur, `cards` in Mjølnir, zero
-overlap. Not yet an OpenSpec change — `builder`'s exact mechanics (the
-`inject-deck` primitive, deck rollover, the minted-ledger) are still being
-worked out before writing a proposal. See `03-data-model.md`.
+**P4's pipeline is built, tested, and archived — but not deployed.**
+`mjolnir`'s `p4-builder` and `stabbur`'s `p4-notes` changes are both complete
+and archived (2026-10-25; D74–D92 trace the full design and implementation
+history, including two real bugs found by independent review and one
+reversed decision — D91 removes the original 6-note mint floor entirely in
+favor of a persisted cross-batch occurrence queue, operator-confirmed).
+
+**What's still missing before P4's actual finish line** ("hand-write 10
+notes, publish, study them on the phone") **is real**: `hub` and `builder`
+have no `Dockerfile` and are not services in `mjolnir`'s `compose.yaml`;
+their operator UIs exist in code but are not reachable (`caddy/Caddyfile`'s
+`/mjolnir/*`/`/builder/*` blocks are still commented out); every
+"end-to-end, verified against the real service" claim in D85/D86/D89 was
+against a local/dev `stabbur`, not the production VPS. A known content bug:
+`audio_sel_ms` (the trim range the authoring UI lets an operator set) is
+never read anywhere in `builder`'s audio pipeline — every card ships its
+full untrimmed audio blob.
+
+Next: deploy `hub`/`builder` for real, fix the audio-trim gap, then actually
+run the 10-note finish line against production. See `03-data-model.md` for
+the data model, the archived `p4-builder`/`p4-notes` changes for the full
+implementation record.
 
 ### Standing operational rule (D72/P31)
 
