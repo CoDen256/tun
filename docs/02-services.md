@@ -7,8 +7,8 @@ family is a Norwegian farm — `smia` the forge, `stabbur` the storehouse.
 
 | repo | contains | depends on |
 |---|---|---|
-| **tun** | minimal shared `compose.yaml`/`Caddyfile` skeleton (no OTA content — D75), backup scripts, **ecosystem docs (this directory)**, shared UI shell | — |
-| **mjolnir** | `docs/findings.md`, `tool/` (bundle-tool, Node — D76), `patches/js/`, `patches/native/`, `apk/`, `builder/` (Node, imports `tool/` as a library), `hub/`, its own `/ota/*` Caddy block + `ota-publish.sh`/`ota-verify.sh` (D75) | stabbur |
+| **tun** | **ecosystem docs (this directory)**, shared UI shell. No deployable artifacts (D84, superseding D75/D81) — the operator deploys `mjolnir` alone | — |
+| **mjolnir** | `docs/findings.md`, `tool/` (bundle-tool, Node — D76), `patches/js/`, `patches/native/`, `apk/`, `builder/` (Node, imports `tool/` as a library), `hub/`, **the whole deployable stack**: `compose.yaml`, `caddy/Caddyfile`, `ota-publish.sh`/`ota-verify.sh` (D75/D84) | stabbur |
 | **stabbur** | captures, notes, enrichment orchestration, triage UI, audio blobs | smia |
 | **smia** | `/inflect` `/ipa` `/tts` `/stt` `/translate`, provider chains, `/ui` | nothing |
 | **phonexa** | phonetics lab (unchanged) | smia (optional), stabbur (optional import) |
@@ -71,6 +71,11 @@ CSS, not a shared package (solo-dev simplicity over DRY).
 ## Deployment
 
 One Contabo VPS: **8 GB RAM, 100 GB disk** (comfortably above the 4 GB floor).
+**`mjolnir`'s own `compose.yaml`/`caddy/Caddyfile` is the single deployed
+stack today (D84)** — `tun` ships no deployable artifacts. The table below is
+the eventual full picture once stabbur/smia/phonexa are themselves deployed;
+whether they join `mjolnir`'s compose file or bring their own is an open
+question, not yet decided (nothing currently depends on the answer).
 
 ```
 caddy           TLS, path routing, STATIC serving of bundles and blobs

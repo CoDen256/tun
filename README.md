@@ -9,13 +9,13 @@ The deployment and documentation root for a Norwegian learning ecosystem.
 
 ```
 docs/            cross-repo design, decisions (ADRs), pitfalls, open questions, roadmap
-compose.yaml     the whole stack — P1 runs caddy alone; the rest join as written
-caddy/Caddyfile  TLS, path routing, static serving of bundles and blobs
-bin/             ota-publish.sh (publish + rollback), ota-verify.sh (P1 acceptance test)
-DEPLOY.md        how to stand it up on the VPS
-data/            gitignored: current.json, bundles, blobs
 ui/              shared header/nav shell              (not written yet)
 ```
+
+**No deployable artifacts live in this repo** (D84, superseding D75/D81):
+`compose.yaml`, `caddy/Caddyfile`, `bin/ota-publish.sh`/`ota-verify.sh`, and
+`DEPLOY.md` all moved to `mjolnir` — the operator deploys `mjolnir` alone, not
+`tun`. `tun` is docs-only.
 
 ## Sibling repos
 
@@ -33,7 +33,8 @@ scaffolded but not implemented.
 ## Status
 
 **P1 and P2 are done.** The device fetches its JS bundle over the air: the OTA
-endpoint is live on the VPS (`bin/ota-verify.sh` 16/16), and the one-time native
+endpoint is live on the VPS (`mjolnir/bin/ota-verify.sh` 16/16 as of the
+pre-D84 layout — owed a re-run after D84's move), and the one-time native
 patch is built, signed, installed and **proven on device** — `asset` →
 `pending` → `active` → `active` across four launches, with no false quarantine.
 See [`docs/12-p2-results.md`](docs/12-p2-results.md) for exactly what was tested

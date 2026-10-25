@@ -2,8 +2,10 @@
 
 ## tun — the Norwegian learning ecosystem root
 
-This repo holds the deployment (compose, Caddy, backups), the shared UI shell,
-and **all cross-repo design documentation**.
+This repo holds the shared UI shell and **all cross-repo design
+documentation**. It holds **no deployable artifacts** (D84, superseding
+D75/D81) — `compose.yaml`, Caddy config, and the OTA scripts all live in
+`mjolnir`, which the operator deploys alone.
 
 **Start at `docs/README.md`. Read `docs/07-decisions.md` before proposing
 anything — do not re-derive settled decisions.**
