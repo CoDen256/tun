@@ -41,6 +41,13 @@ capture
 note
   id                 immutable forever, even once removed (tombstone — see below)
   created_at
+  updated_at         bumped on every edit (D82); notes-read-api's `since`
+                      filters on this, not created_at, so builder's pulls
+                      also catch edits to already-ready notes
+  deleted_at         null | timestamp (D82) — the concrete tombstone marker:
+                      set only when a `ready` note is removed; a `draft`
+                      note's row is hard-deleted instead, so this stays null
+                      for every note that was never eligible to be pulled
   capture_id         provenance; null for manual entries
   type               word | expression | listening | pronunciation | grammar
   source_lang        e.g. "no" — a real column; today every note is Norwegian,
