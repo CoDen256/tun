@@ -78,8 +78,11 @@ postgres        separate logical DB per service — NO cross-service FKs
 stabbur         web + API
 smia            web + API
 phonexa         web + API (existing; /stream and js/realtime.js FROZEN)
-mjolnir-hub     device-facing: /ota, /mjolnir/userdata, heartbeat
-mjolnir-builder worker: polls build_jobs → bundle + audio manifest
+mjolnir-hub     device-facing (/ota, /mjolnir/userdata, heartbeat)
+                + operator UI: publish history (reads `publications`) (D80)
+mjolnir-builder worker + operator UI: live forecast (dry-run deck assignment
+                against stabbur's current ready+audio'd notes) and the
+                manual "publish now" button (D78, D80)
 ```
 
 Rough RAM: postgres 256–512 MB · phonexa 300–500 MB · stabbur ~150 MB ·
@@ -91,10 +94,14 @@ structural rather than nominal.
 
 ### What `builder` is
 
-A background process with no web interface. Building a bundle takes 30–60 s
-(parse 6 MB, inject cards, reassemble, hash, gather audio). Publishing writes a
-row to `build_jobs`; the builder picks it up and writes status back; the UI polls.
-The CI-job pattern. No Redis/Celery for a single user.
+A background process with a small operator UI (D80) — no complexity beyond
+that: a nightly clock checks whether any deck has crossed its 6-note floor and
+publishes automatically if so (D78); the UI shows that same check as a live
+forecast (which decks are close, how many notes each still needs) plus a
+"publish now" button for when you don't want to wait. Building a bundle takes
+30–60 s (parse 6 MB, inject cards, reassemble, hash, gather audio). Publishing
+writes a row to `build_jobs`; `builder` picks it up and writes status back;
+the UI polls. The CI-job pattern. No Redis/Celery for a single user.
 
 ### What `caddy` is for
 

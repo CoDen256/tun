@@ -75,16 +75,32 @@ real audio blobs to serve — not scheduled as its own phase.
 ## P4 — Content spine *(first visible payoff)*
 
 - [ ] `stabbur` schema: `notes` (language-agnostic, no decks/ids/occurrences — D74)
-- [ ] `mjolnir/hub` schema: `card_slots`, `decks`, `publications`, `build_jobs`,
-      plus its own ledger of which note ids it has already minted
-- [ ] `bundle-tool inject-deck`: new data-injection primitive (append
-      deck/card objects by shape-match, not an AST diff — distinct from
-      `patchback`)
+- [ ] `mjolnir/hub` schema: `card_slots`, `decks`, `publications` (three
+      version fields, separately owned — D77), `build_jobs`, plus its own
+      ledger of which note ids it has already minted
+- [ ] `tool/` gains a shared publish module (buildId regex, no-reuse-with-
+      different-bytes, magic-prefix check — today's `ota-publish.sh` logic);
+      the CLI becomes a thin wrapper over it, `builder` imports it directly
+      in-process (D76)
+- [ ] `bundle-tool inject-deck`: small data-only tool — reuses `patchback`'s
+      shape-matching only to *locate* the deck/card arrays, then appends new
+      entries and upserts existing ones by id directly, no AST diffing (D79)
 - [ ] Projector: note → `{N,E,X,A}` + occurrences, per the five types
       (`builder`-side; stabbur never computes this)
 - [ ] Interleaver: append-only, min lag 11
-- [ ] `builder` worker: pull ready+audio'd notes, assign deck by type, mint
-      `card_slots`, regenerate all content fresh each publish (positions frozen)
+- [ ] `builder` worker (Node — D76): pull ready+audio'd notes, assign deck by
+      type/PoS (unmapped PoS → C26 expression), **hold a deck until it has
+      ≥6 newly-eligible notes** (hard floor, not a suggestion — needed for
+      lag-11 to separate a card's own occurrences), mint `card_slots` only
+      once the floor is met, regenerate all content fresh each publish
+      (positions frozen)
+- [ ] `builder` operator UI: live forecast (dry-run deck assignment against
+      stabbur's current state — which decks are close to the floor) + manual
+      "publish now" button; plus the nightly clock that auto-publishes once a
+      deck crosses the floor (D78, D80)
+- [ ] `hub` operator UI: publish history, reading its own `publications`
+      table (D80) — `hub` is device-facing AND operator-facing now, not
+      device-only
 - [ ] mod 1440 audio resolver patch + prefetcher companion (prerequisite —
       every Mjølnir card requires audio, no exceptions; see `03-data-model.md`)
 - [ ] C20–C29 decks appended after C17

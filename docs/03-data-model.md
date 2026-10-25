@@ -78,6 +78,12 @@ decks(code, title, category, max_interval, auto_tick_streak, auto_hammer_count, 
 publications(build_id, base_version, patch_rev, data_rev, bundle_sha, created_at)
 ```
 
+`build_id` stays the existing OTA identity, untouched. The other three version
+fields are owned differently (D77): `base_version` and `patch_rev` are set by
+hand and simply copied forward until the operator changes them; `data_rev` is
+bumped automatically by `builder` on every publish it performs (which, by
+definition, always carries new or changed content).
+
 `mjolnir/hub` tracks internally which note ids it has already minted into
 `card_slots` — this is **hub's own ledger**, built from what it pulled, never
 pushed back to stabbur. The pull stays one-directional (D44): stabbur does not
