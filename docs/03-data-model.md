@@ -110,15 +110,24 @@ other POS   {}        -- supported as type=word with no inflections
 
 | type | N (front) | E (back) | X (extra) | `A` (audio attached to) | occurrence set |
 |---|---|---|---|---|---|
-| **word** | word + inflection table (+ transcription) | en / de / … | context sentence | `N` | A, E, N |
-| **expression** | phrase | en / de / … | context (optional) | `N` | A, E, N |
+| **word** | word + inflection table (+ transcription) | en / de / … | context sentence | `N` | **A, E** |
+| **expression** | phrase | en / de / … | context (optional) | `N` | **A, E** |
 | **listening** | hard sentence | translation | — | `N` | A |
 | **pronunciation** | `"Read out: " + phrase` | **transcription** | — | `E` | N |
 | **grammar** | question (translate/transform) | norwegian answer | grammar rule | `E` | N |
 
-All five shapes are attested in the stock bundle, so none is an untested path.
-Occurrence-set frequency across the 2790 stock cards:
-`EN` 1124 · `N` 987 · `AEN` 376 · `A` 278 · `AE` 98 · `E` 58.
+**D91: word/expression occurrence set is `A, E` only — `N` is dropped as a
+drawable occurrence (operator decision, 2026-10-25).** The word/expression
+card is never quizzed text-first (reading the Norwegian word and recalling
+its meaning); only audio-first (`A`: hear it, recall meaning+spelling) and
+translation-first (`E`: see the meaning, produce the Norwegian word) remain.
+The `N` field still exists on the card's *content* — every side always
+appears once revealed, per the rule below — it simply never triggers a quiz
+on its own. All five shapes below are attested in the *stock* bundle
+(occurrence-set frequency across its 2790 cards: `EN` 1124 · `N` 987 ·
+`AEN` 376 · `A` 278 · `AE` 98 · `E` 58) — that frequency table describes the
+stock content's own historical authoring choices, not a target for new
+content produced under this (narrower) occurrence-set design.
 
 **What the occurrence letter (`N`/`E`/`A`) means: which side is presented
 *first*, before any reveal — not whether audio exists.** `A` = audio plays
@@ -227,21 +236,62 @@ The C13–C17 family is the cleanest, most recent, clearly machine-generated set
 pulls 5 occurrences per block, so a lag of 11 guarantees a card's occurrences
 land at least two pull-blocks apart — never in the same session chunk.
 
-### Appending new cards to an existing deck
+Separately: mod 2110's `drawNewCards(n, l, o, f, c, s)` (`n` = the learner's
+*selected* decks, `o` = the last deck drawn) round-robins across every
+selected deck, pulling one ≤5-occurrence block from a deck before moving to
+the next. Studying with several decks enabled therefore interleaves *across*
+decks for free, which adds real but **probabilistic** spacing — it depends on
+what the learner has selected and shrinks to zero if they ever study one deck
+alone. The guarantee below does not rely on it; it's a bonus on top, not a
+substitute (findings.md's deck-data-model notes this as a confirmed, not
+assumed, mechanism).
 
-Since reordering is forbidden, each publish appends a block. Within that block
-apply lag-11 interleave. For that to be possible the block needs enough entries:
+### Appending new cards to an existing deck — D91 (supersedes D87/D88)
 
-| occurrences/card | min cards per publish to achieve lag 11 |
-|---|---|
-| 2 (`EN`) | ~6 |
-| 3 (`AEN`) | ~4 |
-| 1 (`A`, `N`) | n/a — no intra-card lag needed |
+**No minimum-batch floor of any kind.** Publish whatever is `ready` and
+audio'd, any batch size, including a single note. This replaced an earlier
+design (a fixed 6-note floor, applied uniformly) once two problems with it
+were found: it cost pure publish latency for occurrence sets that don't need
+intra-card spacing at all (listening/pronunciation/grammar — one occurrence
+each), and even where it applied, a same-batch round-robin of 6 cards cannot
+actually reach lag 11 — the achievable gap between a card's own occurrences
+is capped at the batch size, not the target lag.
 
-**Rule: hold `ready` notes with audio until a deck has ≥6 of them, then publish
-that deck.** Smaller batches are allowed but will introduce a card's
-occurrences close together on its first day only — mild, and SRS spaces them
-out afterwards.
+**The guarantee is now cross-batch, not same-batch**, and lives in `hub`'s
+own persisted state, not in the bundle alone:
+
+```
+On mint: the card's A occurrence is appended immediately — it always ships
+         in the same publish the card is minted in (D91: "A always first").
+         Its E occurrence is NOT appended yet. A row is queued instead:
+         {deck_code, card_id, letter: "E", remaining: 11}
+
+Every subsequent publish to that deck: decrement every queued row's
+         `remaining` by however many brand-new occurrences this publish adds
+         to that same deck (new cards' A's only — a queued E draining in the
+         same run does not count toward another queued E's countdown, to
+         keep the bookkeeping a single integer per row rather than an exact
+         array-position computation). Any row that reaches `remaining <= 0`
+         is appended this run and removed from the queue.
+
+A deck that gets zero new cards in a given publish leaves its queue
+         untouched — correct, because nothing was added to that deck's
+         `Cards[]` for the countdown to have progressed against.
+```
+
+Worked example, 2 notes ready (nowhere near any old floor):
+
+```
+Publish 1:  A1 A2                          queue: E1→11, E2→11
+Publish 2:  A3                             queue: E1→10, E2→10, E3→11
+...
+Publish N (11 new occurrences have landed in this deck since E1 was queued):
+            E1 finally appends
+```
+
+Single-occurrence types (listening/pronunciation/grammar) never touch the
+queue — there is nothing of their own to space against, so they publish the
+moment they're ready, every time, with no floor and no wait, ever.
 
 ## Content is regenerated fresh on every publish; positions are frozen forever
 
