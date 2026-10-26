@@ -29,11 +29,21 @@ git clone <stabbur-remote> stabbur
 Each repo's own `.env` still works the normal way — `tun` adds nothing new
 to configure beyond what `mjolnir`'s and `stabbur`'s own `DEPLOY.md`s already
 describe. The one value that matters here: `mjolnir/.env`'s
-`STABBUR_UPSTREAM` should be `backend:5056` — under this deployment mode,
-`include:` already merges both projects onto one shared network, so the
-Docker service name resolves directly (no `tun-shared` external network
-needed, though declaring it in both repos' own compose files doesn't hurt —
-see D98).
+`STABBUR_UPSTREAM` should be `backend:5056` — the Docker service name
+resolves directly once both projects share a network.
+
+**One-time step, required even under this unified file — do not skip it.**
+Both `mjolnir`'s and `stabbur`'s own compose files declare `tun-shared` as
+`external: true` (D98), and `include:` has no way to clear that back off
+(confirmed 2026-10-26 — an including file's own `networks:` override does
+not work, despite this doc previously claiming otherwise):
+
+```sh
+docker network create tun-shared
+```
+
+Run it once per host, before the first `docker compose up` here. Already
+done? `docker network ls | grep tun-shared` tells you.
 
 ```sh
 cp mjolnir/.env.example mjolnir/.env   # fill in, per mjolnir/DEPLOY.md

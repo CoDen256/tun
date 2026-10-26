@@ -19,6 +19,23 @@ include:
   - ../mjolnir/compose.yaml
   - ../stabbur/compose.yaml
 
+# Both included files declare `tun-shared` as `external: true` (D98, so
+# mjolnir and stabbur can also be deployed as two fully independent stacks
+# that still reach each other by name). `include:` merges that declaration
+# in verbatim — an including file's own `networks:` block CANNOT clear
+# `external: true` back off (tried and confirmed false, 2026-10-26: Compose
+# still reports "network tun-shared declared as external, but could not be
+# found" even with an overriding `tun-shared: {}` here, unless a real
+# network by that name already happens to exist on the host for an
+# unrelated reason — which is what silently papered over this the first
+# time it was "verified"). So: this mode needs the exact same one-time setup
+# as the two-stack mode, not less —
+#
+#     docker network create tun-shared
+#
+# — once, before the first `docker compose up` here. DEPLOY.md's first-boot
+# steps include this; do not skip it because this file's docstring used to
+# imply you could.
 services:
   # One database-exploration tool for every included service's Postgres
   # (D-T3) — not one Adminer per database. `stabbur`'s own compose.yaml
