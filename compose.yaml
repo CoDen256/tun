@@ -1,0 +1,37 @@
+# tun/compose.yaml — D94: merges mjolnir's and stabbur's own compose files
+# into one project via Compose's native `include:`, so a VPS deploy is one
+# `git pull` (across sibling checkouts) + one `docker compose up` instead of
+# two separate stacks. Neither included file changes shape because of this
+# — `cd mjolnir && docker compose up` and `cd stabbur && docker compose up`
+# both still work completely standalone; this file only additionally
+# composes them onto one shared network (service-name DNS resolves across
+# the include boundary with no extra wiring).
+#
+# Service names across included files must be unique, or `include:`
+# silently keeps only the FIRST included file's definition of a colliding
+# name and drops the second — no error, no warning (confirmed empirically,
+# not documented clearly anywhere). stabbur's own compose.yaml already
+# renamed its postgres service to `stabbur-postgres` for exactly this
+# reason; mjolnir's stays `postgres`.
+#
+# `env_file` on mjolnir's include entry keeps its `${TUN_SITE_ADDRESS}` /
+# `${OTA_TOKEN}` / `${POSTGRES_PASSWORD}` interpolation anchored to
+# mjolnir's own `.env`, regardless of which directory `docker compose` is
+# actually invoked from (this file's project directory is `tun/`, not
+# `mjolnir/`, so without this `${VAR}` would otherwise resolve against a
+# `tun/.env` that doesn't exist). stabbur has no required vars yet
+# (STABBUR_AUTH_TOKEN defaults to "changeme") so it needs no env_file here.
+include:
+  - path: ../mjolnir/compose.yaml
+    env_file: ../mjolnir/.env
+  - path: ../stabbur/compose.yaml
+
+# One adminer, not one per database (D94) — stabbur's compose.yaml already
+# defines this service; the block below only overrides which Postgres it
+# defaults to. Both are reachable from adminer's own login screen by
+# service name on the shared network this `include:` creates: `postgres`
+# for mjolnir's, `stabbur-postgres` for stabbur's.
+services:
+  adminer:
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres

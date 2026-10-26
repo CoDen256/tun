@@ -10,12 +10,16 @@ The deployment and documentation root for a Norwegian learning ecosystem.
 ```
 docs/            cross-repo design, decisions (ADRs), pitfalls, open questions, roadmap
 ui/              shared header/nav shell              (not written yet)
+compose.yaml     include:s mjolnir's and stabbur's own compose files (D94)
 ```
 
-**No deployable artifacts live in this repo** (D84, superseding D75/D81):
-`compose.yaml`, `caddy/Caddyfile`, `bin/ota-publish.sh`/`ota-verify.sh`, and
-`DEPLOY.md` all moved to `mjolnir` — the operator deploys `mjolnir` alone, not
-`tun`. `tun` is docs-only.
+**`caddy/Caddyfile`, `bin/ota-publish.sh`/`ota-verify.sh`, and `DEPLOY.md`
+still live in `mjolnir` only** — D84's "no deployable artifacts in `tun`"
+covered those too, but D94 superseded that specifically to let this repo's
+own `compose.yaml` `include:` `mjolnir`'s and `stabbur`'s compose files into
+one merged project, once `stabbur` also needed deploying. Each included
+repo's compose file stays fully usable standalone; this one only
+additionally composes them.
 
 ## Sibling repos
 

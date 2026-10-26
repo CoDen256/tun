@@ -3,9 +3,13 @@
 ## tun — the Norwegian learning ecosystem root
 
 This repo holds the shared UI shell and **all cross-repo design
-documentation**. It holds **no deployable artifacts** (D84, superseding
-D75/D81) — `compose.yaml`, Caddy config, and the OTA scripts all live in
-`mjolnir`, which the operator deploys alone.
+documentation**. It now also holds a `compose.yaml` of its own (D94,
+superseding D84's "no deployable artifacts here" for exactly this case):
+Compose's native `include:` merges `mjolnir`'s and `stabbur`'s own compose
+files into one project, so a deploy is one `git pull` (across sibling
+checkouts) + one `docker compose up` from here instead of two separate
+stacks. Caddy config and the OTA scripts still live in `mjolnir` only — this
+repo's `compose.yaml` composes them, it doesn't duplicate them.
 
 **Start at `docs/README.md`. Read `docs/07-decisions.md` before proposing
 anything — do not re-derive settled decisions.**
