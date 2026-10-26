@@ -1,4 +1,10 @@
-## ADDED Requirements
+## Purpose
+
+Unify the deployment of the `tun`, `mjolnir`, and `stabbur` services behind a
+single `docker compose` invocation in the `tun` repository, while keeping
+each included repo's own compose file independently usable on its own.
+
+## Requirements
 
 ### Requirement: The whole stack starts from one compose invocation in `tun`
 The system SHALL bring up every included service (at minimum `mjolnir`'s and
@@ -14,11 +20,13 @@ run in the `tun` repository, with no other command required.
 ### Requirement: Each included repo's compose file stays independently usable
 The system SHALL NOT require any change to `mjolnir`'s or `stabbur`'s own
 compose file for either to keep working when run standalone in its own
-repository.
+repository, given the one-time `docker network create tun-shared` D98
+already requires for the "two independent stacks" deployment mode — this
+change does not add any *further* precondition beyond that one.
 
 #### Scenario: Running `mjolnir` alone
-- **WHEN** `docker compose up` is run inside `mjolnir`'s own directory,
-  independent of `tun`
+- **WHEN** `tun-shared` already exists (D98) and `docker compose up` is run
+  inside `mjolnir`'s own directory, independent of `tun`
 - **THEN** it starts exactly the services it already defines, unaffected by
   whether `tun`'s unified compose file exists
 

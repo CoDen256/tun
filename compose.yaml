@@ -1,37 +1,38 @@
-# tun/compose.yaml — D94: merges mjolnir's and stabbur's own compose files
-# into one project via Compose's native `include:`, so a VPS deploy is one
-# `git pull` (across sibling checkouts) + one `docker compose up` instead of
-# two separate stacks. Neither included file changes shape because of this
-# — `cd mjolnir && docker compose up` and `cd stabbur && docker compose up`
-# both still work completely standalone; this file only additionally
-# composes them onto one shared network (service-name DNS resolves across
-# the include boundary with no extra wiring).
+# tun — the unification point (D94). Brings up mjolnir's and stabbur's own
+# stacks together from one `docker compose up`, without changing either
+# repo's own compose file: `include:` merges both projects onto one shared
+# network, so e.g. mjolnir's Caddy can reach stabbur's `backend` service by
+# name with no extra wiring. Each included file stays fully usable standalone
+# too (`cd mjolnir && docker compose up` is unaffected by this file existing).
 #
-# Service names across included files must be unique, or `include:`
-# silently keeps only the FIRST included file's definition of a colliding
-# name and drops the second — no error, no warning (confirmed empirically,
-# not documented clearly anywhere). stabbur's own compose.yaml already
-# renamed its postgres service to `stabbur-postgres` for exactly this
-# reason; mjolnir's stays `postgres`.
+# Assumes sibling checkout: tun, mjolnir, stabbur cloned at the same
+# filesystem level (see DEPLOY.md). Requires Compose v2.20+ for `include:`.
 #
-# `env_file` on mjolnir's include entry keeps its `${TUN_SITE_ADDRESS}` /
-# `${OTA_TOKEN}` / `${POSTGRES_PASSWORD}` interpolation anchored to
-# mjolnir's own `.env`, regardless of which directory `docker compose` is
-# actually invoked from (this file's project directory is `tun/`, not
-# `mjolnir/`, so without this `${VAR}` would otherwise resolve against a
-# `tun/.env` that doesn't exist). stabbur has no required vars yet
-# (STABBUR_AUTH_TOKEN defaults to "changeme") so it needs no env_file here.
+# `STABBUR_UPSTREAM`/`STABBUR_BASE_URL` can both simply be "backend:5056"
+# under this deployment mode — same value as the `tun-shared` external-
+# network mode (D98), different mechanism: here the shared network comes
+# from `include:` merging the two projects, not a separately-created
+# external network. Either mode is fine; this file is for operators who
+# want the "one command" version rather than two independent `docker
+# compose up`s.
 include:
-  - path: ../mjolnir/compose.yaml
-    env_file: ../mjolnir/.env
-  - path: ../stabbur/compose.yaml
+  - ../mjolnir/compose.yaml
+  - ../stabbur/compose.yaml
 
-# One adminer, not one per database (D94) — stabbur's compose.yaml already
-# defines this service; the block below only overrides which Postgres it
-# defaults to. Both are reachable from adminer's own login screen by
-# service name on the shared network this `include:` creates: `postgres`
-# for mjolnir's, `stabbur-postgres` for stabbur's.
 services:
+  # One database-exploration tool for every included service's Postgres
+  # (D-T3) — not one Adminer per database. `stabbur`'s own compose.yaml
+  # already defines a service literally named "adminer" (scoped to just its
+  # own Postgres); reusing that exact key here means Compose deep-merges
+  # this definition on top of the included one rather than running a
+  # second, separate container — the override, not an addition. Point its
+  # login screen at "postgres" (mjolnir's hub DB) or "stabbur-postgres"
+  # (stabbur's DB) by name; both resolve once brought up together.
   adminer:
+    image: adminer
+    container_name: tun-adminer
+    restart: unless-stopped
     environment:
       ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "8082:8080"
