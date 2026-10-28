@@ -59,11 +59,22 @@ Everything `mjolnir/compose.yaml` and `stabbur/compose.yaml` each already
 define — this file changes nothing about *what* gets deployed, only brings
 both up together. See those repos' own docs for what each service does.
 
-One addition here: a single Adminer, reachable at `http://<host>:8081` (same
-port `stabbur`'s own compose already published — this file's own definition
-merges onto that service, not a second instance). Its login screen accepts
-either `postgres` (mjolnir's hub database) or `stabbur-postgres` (stabbur's)
-as the server — one tool, both databases, no per-service instance needed.
+One addition here: a single Adminer (this file's own definition merges onto
+stabbur's own `adminer` service, not a second instance), reachable two ways:
+
+- `https://<host>/adminer` — through Caddy, no port to remember (mjolnir's
+  `caddy/Caddyfile` reverse-proxies it by service name; only works when
+  brought up this way, via `include:`, since that's the only compose file
+  defining a service named `adminer`)
+- `http://<host>:8082` — the direct published port (this file's own
+  override of stabbur's port, `8081` -> `8082`, so it doesn't collide with
+  stabbur's own standalone port if that stack is ever also run directly)
+
+Its login screen accepts either `postgres` (mjolnir's hub database) or
+`stabbur-postgres` (stabbur's) as the server — one tool, both databases, no
+per-service instance needed. Neither route has its own auth (unlike
+`/mjolnir`/`/builder`, gated by `OPERATOR_AUTH_TOKEN`) — treat both as
+exposed to anyone who can reach the host at all.
 
 ## Navigating between services
 
