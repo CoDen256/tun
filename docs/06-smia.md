@@ -25,10 +25,10 @@ when it has exactly one.
 | Endpoint | In | Out | Providers (no particular order — caller's choice) |
 |---|---|---|---|
 | `POST /inflections` | `{word, lang, provider}` | `{provider, candidates: [{lemma, pos, paradigm}]}` | `ordbank` (Norsk Ordbank, local Postgres import, primary), `kaikki` (kaikki.org/Wiktionary `forms[]`, secondary) |
-| `POST /ipa` | `{text, lang, provider}` | `{provider, candidates: [{phonemic?, phonetic?, variety}]}` | `nst` (NST NOFABET lexicon, dialect-aware), `kaikki` (`sounds[].ipa`), `ordbokene` (ordbokene.no API), `ipadict` (ipa-dict/nb), `wikipron` |
-| `POST /tts` | `{text, lang, provider}` | `{provider, candidates: [{sha256, ...metadata}]}` | `kaikki` (`sounds[].mp3_url`); `forvo`/`elevenlabs`/`filmot`/`dictcc` registered but not yet live — each needs something this environment couldn't get itself (API key signup, or in dict.cc's case, cracking an obfuscated anti-bot JS loader) |
-| `POST /stt` | audio body (multipart) + `{provider}` (always required, even with one configured) | `{provider, text}` | `hf_whisper` (Hugging Face Inference, whisper; cloud-only, self-hosted whisper dropped as too heavy) |
-| `POST /translations` | `{text, from, to, provider}` | `{provider, text, context?}` | `google`/`bing` (ported from hover-translate's `TranslatorFactory`), `deepl`, `libretranslate`; `dictcc` registered but not yet live (same anti-bot blocker as `/tts`) |
+| `POST /ipa` | `{text, lang, provider}` | `{provider, candidates: [{ipa, variety}]}` | `nst` (NST NOFABET lexicon, dialect-aware), `kaikki` (`sounds[].ipa`), `ordbokene` (ordbokene.no API), `ipadict` (ipa-dict/nb), `wikipron` |
+| `POST /tts` | `{text, lang, provider}` | `{provider, candidates: [{sha256, ...metadata}]}` | live at various points: `kaikki`, `dictcc_api`, `forvo`; `elevenlabs`/`filmot` need their own API key — check `GET /providers` for what's actually configured right now, this list drifts |
+| `POST /stt` | audio body (multipart) + `{provider}` (always required, even with one configured) | `{provider, text}` | `hf_whisper` (Hugging Face Inference, whisper; cloud-only, self-hosted whisper dropped as too heavy), `elevenlabs` |
+| `POST /translations` | `{text, from, to, provider}` | `{provider, candidates: [{text, context?}]}` — a candidate list like every other kind, confirmed live (D118); this doc previously said a single `{provider, text}`, which was wrong | `google`/`bing` (ported from hover-translate's `TranslatorFactory`), `deepl`, `dictcc_api`/`dictcc_static`; check `GET /providers` for what's live right now |
 | `GET /providers` | — | full catalog, all kinds | — |
 | `GET /health` | — | per-provider last-success/last-failure/quota (informational only — never changes routing) | — |
 | `GET /ui` | — | provider health, cache hit rate, manual try-it (bypasses cache) | — |

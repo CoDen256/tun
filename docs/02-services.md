@@ -30,7 +30,17 @@ hover-translate ──capture──► stabbur ──enrich──► smia       
                                  │       + blobs by sha256
                             mjolnir/hub ──OTA + sync──► device
                             mjolnir/builder
+```
 
+**The "stabbur ──enrich──► smia" arrow is live**, not just a diagram: stabbur's
+note editor proxies `ipa`/`translations`/`inflections`/`tts` lookups to smia
+server-side (never from the browser directly — smia's token and address stay
+server-side-only), and a chosen TTS candidate's audio is pulled into
+stabbur's own `blob/<sha256>` store rather than left referencing smia's
+non-canonical cache (D45). See D118 and stabbur's `smia-enrichment-panel`
+OpenSpec change for the full design.
+
+```
 phonexa ──► smia (optional)        phonexa ◄── stabbur blob import (optional, by hash)
 ```
 
