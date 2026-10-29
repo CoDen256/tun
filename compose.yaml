@@ -1,23 +1,32 @@
-# tun — the unification point (D94). Brings up mjolnir's and stabbur's own
-# stacks together from one `docker compose up`, without changing either
-# repo's own compose file: `include:` merges both projects onto one shared
-# network, so e.g. mjolnir's Caddy can reach stabbur's `backend` service by
-# name with no extra wiring. Each included file stays fully usable standalone
-# too (`cd mjolnir && docker compose up` is unaffected by this file existing).
+# tun — the unification point (D94, extended by D118 to include smia).
+# Brings up mjolnir's, stabbur's, and smia's own stacks together from one
+# `docker compose up`, without changing any of the three repos' own compose
+# files: `include:` merges all three projects onto one shared network, so
+# e.g. mjolnir's Caddy can reach stabbur's `backend` and smia's
+# `smia-backend` services by name with no extra wiring. Each included file
+# stays fully usable standalone too (`cd mjolnir && docker compose up` is
+# unaffected by this file existing).
 #
-# Assumes sibling checkout: tun, mjolnir, stabbur cloned at the same
+# Assumes sibling checkout: tun, mjolnir, stabbur, smia cloned at the same
 # filesystem level (see DEPLOY.md). Requires Compose v2.20+ for `include:`.
+# smia additionally needs its own `providers/` directory populated on
+# whatever host actually runs it — gitignored, ~1GB, not fetched by this
+# file or by cloning the repo; without it, every data-backed provider
+# (ordbank, nst, kaikki, wikipron, dict.cc static) returns empty candidates
+# for every lookup, indistinguishable from a code bug unless you know to
+# check for this (confirmed live, D118).
 #
-# `STABBUR_UPSTREAM`/`STABBUR_BASE_URL` can both simply be "backend:5056"
-# under this deployment mode — same value as the `tun-shared` external-
-# network mode (D98), different mechanism: here the shared network comes
-# from `include:` merging the two projects, not a separately-created
-# external network. Either mode is fine; this file is for operators who
-# want the "one command" version rather than two independent `docker
-# compose up`s.
+# `STABBUR_UPSTREAM`/`STABBUR_BASE_URL` can both simply be "backend:5056",
+# and `SMIA_UPSTREAM`/`SMIA_BASE_URL` both "smia-backend:5055", under this
+# deployment mode — same values as the `tun-shared` external-network mode
+# (D98), different mechanism: here the shared network comes from `include:`
+# merging the three projects, not a separately-created external network.
+# Either mode is fine; this file is for operators who want the "one command"
+# version rather than three independent `docker compose up`s.
 include:
   - ../mjolnir/compose.yaml
   - ../stabbur/compose.yaml
+  - ../smia/docker-compose.yml
 
 # Both included files declare `tun-shared` as `external: true` (D98, so
 # mjolnir and stabbur can also be deployed as two fully independent stacks
