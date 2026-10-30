@@ -26,7 +26,7 @@
 include:
   - ../mjolnir/compose.yaml
   - ../stabbur/compose.yaml
-  - ../smia/docker-compose.yml
+  - ../smia/compose.yml
 
 # Both included files declare `tun-shared` as `external: true` (D98, so
 # mjolnir and stabbur can also be deployed as two fully independent stacks
