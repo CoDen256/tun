@@ -79,10 +79,25 @@ it is the only code that runs before JS.
 ## Audio cache
 
 ```
-server : /ota/<buildId>/audio.json   { "C20007": "<sha256>", … }
-         /blob/<sha256>              immutable, Cache-Control: immutable
+server : /audio-manifest/<buildId>.json   { "C20007": "<sha256>", … }  — unauthenticated,
+                                              same reasoning as /blob/* (D122)
+         /blob/<sha256>                   immutable, Cache-Control: immutable
 device : <documentDirectory>/mj-audio/<sha256>.mp3
 ```
+
+**Correction (D122, found testing `audio-link-playback-minimal` on a real
+device):** direct URL playback does not work at all on this native player —
+not "unreliable," not "needs caching to be fast," genuinely broken. `RNSoundPlayerModule`
+keeps one reused `MediaPlayer` instance; on every call after the first,
+it calls `mediaPlayer.setDataSource(Context, Uri)` directly with no try/catch
+around it, and for a non-`file://` scheme that call attempts
+`ContentResolver.openAssetFileDescriptor()` first, which has no provider for
+a bare `https://` URL — it throws `FileNotFoundException: No content
+provider: "<url>"` straight up to the caller. Confirmed via two independent
+calls (`playUrl` and `loadUrl`+`play`) failing identically on a real device.
+`file://` URIs never hit this path at all (`Uri.getPath()` → local
+`setDataSource(String)`, no `ContentResolver` involved) — which is why the
+design below is cache-then-play-from-disk, never stream-as-a-fallback.
 
 Resolution inside the patched mod 1440 wrapper (the single chokepoint through
 which every `playSoundFile` call in the app funnels):
@@ -91,21 +106,28 @@ which every `playSoundFile` call in the app funnels):
 playSoundFile(name, ext):
     if name starts with a stock prefix (a/b/c01-c17/z) → playSoundFile(name, ext)   // UNCHANGED
     else if cached(name)   → playUrl("file://" + path)
-    else if online         → playUrl(blobUrl)   + enqueue for caching
-    else                   → skip
+    else                   → skip   // never streams — see D122, there is no working fallback
 ```
 
 Stock cards keep byte-identical behaviour, so an audio bug can only ever affect
 your own cards.
 
-**Prefetch** runs on app foreground: read the manifest for the active build,
-diff against the files present on disk, download the missing blobs with a small
-concurrency cap. Content addressing means a version bump only pulls genuinely
-new clips, and re-cutting one clip does not invalidate any other.
+**Prefetch starts at app launch, not on first play.** A companion module
+(same append mechanism as the boot-ok companion) fetches
+`/audio-manifest/<buildId>.json` immediately on startup, diffs it against
+what's already in `<documentDirectory>/mj-audio/`, and downloads whatever's
+missing with a small concurrency cap — fire-and-forget, never blocking
+startup. The manifest is kept as an in-memory global
+(`globalThis.MJOLNIR_AUDIO_MANIFEST`, same pattern as `MJOLNIR_BUILD_ID`) so
+mod 1440's `cached(name)` lookup is synchronous at play time — only the
+"does the file exist on disk" check touches the filesystem per play call.
+Content addressing means a version bump only pulls genuinely new clips, and
+re-cutting one clip does not invalidate any other.
 
 **The gap is tolerated**, deliberately: activate the bundle immediately even if
-audio is incomplete. A card whose audio is not yet cached streams if online and
-is skipped if not. Cards are reviewed many times, so a temporarily silent card
+audio is incomplete, and a card whose clip hasn't been prefetched yet is
+silently skipped — never streamed, since there is no working streaming path
+(D122). Cards are reviewed many times, so a temporarily silent card
 is recoverable; a bundle that never activates because one download 404'd is not.
 
 ## Partial downloads
