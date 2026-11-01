@@ -29,7 +29,7 @@ when it has exactly one.
 | `POST /tts` | `{text, lang, provider}` | `{provider, candidates: [{sha256, ...metadata}]}` | live at various points: `kaikki`, `dictcc_api`, `forvo`; `elevenlabs`/`filmot` need their own API key — check `GET /providers` for what's actually configured right now, this list drifts |
 | `POST /stt` | audio body (multipart) + `{provider}` (always required, even with one configured) | `{provider, text}` | `hf_whisper` (Hugging Face Inference, whisper; cloud-only, self-hosted whisper dropped as too heavy), `elevenlabs` |
 | `POST /translations` | `{text, from, to, provider}` | `{provider, candidates: [{text, context?}]}` — a candidate list like every other kind, confirmed live (D118); this doc previously said a single `{provider, text}`, which was wrong | `google`/`bing` (ported from hover-translate's `TranslatorFactory`), `deepl`, `dictcc_api`/`dictcc_static`; check `GET /providers` for what's live right now |
-| `GET /providers` | — | full catalog, all kinds | — |
+| `GET /providers` | — | full catalog, all kinds, plus a `counts` map (kind -> {provider: row count}) for providers backed by a local imported table — live/API/manual-link providers have no entry in `counts` | — |
 | `GET /health` | — | per-provider last-success/last-failure/quota (informational only — never changes routing) | — |
 | `GET /ui` | — | provider health, cache hit rate, manual try-it (bypasses cache) | — |
 
