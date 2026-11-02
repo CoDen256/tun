@@ -52,7 +52,7 @@ services:
   # own Postgres); reusing that exact key here means Compose deep-merges
   # this definition on top of the included one rather than running a
   # second, separate container — the override, not an addition. Point its
-  # login screen at "postgres" (mjolnir's hub DB) or "stabbur-postgres"
+  # login screen at "mjolnir-postgres" (mjolnir's hub DB) or "stabbur-postgres"
   # (stabbur's DB) by name; both resolve once brought up together.
   adminer:
     image: adminer
