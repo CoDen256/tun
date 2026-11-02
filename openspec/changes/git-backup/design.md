@@ -73,12 +73,19 @@ Considered and rejected:
 - **A new scheduler inside `stabbur`** — confirmed stabbur has none today;
   building one solely for this is disproportionate new infrastructure.
 
-**Chosen**: a single new service in `tun/compose.yaml`, the one place that
-already treats "reach every included service's Postgres by name" as a
-solved, precedented problem (`adminer` does exactly this today). The
-service is a small image (postgres client tools + git + a shell script),
-not applicable to either repo's own domain logic, so it belongs at the
-layer that unifies them, not inside either.
+**Chosen, revised during implementation**: a plain host-level script
+(`tun/bin/backup.sh`, same convention as `mjolnir/bin/ota-publish.sh`),
+triggered by a host `cron` entry, shelling out to `docker compose exec` for
+both databases. Originally designed as a new containerized service with its
+own provisioned deploy key — revised once the operator had already cloned
+the backup repository directly onto the host (`~/dev/tun/tun-backup`) using
+their own existing SSH identity, the same one already used to `git pull`
+every other repo in this project. That's a strictly simpler, already-
+working credential path than provisioning a second, container-scoped one —
+D-B5/D-B6 below are revised accordingly. `tun` is still the right *logical*
+home (the one place that already knows how to reach both databases by
+name), it's just a script invoked from the host rather than a long-lived
+container.
 
 ### D-B2 — No encryption; the one hard rule that makes that fine
 
@@ -124,25 +131,31 @@ long as stabbur's own copies survive — which this backup already ensures).
 canonical" reasoning — the logic bundles are built from the operator's own
 patch/base-folder sources, themselves already version-controlled.
 
-### D-B5 — Scheduling is self-contained inside the container, not host cron
+### D-B5 — Scheduling is a host `cron` entry, superseding the original "self-contained container" choice
 
-Matches this project's established preference (D92: the VPS deliberately
-has no Node runtime, everything runs containerized) extended to its
-logical conclusion — nothing needed on bare metal beyond Docker itself,
-which is already there. The container runs a simple loop (sleep +
-run, or a lightweight cron implementation inside the image) rather than
-relying on the host's own `cron`.
+Originally designed as scheduling self-contained inside a long-lived
+container, by analogy with D92 (the VPS deliberately has no Node runtime).
+Revised: D92 is about not installing *application runtimes* on bare metal;
+it was never a blanket objection to `cron`, which is a basic OS facility
+this host already runs (the entire deploy model is "`git pull` on the
+host," itself relying on the host's own git/SSH setup). A host `cron` entry
+calling one script is simpler than a container that has to stay running
+forever just to sleep most of the time, and `docker compose exec` already
+works identically whether invoked from a host cron job or a container.
 
-### D-B6 — Git push authentication via a repo-scoped SSH deploy key
+### D-B6 — Git push authentication is the operator's own existing host SSH identity, not a new deploy key
 
-A GitHub deploy key can be scoped to exactly one repository and (if
-read-only isn't needed) granted write access only to that repo — strictly
-less privilege than a personal access token, which typically carries
-broader account access unless deliberately scoped as a fine-grained PAT.
-Stored in `tun`'s own gitignored `.env`, mounted into the backup container
-at a path distinct from the backup repo's own working directory — the
-script never has both the credential and a plausible destination to
-accidentally commit it into in the same filesystem location.
+Originally designed as a repo-scoped SSH deploy key, provisioned
+specifically for this container. Revised: the operator cloned
+`~/dev/tun/tun-backup` directly on the host before this was implemented,
+using their own existing SSH key/agent — the same one already
+authenticating every other `git pull`/`git push` in this project. Adding a
+second, container-scoped credential for the exact same repository would be
+strictly more to manage for no additional safety, since the script now runs
+as the host user rather than inside a container that would otherwise need
+its own credential forwarded in. `~/dev/tun/tun-backup` is added to `tun`'s
+own `.gitignore` — it is a separate git repository nested inside `tun`'s
+working directory, never a part of `tun`'s own history.
 
 ### D-B7 — No commit on a no-op run
 

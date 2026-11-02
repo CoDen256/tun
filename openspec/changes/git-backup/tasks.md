@@ -1,69 +1,75 @@
 ## 0. Before you write any code
 
-Read `design.md` in full, especially D-B1 (why this lives in `tun`, not
-`builder` or `stabbur`) and D-B2/D-B6 (the no-encryption decision and the
-one hard rule — secrets never enter this repo — that makes it safe). Read
-`tun/compose.yaml`'s existing `adminer` service as the precedent for "one
-container reaching both included databases by name."
+Read `design.md` in full, especially D-B1/D-B5/D-B6 as revised during
+implementation — this is a host script + host `cron` entry, not a new
+Docker service with its own deploy key, because the operator had already
+cloned `~/dev/tun/tun-backup` directly on the host using their own existing
+SSH identity before this task list was written. Read D-B2 (no encryption)
+and the one hard rule it depends on (secrets never enter `tun-backup/`).
 
 ## 1. The private backup repository
 
-- [ ] 1.1 Create a new private GitHub repository for backup content only
-      (operator action — not scripted).
-- [ ] 1.2 Generate a repo-scoped SSH deploy key with write access (D-B6);
-      add the public half to the repo's deploy keys.
-- [ ] 1.3 Add the private key path/value and the repo's SSH URL to `tun`'s
-      `.env` (gitignored, same convention every other secret in this repo
-      already follows).
+- [x] 1.1 Create a new private GitHub repository for backup content only
+      — **done**: `~/dev/tun/tun-backup`, remote
+      `git@github.com:CoDen256/tun-backup.git`, cloned on the host.
+- [x] 1.2 Git push authentication — **no new credential needed**: the
+      clone already works over the operator's existing host SSH identity,
+      the same one used for every other repo in this project (supersedes
+      the original deploy-key task, D-B6).
 
-## 2. The backup service
+## 2. The backup script
 
-- [ ] 2.1 New service in `tun/compose.yaml` (e.g. `git-backup`): a small
-      image with `postgresql-client` (or the specific major version
-      matching both Postgres instances — `mjolnir-postgres` is `postgres:17-
-      alpine`, `stabbur-postgres` is `postgres:16`; confirm `pg_dump`'s
-      compatibility range covers both, or install both client versions if
-      not) plus `git` and `openssh-client`. Joins the default merged network
-      (no extra config needed — same as `adminer`).
-- [ ] 2.2 Mount: the deploy key (read-only, from `.env`/a file it
-      references), a named volume for the backup repo's persistent working
-      clone, and `stabbur`'s `stabbur-blobs` volume (read-only).
-- [ ] 2.3 Entrypoint script:
-      - clone the backup repo on first run if the working volume is empty;
-        otherwise `git pull` to stay current (defensive — this container
-        should be the only writer, but cheap to confirm).
-      - `pg_dump` `mjolnir-postgres`'s `postgres` database → `mjolnir.sql`
-        (overwrite).
-      - `pg_dump` `stabbur-postgres`'s `stabbur` database → `stabbur.sql`
-        (overwrite).
-      - diff `stabbur-blobs`'s contents against `blobs/` in the working
-        clone; copy over anything missing (D-B3) — never touch
-        `mjolnir`'s own blob directory (D-B4, not even mounted).
-      - `git add -A`; `git diff --cached --quiet` — if no changes, exit
-        without committing (D-B7); otherwise commit (a timestamped
-        message) and push.
-- [ ] 2.4 Self-contained scheduling (D-B5): a sleep-loop or lightweight
-      in-container cron running the above on a recurring interval (default
-      daily — the Open Question in `design.md`, confirm with the operator
-      before finalizing) — no host-level cron entry.
-- [ ] 2.5 Tests/dry-run: confirm against a disposable test repo (not the
-      real backup destination) that two consecutive runs with no DB changes
-      produce zero commits; a run after a real DB change produces exactly
-      one commit touching only the changed file(s); a new blob file appears
-      added, an unchanged one is untouched; nothing from `mjolnir`'s own
-      `data/blob/` ever appears in the test repo.
+- [x] 2.1 New `tun/bin/backup.sh`: `docker exec mjolnir-postgres pg_dump -U
+      mjolnir postgres` → `tun-backup/mjolnir.sql` (overwrite), and `docker
+      exec stabbur-postgres pg_dump -U stabbur stabbur` → `tun-backup/
+      stabbur.sql` (overwrite). Addresses containers by their fixed
+      `container_name:` rather than `docker compose exec`, so it works
+      identically regardless of which compose project (tun's unified
+      `include:` or independent per-repo stacks) actually started them —
+      confirmed both containers set `container_name:` explicitly. Each
+      container's own bundled `pg_dump` always matches its own server
+      version exactly, so the original design's "reconcile two server
+      majors against one external client" concern doesn't apply.
+- [x] 2.2 Same script: copy new files from the `stabbur_stabbur-blobs`
+      named volume into `tun-backup/blobs/` via a throwaway `alpine`
+      container (`docker run --rm -v stabbur_stabbur-blobs:/src:ro -v
+      $BACKUP_REPO/blobs:/dst alpine sh -c 'cp -n /src/. /dst/'`) — reads
+      the named volume directly, no assumption about where Docker's own
+      volume storage lives on disk. `cp -n` (busybox, confirmed supported
+      and tested) never overwrites an existing destination file, making
+      this naturally incremental with no manifest of our own. Never
+      touches `mjolnir`'s own `data/blob/` (D-B4 — not referenced anywhere
+      in this script).
+- [x] 2.3 Same script: `git add -A`, then `git diff --cached --quiet` to
+      detect a no-op run before committing (D-B7) — verified against a
+      disposable scratch repo (see 2.6).
+- [x] 2.4 Added `tun-backup/` to `tun/.gitignore`.
+- [x] 2.5 Documented in the script's own header comment and in
+      `mjolnir/DEPLOY.md`'s existing "Backups (P24)" section (which
+      previously described hub's own backup as manual and didn't yet
+      mention `userdata`/`userdata_history`/`device_state` at all — both
+      gaps closed in the same edit). The crontab line itself is
+      **documented, not installed** — editing the operator's own crontab
+      is a host-level change outside this change's scope, same as every
+      other "the operator does this themselves" step in this project.
+- [x] 2.6 Dry-run against a disposable scratch repo (not `tun-backup`
+      itself, not a real database): confirmed a no-change run produces
+      zero commits; a run with a real file change plus one new, one
+      already-existing blob file produces exactly one commit touching
+      only the changed file and the genuinely new blob — the existing
+      blob's content was verified unchanged, not overwritten. The
+      `docker exec`/`docker run` steps themselves need the real stack
+      running to verify end-to-end (sign-off, below) — no Postgres
+      containers are up in this sandbox.
 
 ## 3. Sign-off
 
 - [ ] 3.1 **(Operator)** First real run against the actual production
-      databases — confirm the initial (large) commit succeeds and pushes;
-      spot-check `mjolnir.sql`/`stabbur.sql` contain real data by restoring
-      into a scratch Postgres and querying a known table.
-- [ ] 3.2 **(Operator)** Confirm `.env`/the deploy key itself never appear
-      anywhere in the backup repo's history (`git log --all --
-      <possible-secret-filename>` style check, or simply confirm the
-      backup repo's own `.gitignore`/working-directory layout never
-      included the credentials directory to begin with).
+      databases — confirm the initial (large) commit succeeds and pushes
+      to `tun-backup`; spot-check `mjolnir.sql`/`stabbur.sql` contain real
+      data by restoring into a scratch Postgres and querying a known
+      table.
+- [ ] 3.2 **(Operator)** Install the documented `cron` entry.
 - [ ] 3.3 If anything here contradicts or refines `design.md` during
       implementation, record it as an ADR amendment in
       `tun/docs/07-decisions.md`, per this project's established practice.

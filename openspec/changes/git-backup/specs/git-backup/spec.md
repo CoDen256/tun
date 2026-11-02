@@ -1,13 +1,13 @@
 ## ADDED Requirements
 
-### Requirement: A single service backs up every included database
-The system SHALL run one backup service, defined in `tun`'s compose
-project, that dumps both `mjolnir`'s and `stabbur`'s Postgres databases on
-a recurring schedule, with no backup-specific code added to either
-service's own repository.
+### Requirement: A single mechanism backs up every included database
+The system SHALL run one backup mechanism, living in `tun` (the one place
+that already reaches every included service's database), that dumps both
+`mjolnir`'s and `stabbur`'s Postgres databases on a recurring schedule,
+with no backup-specific code added to either service's own repository.
 
 #### Scenario: A scheduled run
-- **WHEN** the backup service's schedule fires
+- **WHEN** the backup mechanism's schedule fires
 - **THEN** both `mjolnir-postgres` and `stabbur-postgres` are dumped, with
   no code change required in `mjolnir` or `stabbur` to make this happen
 

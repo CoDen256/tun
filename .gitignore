@@ -1,3 +1,7 @@
 .env
 *.log
 data/
+# git-backup: a separate git repository (its own remote, its own commits),
+# nested here only because that's where the operator cloned it — never
+# part of tun's own history.
+tun-backup/
