@@ -34,16 +34,57 @@ docker exec mjolnir-postgres pg_dump -U mjolnir postgres > "$BACKUP_REPO/mjolnir
 echo "backup.sh: dumping stabbur-postgres..."
 docker exec stabbur-postgres pg_dump -U stabbur stabbur > "$BACKUP_REPO/stabbur.sql"
 
-# stabbur-blobs is content-addressed and write-once (D09/D45) — `cp -n`
-# (never overwrite an existing destination file) makes this naturally
-# incremental with no manifest/diffing of our own to maintain. A throwaway
-# container reads the named volume directly, so this script doesn't need
-# to assume where Docker's own volume storage lives on disk.
+# `docker run -v <name>:/path` SILENTLY CREATES an empty named volume if one
+# by that exact name doesn't already exist — it never errors. Confirm the
+# real volume exists first, or every run of this script would otherwise
+# "succeed" against a phantom empty volume with nothing in the log to show
+# for it (found live: this is exactly what happened the first time).
+if ! docker volume inspect stabbur_stabbur-blobs >/dev/null 2>&1; then
+  echo "backup.sh: ERROR — volume 'stabbur_stabbur-blobs' does not exist." >&2
+  echo "  Run 'docker volume ls | grep -i blob' to find its real name, then" >&2
+  echo "  fix the name in this script." >&2
+  exit 1
+fi
+
+# stabbur-blobs is content-addressed and write-once (D09/D45), stored flat
+# (no subdirectories — confirmed: stabbur's own compose mounts the volume
+# directly at /app/blobs). A throwaway container reads it directly, so this
+# script doesn't need to assume where Docker's own volume storage lives on
+# disk.
+#
+# NOT `cp -rn /src/. /dst/`: confirmed live (three isolated tests) that
+# busybox's `cp` silently copies ZERO files when `-r` and `-n` are combined
+# — no error, exit 0, destination stays empty, even completely empty to
+# begin with. `-r` alone works; `-n` alone (no recursion) works for a single
+# file; combined, nothing is copied. This is what produced the empty
+# blobs/ directory the first time this script ran for real. A plain
+# per-file loop sidesteps the broken flag combination entirely (and is
+# simpler to reason about than finding a correctly-behaving combination of
+# flags in the first place) — verified to correctly skip an existing file
+# and copy new ones.
 echo "backup.sh: syncing stabbur's blob store..."
 docker run --rm \
   -v stabbur_stabbur-blobs:/src:ro \
   -v "$BACKUP_REPO/blobs":/dst \
-  alpine sh -c 'cp -n /src/. /dst/ 2>/dev/null; true'
+  alpine sh -c '
+    src_count=$(ls -1 /src | wc -l)
+    before=$(ls -1 /dst | wc -l)
+    echo "  source volume has $src_count file(s)"
+    if [ "$src_count" -eq 0 ]; then
+      echo "  WARNING: source volume is empty — nothing to copy this run"
+    fi
+    copied=0
+    for f in /src/*; do
+      [ -e "$f" ] || continue
+      name=$(basename "$f")
+      if [ ! -e "/dst/$name" ]; then
+        cp "$f" "/dst/$name"
+        copied=$((copied + 1))
+      fi
+    done
+    after=$(ls -1 /dst | wc -l)
+    echo "  blobs/: $before -> $after ($copied new)"
+  '
 
 cd "$BACKUP_REPO"
 git add -A
