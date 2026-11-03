@@ -62,3 +62,47 @@ services:
       ADMINER_DEFAULT_SERVER: mjolnir-postgres
     ports:
       - "8082:8080"
+
+  # compose-backup-service: supersedes git-backup's host script + crontab
+  # entry (D-C1..D-C5) — a real service, `docker compose up` and nothing
+  # else. Connects to both Postgres instances over the network with a real
+  # password (D-C1), not `docker exec` — no Docker socket mounted at all.
+  # `stabbur-blobs` is referenced directly even though it's declared (with
+  # an explicit `name:`) in stabbur's own included compose.yaml, not this
+  # file — confirmed live that `include:` makes this work with zero extra
+  # declaration (D-C2), the same way `mjolnir-postgres`/`stabbur-postgres`
+  # are already reachable by name above. Depends on `postgres-17-upgrade`
+  # (stabbur) having landed — this image installs exactly one
+  # `postgresql-client` version (see `backup/Dockerfile`).
+  backup:
+    build: ./backup
+    container_name: tun-backup
+    restart: unless-stopped
+    # mjolnir's own .env already has the real POSTGRES_PASSWORD it uses —
+    # reused as-is, not duplicated into tun's own .env.
+    env_file:
+      - ../mjolnir/.env
+    environment:
+      BACKUP_REPO_URL: ${BACKUP_REPO_URL:?set BACKUP_REPO_URL in tun/.env}
+      # stabbur's own compose.yaml hardcodes POSTGRES_PASSWORD: stabbur
+      # directly rather than reading it from an env file (a pre-existing
+      # fact about that repo, not introduced here) — set explicitly here
+      # to match it, documented in .env.example so the two don't silently
+      # drift if stabbur's compose file ever changes that value.
+      STABBUR_POSTGRES_PASSWORD: ${STABBUR_POSTGRES_PASSWORD:-stabbur}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    volumes:
+      # The repo clone persists here across restarts (D-C4) — cloned by
+      # the container itself on first boot, never a host bind-mount.
+      - backup-repo-clone:/data
+      - stabbur-blobs:/stabbur-blobs:ro
+      # Exactly one mounted private key file (D-C3) — not the operator's
+      # whole ~/.ssh directory, not a fresh deploy key. known_hosts is
+      # managed automatically inside the named volume (StrictHostKeyChecking
+      # =accept-new on first connect, entrypoint.sh), so nothing else needs
+      # mounting for git push to work.
+      - ${BACKUP_SSH_KEY_PATH:?set BACKUP_SSH_KEY_PATH in tun/.env}:/root/.ssh/id_backup:ro
+
+volumes:
+  backup-repo-clone:
+    name: tun_backup-repo-clone

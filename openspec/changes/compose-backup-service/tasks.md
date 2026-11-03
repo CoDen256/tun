@@ -13,10 +13,11 @@ task 1 — this design assumes a single Postgres client version.
 
 ## 1. The image
 
-- [ ] 1.1 `tun/backup/Dockerfile`: `debian:bookworm-slim` base, PGDG apt
+- [x] 1.1 `tun/backup/Dockerfile`: `debian:bookworm-slim` base, PGDG apt
       repo, `postgresql-client-17` (matching both services post-upgrade),
-      `git`, `openssh-client`, `bash`.
-- [ ] 1.2 `tun/backup/entrypoint.sh`: port `bin/backup.sh`'s logic —
+      `git`, `openssh-client`, `bash`. Built clean; all three tools
+      confirmed present and working (`pg_dump`/`git`/`ssh` version checks).
+- [x] 1.2 `tun/backup/entrypoint.sh`: port `bin/backup.sh`'s logic —
       - `PGPASSWORD=$MJOLNIR_POSTGRES_PASSWORD pg_dump -h mjolnir-postgres
         -U mjolnir --restrict-key=tunbackupfixedkey --exclude-table=
         job_logs --exclude-table=build_jobs postgres > $BACKUP_REPO/
@@ -33,33 +34,58 @@ task 1 — this design assumes a single Postgres client version.
       - `git add -A` / `git diff --cached --quiet` / commit+push, same as
         before (D-B7, unchanged).
       - Wrap the whole thing in `while true; do <run>; sleep
-        "${BACKUP_INTERVAL_SECONDS:-86400}"; done` (D-C5).
-- [ ] 1.3 Tests: build the image; run a dry pass against disposable
-      Postgres containers + a disposable blob volume + a disposable git
-      remote (not the real `tun-backup`) confirming the same behaviors
-      already verified for the host-script version (no-op run = no
-      commit; a real change = exactly one commit; existing blobs
-      untouched, new ones added).
+        "${BACKUP_INTERVAL_SECONDS:-86400}"; done` (D-C5). Also added a
+        `RUN_ONCE=1` mode — not in the original task wording, added
+        because it was needed to test the loop body in isolation and is
+        independently useful for triggering a manual backup on demand.
+      - Found and fixed during testing: a bare apostrophe inside
+        `${VAR:?message}`'s message text breaks bash parsing even inside
+        double quotes (a real parser quirk, confirmed via a minimal
+        isolated repro, not assumed) — reworded the one message that had
+        a contraction rather than escaping it.
+- [x] 1.3 Tests: built the image; ran a full dry pass against disposable
+      Postgres 17 containers (network-aliased as `mjolnir-postgres`/
+      `stabbur-postgres`), a disposable blob volume, and a disposable
+      bare git repo standing in for `tun-backup`. Confirmed: first run
+      clones, dumps both DBs (verified `card_slots` present and
+      `job_logs` absent in the mjolnir dump), syncs blobs, commits and
+      pushes; second run with no changes produces zero new commits; a
+      real change (one new DB row, one new blob file) produces exactly
+      one new commit touching only `mjolnir.sql` and the new blob file —
+      the pre-existing blob has no commits against it at all, confirmed
+      via `git log --follow`.
 
 ## 2. The compose service
 
-- [ ] 2.1 New `backup` service in `tun/compose.yaml`: `build: ./backup`,
+- [x] 2.1 New `backup` service in `tun/compose.yaml`: `build: ./backup`,
       joins the default merged network (no extra config, same as
-      `adminer`).
-- [ ] 2.2 `env_file: [../mjolnir/.env]` for `MJOLNIR_POSTGRES_PASSWORD`
-      (reads mjolnir's real `POSTGRES_PASSWORD`); `STABBUR_POSTGRES_
-      PASSWORD` set directly in `tun`'s own `.env` to match stabbur's
-      hardcoded compose-file value (D-C1 — documented clearly so the two
-      don't silently drift).
-- [ ] 2.3 Volumes: a new named volume for the repo clone
-      (`backup-repo-clone`); `stabbur-blobs:/stabbur-blobs:ro` (D-C2,
-      referenced directly, no declaration needed in `tun/compose.yaml`
-      itself); one mounted private key file + `known_hosts` (D-C3) at
-      paths read from `tun/.env` (`BACKUP_SSH_KEY_PATH`).
-- [ ] 2.4 `tun/.env.example`: document `BACKUP_REPO_URL` (the git SSH
-      URL), `BACKUP_SSH_KEY_PATH` (host path to the one private key file),
-      `STABBUR_POSTGRES_PASSWORD`, `BACKUP_INTERVAL_SECONDS` (default
-      `86400`).
+      `adminer`). Verified via `docker compose config --quiet`.
+- [x] 2.2 `env_file: [../mjolnir/.env]`. **Deviation from this task's
+      literal wording**: the entrypoint reads the variable as
+      `POSTGRES_PASSWORD` (exactly what `env_file` hands the container
+      from mjolnir's own `.env`), not a renamed `MJOLNIR_POSTGRES_
+      PASSWORD` — `env_file` passes keys through verbatim, Compose has no
+      built-in rename, and inventing one would mean the entrypoint
+      disagreeing with its own source file's actual key name for no
+      benefit. `STABBUR_POSTGRES_PASSWORD` set directly in `tun`'s own
+      `.env` (default `stabbur`, matching stabbur's hardcoded compose
+      value) — documented in `.env.example` so the two don't silently
+      drift.
+- [x] 2.3 Volumes: `backup-repo-clone` (new named volume,
+      `tun_backup-repo-clone`) for the repo clone; `stabbur-blobs:/
+      stabbur-blobs:ro` (D-C2, referenced directly — verified via
+      `docker compose config` that it resolves with zero declaration in
+      `tun/compose.yaml`); one mounted private key file at
+      `BACKUP_SSH_KEY_PATH` (D-C3). **Deviation**: no separate
+      `known_hosts` mount — `entrypoint.sh` manages it automatically
+      inside the same persistent `/data` volume
+      (`StrictHostKeyChecking=accept-new`), so there's one fewer thing to
+      prepare, not two.
+- [x] 2.4 `tun/.env.example` created (didn't exist before this change):
+      documents `BACKUP_REPO_URL`, `BACKUP_SSH_KEY_PATH`,
+      `STABBUR_POSTGRES_PASSWORD`, `BACKUP_INTERVAL_SECONDS`, and a note
+      that mjolnir's own password is read from its own `.env`, not
+      duplicated here.
 
 ## 3. Retire the host-script version
 
