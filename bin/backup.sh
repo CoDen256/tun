@@ -28,8 +28,23 @@ fi
 
 mkdir -p "$BACKUP_REPO/blobs"
 
+# job_logs/build_jobs are pure run-history bookkeeping (builder's own CI-job
+# narration) — confirmed via every REFERENCES in hub/migrations/*.sql that
+# nothing else depends on them (job_logs -> build_jobs is the only link, and
+# both are excluded together). Everything that actually matters — card_slots,
+# pending_occurrences, card_content, minted_notes, occurrence_shipments,
+# publications, logic_bundles, userdata/userdata_history — has no FK tie to
+# either. Deliberately NOT excluding publications/logic_bundles even though
+# they look like the same kind of "build metadata": occurrence_shipments.
+# build_id is a NOT NULL REFERENCES publications(build_id), and
+# occurrence_shipments is the permanent shipped-occurrence ledger (D93) —
+# excluding publications would make it unrestorable without faking rows to
+# satisfy the FK. Both are tiny (one row per publish/assembly) regardless.
 echo "backup.sh: dumping mjolnir-postgres..."
-docker exec mjolnir-postgres pg_dump -U mjolnir postgres > "$BACKUP_REPO/mjolnir.sql"
+docker exec mjolnir-postgres pg_dump -U mjolnir \
+  --exclude-table=job_logs \
+  --exclude-table=build_jobs \
+  postgres > "$BACKUP_REPO/mjolnir.sql"
 
 echo "backup.sh: dumping stabbur-postgres..."
 docker exec stabbur-postgres pg_dump -U stabbur stabbur > "$BACKUP_REPO/stabbur.sql"

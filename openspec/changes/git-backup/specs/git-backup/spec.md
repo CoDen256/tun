@@ -11,6 +11,25 @@ with no backup-specific code added to either service's own repository.
 - **THEN** both `mjolnir-postgres` and `stabbur-postgres` are dumped, with
   no code change required in `mjolnir` or `stabbur` to make this happen
 
+### Requirement: Disposable run-history tables are excluded from the mjolnir dump
+The system SHALL exclude `job_logs` and `build_jobs` from `mjolnir`'s
+Postgres dump, and SHALL NOT exclude any table referenced by them or by
+any permanent ledger table (`card_slots`, `pending_occurrences`,
+`card_content`, `minted_notes`, `occurrence_shipments`, `publications`,
+`logic_bundles`, `userdata`, `userdata_history`).
+
+#### Scenario: Dumping mjolnir's database
+- **WHEN** the backup mechanism dumps `mjolnir`'s database
+- **THEN** the resulting dump contains no `job_logs` or `build_jobs` data,
+  and contains every row of every other table
+
+#### Scenario: Restoring the dump
+- **WHEN** the dump is restored into a fresh database (after the
+  application's own migrations have created the full schema, including
+  `job_logs`/`build_jobs` empty)
+- **THEN** every foreign key in the restored data is satisfied, with no
+  manual intervention required
+
 ### Requirement: SQL dumps overwrite the same filename every run
 The system SHALL write each database's dump to the same filename on every
 run, relying on version control history (not separate dated files) to

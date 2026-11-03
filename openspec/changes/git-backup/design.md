@@ -131,6 +131,25 @@ long as stabbur's own copies survive — which this backup already ensures).
 canonical" reasoning — the logic bundles are built from the operator's own
 patch/base-folder sources, themselves already version-controlled.
 
+### D-B4b — `job_logs`/`build_jobs` excluded from the mjolnir dump; `publications`/`logic_bundles` deliberately kept
+
+Confirmed via every `REFERENCES` in `hub/migrations/*.sql`: `job_logs` →
+`build_jobs` is the only link involving either table — nothing else
+depends on them, and both are excluded together (`pg_dump
+--exclude-table=job_logs --exclude-table=build_jobs`). They are pure
+run-history bookkeeping (builder's own CI-job narration text), not state.
+
+**Deliberately not excluded**, despite looking like the same category of
+"build metadata": `publications` and `logic_bundles`. `occurrence_shipments
+.build_id` is `NOT NULL REFERENCES publications(build_id)`, and
+`occurrence_shipments` is the permanent shipped-occurrence ledger (D93) —
+not optional, it's what `builder`'s stateless rebuild replays to
+reconstruct `Cards[]` order from scratch (D-L4). Excluding `publications`
+would make `occurrence_shipments` unrestorable without first faking rows
+to satisfy the foreign key. Both tables are tiny regardless (one row per
+publish/assembly event, not per-request bulk like `job_logs`) — there is no
+size trade-off being made by keeping them.
+
 ### D-B5 — Scheduling is a host `cron` entry, superseding the original "self-contained container" choice
 
 Originally designed as scheduling self-contained inside a long-lived
