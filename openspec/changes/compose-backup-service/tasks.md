@@ -89,11 +89,16 @@ task 1 — this design assumes a single Postgres client version.
 
 ## 3. Retire the host-script version
 
-- [ ] 3.1 Remove `bin/backup.sh`.
-- [ ] 3.2 Remove the documented host `crontab` line (was in the script's
-      own header comment and `mjolnir/DEPLOY.md`).
-- [ ] 3.3 Update `mjolnir/DEPLOY.md`'s "Backups (P24)" section to point at
-      the compose service instead of the host script.
+- [x] 3.1 Removed `bin/backup.sh` (the crontab line it documented in its
+      own header comment is removed along with it).
+- [x] 3.2 Host `crontab` line retired — `mjolnir/DEPLOY.md` updated (3.3)
+      to describe the compose service, no crontab mentioned anymore
+      anywhere in either repo's docs.
+- [x] 3.3 `mjolnir/DEPLOY.md`'s "Backups (P24)" section updated: points at
+      `tun`'s `backup` compose service; also fixed two unrelated staleness
+      bugs found while editing it — `job_logs`/`build_jobs` were still
+      listed as backed up (excluded since D-B4b) and `device_state` was
+      still listed as existing (dropped entirely, D126).
 
 ## 4. Sign-off
 
