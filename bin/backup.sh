@@ -40,14 +40,27 @@ mkdir -p "$BACKUP_REPO/blobs"
 # occurrence_shipments is the permanent shipped-occurrence ledger (D93) —
 # excluding publications would make it unrestorable without faking rows to
 # satisfy the FK. Both are tiny (one row per publish/assembly) regardless.
+# --restrict-key: pg_dump (PG 16+) wraps every dump in a \restrict/
+# \unrestrict pair carrying a freshly-randomized token on every single
+# invocation — a psql-safety mechanism, not a secret. Left unset, two dumps
+# of byte-for-byte identical data differ every time (confirmed: diffing two
+# back-to-back dumps of an unchanged table showed only the token differing),
+# which would defeat the no-commit-on-no-op-run behavior entirely. Pinning
+# it to a fixed, non-secret string makes the dump byte-stable when the data
+# actually hasn't changed — confirmed via the same diff test.
+RESTRICT_KEY="tunbackupfixedkey"
+
 echo "backup.sh: dumping mjolnir-postgres..."
 docker exec mjolnir-postgres pg_dump -U mjolnir \
+  --restrict-key="$RESTRICT_KEY" \
   --exclude-table=job_logs \
   --exclude-table=build_jobs \
   postgres > "$BACKUP_REPO/mjolnir.sql"
 
 echo "backup.sh: dumping stabbur-postgres..."
-docker exec stabbur-postgres pg_dump -U stabbur stabbur > "$BACKUP_REPO/stabbur.sql"
+docker exec stabbur-postgres pg_dump -U stabbur \
+  --restrict-key="$RESTRICT_KEY" \
+  stabbur > "$BACKUP_REPO/stabbur.sql"
 
 # `docker run -v <name>:/path` SILENTLY CREATES an empty named volume if one
 # by that exact name doesn't already exist — it never errors. Confirm the
