@@ -64,12 +64,21 @@ and the one hard rule it depends on (secrets never enter `tun-backup/`).
 
 ## 3. Sign-off
 
-- [ ] 3.1 **(Operator)** First real run against the actual production
+- [x] 3.1 **(Operator)** First real run against the actual production
       databases — confirm the initial (large) commit succeeds and pushes
       to `tun-backup`; spot-check `mjolnir.sql`/`stabbur.sql` contain real
       data by restoring into a scratch Postgres and querying a known
-      table.
-- [ ] 3.2 **(Operator)** Install the documented `cron` entry.
-- [ ] 3.3 If anything here contradicts or refines `design.md` during
+      table. **Superseded**: this delivery mechanism (host script) never
+      reached sign-off before `compose-backup-service` replaced it; the
+      equivalent sign-off happened there instead (its tasks.md 4.1/4.2).
+- [x] 3.2 **(Operator)** Install the documented `cron` entry. **Superseded
+      — not done, and no longer applicable**: `compose-backup-service`
+      retires this delivery mechanism before a crontab entry was ever
+      installed; scheduling is internal to the replacement compose service
+      (D-C5).
+- [x] 3.3 If anything here contradicts or refines `design.md` during
       implementation, record it as an ADR amendment in
       `tun/docs/07-decisions.md`, per this project's established practice.
+      Nothing to record here — see D129/D130 for the bugs actually found
+      against this version, and the proposal of `compose-backup-service`
+      for why its delivery mechanism was superseded.

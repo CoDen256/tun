@@ -16,9 +16,13 @@ mkdir -p /root/.ssh
 chmod 700 /root/.ssh
 export GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/data/known_hosts"
 
+log() {
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
+}
+
 run_backup() {
   if [ ! -d "$BACKUP_REPO/.git" ]; then
-    echo "entrypoint: cloning $BACKUP_REPO_URL (first run)..."
+    log "entrypoint: cloning $BACKUP_REPO_URL (first run)..."
     git clone "$BACKUP_REPO_URL" "$BACKUP_REPO"
     git -C "$BACKUP_REPO" config user.email "backup@tun.local"
     git -C "$BACKUP_REPO" config user.name "tun git-backup"
@@ -41,22 +45,22 @@ run_backup() {
   # previously-committed mjolnir.sql/stabbur.sql is never touched by a
   # failed attempt, regardless of how `run_backup`'s own exit status is
   # later handled by its caller.
-  echo "entrypoint: dumping mjolnir-postgres..."
+  log "entrypoint: dumping mjolnir-postgres..."
   if ! PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h mjolnir-postgres -U mjolnir \
       --restrict-key="$RESTRICT_KEY" \
       --exclude-table=job_logs \
       --exclude-table=build_jobs \
       postgres > "$BACKUP_REPO/mjolnir.sql.tmp"; then
-    echo "entrypoint: mjolnir dump failed — aborting this run, mjolnir.sql left untouched" >&2
+    log "entrypoint: mjolnir dump failed — aborting this run, mjolnir.sql left untouched" >&2
     rm -f "$BACKUP_REPO/mjolnir.sql.tmp"
     return 1
   fi
 
-  echo "entrypoint: dumping stabbur-postgres..."
+  log "entrypoint: dumping stabbur-postgres..."
   if ! PGPASSWORD="$STABBUR_POSTGRES_PASSWORD" pg_dump -h stabbur-postgres -U stabbur \
       --restrict-key="$RESTRICT_KEY" \
       stabbur > "$BACKUP_REPO/stabbur.sql.tmp"; then
-    echo "entrypoint: stabbur dump failed — aborting this run, stabbur.sql left untouched" >&2
+    log "entrypoint: stabbur dump failed — aborting this run, stabbur.sql left untouched" >&2
     rm -f "$BACKUP_REPO/mjolnir.sql.tmp" "$BACKUP_REPO/stabbur.sql.tmp"
     return 1
   fi
@@ -69,12 +73,12 @@ run_backup() {
   # stabbur-blobs is mounted directly at /stabbur-blobs (D-C2) — no nested
   # docker run needed. Flat, content-addressed, write-once (D09/D45); a
   # plain per-file loop (not `cp -rn`, confirmed broken in busybox, D129).
-  echo "entrypoint: syncing stabbur's blob store..."
+  log "entrypoint: syncing stabbur's blob store..."
   src_count=$(ls -1 /stabbur-blobs | wc -l)
   before=$(ls -1 "$BACKUP_REPO/blobs" | wc -l)
-  echo "  source volume has $src_count file(s)"
+  log "  source volume has $src_count file(s)"
   if [ "$src_count" -eq 0 ]; then
-    echo "  WARNING: source volume is empty — nothing to copy this run"
+    log "  WARNING: source volume is empty — nothing to copy this run"
   fi
   copied=0
   for f in /stabbur-blobs/*; do
@@ -86,19 +90,19 @@ run_backup() {
     fi
   done
   after=$(ls -1 "$BACKUP_REPO/blobs" | wc -l)
-  echo "  blobs/: $before -> $after ($copied new)"
+  log "  blobs/: $before -> $after ($copied new)"
 
   cd "$BACKUP_REPO"
   git add -A
 
   if git diff --cached --quiet; then
-    echo "entrypoint: no changes, nothing to commit"
+    log "entrypoint: no changes, nothing to commit"
     return 0
   fi
 
   git commit -m "backup $(date -u +%Y-%m-%dT%H:%M:%SZ)" --quiet
   git push --quiet
-  echo "entrypoint: committed and pushed"
+  log "entrypoint: committed and pushed"
 }
 
 : "${BACKUP_REPO_URL:?set BACKUP_REPO_URL}"
@@ -114,7 +118,8 @@ if [ "${RUN_ONCE:-}" = "1" ]; then
 fi
 
 while true; do
-  run_backup || echo "entrypoint: run failed, will retry next interval" >&2
-  echo "entrypoint: sleeping ${INTERVAL}s"
+  run_backup || log "entrypoint: run failed, will retry next interval" >&2
+  next_run=$(date -u -d "+${INTERVAL} seconds" +%Y-%m-%dT%H:%M:%SZ)
+  log "entrypoint: sleeping ${INTERVAL}s, next run at $next_run"
   sleep "$INTERVAL"
 done

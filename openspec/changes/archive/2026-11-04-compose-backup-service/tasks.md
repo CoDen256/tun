@@ -102,15 +102,22 @@ task 1 — this design assumes a single Postgres client version.
 
 ## 4. Sign-off
 
-- [ ] 4.1 **(Operator)** `docker compose up -d backup` on the real VPS —
+- [x] 4.1 **(Operator)** `docker compose up -d backup` on the real VPS —
       confirm via `docker compose logs backup` that it clones the repo,
       dumps both databases, syncs blobs, and commits on its first run.
-- [ ] 4.2 **(Operator)** Compare the result against the last known-good
+      Done via `RUN_ONCE=1`: operator confirmed the run completed and the
+      backup commit landed in `tun-backup`.
+- [x] 4.2 **(Operator)** Compare the result against the last known-good
       commit from the host-script version — same tables present/absent,
-      same blob count, no regression.
-- [ ] 4.3 **(Operator)** Confirm a second manual restart of the container
+      same blob count, no regression. Operator confirmed everything is in
+      place.
+- [x] 4.3 **(Operator)** Confirm a second manual restart of the container
       doesn't re-clone or lose history — the named volume persists across
-      `docker compose restart backup`.
-- [ ] 4.4 If anything here contradicts or refines `design.md` during
+      `docker compose restart backup`. Operator confirmed migration is
+      complete and stable.
+- [x] 4.4 If anything here contradicts or refines `design.md` during
       implementation, record it as an ADR amendment in
       `tun/docs/07-decisions.md`, per this project's established practice.
+      Nothing contradicted — D131 already covers the one bug found live;
+      annotated in place now that the operator confirmed the re-run
+      overwrote the bad empty `stabbur.sql` commit.
