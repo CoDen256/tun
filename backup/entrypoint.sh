@@ -26,17 +26,45 @@ run_backup() {
 
   mkdir -p "$BACKUP_REPO/blobs"
 
+  # Found live (first real run on the VPS): `cmd > file` TRUNCATES `file`
+  # before `cmd` even runs — so a failed pg_dump was silently leaving an
+  # EMPTY mjolnir.sql/stabbur.sql in place, which then got committed and
+  # pushed as if it were a real backup. Compounded by a second bug: calling
+  # `run_backup` as `run_backup || echo ...` (below) disables `set -e` for
+  # the ENTIRE function body, not just the top-level call — a real bash
+  # gotcha (&&/||/if suppress errexit recursively for whatever they test,
+  # even through a subshell — confirmed by isolated repro before fixing),
+  # so the failed dump didn't abort the run either. Fixed with the same
+  # atomic dump-to-.tmp-then-rename convention used everywhere else in this
+  # ecosystem (OTA bundles, blobs, logic bundles): a failed dump leaves only
+  # a `.tmp` file behind and `return`s before `git add` ever runs — the
+  # previously-committed mjolnir.sql/stabbur.sql is never touched by a
+  # failed attempt, regardless of how `run_backup`'s own exit status is
+  # later handled by its caller.
   echo "entrypoint: dumping mjolnir-postgres..."
-  PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h mjolnir-postgres -U mjolnir \
-    --restrict-key="$RESTRICT_KEY" \
-    --exclude-table=job_logs \
-    --exclude-table=build_jobs \
-    postgres > "$BACKUP_REPO/mjolnir.sql"
+  if ! PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h mjolnir-postgres -U mjolnir \
+      --restrict-key="$RESTRICT_KEY" \
+      --exclude-table=job_logs \
+      --exclude-table=build_jobs \
+      postgres > "$BACKUP_REPO/mjolnir.sql.tmp"; then
+    echo "entrypoint: mjolnir dump failed — aborting this run, mjolnir.sql left untouched" >&2
+    rm -f "$BACKUP_REPO/mjolnir.sql.tmp"
+    return 1
+  fi
 
   echo "entrypoint: dumping stabbur-postgres..."
-  PGPASSWORD="$STABBUR_POSTGRES_PASSWORD" pg_dump -h stabbur-postgres -U stabbur \
-    --restrict-key="$RESTRICT_KEY" \
-    stabbur > "$BACKUP_REPO/stabbur.sql"
+  if ! PGPASSWORD="$STABBUR_POSTGRES_PASSWORD" pg_dump -h stabbur-postgres -U stabbur \
+      --restrict-key="$RESTRICT_KEY" \
+      stabbur > "$BACKUP_REPO/stabbur.sql.tmp"; then
+    echo "entrypoint: stabbur dump failed — aborting this run, stabbur.sql left untouched" >&2
+    rm -f "$BACKUP_REPO/mjolnir.sql.tmp" "$BACKUP_REPO/stabbur.sql.tmp"
+    return 1
+  fi
+
+  # Both dumps succeeded — only now do the real, previously-committed
+  # filenames ever change.
+  mv "$BACKUP_REPO/mjolnir.sql.tmp" "$BACKUP_REPO/mjolnir.sql"
+  mv "$BACKUP_REPO/stabbur.sql.tmp" "$BACKUP_REPO/stabbur.sql"
 
   # stabbur-blobs is mounted directly at /stabbur-blobs (D-C2) — no nested
   # docker run needed. Flat, content-addressed, write-once (D09/D45); a

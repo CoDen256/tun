@@ -78,6 +78,21 @@ services:
     build: ./backup
     container_name: tun-backup
     restart: unless-stopped
+    # Found live: on a fresh `docker compose up` (e.g. right after
+    # postgres-17-upgrade's new volume), a Postgres container goes through
+    # its own two-phase init-then-restart startup — reachable on the
+    # network but refusing connections for a few seconds. Without this,
+    # the backup service's first run can race it and dump nothing for
+    # whichever database wasn't ready yet. entrypoint.sh's atomic
+    # dump-then-rename already stops a failed dump from corrupting the
+    # backup repo, but waiting for both to be genuinely healthy avoids the
+    # failure (and the resulting day-long wait for the next scheduled
+    # attempt) in the first place.
+    depends_on:
+      mjolnir-postgres:
+        condition: service_healthy
+      stabbur-postgres:
+        condition: service_healthy
     # mjolnir's own .env already has the real POSTGRES_PASSWORD it uses —
     # reused as-is, not duplicated into tun's own .env.
     env_file:
