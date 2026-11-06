@@ -74,6 +74,8 @@ services:
   # are already reachable by name above. Depends on `postgres-17-upgrade`
   # (stabbur) having landed — this image installs exactly one
   # `postgresql-client` version (see `backup/Dockerfile`).
+
+  # docker compose run --rm -e RUN_ONCE=1 backup
   backup:
     build: ./backup
     container_name: tun-backup
