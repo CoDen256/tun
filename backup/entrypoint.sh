@@ -48,6 +48,9 @@ run_backup() {
   log "entrypoint: dumping mjolnir-postgres..."
   if ! PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h mjolnir-postgres -U mjolnir \
       --restrict-key="$RESTRICT_KEY" \
+      --no-owner \
+      --no-privileges \
+      --no-tablespaces \
       --exclude-table=job_logs \
       --exclude-table=build_jobs \
       postgres > "$BACKUP_REPO/mjolnir.sql.tmp"; then
@@ -59,6 +62,9 @@ run_backup() {
   log "entrypoint: dumping stabbur-postgres..."
   if ! PGPASSWORD="$STABBUR_POSTGRES_PASSWORD" pg_dump -h stabbur-postgres -U stabbur \
       --restrict-key="$RESTRICT_KEY" \
+      --no-owner \
+      --no-privileges \
+      --no-tablespaces \
       stabbur > "$BACKUP_REPO/stabbur.sql.tmp"; then
     log "entrypoint: stabbur dump failed — aborting this run, stabbur.sql left untouched" >&2
     rm -f "$BACKUP_REPO/mjolnir.sql.tmp" "$BACKUP_REPO/stabbur.sql.tmp"
