@@ -17,28 +17,37 @@
 [IDEA]copy from ankindeck and use ai to resolve existing ones.
 [UX]phonexa shadowing should support studying mode where i just press 3 buttons (one makes the audio play, the second compares, the third marks as completed and goes to the next one)
 [IDEA]add tab audio recording in hovertranslate
-[UX] label and patch rev should also be as env vars there, and it should be really preffiled with values, it does not, it say e.g. for logic rev that it is autoincremented to 17, but it doesn't prefill it, and it should suggest it, so the text field with already written value there
+[UX] assembly tab: label and patch rev should also be as env vars there, and it should be really preffiled with values, it does not, it say e.g. for logic rev that it is autoincremented to 17, but it doesn't prefill it, and it should suggest it, so the text field with already written value there
 [IDEA] the builder ui for publishing is okaish, but i really want some nice graphical way of representing how the card flow from stabbur to mint to ready to publish with threashold visible and visible when what cards occurances will come, it doesn't necessarily should contain a lot of data, it should be very nice design and very easy to overview and understand
 
 [IDEA] smia should also support some way to provide prepositions, which the verbs/ use, and differentiate between prepositional verbs and verbs/adjectives/nouns with prepositions. "legge til" prepositional verb vs "vente på" / "redd for. But need to think through it. or understand how to standartize it.
 [DEV] move to monorepo
 [BUG] in the app it shows __MJOLNIR_LABEL_, not the substituted string, as well as data version.
 [OVERHAUL/BUG]  The decks are not being published in multiples of 5 per deck. We need a nice UI for the builder to track it.
+[UX] fix smia dictcc parsing in general, among everything: don't add {n}/{f}/{m}
+[UX] stabbur when rewriting prompt per provider, let it be prefiiled with the suggestion prompt for  all providers
+[UX] smia filmot link for multiword should search them in a quotes: https://filmot.com/search/%22fastsatt%20av%22/1?lang=no&hideDeleted=1&gridView=1&
+[UX] stabbur allow paste custom link to be loaded(youtube), not only via filmot/forvo, they should act as providers, who just refer to the other page, but down i would have a "url provider" so to say, where i just paste any link (youtube+timecode/mp3/wav) and it knows what to do, how to find the audio, either by downloading the video (as in filmot) or just directly the file (like forvo), so url entry is not tied to that particular providers. the providers just suggest to look there.
+[UX] builder should have the stats of the shipping, per deck, not in total, the flow and the quick numbers should be seen per deck. but it still have to say the amount of elligible cards from stabbur and what amount goes to which deck., plus the strip should contain also markers for the cards that are going to be shipped after i click publish, the newly eligible cards and the ones that are newly eligible and staged, should also be marked somehow, and the newly eligible pending as well. Maybe just put some icon on them, leave them as is, just that i see that those are the ones that are going to be added after this publish. also the ones that are going to be drained should be marked as well.
+[IDEA] i should track what bundle and when each bundle was pulled and display it in the ui, if that's not difficult.
+[UX] in logs the json is still pretty prints the whole deck, which spams the logs
 
 ## Triage & Planned Packages
 > Managed by System Overseer AI
 
 ### 🔴 CRITICAL PATH (Blocking)
 
-#### Package: `deck-publishing-and-visualization`
-**Repos:** builder  
-**Severity:** Critical — blocks card publishing workflow & operator oversight  
+#### Package: `data-integrity-and-deck-publishing`
+**Repos:** stabbur, builder  
+**Severity:** Critical — blocks reliable backups, git history, and card publishing workflow  
 **Items:**
+- [BUG] pg_dump row ordering — deterministic ordering needed to prevent spurious commits
 - [OVERHAUL/BUG] Deck publishing multiples of 5 — enforce & track in builder UI
 - [IDEA] Card flow visualization & progress tracking — stabbur → mint → ready → publish with thresholds & timing
+- [BUG] __MJOLNIR_LABEL_ substitution — env var not resolving, shows raw string in app
 
-**Dependencies:** None  
-**Estimate:** 3–4 tasks: deck publishing enforcement, builder progress visualization UI
+**Dependencies:** None (these are independent blockers)  
+**Estimate:** 4–5 tasks: pg_dump fix, deck publishing enforcement, builder visualization UI, label substitution fix
 
 ---
 
@@ -70,22 +79,10 @@
 **Items:**
 - [UX] Add "har" before perfekt inflection; add "å" before infinitive of verbs — revise publishing logic
 - [UX] Transcription/inflections only for lemma (no prepositions); translation/audio include full phrase + prepositions
+- [UX] Builder env vars (label, patch rev) should prefill with auto-incremented values, not just show them
 
 **Dependencies:** Depends on smia prepositions clarification (IDEA below)  
-**Estimate:** 2 tasks (builder inflection logic, smia word-lemma boundary)
-
----
-
-#### Package: `builder-assembly-page-env-vars`
-**Repos:** builder  
-**Type:** Bug fix + UX improvement  
-**Rationale:** Assembly/publishing page should show correct env var values and accept them as prefilled inputs  
-**Items:**
-- [UX] Builder assembly page: label and patch rev should prefill with auto-incremented values (env vars); currently shows "autoincremented to X" but doesn't fill the field
-- [BUG] __MJOLNIR_LABEL_ substitution — env var not resolving, displays as raw string in app instead of actual label value
-
-**Dependencies:** None  
-**Estimate:** 2 tasks (env var substitution fix, assembly page prefill logic)
+**Estimate:** 3 tasks (builder inflection logic, smia word-lemma boundary)
 
 ---
 
@@ -145,12 +142,9 @@
 ## Dependency Map
 
 ```
-┌─ deck-publishing-and-visualization ──────────┐
-│  (deck multiples enforcement,                │
-│   progress visualization)                    │
-│
-├─ builder-assembly-page-env-vars
-│  (env var substitution, prefill logic)
+┌─ data-integrity-and-deck-publishing ──────────┐
+│  (includes pg_dump fix, deck multiples,       │
+│   progress visualization, label substitution) │
 │
 ├─ builder-grammar-standardization
 │  └─ smia-prepositions-design (blocks full implementation)
