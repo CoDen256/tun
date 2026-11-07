@@ -32,6 +32,7 @@
 [IDEA] i should track what bundle and when each bundle was pulled and display it in the ui, if that's not difficult.
 [UX] in logs the json is still pretty prints the whole deck, which spams the logs
 [UX] assembly tab should allow search by module number
+[UX] card preview should be better reflecting the actuall css used in mjolnir so that i don't need to publish and view it in the app to see how it looks like
 ## Triage & Planned Packages
 > Managed by System Overseer AI
 
