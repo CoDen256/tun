@@ -31,7 +31,7 @@
 [UX] builder should have the stats of the shipping, per deck, not in total, the flow and the quick numbers should be seen per deck. but it still have to say the amount of elligible cards from stabbur and what amount goes to which deck., plus the strip should contain also markers for the cards that are going to be shipped after i click publish, the newly eligible cards and the ones that are newly eligible and staged, should also be marked somehow, and the newly eligible pending as well. Maybe just put some icon on them, leave them as is, just that i see that those are the ones that are going to be added after this publish. also the ones that are going to be drained should be marked as well.
 [IDEA] i should track what bundle and when each bundle was pulled and display it in the ui, if that's not difficult.
 [UX] in logs the json is still pretty prints the whole deck, which spams the logs
-
+[UX] assembly tab should allow search by module number
 ## Triage & Planned Packages
 > Managed by System Overseer AI
 
@@ -77,7 +77,7 @@
 **Type:** Bug fixes + grammar rules  
 **Rationale:** Ensures consistent inflection output; blocks reliable card publishing  
 **Items:**
-- [UX] Add "har" before perfekt inflection; add "å" before infinitive of verbs — revise publishing logic
+- [UX] Add "har" before perfekt inflection; add "å" before infinitive of verbs — revise publishing logic and substantives have to have article
 - [UX] Transcription/inflections only for lemma (no prepositions); translation/audio include full phrase + prepositions
 - [UX] Builder env vars (label, patch rev) should prefill with auto-incremented values, not just show them
 
