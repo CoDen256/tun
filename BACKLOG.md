@@ -28,6 +28,142 @@
 ## Triage & Planned Packages
 > Managed by System Overseer AI
 
+### 🔴 CRITICAL PATH (Blocking)
+
+#### Package: `deck-publishing-and-visualization`
+**Repos:** builder  
+**Severity:** Critical — blocks card publishing workflow & operator oversight  
+**Items:**
+- [OVERHAUL/BUG] Deck publishing multiples of 5 — enforce & track in builder UI
+- [IDEA] Card flow visualization & progress tracking — stabbur → mint → ready → publish with thresholds & timing
+
+**Dependencies:** None  
+**Estimate:** 3–4 tasks: deck publishing enforcement, builder progress visualization UI
+
+---
+
+### 🟡 HIGH PRIORITY (Core Feature Gaps)
+
+#### Package: `stabbur-content-acquisition-and-triage`
+**Repos:** stabbur, smia  
+**Type:** Feature + UX improvements  
+**Rationale:** Content acquisition is bottleneck; bulk import + streamlined triage accelerate card creation  
+**Items:**
+- [IDEA] Import from Google Sheets (copy existing word database) + prefill with provider suggestions → add as drafts
+- [IDEA] Import from AnkiDeck + use AI to resolve conflicts
+- [UX] Full triage inbox UI — review drafted cards with modern UX (edit, delete, queue, accept)
+- [UX] Prefill suggestion providers hardcoded + button click to auto-populate
+- [UX] Form should not persist across notes; suggestion panels collapse on new note
+- [UX] Button to reload all providers after editing prompt in "suggest" pill
+- [UX] Multiple translations should append over slash (configurable via settings page)
+- [BUG] Grammar note marked as updated even when content unchanged (builder)
+
+**Dependencies:** Partially blocks phonexa shadowing flow (needs content first)  
+**Estimate:** 7–9 tasks (bulk import routes, triage UI, stabbur UX, one builder grammar fix, one settings feature)
+
+---
+
+#### Package: `builder-grammar-standardization`
+**Repos:** builder, smia  
+**Type:** Bug fixes + grammar rules  
+**Rationale:** Ensures consistent inflection output; blocks reliable card publishing  
+**Items:**
+- [UX] Add "har" before perfekt inflection; add "å" before infinitive of verbs — revise publishing logic
+- [UX] Transcription/inflections only for lemma (no prepositions); translation/audio include full phrase + prepositions
+
+**Dependencies:** Depends on smia prepositions clarification (IDEA below)  
+**Estimate:** 2 tasks (builder inflection logic, smia word-lemma boundary)
+
+---
+
+#### Package: `builder-assembly-page-env-vars`
+**Repos:** builder  
+**Type:** Bug fix + UX improvement  
+**Rationale:** Assembly/publishing page should show correct env var values and accept them as prefilled inputs  
+**Items:**
+- [UX] Builder assembly page: label and patch rev should prefill with auto-incremented values (env vars); currently shows "autoincremented to X" but doesn't fill the field
+- [BUG] __MJOLNIR_LABEL_ substitution — env var not resolving, displays as raw string in app instead of actual label value
+
+**Dependencies:** None  
+**Estimate:** 2 tasks (env var substitution fix, assembly page prefill logic)
+
+---
+
+### 🟢 MEDIUM PRIORITY (UX Polish + Features)
+
+#### Package: `phonexa-study-mode`
+**Repos:** phonexa  
+**Type:** UX feature  
+**Rationale:** Improves learning flow; standalone from other repos  
+**Items:**
+- [UX] Shadowing should support "study mode" — 3 buttons: play audio, compare, mark complete & next
+
+**Dependencies:** None (can start anytime; benefits from stabbur content pipeline)  
+**Estimate:** 1 task
+
+---
+
+#### Package: `hovertranslate-audio`
+**Repos:** hovertranslate  
+**Type:** Feature  
+**Rationale:** Extends capture client capability; standalone  
+**Items:**
+- [IDEA] Add tab for audio recording in hovertranslate
+
+**Dependencies:** None  
+**Estimate:** 1 task
+
+---
+
+#### Package: `smia-prepositions-design`
+**Repos:** smia  
+**Type:** Design + implementation  
+**Rationale:** Unlocks prepositional verb handling; clarifies word-lemma boundaries  
+**Items:**
+- [IDEA] Support prepositions in smia; differentiate prepositional verbs ("legge til") from phrases ("vente på", "redd for")
+
+**Dependencies:** Blocks clarity on builder grammar standardization package (above)  
+**Estimate:** 1 design task + 1–2 implementation tasks
+
+---
+
+### 🔵 BACKLOG (Design-Phase or Blocked)
+
+#### Package: `monorepo-migration`
+**Repos:** All  
+**Type:** Infrastructure  
+**Severity:** Major refactor  
+**Rationale:** Dev ergonomics; currently deprioritized  
+**Items:**
+- [DEV] Move to monorepo
+
+**Dependencies:** Likely blocked until critical path stabilizes  
+**Estimate:** 10+ tasks (infra, CI/CD, build tooling)
+
+---
+
+## Dependency Map
+
+```
+┌─ deck-publishing-and-visualization ──────────┐
+│  (deck multiples enforcement,                │
+│   progress visualization)                    │
+│
+├─ builder-assembly-page-env-vars
+│  (env var substitution, prefill logic)
+│
+├─ builder-grammar-standardization
+│  └─ smia-prepositions-design (blocks full implementation)
+│
+├─ stabbur-content-acquisition-and-triage ─────┐
+│  (Google Sheets + AnkiDeck import routes)     │
+│  ├─ phonexa-study-mode                       │ (benefits from content)
+│
+├─ phonexa-study-mode
+├─ hovertranslate-audio
+│
+└─ monorepo-migration (blocked until above mature)
+```
 
 ---
 
