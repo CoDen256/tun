@@ -30,13 +30,32 @@ storage model. Most notes will never become Samples.
 ```
 capture
   id, created_at, status  inbox|promoted|discarded
+                                  -- SUPERSEDED (D141): captures-provenance-and-
+                                  -- promote ships no status column. A capture
+                                  -- auto-promotes to a draft note in the same
+                                  -- transaction it is ingested, so `inbox` is a
+                                  -- state no row ever occupies and `discarded`
+                                  -- would only duplicate deleting that draft.
+                                  -- The promoted note's own draft/ready status,
+                                  -- plus the origin-scoped triage belt, is the
+                                  -- whole lifecycle now. See D141.
   selected_text                   -- what you actually selected
   context_text                    -- surrounding sentence(s)/paragraph
-  translations JSONB              -- [{provider, lang, text}] as captured
+  translations JSONB              -- [{provider, lang, text}] as captured, in the
+                                  -- provider's own language codes (e.g. smia's
+                                  -- `nb`) — never rewritten to stabbur's own
+                                  -- source_lang vocabulary (e.g. `no`) on the
+                                  -- note it promotes to; the two are deliberately
+                                  -- never reconciled (captures-provenance-and-
+                                  -- promote design D3)
   audio_blob  sha256 | null       -- WIDE clip (padded), null for text sources
   audio_sel_ms [start, end]       -- selection range inside that clip
   source JSONB                    -- {youtube: videoId, cueStartMs, cueEndMs, url, title}
                                   -- | {web: url, title} | {shadowing_segment_id}
+                                  -- (only `web`/`youtube` are implemented and
+                                  -- CHECK-enforced today; `shadowing_segment_id`
+                                  -- is unclaimed — captures-provenance-and-
+                                  -- promote design D8)
 
 note
   id                 immutable forever, even once removed (tombstone — see below)

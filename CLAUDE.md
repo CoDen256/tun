@@ -34,3 +34,11 @@ Mjølnir app internals live in `mjolnir/docs/findings.md`, not here.
   without its correction.
 - OpenSpec is per-repo and implementation-scoped. There is deliberately **no**
   OpenSpec root here — `docs/` is the ecosystem-level spec layer.
+
+## OpenSpec / Opsx Workflow Rules
+
+- **Post-Operation Commit:** Always create a Git commit after running any `opsx` operation.
+- **Walkthrough Requirement for `opsx:apply`:** After executing `opsx:apply`, provide a concise, step-by-step walkthrough covering:
+  - **UI / Visual Checks:** What key elements or changes to look for in the user interface (high-level, not overly detailed).
+  - **Data / Storage Verification:** Where to poke around outside of the codebase (e.g., database tables, local storage, API endpoints, logs).
+  - **Testing & Checkout:** Key terminal commands to run and specific UI flows/interactions to manually test.
