@@ -1,7 +1,9 @@
 # System-Wide Master Backlog
 
 ## Quick Log (Manual Dump)
-
+[ux] stabbur has to run force over cache when reload
+[ux] stabbur collapsed variety is too big and pushes the box very wide
+[ux] stabbur picking translations multiple transcriptions should join the field (space for transcription, / for transclation)
 
 ## Triage & Planned Packages
 > Managed by System Overseer AI. Last triaged 2026-11-08.
