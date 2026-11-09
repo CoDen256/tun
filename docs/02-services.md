@@ -12,7 +12,7 @@ family is a Norwegian farm — `smia` the forge, `stabbur` the storehouse.
 | **stabbur** | captures, notes, enrichment orchestration, triage UI, audio blobs | smia |
 | **smia** | `/inflect` `/ipa` `/tts` `/stt` `/translate`, provider chains, `/ui` | nothing |
 | **phonexa** | phonetics lab (unchanged) | smia (optional), stabbur (optional import) |
-| **hover-translate** | capture client (fork, store releases) | stabbur, smia |
+| **hover-translate** | capture client (fork, Chrome-only, private/unpublished — D144) | stabbur, smia |
 
 `mjolnir` is **self-contained for everything Mjølnir**: bundle format knowledge,
 the JS patch set, the native patch source, the APK rebuild pipeline, the builder
@@ -39,6 +39,17 @@ server-side-only), and a chosen TTS candidate's audio is pulled into
 stabbur's own `blob/<sha256>` store rather than left referencing smia's
 non-canonical cache (D45). See D118 and stabbur's `smia-enrichment-panel`
 OpenSpec change for the full design.
+
+**Correction/exception (D143):** the "never from the browser directly" rule
+above is about *stabbur's own web UI* — a page served to any browser that
+must never hold smia's credentials. It does not extend to
+`hover-translate`: a private, unpublished, single-operator Chrome extension
+calls `POST /smia/translations` **directly**, with its own smia token
+configured by that same operator (`backend-configuration` spec,
+`smia-translation-and-stabbur-capture` design D1). The distinction is who
+the browser context belongs to — stabbur's UI is served to anyone who
+loads it; the extension is configured by, and only runs for, the one
+person who already holds both tokens. See D143 in `07-decisions.md`.
 
 ```
 phonexa ──► smia (optional)        phonexa ◄── stabbur blob import (optional, by hash)

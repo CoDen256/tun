@@ -57,17 +57,38 @@ response, not an aside.
   that need durable audio copy bytes into their own storage.
 - STT is cloud-only; the interface stays open for a local backend later (D17).
 
-## Translation in the extension: fast-then-enrich
+## Translation in the extension: smia-primary, not fast-then-enrich
 
-Hover must feel instant, and a round-trip to the VPS is not instant.
+**Correction (D146): this section previously described a design that
+`smia-translation-and-stabbur-capture` built differently. D32 is narrowed,
+not deleted** — the "extension keeps working when the server is down"
+property it names survives, but the mechanism is not "render fast-local
+first, then async-enrich from smia." As actually built:
 
 ```
-hover → render tooltip from the FAST local translator      (immediate)
-      → async: GET smia /translations + /ipa + "already in your deck?"
-      → enrich the tooltip in place                        (a moment later)
-save  → the capture carries whatever has arrived
+hover → fan out POST smia /translations, one call per configured
+        (provider, targetLanguage) pair — NOT "GET /translations", and
+        NOT a single combined call
+      → each cell paints independently as its own request resolves
+        (no Promise.all; a skeleton until then)
+save  → the capture/note carries whatever translations were obtained,
+        exactly as before
 ```
 
-This resolves the "extension depends on the server for its core feature"
-problem outright: if the server is down, hover still translates; only enrichment is
-missing. It also means capture never waits on enrichment.
+smia is the **primary** path, not an "enrichment" layered on top of a fast
+local tier — there is no always-shown fast-local tooltip underneath it.
+The local Google translator survives only as a **transport-failure
+fallback** (smia unreachable, timeout, or 5xx) — never shown alongside a
+successful smia answer, and never substituted for a provider's genuinely
+empty result. `/ipa` and "already in your deck?" enrichment are explicitly
+out of scope for the extension (the design's Non-Goals) — those stay
+stabbur's editor's job, not hover-translate's.
+
+This still resolves the "extension depends on the server for its core
+feature" problem D32 names, by a different route: a transport failure
+degrades to the local fallback rather than a blank tooltip. What it does
+**not** preserve is instant-first-paint on every hover — with no
+prefetch, an uncached word's first hover costs a real round trip to the
+VPS per configured provider×language cell. That trade-off is deliberate
+(`autoPause` is what makes it tolerable) and logged as an explicit risk,
+not a silently dropped requirement.

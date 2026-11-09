@@ -121,14 +121,46 @@ real audio blobs to serve — not scheduled as its own phase.
 - [ ] `/inflect` (Norsk ordbank import — returns candidates)
 - [ ] `/ipa` (naob → ipa-lookup → espeak)
 - [ ] `/tts` (Forvo → dict.cc → cloud → piper) writing into the blob store
-- [ ] `/translate` (lifted from hover-translate) and `/stt` (cloud)
+- [x] `/translate` (lifted from hover-translate — `google`/`bing`/`deepl`/`dictcc_api`/`dictcc_static` adapters all registered) and `/stt` (cloud)
 
 ## P7 — Capture
 
-- [ ] `POST /capture`; yt-dlp whole-video cache per `videoId`; ffmpeg padded slice
-- [ ] Extension: save action on subtitle selection **and arbitrary page text**
-- [ ] Fast-local translation first, async smia enrichment
-- [ ] Dedup feedback ("already have this")
+**In progress, across stabbur's `captures-provenance-and-promote` (done —
+`POST /api/captures` atomically creates the capture + its promoted draft
+note, D141/D142) and hover-translate's `smia-translation-and-stabbur-capture`
+(this change, phase 3):**
+
+- [x] ~~`POST /capture`; yt-dlp whole-video cache per `videoId`; ffmpeg
+      padded slice~~ — **superseded**, not done as originally scoped.
+      stabbur's server-side YouTube audio clipping is known-blocked by bot
+      checks (`manual-link-audio-capture` spec, repeated live failures).
+      Replaced by hover-translate's own `chrome.tabCapture` + offscreen-
+      document recorder (D11), which sits inside the authenticated browser
+      session instead of fetching server-side.
+- [x] Extension: save action on subtitle selection **and arbitrary page
+      text** — done (`CaptureService`, page-selection path via a keyboard
+      shortcut, YouTube provenance via `ISiteAdapter.getVideoId()` +
+      `VideoController.currentTimeMs`).
+- [x] ~~Fast-local translation first, async smia enrichment~~ —
+      **superseded**, see D146: smia is the primary translation path
+      (provider×language matrix), not a layer on top of an always-shown
+      fast-local tier.
+- [ ] Dedup feedback ("already have this") — not built. stabbur's capture
+      replay-by-id (D4/D142) prevents a *duplicate* note on retry, but
+      there is no UI signal today telling the operator "you already
+      captured this."
+- [x] Tab audio capture (rolling buffer, offscreen recorder) — built;
+      `chrome.tabCapture`'s mute-unless-repiped behavior is handled from
+      the start (documented Chrome behavior); whether DRM-protected
+      players (Cineby) can be captured at all is still genuinely open —
+      Q05 in `09-open-questions.md`.
+- [x] Offline outbox with idempotent flush — built (`OutboxService`,
+      `chrome.storage.local`, flushed from the background service worker;
+      verified live that a replayed `POST /api/captures` with the same id
+      produces exactly one note).
+- [x] Attach-audio-to-note popup surface — built
+      (`GET /api/captures?unattached=true` → `PATCH /api/notes/<id>`), no
+      stabbur editor tab or cross-tab messaging involved (D10/D142).
 
 ## P8 — Triage UI
 
