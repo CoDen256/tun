@@ -82,20 +82,31 @@ transaction, the whole backup run aborts loudly instead of quietly backing
 up only mjolnir and stabbur. (Same hazard `STABBUR_POSTGRES_PASSWORD`
 already has.)
 
-### phonexa's hostname, DNS and login
+### phonexa's path and login
 
-phonexa is **not** at `https://<host>/phonexa` the way `/stabbur` and
-`/smia` are. It is served on a hostname of its own, behind HTTP basic auth
-with the operator token — because its frontend hardcodes absolute API paths
-and opens its live-mic WebSocket at `location.host + '/stream'` (both
-frozen), and because phonexa has no login of its own at all.
+phonexa is at `https://<host>/phonexa/`, the same way `/stabbur` and `/smia`
+are — **no DNS record and no second certificate** (D149, superseding D148's
+subdomain decision). It is behind HTTP basic auth with the operator token,
+because phonexa has no login of its own at all and exposes destructive
+database import/export endpoints.
 
 That routing lives in `mjolnir`, which owns the only Caddy in the stack
-(D84/D148). **Follow "Optional: phonexa on its own hostname" in
-`mjolnir/DEPLOY.md`** for the DNS record, the one-time
-`caddy hash-password` step, and the single-quoting rule for the resulting
-hash. Until you do, nothing breaks: the phonexa site block stays inert and
-fails closed, and phonexa is simply unreachable from outside.
+(D84/D149). **Follow "Optional: phonexa at `/phonexa`" in
+`mjolnir/DEPLOY.md`** for the one-time `caddy hash-password` step and the
+single-quoting rule for the resulting hash. Until you do, nothing breaks:
+the `/phonexa` route fails closed (401 to everything) and phonexa is simply
+unreachable from outside.
+
+**Mind the trailing slash.** `/phonexa` redirects to `/phonexa/`; let it.
+phonexa links its assets relatively, so the un-slashed URL resolves them
+against the site root where they 404 against mjolnir's catch-all — a blank
+page whose errors name the wrong service (P37).
+
+**Shared origin.** phonexa sits on the same origin as hub and builder, whose
+session cookie is `Path=/`. `HttpOnly` stops phonexa-origin JavaScript from
+reading it; it does not stop the browser from sending it on requests a
+phonexa page makes. Accepted deliberately as the cost of dropping the
+subdomain, and bounded by `basic_auth` standing in front of phonexa.
 
 ## What comes up
 
@@ -137,10 +148,12 @@ the same route shape (`/<service>/ui`):
 - `https://<host>/builder/ui` — builder: forecast, schedule, run log
 - `https://<host>/stabbur/ui` — stabbur: notes, grammar rules
 - `https://<host>/smia/ui` — smia: provider catalog, health, manual try-it
+- `https://<host>/phonexa/` — phonexa: the phonetics lab, behind its own
+  basic-auth prompt (see above) rather than hub's login page
 
-phonexa is deliberately **not** in that list: it lives on its own hostname
-behind its own basic-auth prompt (see above), so there are no cross-links
-to or from it yet — a different origin and a separate credential prompt.
+phonexa shares the origin now but still has no cross-links to or from the
+other operator UIs — it answers with a native credential prompt instead of
+the shared login, so it stays out of the shared nav (D149).
 
 ## Verifying it worked
 
