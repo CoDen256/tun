@@ -11,7 +11,7 @@ family is a Norwegian farm — `smia` the forge, `stabbur` the storehouse.
 | **mjolnir** | `docs/findings.md`, `tool/` (bundle-tool, Node — D76), `patches/js/`, `patches/native/`, `apk/`, `builder/` (Node, imports `tool/` as a library), `hub/`, **the whole deployable stack**: `compose.yaml`, `caddy/Caddyfile`, `ota-publish.sh`/`ota-verify.sh` (D75/D84) | stabbur |
 | **stabbur** | captures, notes, enrichment orchestration, triage UI, audio blobs | smia |
 | **smia** | `/inflect` `/ipa` `/tts` `/stt` `/translate`, provider chains, `/ui` | nothing |
-| **phonexa** | phonetics lab (unchanged) | smia (optional), stabbur (optional import) |
+| **phonexa** | phonetics lab; now also deployed as part of the unified stack, on its own authenticated subdomain (D147/D148) | smia (optional), stabbur (optional import) |
 | **hover-translate** | capture client (fork, Chrome-only, private/unpublished — D144) | stabbur, smia |
 
 `mjolnir` is **self-contained for everything Mjølnir**: bundle format knowledge,
@@ -85,18 +85,30 @@ The hash being the filename makes every transfer self-verifying.
 ## UI
 
 Every service ships its own UI with database exploration, in phonexa's spirit.
-Served under **one domain by path** — `/stabbur`, `/smia`, `/mjolnir`, `/phonexa` —
-with a shared header/nav so four UIs feel like one system. The shell is vendored
-CSS, not a shared package (solo-dev simplicity over DRY).
+Served under **one domain by path** — `/stabbur`, `/smia`, `/mjolnir` — with a
+shared header/nav so the UIs feel like one system. The shell is vendored CSS,
+not a shared package (solo-dev simplicity over DRY).
+
+**phonexa is the exception: it is routed by SUBDOMAIN, not by path** (D147/
+D148). Its frontend hardcodes absolute API paths and opens its live-mic
+WebSocket at `location.host + '/stream'`, and both `/stream` and
+`js/realtime.js` are frozen — a `/phonexa` prefix would have to rewrite all
+of them. It gets its own hostname instead, gated at Caddy by `basic_auth` on
+the operator token (phonexa has no auth of its own and exposes destructive
+admin endpoints). Consequence: it is a different origin with its own native
+credential prompt, so it is not in the shared nav.
 
 ## Deployment
 
 One Contabo VPS: **8 GB RAM, 100 GB disk** (comfortably above the 4 GB floor).
-**`mjolnir`'s own `compose.yaml`/`caddy/Caddyfile` is the single deployed
-stack today (D84)** — `tun` ships no deployable artifacts. The table below is
-the eventual full picture once stabbur/smia/phonexa are themselves deployed;
-whether they join `mjolnir`'s compose file or bring their own is an open
-question, not yet decided (nothing currently depends on the answer).
+**`mjolnir` still owns the only deployable Caddy and the device-facing stack
+(D84)**, but the question this paragraph used to leave open — whether
+stabbur/smia/phonexa join `mjolnir`'s compose file or bring their own — has
+since been answered: each brings its own, and `tun/compose.yaml` `include:`s
+all four (D94, D118, **D147** for phonexa). `tun` ships no Caddyfile and no
+scripts; its compose file is purely a unification point plus the shared
+Adminer and the backup service. Everything in the table below is deployed
+today.
 
 ```
 caddy           TLS, path routing, STATIC serving of bundles and blobs
@@ -104,6 +116,9 @@ postgres        separate logical DB per service — NO cross-service FKs
 stabbur         web + API
 smia            web + API
 phonexa         web + API (existing; /stream and js/realtime.js FROZEN)
+                reached on its OWN hostname behind Caddy basic_auth, not
+                under /phonexa (D147/D148); own PG 17 + audio volume, both
+                in tun's backup set
 mjolnir-hub     device-facing (/ota, /mjolnir/userdata, heartbeat)
                 + operator UI: publish history (reads `publications`) (D80)
 mjolnir-builder worker + operator UI: live forecast (dry-run deck assignment

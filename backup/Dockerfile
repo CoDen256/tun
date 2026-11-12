@@ -1,7 +1,11 @@
 # compose-backup-service: single-client-version image (D-U3/postgres-17-upgrade
-# unifies both mjolnir-postgres and stabbur-postgres on postgres:17-alpine,
-# so one postgresql-client-17 install covers both — no PGDG dual-version
-# dance needed, confirmed workable but deliberately avoided, see design.md).
+# unifies mjolnir-postgres and stabbur-postgres on postgres:17-alpine, and
+# phonexa-postgres is postgres:17-alpine too — so one postgresql-client-17
+# install covers all three, with no PGDG dual-version dance needed (that was
+# confirmed workable but deliberately avoided, see design.md). Adding
+# phonexa to the backup set (D147) therefore needs NO change to this file;
+# phonexa moving to PG 17 is precisely what keeps that true. bash, git and
+# findutils are already here, which is all the audio-mirror loop needs.
 FROM debian:bookworm-slim
 
 RUN apt-get update \

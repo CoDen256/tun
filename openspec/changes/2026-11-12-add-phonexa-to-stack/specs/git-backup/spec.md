@@ -32,8 +32,12 @@ The system SHALL dump the entire `phonexa` database to `phonexa.sql`, SHALL NOT 
 - **THEN** the dump contains every table's rows, including `shadowing_media` and `shadowing_segments`
 
 #### Scenario: Restoring the dump
-- **WHEN** the dump is restored into a fresh Postgres 17 database after phonexa's migrations have created the schema
-- **THEN** all rows load with their foreign keys satisfied
+- **WHEN** the dump is loaded into an empty Postgres 17 database
+- **THEN** the schema, all rows (with their foreign keys satisfied) and the migration-version state are all restored from the dump alone, with no migration step run beforehand
+
+#### Scenario: Restoring onto an already-migrated schema
+- **WHEN** the dump is loaded into a database whose schema has already been created by phonexa's migrations
+- **THEN** the load fails rather than silently half-applying, because the dump carries its own schema definitions
 
 ### Requirement: phonexa's audio tree is backed up incrementally, never overwritten
 The system SHALL copy every file in phonexa's audio volume that is not already present at the same relative path in the backup repository, preserving the directory structure (under `phonexa-audio/`), and SHALL NOT overwrite or delete a file already in the backup repository. A file modified in the source after its first backup is therefore backed up in its first-seen form; this staleness is an accepted limitation.

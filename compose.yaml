@@ -1,14 +1,17 @@
-# tun — the unification point (D94, extended by D118 to include smia).
-# Brings up mjolnir's, stabbur's, and smia's own stacks together from one
-# `docker compose up`, without changing any of the three repos' own compose
-# files: `include:` merges all three projects onto one shared network, so
-# e.g. mjolnir's Caddy can reach stabbur's `backend` and smia's
-# `smia-backend` services by name with no extra wiring. Each included file
-# stays fully usable standalone too (`cd mjolnir && docker compose up` is
-# unaffected by this file existing).
+# tun — the unification point (D94, extended by D118 to include smia and by
+# D147 to include phonexa). Brings up mjolnir's, stabbur's, smia's and
+# phonexa's own stacks together from one `docker compose up`, without
+# changing any of the four repos' own compose files: `include:` merges all
+# four projects onto one shared network, so e.g. mjolnir's Caddy can reach
+# stabbur's `backend`, smia's `smia-backend` and phonexa's
+# `phonexa-backend` services by name with no extra wiring. Each included
+# file stays fully usable standalone too (`cd mjolnir && docker compose up`
+# is unaffected by this file existing).
 #
-# Assumes sibling checkout: tun, mjolnir, stabbur, smia cloned at the same
-# filesystem level (see DEPLOY.md). Requires Compose v2.20+ for `include:`.
+# Assumes sibling checkout: tun, mjolnir, stabbur, smia, phonexa cloned at
+# the same filesystem level (see DEPLOY.md). Requires Compose v2.20+ for
+# `include:`. phonexa needs no extra data on the host (nothing like smia's
+# `providers/` below) — just the checkout and its own `.env`.
 # smia additionally needs its own `providers/` directory populated on
 # whatever host actually runs it — gitignored, ~1GB, not fetched by this
 # file or by cloning the repo; without it, every data-backed provider
@@ -27,6 +30,14 @@ include:
   - ../mjolnir/compose.yaml
   - ../stabbur/compose.yaml
   - ../smia/compose.yml
+  # phonexa prefixes every one of its service and volume names `phonexa-`
+  # precisely so it can be merged here (D94/D118: `include:` flattens
+  # everything into one namespace and silently keeps only the FIRST
+  # definition of a colliding name — phonexa's old generic `postgres`,
+  # `backend`, `adminer` would have collided with mjolnir's and stabbur's
+  # and simply never started). Its own development Adminer is behind a
+  # `dev` profile, so it does not start here; use the shared one below.
+  - ../phonexa/docker-compose.yml
 
 # Both included files declare `tun-shared` as `external: true` (D98, so
 # mjolnir and stabbur can also be deployed as two fully independent stacks
@@ -52,8 +63,10 @@ services:
   # own Postgres); reusing that exact key here means Compose deep-merges
   # this definition on top of the included one rather than running a
   # second, separate container — the override, not an addition. Point its
-  # login screen at "mjolnir-postgres" (mjolnir's hub DB) or "stabbur-postgres"
-  # (stabbur's DB) by name; both resolve once brought up together.
+  # login screen at "mjolnir-postgres" (mjolnir's hub DB), "stabbur-postgres"
+  # (stabbur's DB) or "phonexa-postgres" (phonexa's DB) by name; all resolve
+  # once brought up together. phonexa's own Adminer stays off (its `dev`
+  # compose profile), so this really is the single one.
   adminer:
     image: adminer
     container_name: tun-adminer
@@ -65,8 +78,9 @@ services:
 
   # compose-backup-service: supersedes git-backup's host script + crontab
   # entry (D-C1..D-C5) — a real service, `docker compose up` and nothing
-  # else. Connects to both Postgres instances over the network with a real
-  # password (D-C1), not `docker exec` — no Docker socket mounted at all.
+  # else. Connects to all three Postgres instances over the network with a
+  # real password (D-C1), not `docker exec` — no Docker socket mounted at
+  # all.
   # `stabbur-blobs` is referenced directly even though it's declared (with
   # an explicit `name:`) in stabbur's own included compose.yaml, not this
   # file — confirmed live that `include:` makes this work with zero extra
@@ -87,13 +101,15 @@ services:
     # the backup service's first run can race it and dump nothing for
     # whichever database wasn't ready yet. entrypoint.sh's atomic
     # dump-then-rename already stops a failed dump from corrupting the
-    # backup repo, but waiting for both to be genuinely healthy avoids the
+    # backup repo, but waiting for all three to be genuinely healthy avoids the
     # failure (and the resulting day-long wait for the next scheduled
     # attempt) in the first place.
     depends_on:
       mjolnir-postgres:
         condition: service_healthy
       stabbur-postgres:
+        condition: service_healthy
+      phonexa-postgres:
         condition: service_healthy
     # mjolnir's own .env already has the real POSTGRES_PASSWORD it uses —
     # reused as-is, not duplicated into tun's own .env.
@@ -107,12 +123,30 @@ services:
       # to match it, documented in .env.example so the two don't silently
       # drift if stabbur's compose file ever changes that value.
       STABBUR_POSTGRES_PASSWORD: ${STABBUR_POSTGRES_PASSWORD:-stabbur}
+      # Same drift hazard as STABBUR_POSTGRES_PASSWORD above, one step
+      # removed: phonexa's own compose reads this from phonexa's `.env`
+      # (`${PHONEXA_POSTGRES_PASSWORD:-phonexa}`), not from tun's, so the
+      # value must be set to the same thing in BOTH `.env` files. Nothing
+      # keeps them in sync; if they drift the phonexa dump fails, and
+      # because all three dumps are one all-or-nothing transaction that
+      # aborts the whole run loudly rather than silently skipping phonexa.
+      PHONEXA_POSTGRES_PASSWORD: ${PHONEXA_POSTGRES_PASSWORD:-phonexa}
       BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
     volumes:
       # The repo clone persists here across restarts (D-C4) — cloned by
       # the container itself on first boot, never a host bind-mount.
       - backup-repo-clone:/data
       - stabbur-blobs:/stabbur-blobs:ro
+      # phonexa's audio, same zero-extra-declaration trick as
+      # stabbur-blobs above (D-C2): the key is declared in phonexa's own
+      # included docker-compose.yml and resolves here through `include:`.
+      # Read-only — the backup service only ever copies out of it. Unlike
+      # stabbur's flat, write-once blob store this is a NESTED tree
+      # (lang/<lang>/ingested/<name>.wav) whose files can be rewritten in
+      # place by Formant Lab's sample trim, which is why entrypoint.sh's
+      # copy loop is recursive and why its copy-if-absent rule has a
+      # documented staleness consequence (D147).
+      - phonexa-audio-data:/phonexa-audio:ro
       # Exactly one mounted private key file (D-C3) — not the operator's
       # whole ~/.ssh directory, not a fresh deploy key. known_hosts is
       # managed automatically inside the named volume (StrictHostKeyChecking

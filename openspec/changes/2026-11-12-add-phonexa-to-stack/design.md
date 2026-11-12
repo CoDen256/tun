@@ -58,3 +58,25 @@ Two new rows: D147 (inclusion + PG 17 + subdomain + audio-in-git/staleness) and 
 ## Open Questions
 
 - None blocking. (Restore procedure for `phonexa-audio/` → volume is documented, not automated.)
+
+## Correction found during implementation (2026-11-12)
+
+**The restore procedure this design assumed was wrong.** §2's dump uses no
+`--data-only`, so `phonexa.sql` is a *full* dump: it carries its own `CREATE
+TABLE` statements and the `alembic_version` row. Restoring it "into a fresh
+Postgres 17 database after phonexa's migrations have created the schema" —
+as the spec originally said — fails part-way with `ERROR: relation
+"settings" already exists` (`psql` exit 3), verified. The correct procedure
+is the opposite: load it into an **empty** database and run no migration
+first; schema, data and migration state all come from the dump. The spec
+scenario and `DEPLOY.md` were corrected accordingly, and the corrected
+procedure was verified end-to-end (all four seeded tables' row counts match
+after restore into an empty PG 17).
+
+Also noted while testing on the dev host, **not fixed here** because it
+belongs to phonexa's own `deployable-in-tun` change: the existing local
+phonexa volumes are named `phonexa_pgdata` / `phonexa_audio_data`, while the
+renamed compose declares `phonexa-postgres-data` / `phonexa-audio-data`.
+Bringing the stack up under the new names creates fresh, empty volumes
+rather than reusing the existing data — a migration step someone has to
+perform deliberately.
