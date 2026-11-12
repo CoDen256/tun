@@ -15,6 +15,7 @@
 [UX] builder should have the stats of the shipping, per deck, not in total, the flow and the quick numbers should be seen per deck. but it still have to say the amount of elligible cards from stabbur and what amount goes to which deck., plus the strip should contain also markers for the cards that are going to be shipped after i click publish, the newly eligible cards and the ones that are newly eligible and staged, should also be marked somehow, and the newly eligible pending as well. Maybe just put some icon on them, leave them as is, just that i see that those are the ones that are going to be added after this publish. also the ones that are going to be drained should be marked as well.
 [UX] card preview should be better reflecting the actuall css used in mjolnir so that i don't need to publish and view it in the app to see how it looks like
 [ux] builder should have number of cards/occurances in the descriptions
+[ux] use card grid everywhere, improve it
 
 #### Assembly Tab
 [UX] assembly tab: label and patch rev should also be as env vars there, and it should be really preffiled with values, it does not, it say e.g. for logic rev that it is autoincremented to 17, but it doesn't prefill it, and it should suggest it, so the text field with already written value there
@@ -63,9 +64,6 @@
 [IDEA]add tab audio recording in hovertranslate
 
 ### Cross-Repo / Ecosystem
-
-#### Shared UI Components
-[ux] use card grid everywhere, improve it
 
 #### Dev
 [DEV] move to monorepo
