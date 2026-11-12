@@ -1,9 +1,13 @@
 # System-Wide Master Backlog
 
 ## Quick Log (Manual Dump)
-[ux] stabbur has to run force over cache when reload
-[ux] stabbur collapsed variety is too big and pushes the box very wide
-[ux] stabbur picking translations multiple transcriptions should join the field (space for transcription, / for transclation)
+[ux] styrke dict_cc for audio should return more audios, 
+[ux] stabbur when asking dict_cc should filter by PoS, because he picks the wrong PoS sometimes 
+[ux] stabbur ignore variety field do something, can't se anything there
+[ux] merging removes everything not saved,also mergingg should add context add translation, nor replace them.
+[ux] builder should have number of cards/occurances in the descriptions
+[ux] presens + missing prepositions of original text.
+[ux] use card grid everywhere, improve it
 
 ## Triage & Planned Packages
 > Managed by System Overseer AI. Last triaged 2026-11-08.
