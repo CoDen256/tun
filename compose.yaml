@@ -37,7 +37,7 @@ include:
   # `backend`, `adminer` would have collided with mjolnir's and stabbur's
   # and simply never started). Its own development Adminer is behind a
   # `dev` profile, so it does not start here; use the shared one below.
-  - ../phonexa/docker-compose.yml
+  - ../phonexa/compose.yaml
 
 # Both included files declare `tun-shared` as `external: true` (D98, so
 # mjolnir and stabbur can also be deployed as two fully independent stacks

@@ -100,7 +100,7 @@ fails closed, and phonexa is simply unreachable from outside.
 ## What comes up
 
 Everything `mjolnir/compose.yaml`, `stabbur/compose.yaml`,
-`smia/docker-compose.yml` and `phonexa/docker-compose.yml` each already
+`smia/compose.yml` and `phonexa/compose.yaml` each already
 define — this file changes nothing about *what* gets deployed, only brings
 all four up together. See those repos' own docs for what each service does.
 
