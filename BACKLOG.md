@@ -1,16 +1,9 @@
 # System-Wide Master Backlog
 
 ## Quick Log (Manual Dump)
-[ux] styrke dict_cc for audio should return more audios, 
-[ux] stabbur when asking dict_cc should filter by PoS, because he picks the wrong PoS sometimes 
-[ux] stabbur ignore variety field do something, can't se anything there
-[ux] merging removes everything not saved,also mergingg should add context add translation, nor replace them.
-[ux] builder should have number of cards/occurances in the descriptions
-[ux] presens + missing prepositions of original text.
-[ux] use card grid everywhere, improve it
 
 ## Triage & Planned Packages
-> Managed by System Overseer AI. Last triaged 2026-11-08.
+> Managed by System Overseer AI. Last triaged 2026-11-12.
 
 ### mjolnir
 
@@ -21,6 +14,7 @@
 #### Builder: Publishing Flow & Deck UI
 [UX] builder should have the stats of the shipping, per deck, not in total, the flow and the quick numbers should be seen per deck. but it still have to say the amount of elligible cards from stabbur and what amount goes to which deck., plus the strip should contain also markers for the cards that are going to be shipped after i click publish, the newly eligible cards and the ones that are newly eligible and staged, should also be marked somehow, and the newly eligible pending as well. Maybe just put some icon on them, leave them as is, just that i see that those are the ones that are going to be added after this publish. also the ones that are going to be drained should be marked as well.
 [UX] card preview should be better reflecting the actuall css used in mjolnir so that i don't need to publish and view it in the app to see how it looks like
+[ux] builder should have number of cards/occurances in the descriptions
 
 #### Assembly Tab
 [UX] assembly tab: label and patch rev should also be as env vars there, and it should be really preffiled with values, it does not, it say e.g. for logic rev that it is autoincremented to 17, but it doesn't prefill it, and it should suggest it, so the text field with already written value there
@@ -39,6 +33,9 @@
 [UX] using multiple translations should append to the existing translation over slash, not adding additional translation (make configurable via settings page, add settings page)
 [UX] stabbur when rewriting prompt per provider, let it be prefiiled with the suggestion prompt for  all providers
 [UX] stabbur allow paste custom link to be loaded(youtube), not only via filmot/forvo, they should act as providers, who just refer to the other page, but down i would have a "url provider" so to say, where i just paste any link (youtube+timecode/mp3/wav) and it knows what to do, how to find the audio, either by downloading the video (as in filmot) or just directly the file (like forvo), so url entry is not tied to that particular providers. the providers just suggest to look there.
+[ux] stabbur when asking dict_cc should filter by PoS, because he picks the wrong PoS sometimes 
+[ux] stabbur ignore variety field do something, can't se anything there
+[ux] merging removes everything not saved,also mergingg should add context add translation, nor replace them.
 
 #### Content Import / Bulk Draft
 [IDEA] I want to copy existing database of words to stabbur from: https://docs.google.com/spreadsheets/d/1I90ojRVr0T_hFbeO0LwS1CyfxZFrH6u4/edit?gid=1233824495#gid=1233824495 and https://docs.google.com/spreadsheets/d/1I6mvPbcibs79nMKg3UB9ZiTxtGaMF4PK/edit?gid=73884777#gid=73884777 and prefill it with primary set of providers and add each card as a draft, which i can then review, edit/fix and then set as done
@@ -53,6 +50,7 @@
 [IDEA] smia should also support some way to provide prepositions, which the verbs/ use, and differentiate between prepositional verbs and verbs/adjectives/nouns with prepositions. "legge til" prepositional verb vs "vente på" / "redd for. But need to think through it. or understand how to standartize it.
 [UX] fix smia dictcc parsing in general, among everything: don't add {n}/{f}/{m}
 [UX] smia filmot link for multiword should search them in a quotes: https://filmot.com/search/%22fastsatt%20av%22/1?lang=no&hideDeleted=1&gridView=1&
+[ux] styrke dict_cc for audio should return more audios,
 
 ### phonexa
 
@@ -66,7 +64,11 @@
 
 ### Cross-Repo / Ecosystem
 
+#### Shared UI Components
+[ux] use card grid everywhere, improve it
+
 #### Dev
 [DEV] move to monorepo
 
 ## Archive / Done
+[ux] presens + missing prepositions of original text. (mjolnir/builder — reported already done by user during 2026-11-12 triage)
