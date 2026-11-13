@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>smia — linguistics service</title>
+  <link rel="stylesheet" href="__SMIA_PREFIX__/ui/ui.css">
+</head>
+<body>
+
+<header>
+  <h1>smia</h1>
+  <p>Provider health · cache stats · manual try-it</p>
+  <nav>
+    <!-- D46: shared header/nav, one domain by path — placeholders until
+         tun's reverse proxy wires the real sibling paths. -->
+    <a href="/">tun</a>
+    <a href="/phonexa/">phonexa</a>
+    <a href="/stabbur/ui">stabbur</a>
+    <a href="__SMIA_PREFIX__/ui">smia (this page)</a>
+  </nav>
+  <label for="tokenInput">Bearer token</label>
+  <input id="tokenInput" type="password" placeholder="shared smia token (D-S6)" autocomplete="off">
+</header>
+
+<div class="page">
+
+  <section>
+    <h2>Provider catalog</h2>
+    <table>
+      <thead><tr><th>Kind</th><th>Providers</th></tr></thead>
+      <tbody id="catalog"></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Provider health</h2>
+    <table>
+      <thead>
+        <tr><th>Kind</th><th>Provider</th><th>Requests</th><th>Cache hit rate</th><th>Last success</th><th>Last failure</th></tr>
+      </thead>
+      <tbody id="health"></tbody>
+    </table>
+    <button id="refreshBtn" type="button">Refresh</button>
+  </section>
+
+  <section>
+    <h2>Manual try-it</h2>
+    <p class="muted">Body is prefilled with a ready-to-send example when you change "Kind" — edit it freely. Check "Force refresh" to bypass the cache (provider-catalog spec), e.g. to confirm a provider is actually live rather than just serving a cached answer; leave it unchecked to see normal cache-hit behavior on a repeat send.</p>
+    <form id="tryForm">
+      <label for="tryKind">Kind</label>
+      <select id="tryKind"></select>
+      <label for="tryProvider">Provider</label>
+      <select id="tryProvider"></select>
+
+      <div id="tryBodyJson">
+        <label for="tryBody">Request body (JSON, minus "provider"/"forceRefresh")</label>
+        <textarea id="tryBody"></textarea>
+      </div>
+
+      <div id="tryBodyAudio" style="display:none">
+        <label for="tryAudioLang">Language (form field, not JSON)</label>
+        <input id="tryAudioLang" type="text" placeholder="e.g. nb">
+        <label for="tryAudioFile">Audio file</label>
+        <input id="tryAudioFile" type="file" accept="audio/*">
+        <div style="margin-top:8px">
+          <button id="tryRecordBtn" type="button">● Record from microphone</button>
+          <span id="tryRecordStatus" class="muted"></span>
+        </div>
+        <audio id="tryAudioPreview" controls style="display:none; margin-top:8px; width:100%"></audio>
+      </div>
+
+      <label><input id="tryForceRefresh" type="checkbox"> Force refresh (bypass cache)</label>
+      <button type="submit">Send</button>
+    </form>
+    <pre id="tryResult"></pre>
+    <div id="tryAudioPlayers"></div>
+  </section>
+
+</div>
+
+<script>window.SMIA_PREFIX = "__SMIA_PREFIX__";</script>
+<script src="__SMIA_PREFIX__/ui/ui.js"></script>
+</body>
+</html>

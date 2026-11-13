@@ -1,0 +1,293 @@
+"""
+db/models.py — SQLAlchemy ORM models for smia's own Postgres database.
+
+D42: no cross-service foreign keys — smia's schema never references another
+service's tables.
+
+`LookupCache` is the one table every endpoint (`/inflections`, `/ipa`,
+`/tts`, `/translations`, `/stt`) shares, per D-S3 (one runner, not five).
+Two distinct hashes live on this row, not one, because they answer two
+different questions:
+  - `input_hash` = sha256(canonicalized input only) — the cache-key
+    component the lookup-cache spec calls out ("(kind, provider,
+    sha256(input))"); used to detect "have we already asked this provider
+    this exact question".
+  - `id` = sha256(kind, provider, input_hash) — the opaque external
+    resource id from D-S2, used for `GET /<kind>/{id}` and for `/tts`'s
+    byte-serving endpoint. It's a separate value because it folds in
+    `kind`/`provider` too, which `input_hash` deliberately doesn't (so the
+    same input under two providers/kinds collides on `input_hash` lookup
+    intent but not on resource identity).
+"""
+
+from __future__ import annotations
+
+import datetime
+
+from sqlalchemy import DateTime, Index, Integer, LargeBinary, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class LookupCache(Base):
+    __tablename__ = "lookup_cache"
+    __table_args__ = (
+        UniqueConstraint("kind", "provider", "input_hash", name="uq_lookup_cache_kind_provider_input"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    input_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# ── Norsk Ordbank import (task 3.1) ──────────────────────────────────────
+#
+# Four tables mirroring the source export's four files, kept close to the
+# original column names (LEMMA_ID, PARADIGME_ID, ...) so the import job and
+# `tun/docs`'s `09-open-questions.md` Q10 answer stay traceable back to
+# `norsk_ordbank.pdf`'s own documentation. `ordbank_fullform.oppslag` is the
+# reverse-lookup key (surface form -> candidates); `(lemma_id, paradigme_id)`
+# is the candidate-grouping key the adapter uses (adapters/ordbank.py).
+
+
+class OrdbankLemma(Base):
+    __tablename__ = "ordbank_lemma"
+
+    lemma_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    grunnform: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class OrdbankParadigme(Base):
+    __tablename__ = "ordbank_paradigme"
+
+    paradigme_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    boy_gruppe: Mapped[str] = mapped_column(Text, nullable=False)
+    ordklasse: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class OrdbankBoying(Base):
+    __tablename__ = "ordbank_boying"
+    __table_args__ = (UniqueConstraint("boy_gruppe", "boy_nummer", name="uq_ordbank_boying_gruppe_nummer"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    boy_gruppe: Mapped[str] = mapped_column(Text, nullable=False)
+    boy_nummer: Mapped[int] = mapped_column(Integer, nullable=False)
+    ordbok_tekst: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class KaikkiEntry(Base):
+    """One row per kaikki.org/Wiktionary dump entry (D-S4: imported once,
+    queried by four adapters — `kaikki` for `/inflections` via `forms`,
+    `/ipa`/`/tts` via `sounds`, and `/examples` via `examples` — which is
+    why all three raw `jsonb` blobs are kept as-imported rather than
+    normalized into their own tables up front)."""
+
+    __tablename__ = "kaikki_entry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    word: Mapped[str] = mapped_column(Text, nullable=False)
+    pos: Mapped[str] = mapped_column(Text, nullable=False)
+    gender: Mapped[str | None] = mapped_column(Text, nullable=True)
+    forms: Mapped[list] = mapped_column(JSONB, nullable=False)
+    sounds: Mapped[list] = mapped_column(JSONB, nullable=False)
+    examples: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+
+class OrdbankFullform(Base):
+    """`lemma_id`/`paradigme_id` are plain columns, not foreign keys: the
+    source export itself has referential gaps (some `fullformsliste.txt`
+    rows cite a `LEMMA_ID` absent from `lemma.txt` — e.g. 156248 for the
+    symbol `$`), discovered when the real import hit a FK violation."""
+
+    __tablename__ = "ordbank_fullform"
+
+    loepenr: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lemma_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    oppslag: Mapped[str] = mapped_column(Text, nullable=False)
+    paradigme_id: Mapped[str] = mapped_column(Text, nullable=False)
+    boy_nummer: Mapped[int] = mapped_column(Integer, nullable=False)
+    fradato: Mapped[str] = mapped_column(Text, nullable=False)
+    tildato: Mapped[str] = mapped_column(Text, nullable=False)
+    normering: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+# ── NST pronunciation lexicon import (task 4.1-4.2) ──────────────────────
+
+
+class NstLexicon(Base):
+    """The standard (Eastern-Norwegian-formal) NST NOFABET lexicon —
+    `providers/nbno/nb_uttale_tillegg/original_nst_lexicon_nofabet.csv`.
+    `ipa` is computed at import time via the ported conversion table
+    (`adapters/_nofabet_conversion.py`), not at query time."""
+
+    __tablename__ = "nst_lexicon"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wordform: Mapped[str] = mapped_column(Text, nullable=False)
+    nofabet: Mapped[str] = mapped_column(Text, nullable=False)
+    ipa: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class NstDialect(Base):
+    """Dialect-variant pronunciations from `nb_uttale_leksika.zip` — five
+    dialect areas (`e`=Eastern, `sw`=Southwestern, `w`=Western, `t`=Central/
+    Trøndelag, `n`=Northern Norway, per `NB_Uttale_Work_on_Dialects.pdf`)
+    each with a `written`/`spoken` register variant. `ipa` ships
+    precomputed in the source files — no conversion needed here."""
+
+    __tablename__ = "nst_dialect"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wordform: Mapped[str] = mapped_column(Text, nullable=False)
+    dialect_area: Mapped[str] = mapped_column(Text, nullable=False)
+    register: Mapped[str] = mapped_column(Text, nullable=False)
+    ipa: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class IpaDictEntry(Base):
+    """ipa-dict/nb (`providers/open-dict/nb.txt`) — a thin lemma-only
+    fallback `/ipa` provider."""
+
+    __tablename__ = "ipa_dict_entry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wordform: Mapped[str] = mapped_column(Text, nullable=False)
+    ipa: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class ProviderHealth(Base):
+    """Backs `GET /health` (task 8.2) — purely informational counters/
+    timestamps per `(kind, provider)`, never read by the lookup-cache
+    runner to make routing decisions (provider-catalog spec: health must
+    not influence which provider a request uses)."""
+
+    __tablename__ = "provider_health"
+    __table_args__ = (UniqueConstraint("kind", "provider", name="uq_provider_health_kind_provider"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    requests_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    success_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_success_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class TtsAudio(Base):
+    """smia's private, content-addressed audio cache (task 5.1) — distinct
+    from `LookupCache`'s metadata-only rows and from stabbur's canonical
+    blob store (tts-api spec: this cache is an optimization, not a store of
+    record). Keyed on `sha256(bytes)` so identical audio from different
+    providers/requests is stored once."""
+
+    __tablename__ = "tts_audio"
+
+    sha256: Mapped[str] = mapped_column(Text, primary_key=True)
+    content_type: Mapped[str] = mapped_column(Text, nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CorpusSentence(Base):
+    """Backs both `/examples` corpus providers (`tatoeba`, `leipzig`) — one
+    table, not one per provider, because both ask the identical question
+    ("sentences containing these surface forms") and differ only in which
+    `corpus` values they filter to (examples-api design D4). A future
+    corpus is a new `corpus` value and an import script, no schema change.
+
+    `word_count` is precomputed at import time, not derived per query,
+    because it is the dominant ranking signal (design D5) and recomputing
+    it over tens of thousands of candidate rows per request would be the
+    slowest part of the lookup.
+
+    `tsv` is `to_tsvector('simple', text)` — deliberately NOT the
+    `'norwegian'` config. Measured against a real postgres:16: the
+    Norwegian stemmer doesn't relate umlaut plurals to their lemma
+    (`bok`/`bøker`, `mann`/`menn`, `hånd`/`hender`, `fot`/`føtter`), and its
+    176-entry stopword list drops `kom`/`var`/`ble`/`hadde`/`er` — the
+    preterites of `komme`/`være`/`bli`/`ha` — from the index entirely, so
+    no example sentence for those verbs' past tense could ever be found.
+    `simple` indexes every literal token with no stemming/stopwords; all
+    morphology is instead handled by expanding the query against
+    `ordbank_fullform` (design D3). Do not "optimise" this back to
+    `'norwegian'`."""
+
+    __tablename__ = "corpus_sentence"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    corpus: Mapped[str] = mapped_column(Text, nullable=False)
+    ext_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    word_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    tsv: Mapped[str | None] = mapped_column(TSVECTOR, nullable=True)
+
+
+class WikipronEntry(Base):
+    """wikipron's bundled `nob_latn_broad.tsv` — another thin fallback
+    `/ipa` provider."""
+
+    __tablename__ = "wikipron_entry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wordform: Mapped[str] = mapped_column(Text, nullable=False)
+    ipa: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class DictccStaticEntry(Base):
+    """The `dictcc_static` /translations provider's local import of dict.cc's
+    NO-EN/NO-DE/DE-EN vocabulary dumps (task 2.1). `pair` is one of
+    `no_en`/`no_de`/`de_en`; `term1`/`term2` follow the dump's own column
+    order (e.g. for `no_en`, term1 is Norwegian, term2 is English) — the
+    adapter picks which column is the query side per the `(from, to)` it
+    was asked for. Private-use-licensed data (D-DC4): never exposed raw or
+    in bulk by any route, only single-row lemma-pair lookups.
+
+    `term1_clean`/`term2_clean` strip trailing grammar annotations
+    (`"Haus {n}"` -> `"Haus"`) that the raw dump bakes directly into the
+    term text — discovered live: a query for the bare lemma "Haus" matched
+    nothing because every stored row is `"Haus {n}"`, never the bare word.
+    Lookups match against the `_clean` columns; the *answer* returned is
+    still the raw (annotated) `term1`/`term2` value, same as dict.cc's own
+    live API responses."""
+
+    __tablename__ = "dictcc_static_entry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pair: Mapped[str] = mapped_column(Text, nullable=False)
+    term1: Mapped[str] = mapped_column(Text, nullable=False)
+    term2: Mapped[str] = mapped_column(Text, nullable=False)
+    term1_clean: Mapped[str] = mapped_column(Text, nullable=False)
+    term2_clean: Mapped[str] = mapped_column(Text, nullable=False)
+    pos: Mapped[str] = mapped_column(Text, nullable=False)
+    tags: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class PygmalionAudio(Base):
+    """The `pygmalion` /tts provider's word -> recording map (pygmalion-tts-
+    provider D2). One row per recording: `word` is casefolded (exactly what
+    the adapter matches), `dialect` keeps its original spelling (it is
+    returned as the candidate's `voice`), `take` orders a word's recordings
+    within one dialect. The mp3 bytes live once in `tts_audio`, keyed by
+    `sha256`; there is deliberately no foreign key to it, because that cache
+    is a private, evictable optimisation (tts-api spec)."""
+
+    __tablename__ = "pygmalion_audio"
+    __table_args__ = (Index("ix_pygmalion_audio_word", "word"),)
+
+    word: Mapped[str] = mapped_column(Text, primary_key=True)
+    dialect: Mapped[str] = mapped_column(Text, primary_key=True)
+    take: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    sha256: Mapped[str] = mapped_column(Text, nullable=False)
