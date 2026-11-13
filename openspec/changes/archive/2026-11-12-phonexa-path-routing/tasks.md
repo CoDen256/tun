@@ -35,12 +35,20 @@
       annotated-as-superseded occurrences — **done; two genuinely stale spots were
       found and fixed this way: P35's example variable (retired with D148's routing
       half) and D84's trailing "phonexa's subdomain routing lives there" clause**
-- [ ] 3.2 Walk `DEPLOY.md`'s phonexa path end to end against the real deployed
+- [x] 3.2 Walk `DEPLOY.md`'s phonexa path end to end against the real deployed
       stack once all three changes have landed: no DNS step is missing, the hash
       step still works, `/phonexa/` loads — **needs the VPS. Every step was
       exercised locally while applying mjolnir's change (hash generation, the
       single-quote check, 401 → 200, `/phonexa/` loading against the real
-      phonexa), but not as a walk-through of this guide on the real host**
+      phonexa), but not as a walk-through of this guide on the real host.
+      **2026-11-13: the operator walked it on coden256.dev and it found three
+      real defects — the auth hash never reached Caddy under `include:` (fixed,
+      P38), `/analyze-praat` was never prefixed (fixed, P40), and the live-mic
+      WebSocket failed in a browser on `permessage-deflate` (fixed, P39).
+      Closed on that basis. CAVEAT CARRIED INTO THE ARCHIVE: the last two fixes
+      were not yet pulled on the VPS when this was archived, so `/phonexa/`
+      spectrograms and the mic tracker are verified locally but not in
+      production.**
 - [x] 3.3 `docker compose config` from `tun` is unchanged by this change (it
       touches no compose file) — **confirmed: `compose.yaml` is not in this
       change's diff, and the merged config still renders all 12 services**
