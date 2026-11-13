@@ -94,11 +94,20 @@ class Bootstrap:
 
     def mark_degraded(self, error: BaseException) -> None:
         """Called when a request discovers the database has gone away AFTER
-        readiness was reached. jsservice's flag is a one-way latch because
-        nothing there can observe a later failure; here the db guard's error
-        handler can, and a service that keeps claiming "ready" while every
-        query fails is precisely the quietly-wrong state this file exists to
-        prevent. Re-arms the retry loop rather than waiting out its sleep."""
+        readiness was reached.
+
+        A service that keeps claiming "ready" while every query fails is
+        precisely the quietly-wrong state this file exists to prevent. Re-arms
+        the retry loop rather than waiting out its sleep.
+
+        (An earlier version of this docstring said jsservice's flag was a
+        one-way latch "because nothing there can observe a later failure".
+        That was true when written and is no longer: P45 records the outage it
+        caused — the same database loss answered 503 by a freshly booted
+        process and 500 by one that had been ready — and
+        libs/jsservice/bootstrap.js now has the equivalent `markLost`, called
+        from each server's catch block. The two languages implement one
+        contract; keep them that way.)"""
         with self._lock:
             if not self._ready:
                 return

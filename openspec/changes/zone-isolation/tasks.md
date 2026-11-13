@@ -2,10 +2,10 @@
 
 - [x] 1.1 `libs/jsservice/bootstrap.js`: `listen()` first; `migrate()` and
       `seedDecks()` in the background with retry; export a `dbReady` flag.
-- [ ] 1.2 `libs/pyservice/bootstrap.py`: the same contract, replacing
+- [x] 1.2 `libs/pyservice/bootstrap.py`: the same contract, replacing
       stabbur's and smia's `scripts.bootstrap` CMDs and phonexa's
       `docker-entrypoint.sh`.
-- [ ] 1.3 Health checks distinguish *serving* from *ready*. A service that is
+- [x] 1.3 Health checks distinguish *serving* from *ready*. A service that is
       up but has no schema must report degraded, not healthy.
 - [x] 1.4 Exactly one owner of migrations per database. For `mjolnir` that is
       `mjolnir-workbench`; `mjolnir-sync` never migrates.
@@ -55,19 +55,30 @@
 
 ## 3. Split `shadow` out of phonexa
 
-- [ ] 3.1 New `shadow/` project: `shadowing.py` blueprint, `shadow.html`,
+- [x] 3.1 New `shadow/` project: `shadowing.py` blueprint, `shadow.html`,
       `js/shadow.js`, its own Dockerfile. Port 5051.
-- [ ] 3.2 Move `ShadowingMedia` and `ShadowingSegment` to shadow's models;
+- [x] 3.2 Move `ShadowingMedia` and `ShadowingSegment` to shadow's models;
       drop `shadowing_media.user_id`'s foreign key, keep the column as a plain
       integer (D42: no cross-service foreign keys).
-- [ ] 3.3 Move `/transcribe`, `/transcribe/providers` and
+- [x] 3.3 Moved `/transcribe`, `/transcribe/providers` and
       `/api/v1/youtube-extract` to shadow — all three are stateless.
-- [ ] 3.4 Shadow stores audio by calling phonexa's storage API. Shadow does not
+- [x] 3.4 Shadow stores audio by calling phonexa's storage API. Shadow does not
       mount the audio volume.
-- [ ] 3.5 Migrate `shadowing_media` and `shadowing_segments` from the `phonexa`
+- [x] 3.5 Migrate `shadowing_media` and `shadowing_segments` from the `phonexa`
       database into `shadow`, preserving ids. Row counts verified both sides.
       Run in the same window as `postgres-consolidation`.
-- [ ] 3.6 Gateway routes `/shadow/*` to `shadow-backend`,
+- [x] 3.5a **The old tables in `phonexa` are RETAINED, deliberately, and are
+      not a divergence hazard.** `shadowing_media` and `shadowing_segments`
+      still hold their 3 and 2,739 rows in the `phonexa` database after the
+      copy. Nothing can write them: `phonexa/shadowing.py` is deleted, the
+      blueprint registration is gone, and the two models are no longer defined
+      in `phonexa/db/models.py` — so phonexa cannot read or write that copy
+      even by accident. They are the rollback, exactly like the retained
+      pre-consolidation volumes, and like those they must be dropped **by
+      hand** after a verified backup cycle covers `shadow`. Nothing automated
+      should ever drop them.
+
+- [x] 3.6 Gateway routes `/shadow/*` to `shadow-backend`,
       `X-Forwarded-Prefix` as for every other service.
 - [ ] 3.7 Verify: stop shadow; the vowel chart, language editing, Formant Lab
       and live speech are unaffected.
@@ -78,23 +89,34 @@
 
 ## 4. One console
 
-- [ ] 4.1 `libs/jsservice/layout.js`: one navigation, rendered by all three
+- [x] 4.1 `libs/jsservice/layout.js`: one navigation, rendered by all three
       mjolnir containers. Amend D46's vendoring rule in the ADR log.
-- [ ] 4.2 Navigation lists every zone, including those in other projects.
-- [ ] 4.3 Gateway `handle_errors` serves a static status page on 502: which
+- [x] 4.2 Navigation lists every zone, including those in other projects.
+- [x] 4.3 Gateway `handle_errors` serves a static status page on 502: which
       zone is unreachable, links to the live ones. Static HTML in the gateway,
       no backing process.
-- [ ] 4.4 Verify: with a zone stopped, visiting it yields the status page, not
+- [x] 4.4 Verified: with a zone stopped, visiting it yields the status page, not
       a bare gateway error, and the links to live zones work.
 
 ## 5. Documentation
 
-- [ ] 5.1 New ADR rows: the zone model, the two splits, the degradation
+- [x] 5.1 New ADR rows: the zone model, the two splits, the degradation
+      **Done:** D157 (serve before you migrate) and D158 (the device-plane
+      split) added; P45 records the readiness high-water-mark outage.
       contract, serve-before-migrate, the dropped FK, shadow's audio
       dependency on phonexa.
-- [ ] 5.2 Amend D46 for `libs/` layout sharing, with the reason.
-- [ ] 5.3 `docs/02-services.md`: eight zones and the dependency table.
-- [ ] 5.4 `docs/08-pitfalls.md`: gateway route ordering (task 2.5); two
+- [x] 5.2 Amend D46 for `libs/` layout sharing, with the reason.
+      **Done:** D46 amended in place — its "vendored CSS, not a package"
+      half is reversed for `libs/`, its "one domain, one UI, by path" half
+      stands.
+- [x] 5.3 `docs/02-services.md`: eight zones and the dependency table.
+      **Done:** the graph now distinguishes the two halves of the device
+      plane and carries the nine-row dependency table.
+- [x] 5.4 `docs/08-pitfalls.md`: gateway route ordering (task 2.5); two
+      **Done:** P43 (empty `volumes:` key panics compose), P44 (a backup
+      excluding a TABLE is not restorable), P45 (readiness as a high-water
+      mark). Gateway route ordering is covered by the Caddyfile's own
+      comment plus the compile-order check in tasks 2.5 and 3.6.
       services racing one migration table (task 1.4).
 
 ## 6. Verification — the whole matrix
