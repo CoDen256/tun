@@ -11,8 +11,8 @@ anything — do not re-derive settled decisions.**
 | directory | owns |
 |---|---|
 | `docs/` | the ecosystem design layer + the ADR log. The spec layer above every project. |
-| `grind/` | the gateway: TLS, routing, the operator gate, the status page |
-| `mjolnir/` | bundle tool, JS + native patches, APK pipeline. Three services: `mjolnir-workbench` (console), `mjolnir-builder`, `mjolnir-sync` (**device plane**, D158). `docs/findings.md` |
+| `grind/` | **not yet** — the gateway is still `mjolnir/caddy/` plus the `caddy` service; `unified-auth` moves it here |
+| `mjolnir/` | bundle tool, JS + native patches, APK pipeline. Three services — the console (compose key `mjolnir-hub`; the *rename* to `mjolnir-workbench` is deferred, it must change the key and the gateway upstream together), `mjolnir-builder`, and `mjolnir-sync` (**device plane**, D158). `docs/findings.md` |
 | `stabbur/` | learning content: captures, notes, enrichment, triage UI, audio blobs |
 | `smia/` | linguistics: inflect / ipa / tts / stt / translate |
 | `phonexa/` | phonetics lab: vowels, consonants, formants, live speech |

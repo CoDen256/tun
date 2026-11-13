@@ -54,17 +54,29 @@ Degradation: with phonexa down, shadow cannot resolve profile *names* but
 continues to work against the current profile id. Named here so it is a decision
 rather than a surprise.
 
-## Decision — shadow stores audio through phonexa, not beside it
+## Decision — shadow mounts no volume, because there is no audio to store
 
-Operator direction: *"it just should be able to call to phonexa to store it."*
-Confirmed to be clean — `shadowing.py` never calls `get_audio_store`, so no
-existing code has to be untangled.
+**Corrected 2026-11-13.** This section originally said shadow would store audio
+by calling phonexa's storage API, and reasoned about "one owner of the audio
+tree, one backup path". Independent review checked the premise against the code
+and it was wrong.
 
-This makes shadow's ingest path depend on phonexa, which is a real coupling and
-is accepted deliberately: one owner of the audio tree means one backup path and
-one storage policy. Degradation: with phonexa down, shadow cannot ingest new
-media but existing segments still play, since playback is a gateway-routed read
-of an already-stored object.
+Shadowing recordings are never persisted server-side. `shadowing.py` never
+calls `get_audio_store`, never receives audio bytes, and `ShadowingMedia`
+deliberately holds no storage key; the browser keeps the file locally through
+the File System Access API. phonexa's audio tree holds VOWEL SAMPLES — a
+different domain shadow never reads or writes.
+
+So the operator's direction, *"it just should be able to call to phonexa to
+store it"*, is satisfied trivially rather than by an API call: shadow mounts no
+volume at all, and `shadow/tests/test_zone_boundary.py` asserts it.
+
+The coupling that IS real lives over HTTP in `shadow/phonexa_client.py` alone:
+`users` and `settings` (phonexa owns the profile table), and `/analyze-praat`
+for pitch comparison, since parselmouth belongs with the vowel domain.
+Degradation: with phonexa down shadow cannot list or create profiles and cannot
+run a pitch comparison; everything else, playback of existing segments
+included, is unaffected — because none of it was ever stored on a server.
 
 ## Decision — serve first, migrate behind a flag
 
@@ -141,5 +153,7 @@ an amendment with its rationale, not silently.
 - **Leave sync inside hub and accept brief interruptions.** Defensible for a
   single phone that retries — but hub is the most frequently deployed service in
   the stack and the device path is the one with no rollback.
-- **Give shadow its own audio volume.** Rejected by operator direction; two
-  owners of one audio tree means two backup paths and a split storage policy.
+- **Give shadow its own audio volume.** Moot, not rejected: shadow stores no
+  audio at all, so there is no volume to give it. The original reasoning
+  ("two owners of one audio tree means two backup paths") assumed a premise
+  that checking the code disproved — see the corrected decision above.

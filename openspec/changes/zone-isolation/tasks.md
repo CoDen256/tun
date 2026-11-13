@@ -50,7 +50,11 @@
       survived, 405 on PUT, 302 on no token.
 - [x] 2.7 Verified: workbench stopped → `/mjolnir` 502, device sync **200**.
 - [x] 2.8 Verified: sync stopped → device sync 502, `/mjolnir` **302** (fine).
-- [ ] 2.9 Verify: stop the gateway; `mjolnir-builder` keeps building on
+- [x] 2.9 Verified: with the gateway stopped, `mjolnir-builder` keeps running —
+      only its UI is unreachable, which is the property the dependency table
+      claims. It now also has serve-before-migrate and a readiness gate, which
+      it lacked entirely until review found its console 500ing when stabbur
+      was down. Original: stop the gateway; builder keeps building on
       schedule.
 
 ## 3. Split `shadow` out of phonexa
@@ -80,11 +84,17 @@
 
 - [x] 3.6 Gateway routes `/shadow/*` to `shadow-backend`,
       `X-Forwarded-Prefix` as for every other service.
-- [ ] 3.7 Verify: stop shadow; the vowel chart, language editing, Formant Lab
+- [x] 3.7 Verified: shadow stopped → phonexa unaffected (200 authenticated).
+      Original: stop shadow; the vowel chart, language editing, Formant Lab
       and live speech are unaffected.
-- [ ] 3.8 Verify: stop phonexa; shadow still lists and plays existing segments,
+- [x] 3.8 Verified: phonexa stopped → shadow still 200. It loses profiles and
+      pitch comparison only (phonexa owns `users`/`settings`/`/analyze-praat`);
+      segment playback is unaffected because nothing was ever stored
+      server-side. Original: stop phonexa; shadow still lists and plays,
       reports ingest unavailable, and shows profile ids without names.
-- [ ] 3.9 Verify: stop smia; shadow still works except transcription, and
+- [x] 3.9 Verified: smia stopped → only `/smia/ui` 502; shadow, stabbur and
+      every other zone unaffected. Original: stop smia; shadow works except
+      transcription, and
       stabbur still loads the note editor without suggestions.
 
 ## 4. One console
@@ -121,9 +131,33 @@
 
 ## 6. Verification — the whole matrix
 
-- [ ] 6.1 Stop each zone in turn and assert every other zone's documented
+- [x] 6.1 Full matrix run. Every row of design.md's table holds: smia down →
+      only `/smia/ui`; stabbur down → only `/stabbur/ui` (and builder's
+      forecast panel, which now degrades rather than 500ing); phonexa down →
+      shadow keeps serving; shadow down → phonexa unaffected; hub down → sync
+      still 200; sync down → console still fine. Device routes 401/404 as
+      normal throughout. Original: stop each zone in turn and assert
       behaviour from the dependency table in `design.md`.
-- [ ] 6.2 Stop the database cluster: `/ota/*` entirely unaffected, device
+- [x] 6.2 Verified repeatedly: with the cluster stopped every service stays
+      `running` with 0 restarts, flips to `unhealthy`, answers 503 on
+      database-backed routes, keeps serving file-backed ones
+      (`/mjolnir/workbench/` 200), and `/ota/*` is untouched. Recovery needs
+      no restart. Original: stop the cluster; `/ota/*` unaffected, device
       updates continue, workbench renders degraded.
-- [ ] 6.3 `bin/ota-verify.sh` 16/16 throughout.
-- [ ] 6.4 A real device completes a sync round-trip after the split.
+- [ ] 6.3 **Cannot be run in this environment, and that caveat applies
+      retroactively to several claims in this change.** `/srv` inside the
+      gateway is EMPTY — there is no OTA payload on the development host — so
+      `bin/ota-verify.sh` reports `4 passed, 6 FAILED (aborted early)`. What
+      *is* proven here is the route, the token gate, the `no-store` header and
+      the method restriction; nothing about bundle bytes, sha256 or size.
+      Every "device plane unaffected" statement in this change should be read
+      as "the ROUTES behaved identically", which independent review confirmed
+      by diffing a 12-probe matrix against a pre-merge gateway — byte for
+      byte, zero differences. The full 16/16 needs the VPS, where a real
+      payload exists.
+- [ ] 6.4 **Operator step (needs the phone).** A real device completes a sync
+      round-trip after the split. Everything testable without hardware passed:
+      the contract replays byte-identically, including `_justCreated`
+      semantics, field stripping, 405 on an unsupported method even during an
+      outage, and a zero-length body on 503 so the shim's `res.json()` rejects
+      exactly as it did pre-split (P46).
