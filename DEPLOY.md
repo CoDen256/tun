@@ -21,7 +21,8 @@ forget.
 >   simply unused; `docker network rm tun-shared` is safe once the stack is
 >   up on this branch.
 > - **No sibling checkouts.** `mjolnir/`, `stabbur/`, `smia/`, `phonexa/`,
->   `hover-translate/` and `backup/` are directories in *this* repo.
+>   and `backup/` are directories in *this* repo. `hover-translate` is NOT
+>   (D154) — it is its own repository and is never deployed.
 > - **No `rsync` of smia's `providers/`.** The old claim that it is gitignored
 >   and must be copied in separately was wrong: it is tracked in git (4,082
 >   tracked files under `smia/`, of which 3,858 are `providers/`). A clone
@@ -53,7 +54,6 @@ tun/                     ← the only clone
   stabbur/     learning content: notes, captures, blobs
   smia/        linguistics services + the tracked providers/ lookup data
   phonexa/     the phonetics lab
-  hover-translate/   the capture client (not deployed by this stack)
   backup/      the backup service's image
 ```
 
@@ -107,7 +107,6 @@ starts with its project-local file absent (`required: false`).
 | `mjolnir/.env` | `PHONEXA_AUTH_HASH` (§4), `SOURCE_LANG`, and the local-only `ALLOW_HTTP` / `ALLOW_NO_COMPANION` | `/phonexa/*` fails closed (401); the rest defaults |
 | `smia/.env` | `HF_TOKEN`, `DEEPL_TOKEN`, `ELEVENLABS_TOKEN` | smia starts; those providers fail at call time with "needs a *_TOKEN" |
 | `phonexa/.env` | `AUDIO_BACKEND` (only `local` is implemented) | the backend already defaults to `local` |
-| `hover-translate/.env` | `AMO_API_KEY`, `AMO_API_SECRET`, `AMO_ADDON_ID` | not deployed by this stack at all — publishing only |
 | `stabbur/.env` | **nothing. Do not create it.** Everything stabbur needs is shared or derived | — |
 
 Never copy a value from the root `.env` into one of these. If

@@ -84,6 +84,8 @@ credential by design.
 route at `/` while `/stabbur/ui` returns 200 (both verified 2026-11-13).
 
 **hover-translate holds one credential instead of two**, sent to one origin.
+It lives in its own repository (D154) and is the one client that cannot use a
+browser session, so this change is coordinated there rather than here.
 
 ## Capabilities
 

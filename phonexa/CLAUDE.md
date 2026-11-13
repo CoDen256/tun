@@ -9,7 +9,7 @@ standalone (`cd phonexa && docker compose up`).
 Sibling projects — top-level directories of this one repository, not sibling
 checkouts (D150): `docs/` (ecosystem design), `mjolnir/` (bundle tool, patches,
 builder, hub, device sync), `stabbur/` (learning content), `smia/`
-(linguistics), `hover-translate/` (capture client), `backup/` (the git-backup
+(linguistics), `backup/` (the git-backup
 service). The root `CLAUDE.md` carries the ecosystem rules and the service
 standard.
 

@@ -19,7 +19,7 @@ exactly.
 | `stabbur/` | captures, notes, enrichment orchestration, triage UI, audio blobs | smia |
 | `smia/` | `/inflect` `/ipa` `/tts` `/stt` `/translate`, provider chains, `/ui` | nothing |
 | `phonexa/` | phonetics lab; deployed as part of the unified stack at the authenticated `/phonexa/` path (D147/D149) | smia (optional), stabbur (optional import) |
-| `hover-translate/` | capture client (fork, Chrome-only, private/unpublished — D144). Never deployed | stabbur, smia |
+| *(external)* `hover-translate` | capture client (fork, Chrome-only, private/unpublished — D144). **Its own repository, not a project here — D154.** Never deployed | stabbur, smia |
 | `backup/` | the git-backup service (D-C1..D-C5): a `pg_dump` per covered database plus the blob and audio mirrors | mjolnir / stabbur / phonexa databases (not smia yet) |
 
 `mjolnir` is **self-contained for everything Mjølnir**: bundle format knowledge,

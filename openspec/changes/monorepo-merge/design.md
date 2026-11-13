@@ -68,7 +68,7 @@ repo             pack      dominated by
 phonexa          820 MB    264 commits of churned lang/*.wav
 smia             172 MB    3,858 tracked provider files
 mjolnir          145 MB    base/mjolnir.merged.apk (69 MB)
-hover-translate   52 MB    three ~15 MB demo GIFs
+hover-translate   52 MB    three ~15 MB demo GIFs  (merged, then EXCISED — D154)
 stabbur          0.9 MB
 tun              0.1 MB
 ```

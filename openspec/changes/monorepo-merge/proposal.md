@@ -42,7 +42,7 @@ tun/
   compose.yaml  .env  README.md  CLAUDE.md  DEPLOY.md  .dockerignore
   docs/  openspec/  libs/
   postgres/   grind/   mjolnir/   stabbur/   smia/   phonexa/
-  hover-translate/   backup/
+  backup/
 ```
 
 **`include:` is kept, the external network is not.** Each project keeps its own
@@ -62,7 +62,7 @@ not the same as centralising:
 | `<project>/.env` | values used by exactly one project |
 
 So `HF_TOKEN`/`DEEPL_TOKEN`/`ELEVENLABS_TOKEN` stay in `smia/.env`;
-`AMO_API_*` stay in `hover-translate/.env`. Derived values
+`AMO_API_*` left with hover-translate when it was excised (D154). Derived values
 (`DATABASE_URL`, `*_BASE_URL`, `*_UPSTREAM`) are computed in compose and never
 typed at all.
 

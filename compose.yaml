@@ -16,10 +16,14 @@
 #   cd stabbur && docker compose up      # the same, plus loopback ports for a
 #                                        # native venv (compose.override.yaml)
 #
-# Host ports: only this file's gateway publishes in the unified stack. Each
-# project's own `compose.override.yaml` publishes loopback ports, and Compose
-# auto-loads an override file ONLY for the primary compose file of the
-# directory it runs in — verified — so the unified stack never publishes them.
+# Host ports: in the unified stack the gateway is the only service publishing
+# on a PUBLIC interface. This file's `adminer` also publishes, on loopback
+# only (127.0.0.1:8082), because it is an operator tool that has to be
+# reachable here; phonexa's own dev Adminer does the same behind a `dev`
+# profile. Every SERVICE port lives in that project's own
+# `compose.override.yaml`, which Compose auto-loads ONLY for the primary
+# compose file of the directory it runs in — verified — so `docker compose up`
+# here publishes no service ports at all.
 include:
   - ./mjolnir/compose.yaml
   - ./stabbur/compose.yaml

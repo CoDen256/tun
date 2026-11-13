@@ -4,7 +4,7 @@ Unify the deployment of every project behind a single `docker compose`
 invocation at the root of the `tun` repository, while keeping each project's
 own compose file independently usable on its own.
 
-Since D150 `mjolnir`, `stabbur`, `smia`, `phonexa`, `hover-translate` and
+Since D150 `mjolnir`, `stabbur`, `smia`, `phonexa` and
 `backup` are top-level **directories of this one repository**, not sibling
 checkouts, and there is no `tun-shared` external network: one repository is
 one Compose project is one default network. The requirements below that still

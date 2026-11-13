@@ -32,7 +32,7 @@ DEVICE PLANE                        OPERATOR PLANE
   ota            files, no process    mjolnir-workbench
   mjolnir-sync   new container        mjolnir-builder
                                       stabbur   smia
-                                      phonexa   shadow      (hover-translate: client)
+                                      phonexa   shadow      (hover-translate: external client, own repo)
 ```
 
 **`hub` splits into `mjolnir-sync` and `mjolnir-workbench`.** `userdata.js` is

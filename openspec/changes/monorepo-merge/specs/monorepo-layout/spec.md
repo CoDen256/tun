@@ -7,9 +7,14 @@ history of each former repository reachable from that repository.
 
 #### Scenario: Cloning the ecosystem
 - **WHEN** an operator clones the repository
-- **THEN** `grind`, `mjolnir`, `stabbur`, `smia`, `phonexa`, `shadow`,
-  `hover-translate`, `postgres` and `backup` are all present, with no other
-  checkout required
+- **THEN** `mjolnir`, `stabbur`, `smia`, `phonexa` and `backup` are all
+  present, with no other checkout required
+
+#### Scenario: A project that is not deployed with the stack
+- **WHEN** a component of the ecosystem is a fork, is standalone, and is never
+  deployed alongside the stack
+- **THEN** it is NOT a project of this repository, and the repository documents
+  it as an external client instead
 
 #### Scenario: History of a merged project survives
 - **WHEN** the history of a file that belonged to a former repository is
@@ -59,15 +64,21 @@ project in that project's own environment file.
   database URL from a password, or an upstream address from a service name)
 - **THEN** it is computed, and does not appear in any environment file
 
-### Requirement: One name per service, used everywhere
-The system SHALL use a single identifier for each service as its directory or
-compose key, its network hostname, its database name where it has one, and its
-URL prefix where it has one.
+### Requirement: Service names derive from their project, predictably
+The system SHALL name every service after the project that owns it, so that a
+service's compose key, its network hostname and its URL prefix are derivable
+from the project name rather than being independently chosen.
+
+A project's services are `<project>-<role>` (`stabbur-backend`,
+`stabbur-postgres`); its URL prefix is `/<project>/`. The compose key and the
+network hostname are always the same string. The prefix and the database name
+are deliberately NOT required to equal it: `/stabbur/` is served by
+`stabbur-backend`, and mjolnir's database is historically named `postgres`.
 
 #### Scenario: Reaching a service from another service
-- **WHEN** one service addresses another by its name
-- **THEN** that name is the same string that identifies the service in the
-  compose file and in its URL prefix
+- **WHEN** one service addresses another
+- **THEN** it uses the service's compose key as the hostname, and that key is
+  prefixed with the owning project's name
 
 #### Scenario: Container naming
 - **WHEN** the stack is running

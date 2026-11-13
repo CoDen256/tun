@@ -5,7 +5,7 @@
 **Start here.** This directory is the single source of truth for the whole
 ecosystem, which since D150 is **one repository** with each former repo as a
 top-level directory: **mjolnir** + **stabbur** + **smia** + **phonexa** +
-**shadow** + **hover-translate** + **grind** + **backup**.
+**shadow** + **grind** + **backup**.
 It is written to survive between sessions: if you remember nothing else,
 read this file and `07-decisions.md`.
 
@@ -65,10 +65,14 @@ together from one `docker compose up` at the root.
 | `smia/` | linguistics providers (inflect / ipa / tts / stt / translate) |
 | `phonexa/` | phonetics lab: vowels, consonants, formants, live speech |
 | `shadow/` | shadowing: media, segments, transcription |
-| `hover-translate/` | capture client (a browser extension — never deployed) |
 | `postgres/` | the shared database cluster |
 | `backup/` | the git-backup service |
 | `libs/` | code shared across projects (auth, prefix handling, layout, bootstrap) |
+
+`hover-translate` is deliberately **not** here (D154): a fork, standalone, and
+never deployed, so it stays its own repository and talks to `smia` and
+`stabbur` from outside. It is still one of the ecosystem's modules in
+`01-vision-and-scope.md` — just not one of this repository's projects.
 
 One clone, no sibling checkouts. The APK build workspace at
 `/home/coden/rev/mjolnir/` is still disposable scratch, not part of this repo.

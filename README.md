@@ -8,7 +8,7 @@ spaced-repetition card with real audio in a modded Mjølnir app — with every
 step in between inspectable and editable by one operator.
 
 Since **D150** this is a monorepo: the six former repositories (`mjolnir`,
-`stabbur`, `smia`, `phonexa`, `hover-translate` and `tun` itself) are merged
+`stabbur`, `smia`, `phonexa` and `tun` itself) are merged
 here as top-level directories, with all history reachable — no SHA was
 rewritten, and every former head commit is an ancestor of `HEAD`.
 
@@ -38,7 +38,6 @@ Each directory owns its own `compose.yaml`, which the root `compose.yaml`
 | `stabbur/` | learning content: captures, notes, enrichment, triage UI, audio blobs |
 | `smia/` | linguistics providers: inflect / ipa / tts / stt / translate |
 | `phonexa/` | phonetics lab: vowels, consonants, formants, live speech |
-| `hover-translate/` | capture client (a private Chrome extension — never deployed) |
 | `backup/` | the git-backup service: a `pg_dump` per covered database (mjolnir, stabbur, phonexa — smia not yet) plus blob and audio mirrors |
 | `bin/` | `check-standards.sh`, the mechanical enforcement of D150–D153 |
 

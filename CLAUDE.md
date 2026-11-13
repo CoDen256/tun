@@ -17,10 +17,14 @@ anything — do not re-derive settled decisions.**
 | `smia/` | linguistics: inflect / ipa / tts / stt / translate |
 | `phonexa/` | phonetics lab: vowels, consonants, formants, live speech |
 | `shadow/` | shadowing: media, segments, transcription |
-| `hover-translate/` | capture client (browser extension — never deployed) |
 | `postgres/` | the shared database cluster |
 | `backup/` | the git-backup service |
 | `libs/` | code shared across projects: auth, prefix handling, layout, bootstrap |
+
+`hover-translate` is **not** in this repository (D154). It is a fork, a
+standalone browser extension, and never deployed — it lives in its own repo
+and reaches `smia` and `stabbur` across origins like any external client.
+Every reference to it inside `smia`, `stabbur` and `mjolnir` is still correct.
 
 Mjølnir app internals live in `mjolnir/docs/findings.md`, not in `docs/`.
 
@@ -47,8 +51,12 @@ Mjølnir app internals live in `mjolnir/docs/findings.md`, not in `docs/`.
 - **No configuration value exists in two files.** Used by more than one
   project → the root `.env`. Used by exactly one → that project's `.env`.
   Derivable → computed in compose, typed nowhere.
-- **Directory name = compose service key = hostname = database name = URL
-  prefix.** No `container_name:` anywhere.
+- **Service names derive from their project:** `<project>-<role>`
+  (`stabbur-backend`), URL prefix `/<project>/`. The compose key and the
+  network hostname are always the same string. The prefix and the database name
+  are NOT required to equal it — `/stabbur/` is served by `stabbur-backend`,
+  and mjolnir's database is named `postgres` for historical reasons. No
+  `container_name:` anywhere.
 - `restart: unless-stopped`; a health check for the service itself; host ports
   on `127.0.0.1`, published only by a per-project `compose.override.yaml` —
   only the gateway publishes in the unified stack. **Not** a `dev` profile:

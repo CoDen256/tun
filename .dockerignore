@@ -57,8 +57,6 @@ phonexa/data
 phonexa/db-export
 phonexa/sounds
 
-# --- hover-translate is a browser extension; nothing builds an image from it.
-hover-translate
 
 # --- the git-backup clone the operator happens to keep inside the checkout.
 tun-backup

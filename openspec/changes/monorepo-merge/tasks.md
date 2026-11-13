@@ -24,7 +24,9 @@
       `git remote add -f <r> <url>` →
       `git merge -s ours --no-commit --allow-unrelated-histories <r>/<branch>` →
       `git read-tree --prefix=<r>/ -u <r>/<branch>` → commit.
-      Order: mjolnir, stabbur, smia, phonexa, hover-translate.
+      Order: mjolnir, stabbur, smia, phonexa, hover-translate — the last of
+      which was then **removed again** by dropping its merge commit (D154);
+      see task 1.7.
 - [x] 1.2 phonexa merged from `main` onto this `master`-descended branch; the
       monorepo has no `main`. Retiring phonexa's own remote `main` is outside
       this repository's edit scope and belongs to the runbook.
@@ -40,10 +42,14 @@
       do **not** traverse a `read-tree --prefix` graft — unavoidable without
       rewriting SHAs, which design.md rejects. Documented rather than
       papered over.
-- [x] 1.5 Verified: all five former heads and root commits are ancestors of
-      HEAD with unchanged SHAs; per-repo tracked-file counts match the
-      pre-merge baseline exactly (35732 / 238 / 4082 / 521 / 205); 857
-      commits = 851 pre-merge + 5 merge commits + 1 artifact commit.
+- [x] 1.5 Verified **at the merge commit** (`ea89db37`'s parent chain): every
+      former head and root commit is an ancestor of HEAD with unchanged SHAs,
+      and per-repo tracked-file counts matched the pre-merge baseline exactly
+      (35732 / 238 / 4082 / 521). Counts at HEAD are intentionally LOWER —
+      task 4.9 deleted ~9 duplicated `.claude/` files per project, 4.6 renamed
+      phonexa's test directory, and `mjolnir/hub/.env.example` was deleted as
+      a D151 violation. An earlier wording stated the match in the present
+      tense, which independent review correctly refuted.
 - [x] 1.6 **Corrected — nothing to delete.** The 7 matches were a bad grep:
       they are decompiled APK resources whose *filenames* contain
       "node_modules" (React Native LogBox/navigation PNGs) inside
@@ -51,6 +57,18 @@
       That directory is the stock APK base, the input to the one irreversible
       build (D04), and deleting from it would corrupt it. No repo tracks a
       real `node_modules/`; verified across all five.
+
+- [x] 1.7 **`hover-translate` removed again (D154, operator direction).** It was
+      merged in task 1.1 and then excised, by dropping its merge commit on the
+      unpushed branch rather than by `git rm` — a `git rm` leaves the merge in
+      history, so a clone would still download all ~52 MiB and `git log` would
+      still show the fork's 152 commits, which is exactly what the operator did
+      not want. Also removed the five merge remotes afterwards: their
+      remote-tracking refs pinned the objects and the pack did not shrink until
+      they were gone. Result: 391.87 MiB → 339.86 MiB, 858 → 708 commits, and
+      the history now has exactly one author. Its references inside `smia`,
+      `stabbur` and `mjolnir` are unchanged and still correct — it remains an
+      external client of the ecosystem.
 
 ## 2. Compose composition
 
@@ -81,7 +99,12 @@
       root context (busybox harness): stabbur, smia, phonexa, mjolnir-hub,
       mjolnir-builder all OK.
 - [x] 2.7 Verified. Root lists all 12 services; each of the four projects
-      composes standalone. Plus the property this change exists for:
+      composes standalone **as `docker compose --env-file ../.env ...`**, which
+      is what `DEPLOY.md` documents. The bare `cd <project> && docker compose
+      up` promised by some compose-file comments does NOT work for mjolnir:
+      Compose reads the root `.env` only when invoked at the root, so its
+      `${VAR:?}` guards fail. Comments corrected; the guards are deliberately
+      kept loud rather than defaulted. Plus the property this change exists for:
       `cd stabbur && docker compose up` publishes loopback ports for a native
       venv, while the root stack publishes **nothing** but the gateway.
 
@@ -89,7 +112,7 @@
 
 - [x] 3.1 Root `.env.example`: only values used by more than one project.
 - [x] 3.2 Per-project `.env.example`: only values used by exactly that project
-      (`smia`: HF/DeepL/ElevenLabs; `hover-translate`: AMO_*; `mjolnir`:
+      (`smia`: HF/DeepL/ElevenLabs; `mjolnir`:
       ALLOW_HTTP, ALLOW_NO_COMPANION, SOURCE_LANG; `phonexa`: AUDIO_BACKEND).
 - [x] 3.3 Every `DATABASE_URL` derived in compose; every `*_UPSTREAM` and
       `*_BASE_URL` deleted. **Corrected from one shared `POSTGRES_PASSWORD` to
@@ -134,8 +157,15 @@
       (180s): its bootstrap.py imports ~9M provider rows before it execs
       app.py. Nothing `depends_on` any backend (`backup` depends on the
       three *postgres* healthchecks), so none of this can block the stack.
-- [x] 4.5 All host port publishing bound to `127.0.0.1` and moved into a
-      per-project `compose.override.yaml`. **A `dev` profile is impossible** —
+- [x] 4.5 All host port publishing bound to `127.0.0.1`. Service ports moved
+      into per-project `compose.override.yaml`; **two Adminer ports are
+      deliberately NOT in override files** — the root's `adminer` publishes
+      `127.0.0.1:8082` from `compose.yaml` because it is an operator tool that
+      must be reachable in the unified stack, and `phonexa-adminer` publishes
+      `127.0.0.1:8081` from its own fragment behind a `dev` profile. Both are
+      loopback-only, so the production-safety property holds; the claim that
+      *all* ports live in override files did not, and independent review
+      refuted it. **A `dev` profile is impossible** —
       Compose has no per-port profile; see design.md's correction. The override
       mechanism is strictly better and was verified empirically.
 - [x] 4.6 One test layout per language. `phonexa/test/` -> `phonexa/tests/`
@@ -177,7 +207,14 @@
       `.claude/` directories — 40 files, zero loss. This is the tooling half
       of the "6 claude code sessions" problem.
 
-- [x] 4.8 One OpenSpec change-id convention: **bare slugs**. Forced by
+- [x] 4.8 One OpenSpec change-id convention for **ACTIVE** changes: bare
+      slugs. Four renamed. **Archived changes keep their dated names** (41 of
+      them across tun, mjolnir and phonexa) — that is D153's decision, not an
+      omission: they are historical record, are not addressable by
+      `openspec --change` either way, and renaming them would break every
+      document citing them. An earlier wording of this task said "including
+      those under `changes/archive/`", which contradicted D153 and was
+      refuted by review. Original text: Forced by
       tooling — `openspec status --change` and `openspec instructions apply
       --change` reject any name not starting with a letter, so dated ids
       cannot be driven by the CLI. Rename the pre-existing dated changes in
@@ -209,8 +246,7 @@
       bundles, rollback and the OTA data layout.
 - [x] 5.5 `docs/02-services.md`, `docs/13-operator-console-ux.md`: both were
       written around `include:` across repos and one Adminer.
-- [x] 5.6 Root `CLAUDE.md` + per-project `CLAUDE.md` (incl. a new one for
-      hover-translate, which had none); `mjolnir/docs/findings.md`
+- [x] 5.6 Root `CLAUDE.md` + per-project `CLAUDE.md`; `mjolnir/docs/findings.md`
       stays where it is.
 - [x] 5.7 Done — 18 files. Two were real defects, not stale prose:
       `stabbur/scripts/seed_p4_notes.py` hardcoded
@@ -225,15 +261,33 @@
 
 ## 6. Verification — the bar is "nothing changed"
 
-- [x] 6.1 **`bin/ota-verify.sh`: 16 passed, 0 failed — "P1 path proven".**
-      Run against a synthetic payload with the **gateway as the only running
-      container** — no database, no application service — which simultaneously
-      evidences the `device-plane` scenario "every service stopped, the device
-      can still fetch". Note for whoever reruns this: the D49 chunked-transfer
-      check only holds above Caddy's response-buffer threshold, so a small or
-      highly compressible test bundle fails it spuriously (observed at 73 B and
-      at 74 kB of repetitive text, passing at 2 MB incompressible). That is a
-      property of the harness, not of the contract.
+- [x] 6.1 `bin/ota-verify.sh` runs and passes everything it can prove
+      locally, with the **gateway as the only running container** — no
+      database, no application service.
+      **Independent review refuted the stronger claim this task first made**
+      ("16 passed, 0 failed — P1 path proven"), and it was right:
+      - Eight of the sixteen assertions are self-fulfilling against a synthetic
+        payload, because the harness authors both `current.json` and the
+        bundle: buildId, buildId charset, sha256-is-hex, size, sha256-matches,
+        byte-count-matches and magic-prefix test only that the gateway does not
+        corrupt bytes — never that the publisher writes correct metadata.
+      - Worse, the D53 check was **inverted**: with `ALLOW_HTTP=1` it reported
+        `PASS url is http`, so the production-critical "url MUST be https"
+        assertion contributed a pass while recording its opposite. **Fixed in
+        the script**: that branch is now a `SKIP` that does not increment the
+        pass count, and the summary says "NOT a full proof" whenever anything
+        was skipped. The documented command now honestly reports
+        `15 passed, 1 FAILED` against a local http url.
+      - The script only ever requests `/ota/*`. It never touches `/blob/*` or
+        `/audio-manifest/*`, never asserts the `immutable` headers, and never
+        checks for `precompressed` — so it evidences one of the three device
+        routes, not all three. Review verified the other two by hand
+        (including planting a sibling `.gz` to prove no `precompressed`).
+      What IS proven: the token gate (401/401/200/405), `no-store` on
+      current.json, and the three gzip/Content-Length properties of D49 — all
+      gateway properties. Note the D49 chunked check only holds above Caddy's
+      response-buffer threshold: a small or compressible test bundle fails it
+      spuriously (observed at 73 B and 74 kB, passing at 2 MB incompressible).
 - [ ] 6.2 **Runbook (needs the real payload, which is gitignored and lives on
       the VPS).** What IS proven locally: the three device `handle` blocks are
       byte-identical to pre-merge by per-block sha256
@@ -254,7 +308,8 @@
       `mjolnir_caddy_data` keeps its exact name in the rendered config and
       survived every harness run. `DEPLOY.md` §8.2 carries the post-boot
       certificate assertion. Original: Caddy serves the **same** certificate.
-- [x] 6.5 Verified for all four, and the dev-port property with it:
+- [x] 6.5 Verified for all four (with `--env-file ../.env`, see 2.7), and the
+      dev-port property with it:
       standalone publishes loopback ports (stabbur 5056/5434, smia 5055/5433,
       phonexa 5050/5432) while the root stack publishes only the gateway.
 - [ ] 6.6 **Runbook (needs the operator's real deploy key).** Proven locally:

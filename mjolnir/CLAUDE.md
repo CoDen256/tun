@@ -10,7 +10,8 @@ Since **D150** mjolnir is not its own repository: it is the `mjolnir/` directory
 of the one `tun` repo. Sibling *directories* of the same repo — not sibling
 checkouts — are `docs/` (deployment + ecosystem docs), `stabbur/` (learning
 content), `smia/` (linguistics), `phonexa/` (phonetics lab),
-`hover-translate/` (capture client) and `backup/` (the git-backup service).
+and `backup/` (the git-backup service). `hover-translate` is an EXTERNAL
+client in its own repository, not a directory here (D154).
 The root `CLAUDE.md` carries the ecosystem rules and the service standard.
 
 **Cross-repo design, decisions, pitfalls and the roadmap live in
