@@ -12,10 +12,12 @@ history of each former repository reachable from that repository.
   checkout required
 
 #### Scenario: History of a merged project survives
-- **WHEN** `git log --follow` is run on a file that belonged to a former
-  repository
-- **THEN** its commits from before the merge are listed, with their original
-  commit hashes unchanged
+- **WHEN** the history of a file that belonged to a former repository is
+  inspected with `git blame`, or with `git log --full-history` against its
+  pre-merge path
+- **THEN** its commits from before the merge are reachable with their original
+  commit hashes unchanged, and `git blame` attributes each line to the
+  pre-merge commit that wrote it
 
 ### Requirement: Each project composes independently and together
 The system SHALL define each project's services in that project's own compose

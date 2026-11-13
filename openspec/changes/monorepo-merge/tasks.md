@@ -20,20 +20,37 @@
 
 ## 1. Merge
 
-- [ ] 1.1 Merge each repo into `tun` at its own top-level prefix, full history:
+- [x] 1.1 Merge each repo into `tun` at its own top-level prefix, full history:
       `git remote add -f <r> <url>` →
       `git merge -s ours --no-commit --allow-unrelated-histories <r>/<branch>` →
       `git read-tree --prefix=<r>/ -u <r>/<branch>` → commit.
       Order: mjolnir, stabbur, smia, phonexa, hover-translate.
-- [ ] 1.2 phonexa is on `main`; every other repo on `master`. Merge onto
-      `master` and retire `main`.
-- [ ] 1.3 Move `tun`'s own `docs/`, `openspec/`, `compose.yaml`, `DEPLOY.md`,
-      `README.md` to the root; move `tun/backup/` to `backup/`.
-- [ ] 1.4 `git log --follow` spot-check on one file per merged repo.
-- [ ] 1.5 Confirm pack size is in the expected range (~1.5 GB) and that no
-      history was rewritten (`git rev-parse` a known old SHA per repo).
-- [ ] 1.6 Delete `mjolnir`'s 7 tracked `node_modules/` files; extend
-      `.gitignore`.
+- [x] 1.2 phonexa merged from `main` onto this `master`-descended branch; the
+      monorepo has no `main`. Retiring phonexa's own remote `main` is outside
+      this repository's edit scope and belongs to the runbook.
+- [x] 1.3 `tun`'s own `docs/`, `openspec/`, `compose.yaml`, `DEPLOY.md`,
+      `README.md` and `backup/` are already at the root — `tun` was the merge
+      base, so no move was required.
+- [x] 1.4 History-traversal spot-check per merged repo. **Verified
+      2026-11-13, and the limits are real:** `git blame HEAD -- <new/path>`
+      attributes lines to the pre-merge commits (confirmed: stabbur/auth.py →
+      `c36bc2aa0 auth.py`), `git log --full-history -- <old-path>` lists the
+      pre-merge commits, and every former head and root commit is an ancestor
+      of HEAD. `git log --follow` and default-simplified `git log -- <path>`
+      do **not** traverse a `read-tree --prefix` graft — unavoidable without
+      rewriting SHAs, which design.md rejects. Documented rather than
+      papered over.
+- [x] 1.5 Verified: all five former heads and root commits are ancestors of
+      HEAD with unchanged SHAs; per-repo tracked-file counts match the
+      pre-merge baseline exactly (35732 / 238 / 4082 / 521 / 205); 857
+      commits = 851 pre-merge + 5 merge commits + 1 artifact commit.
+- [x] 1.6 **Corrected — nothing to delete.** The 7 matches were a bad grep:
+      they are decompiled APK resources whose *filenames* contain
+      "node_modules" (React Native LogBox/navigation PNGs) inside
+      `mjolnir/base/smali.mjolnir.merged/res/`, not a tracked dependency tree.
+      That directory is the stock APK base, the input to the one irreversible
+      build (D04), and deleting from it would corrupt it. No repo tracks a
+      real `node_modules/`; verified across all five.
 
 ## 2. Compose composition
 
