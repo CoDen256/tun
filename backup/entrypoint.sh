@@ -57,7 +57,7 @@ run_backup() {
     return 1
   fi
 
-  mkdir -p "$BACKUP_REPO/blobs"
+  mkdir -p "$BACKUP_REPO/blobs" || { log "entrypoint: FATAL mkdir blobs failed" >&2; return 1; }
 
   # Found live (first real run on the VPS): `cmd > file` TRUNCATES `file`
   # before `cmd` even runs — so a failed pg_dump was silently leaving an
@@ -125,18 +125,27 @@ run_backup() {
 
   # All three dumps succeeded — only now do the real, previously-committed
   # filenames ever change.
-  mv "$BACKUP_REPO/mjolnir.sql.tmp" "$BACKUP_REPO/mjolnir.sql"
-  mv "$BACKUP_REPO/stabbur.sql.tmp" "$BACKUP_REPO/stabbur.sql"
-  mv "$BACKUP_REPO/phonexa.sql.tmp" "$BACKUP_REPO/phonexa.sql"
+  mv "$BACKUP_REPO/mjolnir.sql.tmp" "$BACKUP_REPO/mjolnir.sql" || { log "entrypoint: FATAL rename of mjolnir.sql failed" >&2; return 1; }
+  mv "$BACKUP_REPO/stabbur.sql.tmp" "$BACKUP_REPO/stabbur.sql" || { log "entrypoint: FATAL rename of stabbur.sql failed" >&2; return 1; }
+  mv "$BACKUP_REPO/phonexa.sql.tmp" "$BACKUP_REPO/phonexa.sql" || { log "entrypoint: FATAL rename of phonexa.sql failed" >&2; return 1; }
 
   # stabbur-blobs is mounted directly at /stabbur-blobs (D-C2) — no nested
   # docker run needed. Flat, content-addressed, write-once (D09/D45); a
   # plain per-file loop (not `cp -rn`, confirmed broken in busybox, D129).
   log "entrypoint: syncing stabbur's blob store..."
+  MIRROR_DIR=blobs
   src_count=$(ls -1 /stabbur-blobs | wc -l)
   before=$(ls -1 "$BACKUP_REPO/blobs" | wc -l)
   log "  source volume has $src_count file(s)"
   if [ "$src_count" -eq 0 ]; then
+    # Empty is only benign if the backup has never held anything for this
+    # source. If the mirror already has files, an empty source means the
+    # volume name drifted or the mount is wrong — and the old behaviour was to
+    # warn and then commit a green, mirror-nothing backup.
+    if [ "$(ls -1A "$BACKUP_REPO/$MIRROR_DIR" 2>/dev/null | wc -l)" -gt 0 ]; then
+      log "entrypoint: FATAL source for $MIRROR_DIR is empty but the mirror is not — check the volume mount" >&2
+      return 1
+    fi
     log "  WARNING: source volume is empty — nothing to copy this run"
   fi
   copied=0
@@ -144,8 +153,16 @@ run_backup() {
     [ -e "$f" ] || continue
     name=$(basename "$f")
     if [ ! -e "$BACKUP_REPO/blobs/$name" ]; then
-      cp "$f" "$BACKUP_REPO/blobs/$name"
-      copied=$((copied + 1))
+      # Count only a copy that SUCCEEDED. `copied` was incremented
+      # unconditionally, so the summary line reported copies that never
+      # happened — and under the `run_backup || log ...` caller a failing `cp`
+      # does not abort either (errexit is suppressed for the whole function).
+      if cp "$f" "$BACKUP_REPO/blobs/$name"; then
+        copied=$((copied + 1))
+      else
+        log "entrypoint: FATAL copy of blob $name failed" >&2
+        return 1
+      fi
     fi
   done
   after=$(ls -1 "$BACKUP_REPO/blobs" | wc -l)
@@ -169,11 +186,20 @@ run_backup() {
   # refresh one file on purpose: delete it from the backup repo clone and
   # let the next run copy the current one.
   log "entrypoint: syncing phonexa's audio tree..."
-  mkdir -p "$BACKUP_REPO/phonexa-audio"
+  mkdir -p "$BACKUP_REPO/phonexa-audio" || { log "entrypoint: FATAL mkdir phonexa-audio failed" >&2; return 1; }
+  MIRROR_DIR=phonexa-audio
   src_count=$(find /phonexa-audio -type f | wc -l)
   before=$(find "$BACKUP_REPO/phonexa-audio" -type f | wc -l)
   log "  source volume has $src_count file(s)"
   if [ "$src_count" -eq 0 ]; then
+    # Empty is only benign if the backup has never held anything for this
+    # source. If the mirror already has files, an empty source means the
+    # volume name drifted or the mount is wrong — and the old behaviour was to
+    # warn and then commit a green, mirror-nothing backup.
+    if [ "$(ls -1A "$BACKUP_REPO/$MIRROR_DIR" 2>/dev/null | wc -l)" -gt 0 ]; then
+      log "entrypoint: FATAL source for $MIRROR_DIR is empty but the mirror is not — check the volume mount" >&2
+      return 1
+    fi
     log "  WARNING: source volume is empty — nothing to copy this run"
   fi
   copied=0
@@ -181,21 +207,39 @@ run_backup() {
     rel="${f#/phonexa-audio/}"
     dest="$BACKUP_REPO/phonexa-audio/$rel"
     if [ ! -e "$dest" ]; then
-      mkdir -p "$(dirname "$dest")"
-      cp "$f" "$dest"
-      copied=$((copied + 1))
+      mkdir -p "$(dirname "$dest")" || { log "entrypoint: FATAL mkdir for $rel failed" >&2; return 1; }
+      if cp "$f" "$dest"; then
+        copied=$((copied + 1))
+      else
+        log "entrypoint: FATAL copy of audio $rel failed" >&2
+        return 1
+      fi
     fi
   done < <(find /phonexa-audio -type f -print0)
   after=$(find "$BACKUP_REPO/phonexa-audio" -type f | wc -l)
   log "  phonexa-audio/: $before -> $after ($copied new)"
 
-  cd "$BACKUP_REPO"
+  cd "$BACKUP_REPO" || { log "entrypoint: FATAL cd $BACKUP_REPO failed" >&2; return 1; }
   if ! git add -A; then
     log "entrypoint: FATAL git add failed" >&2
     return 1
   fi
 
   if git diff --cached --quiet; then
+    # A previous run may have committed successfully and then FAILED to push,
+    # leaving an unpushed local commit. The dumps are byte-identical on the
+    # next run, so nothing is staged and this branch is taken — and without
+    # the retry below the remote stays stale FOREVER while every subsequent
+    # run logs success. Found by independent review, 2026-11-13.
+    if [ -n "$(git log '@{u}..HEAD' --oneline 2>/dev/null)" ]; then
+      log "entrypoint: no new changes, but local commits are unpushed — retrying push"
+      if ! git push --quiet; then
+        log "entrypoint: FATAL push of previously-committed backups still failing — the remote is STALE" >&2
+        return 1
+      fi
+      log "entrypoint: pushed previously-committed backups"
+      return 0
+    fi
     log "entrypoint: no changes, nothing to commit"
     return 0
   fi

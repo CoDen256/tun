@@ -13,6 +13,14 @@
 # implementation `builder` also imports in-process.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# D151: shared values (TUN_PUBLIC_BASE, OTA_TOKEN) live in the REPOSITORY
+# ROOT .env — one level up from here — and only mjolnir-local ones in ./.env.
+# Sourcing just ./.env was correct before the monorepo and broke silently with
+# it: mjolnir/.env no longer exists, so this script aborted on
+# TUN_PUBLIC_BASE's `:?` guard before reaching a single check. Found by
+# independent review, not by running it, because every earlier run passed the
+# base url and token explicitly. Root first, project second.
+[ -f ../.env ] && set -a && . ../.env && set +a
 [ -f .env ] && set -a && . ./.env && set +a
 : "${TUN_PUBLIC_BASE:?set TUN_PUBLIC_BASE in .env}"
 exec node bin/bundle-tool.js ota-publish "$@"

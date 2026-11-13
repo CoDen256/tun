@@ -9,15 +9,28 @@
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
+# D151: shared values (TUN_PUBLIC_BASE, OTA_TOKEN) live in the REPOSITORY
+# ROOT .env — one level up from here — and only mjolnir-local ones in ./.env.
+# Sourcing just ./.env was correct before the monorepo and broke silently with
+# it: mjolnir/.env no longer exists, so this script aborted on
+# TUN_PUBLIC_BASE's `:?` guard before reaching a single check. Found by
+# independent review, not by running it, because every earlier run passed the
+# base url and token explicitly. Root first, project second.
+[ -f ../.env ] && set -a && . ../.env && set +a
 [ -f .env ] && set -a && . ./.env && set +a
 BASE=${1:-${TUN_PUBLIC_BASE:?set TUN_PUBLIC_BASE in .env or pass a base url}}
 TOKEN=${OTA_TOKEN:?set OTA_TOKEN in .env}
 AUTH="Authorization: Bearer ${TOKEN}"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-PASS=0; FAIL=0
+PASS=0; FAIL=0; SKIP=0
 
 ok()   { printf '  \033[32mPASS\033[0m %s\n' "$1"; PASS=$((PASS+1)); }
 bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$1"; FAIL=$((FAIL+1)); }
+# A check that was deliberately not exercised must NOT count as a pass. Added
+# after independent review found the D53 assertion below reporting PASS for
+# the exact condition production forbids whenever ALLOW_HTTP=1 — so a
+# "16 passed" run could include the INVERSE of the production requirement.
+skip() { printf '  \033[33mSKIP\033[0m %s\n' "$1"; SKIP=$((SKIP+1)); }
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 
 # An empty value must NEVER satisfy an assertion. Comparing two unset strings
@@ -71,8 +84,9 @@ printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{64}$' \
 	&& ok "size = $SIZE" || bad "size missing or non-positive"
 case "$URL" in
 	https://*) ok "url is https (D53)" ;;
-	http://*)  [ "${ALLOW_HTTP:-0}" = 1 ] && ok "url is http (local test only)" \
-	                                      || bad "url MUST be https in production (D53)" ;;
+	http://*)  [ "${ALLOW_HTTP:-0}" = 1 ] \
+	             && skip "url is http — D53's https requirement NOT verified (ALLOW_HTTP=1)" \
+	             || bad "url MUST be https in production (D53)" ;;
 	*) bad "url malformed: '$URL'" ;;
 esac
 [ "$(grep -ci 'cache-control: *no-store' <(curl -sSI -H "$AUTH" "$BASE/ota/current.json"))" -ge 1 ] \
@@ -126,7 +140,12 @@ eq "ungzipped GET Content-Length == size" "$PLAIN_CL" "$SIZE"
 
 echo
 if [ "$FAIL" -eq 0 ]; then
-	printf '\033[32m%s passed, 0 failed — P1 path proven\033[0m\n' "$PASS"; exit 0
+	if [ "$SKIP" -gt 0 ]; then
+		printf '\033[33m%s passed, 0 failed, %s SKIPPED — NOT a full proof of the device path\033[0m\n' "$PASS" "$SKIP"
+	else
+		printf '\033[32m%s passed, 0 failed — P1 path proven\033[0m\n' "$PASS"
+	fi
+	exit 0
 else
-	printf '\033[31m%s passed, %s FAILED\033[0m\n' "$PASS" "$FAIL"; exit 1
+	printf '\033[31m%s passed, %s FAILED, %s skipped\033[0m\n' "$PASS" "$FAIL" "$SKIP"; exit 1
 fi

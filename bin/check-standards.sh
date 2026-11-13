@@ -1,95 +1,133 @@
 #!/usr/bin/env bash
-# Enforces the standards that D151 and D152 state, so drift is a failed check
-# rather than a discovery. Run it from the repository root.
+# Enforces the standards D150-D153 state, so drift is a failed check rather
+# than a discovery. Run from the repository root.
 #
 #   bin/check-standards.sh
 #
-# Exit 0 = conformant. Any violation prints the file and the offending value.
+# EXIT CODES MATTER — DEPLOY.md treats this as a gate:
+#   0  every check ran and passed
+#   1  a real violation
+#   2  a check could not be run (no docker, no .env). NOT a pass.
+#
+# Rewritten 2026-11-13 after independent review found the previous version
+# fail-OPEN on its most security-relevant check: the port-leak test piped
+# `docker compose config` into python with `except: sys.exit(0)`, so ANY
+# config failure produced an empty result and printed " ok ". It was also
+# gated on `[ -f .env ]` and skipped in silence on a fresh clone, while the
+# summary still read "all standards checks passed". A gate that cannot fail is
+# worse than no gate.
 set -uo pipefail
 cd "$(dirname "$0")/.."
-fail=0
-note() { printf '  %s\n' "$*"; }
-bad() { printf '\033[31mFAIL\033[0m %s\n' "$*"; fail=1; }
-ok()  { printf '\033[32m ok \033[0m %s\n' "$*"; }
+fail=0; skipped=0
+note() { printf '     %s\n' "$*"; }
+bad()  { printf '\033[31mFAIL\033[0m %s\n' "$*"; fail=1; }
+ok()   { printf '\033[32m ok \033[0m %s\n' "$*"; }
+skip() { printf '\033[33mSKIP\033[0m %s\n' "$*"; skipped=1; }
 
-# --- D151: no configuration key appears in two .env files -----------------
-envs=$(ls .env.example */.env.example 2>/dev/null)
-dupes=$(for f in $envs; do
-          grep -hoE '^[A-Z_][A-Z0-9_]*=' "$f" 2>/dev/null | tr -d '=' | sed "s|^|$f |"
-        done | awk '{print $2}' | sort | uniq -d)
+# Every compose file, including the root compose.dev.yaml the old version's
+# --include globs silently excluded.
+COMPOSE_FILES=$(find . -path ./.git -prune -o -name 'compose*.yaml' -type f -print 2>/dev/null | grep -v '/base/')
+# .env.example at ANY depth — the old depth-1 glob missed
+# mjolnir/hub/.env.example, which types a DATABASE_URL that D151 forbids.
+ENV_FILES=$(find . -path ./.git -prune -o -name '.env.example' -type f -print 2>/dev/null)
+
+# --- D151: no configuration key in two .env.example files -------------------
+dupes=$(for f in $ENV_FILES; do
+          grep -hoE '^[[:space:]]*#?[[:space:]]*[A-Z_][A-Z0-9_]*=' "$f" 2>/dev/null \
+            | tr -d '#=' | tr -d '[:blank:]'
+        done | sort | uniq -d)
 if [ -n "$dupes" ]; then
-  bad "D151: these keys are defined in more than one .env.example:"
-  for k in $dupes; do note "$k -> $(grep -l "^$k=" $envs | tr '\n' ' ')"; done
+  bad "D151: keys defined in more than one .env.example:"
+  for k in $dupes; do note "$k -> $(grep -lE "^[[:space:]]*#?[[:space:]]*$k=" $ENV_FILES | tr '\n' ' ')"; done
 else
-  ok "D151: no configuration key is defined in two .env.example files"
+  ok "D151: no configuration key is defined in two .env.example files ($(echo $ENV_FILES | wc -w) files, commented keys included)"
 fi
 
-# --- D151: values that must be derived, never typed ------------------------
-# PHONEXA_AUTH_HASH is deliberately NOT in this list. It is neither derivable
-# nor retired yet: mjolnir/compose.yaml reads it by interpolation and
-# mjolnir/.env.example documents it, so an operator who follows DEPLOY.md and
-# sets it would have tripped a false failure here. `unified-auth` retires it by
-# deriving the hash in the gateway's entrypoint; add it then, not now.
-dead='STABBUR_UPSTREAM|SMIA_UPSTREAM|PHONEXA_UPSTREAM|STABBUR_BASE_URL|STABBUR_UI_BASE|SMIA_BASE_URL'
-if hits=$(grep -nE "^($dead)=" $envs 2>/dev/null); then
-  bad "D151: these are derivable or retired and must not be in any .env:"; note "$hits"
-else
-  ok "D151: no retired or derivable value is typed into a .env"
-fi
+# --- D151: derivable or retired values must not be typed anywhere ----------
+# PHONEXA_AUTH_HASH is deliberately absent: it is neither derivable nor retired
+# yet (mjolnir/compose.yaml interpolates it). `unified-auth` retires it by
+# deriving the hash in the gateway entrypoint; add it then.
+dead='STABBUR_UPSTREAM|SMIA_UPSTREAM|PHONEXA_UPSTREAM|STABBUR_BASE_URL|STABBUR_UI_BASE|SMIA_BASE_URL|DATABASE_URL'
+hits=$(grep -nE "^[[:space:]]*#?[[:space:]]*($dead)=" $ENV_FILES 2>/dev/null)
+if [ -n "$hits" ]; then bad "D151: derivable/retired values typed into a .env.example:"; note "$hits"
+else ok "D151: no retired or derivable value is typed into any .env.example"; fi
 
-# --- D152: no container_name, no external network -------------------------
-if hits=$(grep -rnE '^\s*(container_name:|external:\s*true)' --include=compose.yaml --include=compose.override.yaml . 2>/dev/null); then
-  bad "D152: container_name / external network found:"; note "$hits"
-else
-  ok "D152: no container_name and no external network"
-fi
-# Only non-comment lines: the compose files legitimately explain in comments
-# that the network was removed and why (D104's trap is worth remembering).
-if hits=$(grep -rn 'tun-shared' --include=compose.yaml --include=compose.override.yaml . 2>/dev/null | grep -vE ':[0-9]+:\s*#'); then
-  bad "D150: tun-shared network still referenced:"; note "$hits"
-else
-  ok "D150: no tun-shared reference"
-fi
+# --- D152/D150: file-level prohibitions across EVERY compose file ----------
+hits=$(grep -nE '^[[:space:]]*(container_name:|external:[[:space:]]*true)' $COMPOSE_FILES 2>/dev/null)
+if [ -n "$hits" ]; then bad "D152: container_name / external network:"; note "$hits"
+else ok "D152: no container_name and no external network (all $(echo $COMPOSE_FILES | wc -w) compose files)"; fi
 
-# --- D152: every long-running service restarts -----------------------------
-for f in */compose.yaml; do
-  svcs=$(grep -cE '^  [a-z][a-z0-9-]*:' "$f")
-  rs=$(grep -c 'restart: unless-stopped' "$f")
-  [ "$rs" -ge 1 ] || bad "D152: $f declares no restart policy"
-done
-ok "D152: restart policies present"
+hits=$(grep -nE 'tun-shared' $COMPOSE_FILES 2>/dev/null | grep -vE ':[0-9]+:[[:space:]]*#')
+if [ -n "$hits" ]; then bad "D150: tun-shared referenced outside a comment:"; note "$hits"
+else ok "D150: no tun-shared reference outside comments"; fi
 
-# --- D152: nothing but the gateway publishes a public port -----------------
-if command -v docker >/dev/null && [ -f .env ]; then
-  leak=$(docker compose config --format json 2>/dev/null | python3 -c "
-import sys,json
-try: d=json.load(sys.stdin)
-except Exception: sys.exit(0)
-for n,s in d.get('services',{}).items():
-    for p in s.get('ports') or []:
-        ip=p.get('host_ip','0.0.0.0')
-        if n!='caddy' and ip not in ('127.0.0.1','::1'):
-            print(f'{n} {ip}:{p.get(\"published\")}')
-")
-  if [ -n "$leak" ]; then bad "D152: non-gateway service publishes a public port:"; note "$leak"
-  else ok "D152: only the gateway publishes publicly"; fi
-fi
+# --- D153: active change ids are bare slugs --------------------------------
+# Archives keep their dated names on purpose (D153) — they are historical
+# record, are not addressable by `openspec --change` either way, and renaming
+# them would break every document citing them. This check is therefore about
+# ACTIVE changes only, and its message says so rather than implying more.
+hits=$(find . -path ./.git -prune -o -path '*/openspec/changes/*' -name '.openspec.yaml' -print 2>/dev/null \
+        | grep -v '/archive/' | xargs -r -n1 dirname 2>/dev/null \
+        | xargs -r -n1 basename 2>/dev/null | grep -E '^[0-9]')
+if [ -n "$hits" ]; then bad "D153: dated ACTIVE change ids (openspec --change rejects these):"; note "$hits"
+else ok "D153: every ACTIVE change id is a bare slug (archives keep dated names by decision)"; fi
 
-# --- D153: OpenSpec change ids are bare slugs ------------------------------
-if hits=$(ls -d openspec/changes/[0-9]* */openspec/changes/[0-9]* 2>/dev/null); then
-  bad "D153: dated change ids (the CLI's --change flag rejects these):"; note "$hits"
-else
-  ok "D153: all active change ids are bare slugs"
-fi
-
-# --- no CI (D152) ----------------------------------------------------------
+# --- D152: no CI ------------------------------------------------------------
 hits=$(find . -path ./.git -prune -o -path '*/.github/workflows/*' -type f -print 2>/dev/null)
-if [ -n "$hits" ]; then
-  bad "D152: a CI workflow exists:"; note "$hits"
+if [ -n "$hits" ]; then bad "D152: a CI workflow exists:"; note "$hits"
+else ok "D152: no CI workflow"; fi
+
+# --- service-level checks, from the RENDERED config (authoritative) --------
+# These cannot be done by grepping text: a service's effective restart policy,
+# ports and healthcheck are the result of merging every included fragment.
+if ! command -v docker >/dev/null 2>&1; then
+  skip "D152 service-level checks: docker not available — restart policies, port exposure and healthchecks NOT verified"
+elif [ ! -f .env ]; then
+  skip "D152 service-level checks: no .env at the repo root — cannot render the config, so restart policies, port exposure and healthchecks are NOT verified (cp .env.example .env)"
 else
-  ok "D152: no CI workflow"
+  rendered=$(docker compose config --format json 2>/dev/null)
+  if [ -z "$rendered" ]; then
+    bad "D152 service-level checks: 'docker compose config' produced NOTHING — the project does not render. This is a violation, not a skip:"
+    note "$(docker compose config 2>&1 | head -4)"
+  else
+    result=$(printf '%s' "$rendered" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+svcs = d.get('services') or {}
+problems = []
+# Long-running services must restart. Checked PER SERVICE — the old version
+# counted occurrences per FILE, so a file where five of six services lost
+# their policy still passed.
+for n, s in sorted(svcs.items()):
+    if s.get('restart') != 'unless-stopped':
+        problems.append(f'restart: {n} = {s.get(\"restart\")!r}, expected unless-stopped')
+# Only the gateway may publish on a non-loopback interface.
+for n, s in sorted(svcs.items()):
+    for p in s.get('ports') or []:
+        ip = p.get('host_ip', '0.0.0.0')
+        if n != 'caddy' and ip not in ('127.0.0.1', '::1'):
+            problems.append(f'public port: {n} on {ip}:{p.get(\"published\")}')
+# Every backend needs its own healthcheck. The gateway, adminer and the backup
+# service are listed explicitly as known-unmonitored rather than silently
+# excluded — see the service-standard spec.
+EXEMPT = {'caddy', 'adminer', 'backup'}
+for n, s in sorted(svcs.items()):
+    if n in EXEMPT: continue
+    if not s.get('healthcheck'):
+        problems.append(f'no healthcheck: {n}')
+print(f'SERVICES={len(svcs)}')
+for p in problems: print('P:' + p)
+" 2>&1)
+    if printf '%s' "$result" | grep -q '^P:'; then
+      bad "D152: service-level violations in the rendered config:"
+      printf '%s' "$result" | grep '^P:' | sed 's/^P:/     /'
+    else
+      ok "D152: every service restarts, only the gateway publishes publicly, every backend has a healthcheck ($(printf '%s' "$result" | grep SERVICES= | cut -d= -f2) services)"
+    fi
+  fi
 fi
 
 echo
-[ $fail -eq 0 ] && echo "all standards checks passed" || echo "standards violations above"
-exit $fail
+if [ "$fail" -ne 0 ]; then echo "standards VIOLATIONS above"; exit 1; fi
+if [ "$skipped" -ne 0 ]; then echo "no violations found, but some checks could NOT be run — this is not a pass"; exit 2; fi
+echo "all standards checks passed"
