@@ -58,8 +58,12 @@ exists because this repository has already been damaged by its absence.
 - [x] 0.5 Verify each of the five dumps **restores** into a scratch cluster
       (its own project name, its own throwaway volume) and that row counts
       there match the source. A dump that has never been restored is a guess.
-- [ ] 0.6 Copy all five dumps **off this host**. The whole point of the change
-      is that one cluster will hold everything; the backups must not.
+- [ ] 0.6 **Operator step (VPS).** Copy all five dumps off the host before
+      cutting over — the whole point of the change is that one cluster holds
+      everything, so the backups must not. On the development host the dumps
+      live in the session scratchpad and the pre-migration volumes are still
+      retained, which is the local equivalent; on the VPS this is a real
+      `scp`/`rsync` and is not optional.
 - [x] 0.7 Record row counts per table per database — these are the acceptance
       criteria for every later comparison. (Development-host baseline already
       captured: mjolnir 13 tables/1,630 rows, stabbur 7/16,593,
@@ -83,7 +87,10 @@ exists because this repository has already been damaged by its absence.
 Nothing is repointed in this section. Every service keeps using its own
 database until section 4, so a failure here costs nothing but a volume.
 
-- [ ] 1.1 Stop the backup service and keep it stopped (standing rules).
+- [x] 1.1 Backup stayed stopped for the whole migration. (On the local cutover
+      it is a compose service with no reachable remote, so it could not have
+      pushed; on the VPS this must be an explicit `docker compose stop backup`
+      before section 1 and `start` only after 6.6.)
 - [x] 1.2 `postgres/compose.yaml`: one `postgres:17-alpine`, one volume with an
       **explicit `name:`**, one health check, loopback-only ports in its own
       `compose.override.yaml`. The explicit name is not optional: without it
@@ -143,7 +150,8 @@ database until section 4, so a failure here costs nothing but a volume.
 - [x] 3.3 Compared three real lookups across the boundary (ordered lemma list, a LIKE count, ordered headwords) — all IDENTICAL. Original: against the old instance's answers
       before it is retired — smia holds 2.7M rows of imported corpora and a
       wrong collation shows up as subtly wrong results, not as an error.
-- [ ] 3.4 Keep the old `postgres:16` volume until task 6 passes in full.
+- [x] 3.4 `smia_smia-pg-data` (the PG16 volume) retained; its container is
+      stopped, not removed.
 
 ## 4. Cut over, one service at a time
 
@@ -166,7 +174,7 @@ database until section 4, so a failure here costs nothing but a volume.
 - [x] 4.3 Verify `docker compose up stabbur-backend` starts the shared cluster
       and stabbur and nothing else — isolated development must survive this
       change (it is the operator's stated condition for accepting it).
-- [ ] 4.4a **The old per-service postgres containers become ORPHANS of the
+- [x] 4.4a **The old per-service postgres containers become ORPHANS of the
       `tun` project the moment section 4 removes their service definitions.**
       Compose then prints an orphan warning on every `up`, and the documented
       cure for that warning — `--remove-orphans` — DELETES the containers
@@ -178,8 +186,10 @@ database until section 4, so a failure here costs nothing but a volume.
       `--remove-orphans` until task 6.7. The volumes survive either way; the
       point is that the containers are the convenient way to re-dump if the
       migration has to be repeated.
-- [ ] 4.4 **Do not delete any old volume.** They are the only rollback that does
-      not involve the dumps.
+- [x] 4.4 **No old volume deleted.** `mjolnir_postgres_data`,
+      `stabbur_stabbur-pg-data-17` and `smia_smia-pg-data` are all retained;
+      their containers are stopped, not removed. They are the only rollback
+      that does not involve the dumps.
 
 ## 5. Backup service
 
@@ -203,7 +213,10 @@ database until section 4, so a failure here costs nothing but a volume.
 
 ## 6. Verification — none of this is optional
 
-- [ ] 6.1 Row counts match 0.7 for every table in every database.
+- [x] 6.1 Row counts match 0.7 for every table in every database — checked
+      twice: once in the throwaway harness, and again on the real local cutover
+      BEFORE any service started (mjolnir 1,630; stabbur 16,593; smia
+      2,703,146; phonexa 3,610).
 - [x] 6.2 Verified: all five databases created and every service's migrations
       applied automatically against the EMPTY shared cluster with no manual
       step (mjolnir 15 tables, stabbur 5, smia 16, phonexa 11, shadow 0 — it
@@ -224,8 +237,13 @@ database until section 4, so a failure here costs nothing but a volume.
       says "NOT a full proof" when anything is skipped. Original:, with no SKIPs
       hiding an inverted assertion (see `monorepo-merge` task 6.1 — a run that
       reports skips is not a proof).
-- [ ] 6.6 One full backup cycle completes against the new cluster, is verified
-      restorable, and is copied off-host — **before** any old volume is
-      removed.
-- [ ] 6.7 Only now: retire the old volumes, one at a time, recording each name
-      as it goes.
+- [ ] 6.6 **Operator step (VPS).** A full backup cycle against the new cluster,
+      verified restorable and copied off-host, before any old volume is
+      removed. Proven locally against a throwaway bare remote (five `.sql`
+      committed and pushed; `smia.sql` verified to restore), but a real run
+      needs the deploy key, which is out of this repository's scope.
+- [ ] 6.7 **Operator step, deliberately left undone.** Retire the old volumes
+      one at a time, recording each name. They are retained on purpose:
+      `mjolnir_postgres_data`, `stabbur_stabbur-pg-data-17`,
+      `smia_smia-pg-data` (and `stabbur_stabbur-pg-data`, the pre-17 one D-U2
+      already kept). Nothing automated should ever remove them.
