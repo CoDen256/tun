@@ -574,6 +574,25 @@ Keep all four dumps off the VPS before you change anything.
 
 ### 8.4 Then, and only then, cut over
 
+**First stand down the OLD per-repo stacks.** This step is not optional and was
+missing from an earlier version of this runbook. Before the merge each project
+ran as its own Compose project from its own sibling checkout, and those
+containers still hold the named volumes the new project is about to mount. Two
+Postgres processes on one data directory corrupts it. Verified on the
+development host: `phonexa-postgres` was still running under project `phonexa`,
+holding `phonexa_postgres_data`, long after the merge.
+
+```sh
+# For each sibling checkout that ever ran a stack. NOTE: no -v, ever (§8.2).
+for p in mjolnir stabbur smia phonexa; do
+  [ -d ~/"$p" ] && (cd ~/"$p" && docker compose down)
+done
+docker ps            # must list NOTHING holding a *_pg-data / *_postgres_data volume
+docker compose ls    # must show no other project still up
+```
+
+Then cut over:
+
 ```sh
 cd ~/tun                      # the one clone; see §1
 git fetch && git checkout monorepo
@@ -581,7 +600,8 @@ wc -c compose.yaml            # sanity: not 47 bytes (§8.0)
 cp .env.example .env.new && $EDITOR .env.new      # merge in the live values
 # MJOLNIR_POSTGRES_PASSWORD must be the OLD mjolnir/.env POSTGRES_PASSWORD (§3)
 mv .env.new .env
-bash bin/check-standards.sh   # exits 0
+bash bin/check-standards.sh   # must exit 0. Exit 2 means a check could NOT be
+                              # run — that is not a pass; fix it and re-run.
 docker compose up -d --build
 ```
 

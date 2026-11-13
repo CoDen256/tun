@@ -102,3 +102,64 @@ is a change in blast radius and is recorded as such.
   the one-time risk is paid once while the operational cost is paid forever.
 - **One cluster, one database, separate schemas.** Rejected: it breaks the
   "separate `.sql` per service" requirement the operator stated explicitly.
+
+## Hardened after independent review of `monorepo-merge` (2026-11-13)
+
+Four adversarial reviewers went over the previous change and were asked, as
+their highest-value task, to name how THIS change could destroy data before it
+runs. They found eight ways, every one of which the original `tasks.md` failed
+to prevent. The task list was restructured rather than appended to, because two
+of the defects were ordering problems that no added warning would fix.
+
+**The ordering defect.** The original section 1 made each project `include:`
+the shared cluster and repoint its `DATABASE_URL`, and only then did section 2
+`pg_dump` "from the verified live volume" one service at a time. Once a
+project's compose file stops declaring its own postgres service, that container
+is an orphan: the first `docker compose up` detaches all four source databases,
+and `--remove-orphans` — which operators reach for precisely because Compose
+prints a warning about them — deletes them. The sources would be gone before
+they were dumped. Now **every dump happens in section 0**, while every source
+is intact, and nothing is repointed until section 4, after the restore has been
+row-count verified.
+
+**smia had no backup and the riskiest migration.** It is the only 16 → 17
+restore, it is the only database the backup service has never covered, and its
+volume was already destroyed once during this effort (P41). The original file
+merely said "decide whether smia's cache is backed up". A hand-made, restore
+verified, off-host `smia.sql` is now a blocking pre-flight task.
+
+**Idempotent init is not achievable the documented way.** The original said
+"idempotent init: create databases …". Postgres runs
+`/docker-entrypoint-initdb.d` **only** when initialising a fresh data
+directory — the same mechanism this change's own "one password cannot be
+shared" reasoning depends on. A half-failed first attempt that leaves the
+volume behind produces a cluster with no databases, no roles and no `shadow`,
+and the only symptom is authentication failures. Idempotency now has to come
+from a step that runs on every start and is verified by running it twice.
+
+**A successful backup can destroy a good backup.** Nothing stopped the backup
+service during the migration. A scheduled run against a half-migrated database
+dumps the new empty-or-partial state, renames over the committed `.sql` and
+pushes — and because that run *succeeded*, the all-or-nothing discipline does
+not help. The service is now stopped from the first task of section 1 until the
+final verification passes.
+
+**Out-of-project containers hold the target volumes.** Verified live on the
+development host: `phonexa-postgres` runs under Compose project `phonexa`, from
+the pre-merge sibling checkout, holding `phonexa_postgres_data`. Nothing in the
+original file stood the old stacks down, and `DEPLOY.md` §8.4 was
+`git checkout` + `docker compose up`. Two Postgres processes on one data
+directory corrupts it.
+
+**Plus the three P41-derived standing rules** (never `-v` against the root
+project; a harness must redirect every volume in the *rendered* config; never
+point a bootstrap at real data — smia's `import_kaikki` opens with `TRUNCATE`),
+and an explicit `name:` on the new cluster's volume, without which it would be
+`tun_*` through the include and `postgres_*` standalone — the exact mechanism
+that gave this host its parallel generation of volumes in the first place.
+
+The through-line: every one of these is a case where the *failure reports
+success*. That is the class of defect this ecosystem keeps producing, and it is
+why the verification tasks now require a restore rather than a file, a query
+rather than a script, and a scratch cluster rather than a careful operator.
+
