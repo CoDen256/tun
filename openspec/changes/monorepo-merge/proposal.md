@@ -99,15 +99,35 @@ below, which must be answered before this change is applied.
   root `.dockerignore` mandatory — the combined working tree is ~10 GB.
 
 **Non-goals (each is its own change):**
-- Database consolidation → `2026-11-13-postgres-consolidation`
-- Splitting hub/phonexa, degradation → `2026-11-13-zone-isolation`
-- The auth rework → `2026-11-13-unified-auth`
+- Database consolidation → `postgres-consolidation`
+- Splitting hub/phonexa, degradation → `zone-isolation`
+- The auth rework → `unified-auth`
 - Any change to the device-facing contract. None. Not in this change.
 
-## Open question — BLOCKING
+## Decisions taken (2026-11-13, operator)
 
-phonexa's `.github/workflows/docker-build-push.yml` does two jobs, not one. It
-pushes a Docker image to Docker Hub **and deploys GitHub Pages**.
-`https://coden256.github.io/phonexa/` is live (verified 200, 2026-11-13).
-Deleting the workflow takes that site down. The operator asked for the CI to be
-removed; this flags that the Pages site goes with it unless kept deliberately.
+- **phonexa CI: deleted in full.** The workflow's GitHub Pages job goes with
+  it and `https://coden256.github.io/phonexa/` stops being published. Accepted
+  knowingly — phonexa is served at `/phonexa/` behind the operator gate.
+- **Execution scope: this repository only.** The merge, all configuration, the
+  splits and the documentation are implemented and verified locally under
+  Docker. The production cutover (identifying live volumes, dump/restore, the
+  shadowing table move, the device replay) is delivered as a runbook in
+  `DEPLOY.md` for the operator to execute. Nothing in this change touches live
+  data or the TLS certificates.
+- **Git: a `monorepo` branch, not pushed.** `master` is untouched and no
+  remote receives the ~1.5 GB until the operator chooses to push.
+- **smia's `providers/` stays tracked in git.** `DEPLOY.md`'s and
+  `compose.yaml`'s claim that it is gitignored and must be `rsync`ed is simply
+  wrong and is deleted. A fresh clone therefore gives a working smia, instead
+  of one whose every data-backed provider silently returns empty candidates
+  (the failure D118 confirmed live).
+- **smia's backup excludes its lookup-cache tables**, which are rebuildable
+  from `providers/` and the import scripts, mirroring the existing `job_logs`
+  exclusion. Everything else in smia is dumped.
+- **OpenSpec change ids are bare slugs, not dated.** Forced by tooling, not
+  taste: `openspec status --change` and `openspec instructions apply --change`
+  reject any name that does not start with a letter, so the dated convention
+  used by `tun`, `mjolnir` and `phonexa` cannot be driven by the CLI at all.
+  The four changes of this effort were renamed accordingly. The pre-existing
+  dated changes have the same defect and are renamed as part of task 4.8.

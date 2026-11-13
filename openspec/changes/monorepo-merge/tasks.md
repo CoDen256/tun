@@ -1,19 +1,22 @@
 ## 0. Before anything is moved
 
-- [ ] 0.1 Resolve the **blocking** question in `proposal.md`: deleting
-      phonexa's workflow also takes down `https://coden256.github.io/phonexa/`
-      (verified live, 200). Keep the Pages job, or accept the site going away.
-- [ ] 0.2 On the VPS, record the live volume set from the **running
-      containers**, not the compose files:
+- [x] 0.1 **Answered** (operator, 2026-11-13): phonexa's CI is deleted in
+      full, including its GitHub Pages job; `coden256.github.io/phonexa`
+      stops being published. See proposal.md, Decisions taken.
+- [ ] 0.2 **Runbook, not executable here** (scope: this repository only).
+      `DEPLOY.md` must instruct the operator to record the live volume of
+      every stateful service from the **running containers** before any
+      cutover:
       `docker ps -q | xargs -n1 docker inspect --format '{{.Name}} {{range .Mounts}}{{.Name}} {{end}}'`
-      Write the result into `DEPLOY.md`. Two generations of volumes exist on at
-      least one host (design.md, Risks) and every later change depends on
-      knowing which is live.
-- [ ] 0.3 Verify a full backup run completed and that `tun-backup` holds a
-      current `mjolnir.sql`, `stabbur.sql`, `phonexa.sql`.
-- [ ] 0.4 Settle whether smia's `providers/` is genuinely tracked (it is —
-      3,858 files) and update `DEPLOY.md`'s contrary claim, or gitignore it and
-      keep the out-of-band copy. Decide before the merge, not after.
+      Two generations of volumes exist on at least one host (design.md,
+      Risks), and dumping the wrong one yields a complete, plausible, stale
+      database with no error.
+- [ ] 0.3 **Runbook, not executable here.** `DEPLOY.md` must require a
+      verified git-backup cycle, with a current dump per database, before the
+      cutover begins.
+- [x] 0.4 **Answered** (operator, 2026-11-13): smia's `providers/` stays
+      tracked in git. `DEPLOY.md`'s and `compose.yaml`'s contrary claim is
+      wrong and is deleted in task 5.4/5.5.
 
 ## 1. Merge
 
@@ -79,9 +82,14 @@
       `dev` profile (stabbur and smia currently bind `0.0.0.0`).
 - [ ] 4.6 `pytest.ini` + `tests/` in all three Flask services; rename
       phonexa's `test/` and give it a `pytest.ini`.
-- [ ] 4.7 Delete `phonexa/.github/` — **only after task 0.1 is answered**.
-- [ ] 4.8 One OpenSpec change-id convention across all projects; currently
-      split 3/3 between dated and bare slugs.
+- [ ] 4.7 Delete `phonexa/.github/` entirely (task 0.1 answered: the Pages
+      site goes with it).
+- [ ] 4.8 One OpenSpec change-id convention: **bare slugs**. Forced by
+      tooling — `openspec status --change` and `openspec instructions apply
+      --change` reject any name not starting with a letter, so dated ids
+      cannot be driven by the CLI. Rename the pre-existing dated changes in
+      `tun`, `mjolnir` and `phonexa` (including those under
+      `changes/archive/`) and fix every cross-reference to them.
 
 ## 5. Documentation
 

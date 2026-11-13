@@ -104,7 +104,7 @@ ones, not a bare gateway error.
 **Non-goals:**
 - No auth change. `mjolnir-sync` keeps validating exactly the credential it
   validates today; the device sees no difference. The gate is
-  `2026-11-13-unified-auth`.
+  `unified-auth`.
 - **No change to the device-facing contract.** The sync endpoint's path, method,
   header, body shape and status codes are unchanged. `11-ota-contract.md` is
   untouched.
