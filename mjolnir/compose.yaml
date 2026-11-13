@@ -163,7 +163,12 @@ services:
       # curl, hub's does not), and `node -e` is CommonJS by default so
       # require() is fine. 127.0.0.1 rather than localhost: the server binds
       # all interfaces and the literal skips any IPv6-first resolution.
-      test: ["CMD", "node", "-e", "const r=require('http').get({host:'127.0.0.1',port:8000,path:'/mjolnir/login'},s=>process.exit(s.statusCode?0:1));r.setTimeout(3000,()=>{r.destroy();process.exit(1)});r.on('error',()=>process.exit(1))"]
+      # Keys on the STATUS CODE, not merely on getting a response. The
+      # previous probe exited 0 for any statusCode at all, so with the
+      # database down /_health answered 503 "degraded" while `docker inspect`
+      # still said healthy — the P45 symptom in a new place. Keeps the 3s
+      # timeout guard, which a bare fetch() does not have.
+      test: ["CMD", "node", "-e", "const r=require('http').get({host:'127.0.0.1',port:8000,path:'/mjolnir/_health'},s=>process.exit(s.statusCode===200?0:1));r.setTimeout(3000,()=>{r.destroy();process.exit(1)});r.on('error',()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -204,7 +209,7 @@ services:
     healthcheck:
       # Liveness only, and outside the auth gate on purpose: /_health is not
       # part of the device contract and a probe must not need a credential.
-      test: ["CMD", "node", "-e", "fetch('http://localhost:8002/_health').then(r=>process.exit(0)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "const r=require('http').get({host:'127.0.0.1',port:8002,path:'/_health'},s=>process.exit(s.statusCode===200?0:1));r.setTimeout(3000,()=>{r.destroy();process.exit(1)});r.on('error',()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -259,7 +264,12 @@ services:
       # node rather than curl even though this image does install curl (for
       # ffmpeg-adjacent ops scripting): keeping the probe byte-for-byte hub's,
       # modulo the port and path, is the point of 4.4.
-      test: ["CMD", "node", "-e", "const r=require('http').get({host:'127.0.0.1',port:8001,path:'/builder/login'},s=>process.exit(s.statusCode?0:1));r.setTimeout(3000,()=>{r.destroy();process.exit(1)});r.on('error',()=>process.exit(1))"]
+      # Keys on the STATUS CODE, not merely on getting a response. The
+      # previous probe exited 0 for any statusCode at all, so with the
+      # database down /_health answered 503 "degraded" while `docker inspect`
+      # still said healthy — the P45 symptom in a new place. Keeps the 3s
+      # timeout guard, which a bare fetch() does not have.
+      test: ["CMD", "node", "-e", "const r=require('http').get({host:'127.0.0.1',port:8001,path:'/builder/_health'},s=>process.exit(s.statusCode===200?0:1));r.setTimeout(3000,()=>{r.destroy();process.exit(1)});r.on('error',()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5

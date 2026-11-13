@@ -69,7 +69,14 @@ export function createServer(config, boot) {
       // of the device contract, and deliberately outside the auth gate so a
       // probe does not need a credential.
       if (url.pathname === "/_health") {
-        return sendJson(res, 200, { status: boot.status(), db: boot.dbReady() });
+        // 503 when degraded, not a 200 whose BODY says degraded. The probe
+        // keys on the status code, and a body nobody parses is not a signal.
+        const ready = boot.dbReady();
+        return sendJson(res, ready ? 200 : 503, {
+          service: "mjolnir-sync",
+          status: boot.status(),
+          db: ready,
+        });
       }
 
       if (config.operatorAuthToken) {
@@ -81,12 +88,48 @@ export function createServer(config, boot) {
         // (D-S1) — `userdata`/`userdata_history` stay keyed by it unchanged.
         const uid = decodeURIComponent(url.pathname.slice(USERDATA_PREFIX.length));
 
-        // The database is the one hard dependency this service has. Saying so
-        // explicitly beats letting a connection error surface as a 500 with a
-        // driver stack trace: the device retries, and a 503 is the honest code
-        // for "try again".
+        // METHOD DISPATCH FIRST, readiness second. Independent review caught
+        // this the other way round: the readiness gate sat above the method
+        // check, so during a database outage a PUT answered 503 where the
+        // frozen contract says 405. Whether the database is up has nothing to
+        // do with whether a method is supported, and the device is entitled
+        // to the same 405 either way.
+        const SUPPORTED = ["GET", "PATCH", "POST", "DELETE"];
+        if (!SUPPORTED.includes(req.method)) {
+          res.writeHead(405, { "Content-Type": "text/plain" });
+          return res.end("method not allowed");
+        }
+
+        // The database is this service's one hard dependency.
+        //
+        // 503, WITH AN EMPTY BODY. Both halves matter, and the body is the
+        // half that nearly shipped a device bug.
+        //
+        // mod 2080's shim does NOT check the status code. It calls
+        // `res.json()` unconditionally:
+        //
+        //     return fetch(...).then(res => method === 'GET' ? res.json() : ...)
+        //
+        // Pre-split a database outage produced a 502 from the gateway with an
+        // empty body, so `res.json()` REJECTED and the shim took its error
+        // path. The first version of this guard answered 503 with
+        // `{"error":"database unavailable"}` — valid JSON, so `res.json()`
+        // RESOLVED and handed mod 2080 that object AS IF IT WERE A USERDATA
+        // DOCUMENT: no decks, no cards, no progress. Verified in isolation:
+        //   502 + empty body  -> rejected   (the pre-split error path)
+        //   503 + JSON body   -> RESOLVED with {error: ...}   <-- the bug
+        //   503 + empty body  -> rejected   (identical to pre-split)
+        //
+        // So: an empty body, which reproduces the pre-split rejection exactly,
+        // while the status code itself becomes honest — 503 says "I am here,
+        // my dependency is not", which a 502 cannot distinguish from a
+        // crashed service. The device cannot tell the difference; the
+        // operator reading gateway logs can.
+        //
+        // Never return a parseable body on this path.
         if (!boot.dbReady()) {
-          return sendJson(res, 503, { error: "database unavailable" });
+          res.writeHead(503, { "Content-Length": 0 });
+          return res.end();
         }
 
         if (req.method === "GET") {
@@ -133,7 +176,10 @@ export function createServer(config, boot) {
       // request 500ing with a driver stack trace until someone restarts it.
       boot.noteError(err);
       if (boot.isConnectionError(err)) {
-        return sendJson(res, 503, { error: "database unavailable" });
+        // Empty body, same reasoning as the readiness gate above: a
+        // parseable body here would be handed to mod 2080 as a document.
+        res.writeHead(503, { "Content-Length": 0 });
+        return res.end();
       }
       console.error(err);
       sendJson(res, 500, { error: err.message });

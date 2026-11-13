@@ -1066,6 +1066,25 @@ export function createServer(pool, config, boot) {
     const url = new URL(req.url, "http://localhost");
     try {
 
+      // Liveness AND readiness, for the container health check only. Outside
+      // the auth gate on purpose: a probe must not need a credential.
+      //
+      // Added after independent review found every Node probe was
+      // liveness-only — `node -e "...then(() => process.exit(0))"` exits 0 for
+      // ANY HTTP status, so with the database down /_health said degraded
+      // while `docker inspect` said healthy. That is verbatim the P45 symptom
+      // ("its health check also still said healthy") reproduced in a new
+      // place. The status code here is what the probe keys on: 200 ready,
+      // 503 degraded.
+      if (url.pathname === "/mjolnir/_health") {
+        const ready = boot ? boot.dbReady() : true;
+        return sendJson(res, ready ? 200 : 503, {
+          service: "mjolnir-workbench",
+          status: boot ? boot.status() : "ready",
+          db: ready,
+        });
+      }
+
       // Mounted before the operator-auth gate below would otherwise apply
       // per-route — checked explicitly here instead, since the workbench's
       // own routes/static assets live under one prefix rather than hub's

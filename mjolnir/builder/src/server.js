@@ -740,9 +740,21 @@ function renderLogsPage(jobs, selectedJob, logLines) {
   });
 }
 
-export function createServer(pool, config) {
+export function createServer(pool, config, boot) {
   return http.createServer(async (req, res) => {
-    try {
+        // Liveness AND readiness for the container probe — outside the auth
+    // gate, since a probe has no credential. 503 when degraded, because a
+    // 200 whose body says "degraded" is not a signal anything reads (P45).
+    {
+      const hp = new URL(req.url, "http://localhost").pathname;
+      if (hp === "/builder/_health") {
+        const ready = boot ? boot.dbReady() : true;
+        const payload = JSON.stringify({ service: "mjolnir-builder", status: boot ? boot.status() : "ready", db: ready });
+        res.writeHead(ready ? 200 : 503, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(payload) });
+        return res.end(payload);
+      }
+    }
+try {
       const url = new URL(req.url, "http://localhost");
 
       // D-H6: checked before every route except /builder/login itself.
@@ -771,16 +783,73 @@ export function createServer(pool, config) {
       // /builder/ui is the canonical entry point, matching stabbur's own
       // /stabbur/ui and hub's /mjolnir/ui (D46: one convention across
       // services). The bare path keeps working too.
+      // READINESS GATE. The forecast panel already degrades when stabbur is
+      // unreachable, but the other three queries on this page read builder's
+      // OWN database — so with postgres down the page still 500'd, just by a
+      // different route. Degrade to an honest 503 rather than a driver error.
+      if (boot && !boot.dbReady() && url.pathname.startsWith("/builder")
+          && url.pathname !== "/builder/_health" && url.pathname !== "/builder/login") {
+        const why = boot.lastError()?.message || "the database is not reachable";
+        if (url.pathname.includes("/api/")) {
+          const payload = JSON.stringify({ error: "database unavailable", detail: why });
+          res.writeHead(503, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(payload) });
+          return res.end(payload);
+        }
+        const html = `<!doctype html><meta charset="utf-8"><title>builder — database unavailable</title>
+          <body style="font-family:system-ui;background:#14171c;color:#e8e6e1;padding:3rem">
+          <h2>Database unavailable</h2>
+          <p>The builder console needs the database, which is not reachable right
+          now. Scheduled builds retry on their own and devices are unaffected —
+          updates are served off disk.</p>
+          <p style="opacity:.6"><code>${String(why).replace(/[<&]/g, "")}</code></p>
+          <p><a style="color:#c6703f" href="/mjolnir">← workbench</a></p></body>`;
+        res.writeHead(503, { "Content-Type": "text/html; charset=utf-8" });
+        return res.end(html);
+      }
+
       if (
         req.method === "GET" &&
         (url.pathname === "/builder" || url.pathname === "/builder/" || url.pathname === "/builder/ui")
       ) {
-        const [forecast, jobs, batches, activeLogicBundle] = await Promise.all([
-          runForecast(pool, config),
+        // DEGRADE TO A LOST FEATURE, NOT A LOST PAGE.
+        //
+        // `runForecast` pulls notes from stabbur over HTTP. It used to sit in
+        // this Promise.all unguarded, so with stabbur unavailable the whole
+        // console answered
+        //   500 {"error":"stabbur pull failed: 503 SERVICE UNAVAILABLE"}
+        // — the exact cascade zone-isolation exists to remove, and a direct
+        // contradiction of its own spec. Found by independent review, which
+        // stopped stabbur and looked, rather than by reading the dependency
+        // table that claimed builder tolerates it.
+        //
+        // The forecast is ONE panel. Everything else on this page — recent
+        // jobs, recent batches, the active logic bundle — comes from
+        // builder's own database and is unaffected by stabbur being down.
+        let forecastError = null;
+        const forecastOrNull = runForecast(pool, config).catch((err) => {
+          forecastError = err;
+          console.error(`[mjolnir-builder] forecast unavailable: ${err.message}`);
+          return null;
+        });
+        const [forecastRaw, jobs, batches, activeLogicBundle] = await Promise.all([
+          forecastOrNull,
           recentBuildJobs(pool),
           recentBatches(pool, 5),
           getActiveMeta(pool),
         ]);
+        // The empty shape must match runForecast's real one exactly
+        // (pipeline.js), or the renderers below throw on a missing array and
+        // we are back to a 500 by a different route.
+        const forecast = forecastRaw || {
+          wouldShip: [],
+          wouldQueue: [],
+          byDeck: [],
+          wouldUpdate: [],
+          totalPulled: 0,
+          totalAlreadyMinted: 0,
+          degraded: true,
+          reason: forecastError?.message || "stabbur unavailable",
+        };
         const batchDetails = new Map();
         for (const b of batches) batchDetails.set(b.buildId, await occurrencesForBuild(pool, b.buildId));
         const [deckMeta, shipOrders] = await Promise.all([

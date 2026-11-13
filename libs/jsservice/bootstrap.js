@@ -30,6 +30,33 @@ export function createBootstrap({ name, prepare, onReady, log = console }) {
   let lastError = null;
   let attempts = 0;
 
+  // PROACTIVE RE-CHECK while ready.
+  //
+  // markLost() only fires on a request that touches the database, so a
+  // low-traffic service reported ready — and `docker inspect` reported
+  // healthy — for as long as nobody asked it anything, right through a total
+  // outage. Measured: with postgres stopped, a backend sat at
+  // {"status":"ready","db":true} for over two minutes while busier services
+  // had already degraded. "Degraded only if someone happens to look" is the
+  // same quietly-wrong state P45 was written to remove, one step out.
+  //
+  // So while ready, re-run the readiness probe on a slow timer. Slow on
+  // purpose: this is a liveness poll, not a workload, and the reactive path
+  // still catches a failure instantly for any service with real traffic.
+  const POLL_MS = 15000;
+  function schedulePoll() {
+    setTimeout(async () => {
+      if (!ready) return;            // the retry loop already owns it
+      try {
+        await prepare();
+        schedulePoll();
+      } catch (err) {
+        if (isConnectionError(err)) markLost(err);
+        else schedulePoll();          // a non-connection error is not an outage
+      }
+    }, POLL_MS).unref?.();
+  }
+
   async function attempt() {
     attempts += 1;
     try {
@@ -37,6 +64,7 @@ export function createBootstrap({ name, prepare, onReady, log = console }) {
       ready = true;
       lastError = null;
       log.log(`[${name}] schema ready after ${attempts} attempt(s)` + (result ? `: ${result}` : ""));
+      schedulePoll();
       if (onReady) await onReady();
     } catch (err) {
       ready = false;

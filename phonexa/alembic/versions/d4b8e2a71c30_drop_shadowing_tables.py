@@ -39,7 +39,42 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # segments first: its media_id FK points at shadowing_media.
+    """OPT-IN. Does nothing unless PHONEXA_DROP_SHADOWING_TABLES=1.
+
+    Independent review caught this as a data-loss time bomb, and it was right.
+    The task list says the retained phonexa copies are the rollback and that
+    "nothing automated should ever drop them" — but this migration was the
+    head of a chain that `scripts/bootstrap.py` runs with `alembic upgrade
+    head` on EVERY container start. The claim and the code disagreed, and the
+    code would have won on the next rebuild: the live database was still one
+    revision behind, so the first restart would have destroyed 3 media and
+    2,739 segment rows that exist nowhere else except the `shadow` copy made
+    minutes earlier and never yet covered by a backup run.
+
+    So the revision still advances — the chain stays linear and later
+    migrations keep working — but the DROP only happens when the operator
+    explicitly asks for it. Retiring the rollback is the same class of act as
+    deleting the retained pre-consolidation volumes (postgres-consolidation
+    task 6.7): deliberate, after a verified backup, never a side effect of a
+    deploy.
+    """
+    import os
+
+    if os.environ.get("PHONEXA_DROP_SHADOWING_TABLES") != "1":
+        print(
+            "[d4b8e2a71c30] SKIPPING the drop of shadowing_media/shadowing_segments.\n"
+            "               The rows stay as the rollback for the shadow split.\n"
+            "               Nothing reads or writes them: phonexa/shadowing.py is\n"
+            "               deleted, its blueprint is unregistered and the models are\n"
+            "               gone from db/models.py.\n"
+            "               To retire them, AFTER a backup cycle has covered the\n"
+            "               `shadow` database, run once with\n"
+            "                   PHONEXA_DROP_SHADOWING_TABLES=1\n"
+            "               or drop them by hand."
+        )
+        return
+
+    print("[d4b8e2a71c30] PHONEXA_DROP_SHADOWING_TABLES=1 — dropping the shadowing tables")
     op.drop_table('shadowing_segments')
     op.drop_table('shadowing_media')
 

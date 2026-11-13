@@ -42,6 +42,9 @@ import threading
 import time
 from typing import Callable, Iterable, Sequence
 
+POLL_SECONDS = 15.0
+"""How often a READY service re-checks the database with no traffic."""
+
 RETRY_SECONDS = 5.0
 
 
@@ -152,10 +155,30 @@ class Bootstrap:
             # it. Degraded: sleep the retry interval. Both are the same wait,
             # and that symmetry is what makes recovery work without a restart
             # in either direction.
+            # PROACTIVE RE-CHECK while ready, rather than parking forever.
+            #
+            # mark_degraded() only fires on a request that touches the
+            # database, so a low-traffic service stayed ready — and reported
+            # healthy — right through a total outage for as long as nobody
+            # asked it anything. Measured: with postgres stopped, smia sat at
+            # {"status":"ready","db":true} for over two minutes while busier
+            # services had already degraded. "Degraded only if someone happens
+            # to look" is the quietly-wrong state this file exists to prevent.
+            #
+            # Slow on purpose: a liveness poll, not a workload. The reactive
+            # path still catches failures instantly under real traffic.
             if self.db_ready():
-                self._wake.wait()
-            else:
-                self._wake.wait(timeout=RETRY_SECONDS)
+                self._wake.wait(timeout=POLL_SECONDS)
+                if self._wake.is_set():
+                    self._wake.clear()
+                    continue
+                self._wake.clear()
+                try:
+                    self._prepare()
+                except Exception as err:  # noqa: BLE001 - any failure is a signal
+                    self.mark_degraded(err)
+                continue
+            self._wake.wait(timeout=RETRY_SECONDS)
             self._wake.clear()
 
     def start(self) -> None:
