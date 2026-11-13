@@ -90,34 +90,7 @@ else
     bad "D152 service-level checks: 'docker compose config' produced NOTHING — the project does not render. This is a violation, not a skip:"
     note "$(docker compose config 2>&1 | head -4)"
   else
-    result=$(printf '%s' "$rendered" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-svcs = d.get('services') or {}
-problems = []
-# Long-running services must restart. Checked PER SERVICE — the old version
-# counted occurrences per FILE, so a file where five of six services lost
-# their policy still passed.
-for n, s in sorted(svcs.items()):
-    if s.get('restart') != 'unless-stopped':
-        problems.append(f'restart: {n} = {s.get(\"restart\")!r}, expected unless-stopped')
-# Only the gateway may publish on a non-loopback interface.
-for n, s in sorted(svcs.items()):
-    for p in s.get('ports') or []:
-        ip = p.get('host_ip', '0.0.0.0')
-        if n != 'caddy' and ip not in ('127.0.0.1', '::1'):
-            problems.append(f'public port: {n} on {ip}:{p.get(\"published\")}')
-# Every backend needs its own healthcheck. The gateway, adminer and the backup
-# service are listed explicitly as known-unmonitored rather than silently
-# excluded — see the service-standard spec.
-EXEMPT = {'caddy', 'adminer', 'backup'}
-for n, s in sorted(svcs.items()):
-    if n in EXEMPT: continue
-    if not s.get('healthcheck'):
-        problems.append(f'no healthcheck: {n}')
-print(f'SERVICES={len(svcs)}')
-for p in problems: print('P:' + p)
-" 2>&1)
+    result=$(printf '%s' "$rendered" | python3 "$(dirname "$0")/_check_services.py" 2>&1)
     if printf '%s' "$result" | grep -q '^P:'; then
       bad "D152: service-level violations in the rendered config:"
       printf '%s' "$result" | grep '^P:' | sed 's/^P:/     /'

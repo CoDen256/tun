@@ -17,7 +17,7 @@ anything — do not re-derive settled decisions.**
 | `smia/` | linguistics: inflect / ipa / tts / stt / translate |
 | `phonexa/` | phonetics lab: vowels, consonants, formants, live speech |
 | `shadow/` | shadowing: media, segments, transcription |
-| `postgres/` | the shared database cluster |
+| `postgres/` | the shared database cluster: one Postgres 17, five databases, five roles |
 | `backup/` | the git-backup service |
 | `libs/` | code shared across projects: auth, prefix handling, layout, bootstrap |
 
@@ -28,8 +28,8 @@ Every reference to it inside `smia`, `stabbur` and `mjolnir` is still correct.
 
 Mjølnir app internals live in `mjolnir/docs/findings.md`, not in `docs/`.
 
-`grind/`, `shadow/`, `postgres/` and `libs/` are created by the
-`zone-isolation`, `postgres-consolidation` and `unified-auth` changes.
+`grind/`, `shadow/` and `libs/` are created by the `zone-isolation` and
+`unified-auth` changes; `postgres/` exists now (D155).
 
 ## The three zones — never blur them
 

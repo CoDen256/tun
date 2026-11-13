@@ -36,24 +36,22 @@ include:
   - ./phonexa/compose.yaml
 
 services:
-  # One database-exploration tool for every project's Postgres (D-T3), not one
-  # per database. Point its login screen at `mjolnir-postgres`,
-  # `stabbur-postgres`, `smia-postgres` or `phonexa-postgres` by name — all
-  # four resolve on the default network.
+  # One database-exploration tool for the one cluster (D-T3, D155). Log in as
+  # a service role (`stabbur` / `smia` / `mjolnir` / `phonexa` / `shadow`) with
+  # that role's derived password, "<POSTGRES_PASSWORD>_<db>" — each role sees
+  # only its own database, which is the same isolation the services get.
   #
   # (The comment here used to say this key deep-merges over an `adminer`
   # service of stabbur's own. That stopped being true when stabbur renamed its
   # services to `stabbur-*` under D94: stabbur defines no `adminer`, so this
   # is simply the only one.)
-  #
-  # postgres-consolidation replaces the four instances with one cluster of
-  # four databases, at which point ADMINER_DEFAULT_SERVER becomes the only
-  # server there is.
   adminer:
     image: adminer
     restart: unless-stopped
     environment:
-      ADMINER_DEFAULT_SERVER: mjolnir-postgres
+      # One cluster now (D155) — this is the only server there is, and all
+      # five databases are reachable from it with each service's own role.
+      ADMINER_DEFAULT_SERVER: postgres
     ports:
       - "127.0.0.1:8082:8080"
 
@@ -68,8 +66,9 @@ services:
   # though they are declared in those projects' own compose files — `include:`
   # makes that work with no extra declaration here (D-C2).
   #
-  # Covers mjolnir, stabbur and phonexa. smia is NOT backed up yet; that and
-  # the move to one cluster are postgres-consolidation's.
+  # Covers ALL FIVE databases — mjolnir, stabbur, smia, phonexa, shadow.
+  # smia joined the set with D155: it had never been backed up at all, while
+  # being the only database carrying 2.7M rows of imported corpora.
   backup:
     build: ./backup
     restart: unless-stopped
@@ -79,27 +78,21 @@ services:
     # entrypoint.sh's atomic dump-then-rename already stops a failed dump from
     # corrupting the backup repo; this avoids the failure in the first place.
     depends_on:
-      mjolnir-postgres:
-        condition: service_healthy
-      stabbur-postgres:
-        condition: service_healthy
-      phonexa-postgres:
-        condition: service_healthy
+      # One cluster now (D155), and the BOOTSTRAP rather than the bare server:
+      # dumping before the databases exist would produce five empty files.
+      postgres-init:
+        condition: service_completed_successfully
     environment:
       BACKUP_REPO_URL: ${BACKUP_REPO_URL:?set BACKUP_REPO_URL in the root .env}
       BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
-      # One password per database, all four defined in the root `.env` and
-      # nowhere else (D151). They are NOT yet collapsed into one value, and
-      # must not be: Postgres applies POSTGRES_PASSWORD only when it
-      # initialises a fresh data directory, so the three existing volumes
-      # still carry the literals `stabbur`, `smia` and `phonexa` they were
-      # created with. A single shared value here would authenticate against
-      # none of them, and the only symptom would be an auth failure.
-      # postgres-consolidation collapses them to one when it dump/restores
-      # into a fresh cluster — that is the right place for it.
-      MJOLNIR_POSTGRES_PASSWORD: ${MJOLNIR_POSTGRES_PASSWORD:?set MJOLNIR_POSTGRES_PASSWORD in the root .env}
-      STABBUR_POSTGRES_PASSWORD: ${STABBUR_POSTGRES_PASSWORD:-stabbur}
-      PHONEXA_POSTGRES_PASSWORD: ${PHONEXA_POSTGRES_PASSWORD:-phonexa}
+      # ONE password now (D155). The four per-database keys this file used to
+      # carry existed because Postgres applies a password only when it
+      # initialises a fresh data directory, so three live volumes still held
+      # the literals they were created with. Restoring into a fresh cluster is
+      # exactly the moment that constraint lifts — entrypoint.sh derives each
+      # role password as "<POSTGRES_PASSWORD>_<db>", the same rule
+      # postgres/init/bootstrap.sh used to create them.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}
     volumes:
       # The repo clone persists across restarts (D-C4) — cloned by the
       # container on first boot, never a host bind mount.

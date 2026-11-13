@@ -1,3 +1,11 @@
+# The shared cluster (D155). This project no longer runs its own Postgres:
+# `include:` pulls in the one cluster, which holds one database and one role
+# per service. The same fragment included by several projects deduplicates, so
+# `docker compose up phonexa-backend` still starts the cluster and this service and
+# nothing else.
+include:
+  - ../postgres/compose.yaml
+
 # phonexa's own stack — usable standalone (`docker compose up -d` here) and as
 # one of the files the root compose.yaml `include:`s.
 #
@@ -14,36 +22,9 @@
 # Host port publishing lives in compose.override.yaml, which Compose loads
 # only when you run from inside this directory. See the comment there.
 services:
-  phonexa-postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: phonexa
-      POSTGRES_USER: phonexa
-      # Shared with the other projects' databases and with the backup service,
-      # so it lives in the repository-root .env and is typed nowhere else.
-      POSTGRES_PASSWORD: ${PHONEXA_POSTGRES_PASSWORD:-phonexa}
-    volumes:
-      - phonexa-postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U phonexa"]
-      interval: 2s
-      timeout: 3s
-      retries: 20
-
-  # Development-only database browser. Gated behind the `dev` profile so it
   # never starts in the unified stack (whose shared Adminer reaches
   # `phonexa-postgres` directly):
   #   docker compose --profile dev up -d
-  phonexa-adminer:
-    image: adminer
-    profiles: ["dev"]
-    depends_on:
-      phonexa-postgres:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:8081:8080"
-
   phonexa-backend:
     build:
       # Context is the repository root so a service can COPY from shared
@@ -53,15 +34,20 @@ services:
       dockerfile: phonexa/Dockerfile
     restart: unless-stopped
     depends_on:
-      phonexa-postgres:
-        condition: service_healthy
+      # Waits for the BOOTSTRAP, not merely a healthy server: a failed
+      # bootstrap must stop this service starting against a cluster with no
+      # databases, rather than letting it fail later with an auth error.
+      postgres-init:
+        condition: service_completed_successfully
     # phonexa-only values (AUDIO_BACKEND). Read here rather than relied on for
     # interpolation, so it is picked up both standalone and from the root.
     env_file:
       - path: ./.env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg2://phonexa:${PHONEXA_POSTGRES_PASSWORD:-phonexa}@phonexa-postgres:5432/phonexa
+      # Derived, never typed: the role password is "<POSTGRES_PASSWORD>_phonexa",
+      # created by postgres/init/bootstrap.sh from the same one value.
+      DATABASE_URL: postgresql+psycopg2://phonexa:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_phonexa@postgres:5432/phonexa
       AUDIO_STORAGE_ROOT: /data/audio
       # Speech-to-text for Shadowing is proxied to smia (stt-via-smia). The
       # address is derived from smia's service key, never configured. The token
@@ -91,10 +77,6 @@ volumes:
   # directly. Explicit `name:` so it is the SAME Docker volume whether started
   # from this directory or from the root (otherwise Compose prefixes the
   # project name and the two entry points get separate volumes).
-  phonexa-postgres-data:
-    # New name on purpose: the old local volume (phonexa_pgdata) holds PG 16
-    # data, which a postgres:17 image cannot start on. It is left untouched.
-    name: phonexa_postgres_data
   phonexa-audio-data:
     # Same name the old `audio_data` volume already resolved to in this
     # directory, so existing local audio carries over.

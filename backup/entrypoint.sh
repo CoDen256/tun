@@ -6,11 +6,11 @@
 # mounted directly (D-C2) instead of via a throwaway container. Runs its
 # own schedule internally (D-C5) — no host cron.
 #
-# Covers THREE databases (mjolnir, stabbur, phonexa — D147) and TWO
-# blob-like stores (stabbur's flat content-addressed blob volume, and
-# phonexa's nested audio tree). The three dumps are one all-or-nothing
-# transaction: a failure in any of them leaves all three committed .sql
-# files untouched and makes no commit at all.
+# Covers FIVE databases in one cluster (mjolnir, stabbur, smia, phonexa,
+# shadow — D155) and TWO blob-like stores (stabbur's flat content-addressed
+# blob volume, and phonexa's nested audio tree). The five dumps are one
+# all-or-nothing transaction: a failure in any of them leaves every committed
+# .sql untouched and makes no commit at all.
 set -euo pipefail
 
 BACKUP_REPO="/data/tun-backup"
@@ -61,73 +61,99 @@ run_backup() {
 
   # Found live (first real run on the VPS): `cmd > file` TRUNCATES `file`
   # before `cmd` even runs — so a failed pg_dump was silently leaving an
-  # EMPTY mjolnir.sql/stabbur.sql in place, which then got committed and
-  # pushed as if it were a real backup. Compounded by a second bug: calling
-  # `run_backup` as `run_backup || echo ...` (below) disables `set -e` for
-  # the ENTIRE function body, not just the top-level call — a real bash
-  # gotcha (&&/||/if suppress errexit recursively for whatever they test,
-  # even through a subshell — confirmed by isolated repro before fixing),
-  # so the failed dump didn't abort the run either. Fixed with the same
-  # atomic dump-to-.tmp-then-rename convention used everywhere else in this
-  # ecosystem (OTA bundles, blobs, logic bundles): a failed dump leaves only
-  # a `.tmp` file behind and `return`s before `git add` ever runs — the
-  # previously-committed mjolnir.sql/stabbur.sql is never touched by a
-  # failed attempt, regardless of how `run_backup`'s own exit status is
-  # later handled by its caller.
-  log "entrypoint: dumping mjolnir-postgres..."
-  if ! PGPASSWORD="$MJOLNIR_POSTGRES_PASSWORD" pg_dump -h mjolnir-postgres -U mjolnir \
-      --restrict-key="$RESTRICT_KEY" \
-      --no-owner \
-      --no-privileges \
-      --no-tablespaces \
-      --exclude-table=job_logs \
-      --exclude-table=build_jobs \
-      postgres > "$BACKUP_REPO/mjolnir.sql.tmp"; then
-    log "entrypoint: mjolnir dump failed — aborting this run, mjolnir.sql left untouched" >&2
-    rm -f "$BACKUP_REPO/mjolnir.sql.tmp" "$BACKUP_REPO/stabbur.sql.tmp" \
-          "$BACKUP_REPO/phonexa.sql.tmp"
-    return 1
-  fi
+  # EMPTY .sql in place, which then got committed and pushed as if it were a
+  # real backup. Compounded by a second bug: calling `run_backup` as
+  # `run_backup || echo ...` (below) disables `set -e` for the ENTIRE function
+  # body, not just the top-level call — a real bash gotcha (&&/||/if suppress
+  # errexit recursively for whatever they test, even through a subshell), so
+  # the failed dump didn't abort the run either. Hence the atomic
+  # dump-to-.tmp-then-rename convention used everywhere in this ecosystem: a
+  # failed dump leaves only a `.tmp` behind and `return`s before `git add`
+  # ever runs, so the previously-committed .sql is never touched.
+  #
+  # ALL-OR-NOTHING ACROSS FIVE DATABASES (D155). One cluster now, one
+  # connection, one derived password per role. smia is IN THIS SET for the
+  # first time — it was never backed up at all, while holding 2.7M rows of
+  # imported corpora, and its volume was destroyed once during the monorepo
+  # work with no dump to restore from (P41).
+  DATABASES="mjolnir stabbur smia phonexa shadow"
 
-  log "entrypoint: dumping stabbur-postgres..."
-  if ! PGPASSWORD="$STABBUR_POSTGRES_PASSWORD" pg_dump -h stabbur-postgres -U stabbur \
-      --restrict-key="$RESTRICT_KEY" \
-      --no-owner \
-      --no-privileges \
-      --no-tablespaces \
-      stabbur > "$BACKUP_REPO/stabbur.sql.tmp"; then
-    log "entrypoint: stabbur dump failed — aborting this run, stabbur.sql left untouched" >&2
-    rm -f "$BACKUP_REPO/mjolnir.sql.tmp" "$BACKUP_REPO/stabbur.sql.tmp" \
-          "$BACKUP_REPO/phonexa.sql.tmp"
-    return 1
-  fi
+  # Per-database table exclusions. mjolnir's job_logs/build_jobs are
+  # regenerable machine output. smia's lookup_cache and tts_audio are a cache
+  # rebuildable from providers/ and the upstream APIs, and dominate the dump
+  # size. EVERY phonexa table is user data — vowel samples' metadata, tokens,
+  # settings, users and the Shadowing tables (split points, progress,
+  # transcripts); Shadowing recordings are deliberately never stored
+  # server-side, so the database IS the Shadowing backup. Do not "optimize"
+  # any of phonexa out (D147).
+  # smia: SCHEMA ONLY for every bulk table — `--exclude-table-data`, not
+  # `--exclude-table`, so a restore still yields a complete, working database
+  # that simply starts empty and refills itself.
+  #
+  # smia holds NO irreplaceable data. Audited table by table (2026-11-13):
+  # every one is schema (`alembic_version`), a cache (`lookup_cache`,
+  # `tts_audio`, `provider_health`), or an imported corpus rebuilt by
+  # `scripts/import_*.py` from `providers/` — which is itself tracked in git,
+  # so smia's real backup is already in the monorepo. smia's own bootstrap
+  # re-imports any table it finds empty, which is exactly how it was rebuilt
+  # after P41 destroyed its volume. `tts_audio` is disposable for a second,
+  # independent reason: D118/D45 keep the authoritative copy of a CHOSEN tts
+  # candidate in stabbur's blob store, which IS backed up here.
+  #
+  # This is task 0.8's decision, made explicitly rather than by omission. It
+  # takes smia.sql from ~225 MB to a few hundred KB — and every run COMMITS to
+  # a git repository, so a 225 MB daily commit of regenerable corpora would
+  # bloat the backup repo indefinitely for data the repo already holds in
+  # source form.
+  SMIA_DERIVED="lookup_cache tts_audio provider_health corpus_sentence
+                dictcc_static_entry ipa_dict_entry kaikki_entry nst_dialect
+                nst_lexicon ordbank_boying ordbank_fullform ordbank_lemma
+                ordbank_paradigme pygmalion_audio wikipron_entry"
 
-  # No --exclude-table here, deliberately, unlike mjolnir's dump above:
-  # mjolnir's job_logs/build_jobs are regenerable machine output, but EVERY
-  # phonexa table is user data — vowel samples' metadata, tokens, settings,
-  # users, and the Shadowing tables (shadowing_media, shadowing_segments)
-  # carrying split points, progress and transcripts. Shadowing needs no
-  # special handling beyond being in this dump: its recordings are
-  # deliberately ephemeral and never stored server-side, so the database IS
-  # the Shadowing backup. Do not "optimize" any of it out (D147).
-  log "entrypoint: dumping phonexa-postgres..."
-  if ! PGPASSWORD="$PHONEXA_POSTGRES_PASSWORD" pg_dump -h phonexa-postgres -U phonexa \
-      --restrict-key="$RESTRICT_KEY" \
-      --no-owner \
-      --no-privileges \
-      --no-tablespaces \
-      phonexa > "$BACKUP_REPO/phonexa.sql.tmp"; then
-    log "entrypoint: phonexa dump failed — aborting this run, phonexa.sql left untouched" >&2
-    rm -f "$BACKUP_REPO/mjolnir.sql.tmp" "$BACKUP_REPO/stabbur.sql.tmp" \
-          "$BACKUP_REPO/phonexa.sql.tmp"
-    return 1
-  fi
+  exclusions_for() {
+    case "$1" in
+      mjolnir) echo "--exclude-table=job_logs --exclude-table=build_jobs" ;;
+      smia)    for t in $SMIA_DERIVED; do printf -- "--exclude-table-data=%s " "$t"; done ;;
+      *)       echo "" ;;
+    esac
+  }
 
-  # All three dumps succeeded — only now do the real, previously-committed
+  clean_tmp() {
+    for db in $DATABASES; do rm -f "$BACKUP_REPO/$db.sql.tmp"; done
+  }
+
+  for db in $DATABASES; do
+    log "entrypoint: dumping $db..."
+    # Derived, never typed — the same rule postgres/init/bootstrap.sh used to
+    # create the role: "<POSTGRES_PASSWORD>_<db>".
+    if ! PGPASSWORD="${POSTGRES_PASSWORD}_${db}" pg_dump -h postgres -U "$db" \
+        --restrict-key="$RESTRICT_KEY" \
+        --no-owner \
+        --no-privileges \
+        --no-tablespaces \
+        $(exclusions_for "$db") \
+        "$db" > "$BACKUP_REPO/$db.sql.tmp"; then
+      log "entrypoint: $db dump failed — aborting this run, every committed .sql left untouched" >&2
+      clean_tmp
+      return 1
+    fi
+    # A dump that succeeded but produced nothing is still a failed backup.
+    # pg_dump exits 0 on an empty database, and committing that over a good
+    # file is precisely the "failure reports success" shape this ecosystem
+    # keeps producing.
+    if [ ! -s "$BACKUP_REPO/$db.sql.tmp" ]; then
+      log "entrypoint: FATAL $db dump is empty — aborting" >&2
+      clean_tmp
+      return 1
+    fi
+  done
+
+  # All five dumps succeeded — only now do the real, previously-committed
   # filenames ever change.
-  mv "$BACKUP_REPO/mjolnir.sql.tmp" "$BACKUP_REPO/mjolnir.sql" || { log "entrypoint: FATAL rename of mjolnir.sql failed" >&2; return 1; }
-  mv "$BACKUP_REPO/stabbur.sql.tmp" "$BACKUP_REPO/stabbur.sql" || { log "entrypoint: FATAL rename of stabbur.sql failed" >&2; return 1; }
-  mv "$BACKUP_REPO/phonexa.sql.tmp" "$BACKUP_REPO/phonexa.sql" || { log "entrypoint: FATAL rename of phonexa.sql failed" >&2; return 1; }
+  for db in $DATABASES; do
+    mv "$BACKUP_REPO/$db.sql.tmp" "$BACKUP_REPO/$db.sql" \
+      || { log "entrypoint: FATAL rename of $db.sql failed" >&2; return 1; }
+  done
 
   # stabbur-blobs is mounted directly at /stabbur-blobs (D-C2) — no nested
   # docker run needed. Flat, content-addressed, write-once (D09/D45); a
@@ -258,9 +284,7 @@ run_backup() {
 }
 
 : "${BACKUP_REPO_URL:?set BACKUP_REPO_URL}"
-: "${MJOLNIR_POSTGRES_PASSWORD:?set MJOLNIR_POSTGRES_PASSWORD in the root .env}"
-: "${STABBUR_POSTGRES_PASSWORD:?set STABBUR_POSTGRES_PASSWORD}"
-: "${PHONEXA_POSTGRES_PASSWORD:?set PHONEXA_POSTGRES_PASSWORD}"
+: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}"
 
 # RUN_ONCE=1 runs the backup exactly once and exits — used for testing and
 # for triggering a manual backup on demand (e.g. `docker compose run --rm

@@ -1,3 +1,11 @@
+# The shared cluster (D155). This project no longer runs its own Postgres:
+# `include:` pulls in the one cluster, which holds one database and one role
+# per service. The same fragment included by several projects deduplicates, so
+# `docker compose up stabbur-backend` still starts the cluster and this service and
+# nothing else.
+include:
+  - ../postgres/compose.yaml
+
 # D94: renamed from docker-compose.yml to compose.yaml, service names made
 # unique (stabbur-postgres, not postgres) so the root compose.yaml's
 # `include:` can merge this file alongside mjolnir's without a service-name
@@ -12,26 +20,6 @@
 # STABBUR_AUTH_TOKEN, SMIA_AUTH_TOKEN) come from the root `.env`; nothing in
 # this file is also typed in another file.
 services:
-  stabbur-postgres:
-    # postgres-17-upgrade: matches mjolnir-postgres's exact tag (D-U3) —
-    # not just "some 17" — so the planned unified backup service needs
-    # exactly one pg_dump client version, not two. Postgres major versions
-    # are not binary-compatible on disk (D-U2), so this pairs with a new
-    # volume name below, not an in-place upgrade of the old one.
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: stabbur
-      POSTGRES_PASSWORD: ${STABBUR_POSTGRES_PASSWORD:-stabbur}
-      POSTGRES_DB: stabbur
-    volumes:
-      - stabbur-pg-data-17:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U stabbur"]
-      interval: 2s
-      timeout: 3s
-      retries: 20
-
   stabbur-backend:
     # Build context is the repository root so a later change can COPY from
     # the shared `libs/`; paths in an included file resolve relative to this
@@ -41,11 +29,16 @@ services:
       dockerfile: stabbur/Dockerfile
     restart: unless-stopped
     depends_on:
-      stabbur-postgres:
-        condition: service_healthy
+      # Waits for the BOOTSTRAP, not merely a healthy server: a failed
+      # bootstrap must stop this service starting against a cluster with no
+      # databases, rather than letting it fail later with an auth error.
+      postgres-init:
+        condition: service_completed_successfully
     environment:
       # Derived, never typed: assembled from STABBUR_POSTGRES_PASSWORD (root .env).
-      DATABASE_URL: postgresql+psycopg2://stabbur:${STABBUR_POSTGRES_PASSWORD:-stabbur}@stabbur-postgres:5432/stabbur
+      # Derived, never typed: the role password is "<POSTGRES_PASSWORD>_stabbur",
+      # created by postgres/init/bootstrap.sh from the same one value.
+      DATABASE_URL: postgresql+psycopg2://stabbur:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_stabbur@postgres:5432/stabbur
       # NO `:-changeme` default. An unset token must fail CLOSED, not fall back
       # to a publicly-known string: auth.py's check is `if not token or
       # provided != token -> 401`, so empty means "reject everything", which is
@@ -116,13 +109,12 @@ volumes:
   # silently "disappeared" switching between the two entry points, because
   # they'd never been in the same volume at all. These names are preserved
   # verbatim across the monorepo merge for exactly that reason.
-  # postgres-17-upgrade (D-U2): stabbur-pg-data is kept defined,
-  # deliberately unused, so the pre-upgrade data is never deleted as a side
-  # effect of a change — the operator removes it by hand only after a
-  # self-chosen cool-down period confirming the migration went cleanly.
-  stabbur-pg-data:
-    name: stabbur_stabbur-pg-data
-  stabbur-pg-data-17:
-    name: stabbur_stabbur-pg-data-17
+  # The two Postgres data volumes that used to be declared here
+  # (stabbur-pg-data, stabbur-pg-data-17) are gone: the data moved into the
+  # shared cluster (D155). The volumes THEMSELVES still exist on disk and are
+  # retained deliberately until the operator removes them by hand, which is
+  # what D-U2 was actually protecting. Declaring them here never protected
+  # anything — Compose prunes an unreferenced volume declaration from the
+  # rendered config entirely, so it neither creates nor preserves a volume.
   stabbur-blobs:
     name: stabbur_stabbur-blobs

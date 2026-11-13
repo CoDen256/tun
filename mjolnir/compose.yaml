@@ -18,6 +18,9 @@
 # NOT optional for a real deploy (Caddy exposes both publicly at /mjolnir/*
 # and /builder/*) even though each service's own config loader treats it as
 # optional for local/dev ergonomics.
+include:
+  - ../postgres/compose.yaml
+
 services:
   caddy:
     image: caddy:2-alpine
@@ -70,30 +73,6 @@ services:
       - caddy_data:/data                 # TLS certs — LOSING THIS MEANS RE-ISSUING CERTS
       - caddy_config:/config
 
-  mjolnir-postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_PASSWORD: ${MJOLNIR_POSTGRES_PASSWORD:?set MJOLNIR_POSTGRES_PASSWORD in the root .env}
-      POSTGRES_USER: mjolnir
-      POSTGRES_DB: postgres
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    # Deliberately NOT published to the host: only sibling containers reach it.
-    healthcheck:
-      # -d postgres is required: pg_isready with no -d defaults to a database
-      # named after -U's value ("mjolnir"), which doesn't exist — POSTGRES_DB
-      # above is "postgres". Harmless to the healthcheck's pass/fail result
-      # (pg_isready still reports the server as accepting connections even
-      # when the probed database doesn't exist) but spams
-      # `FATAL: database "mjolnir" does not exist` into the logs forever,
-      # every 10s, drowning out real problems.
-      test: ["CMD-SHELL", "pg_isready -U mjolnir -d postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # hub-builder-operator-console: hub owns the schema (`card_slots`,
   # `decks`, `publications`, `build_jobs`, `occurrence_shipments`,
   # `pending_occurrences`, `builder_config`, `job_logs`); builder is the
   # only other writer — both point at the same logical database (02-
@@ -113,8 +92,11 @@ services:
       dockerfile: mjolnir/hub/Dockerfile
     restart: unless-stopped
     depends_on:
-      mjolnir-postgres:
-        condition: service_healthy
+      # Waits for the BOOTSTRAP, not merely a healthy server: a failed
+      # bootstrap must stop this service starting against a cluster with no
+      # databases, rather than letting it fail later with an auth error.
+      postgres-init:
+        condition: service_completed_successfully
     # mjolnir's own values (ALLOW_HTTP, ALLOW_NO_COMPANION, SOURCE_LANG, …).
     # Shared and derived values are set in `environment:` below. Not
     # required: every mjolnir-local value is optional with a working
@@ -123,7 +105,17 @@ services:
       - path: ./.env
         required: false
     environment:
-      DATABASE_URL: postgresql://mjolnir:${MJOLNIR_POSTGRES_PASSWORD:?set MJOLNIR_POSTGRES_PASSWORD in the root .env}@mjolnir-postgres:5432/postgres
+      # NOTE THE DATABASE NAME. mjolnir's database was historically called
+      # `postgres` — the default database of its own container, never renamed
+      # (D152 recorded it as the one place where database name != project
+      # name). In the shared cluster `postgres` is the superuser's maintenance
+      # database, so mjolnir's data lives in a database actually called
+      # `mjolnir`. The dump restores into it; nothing in hub's SQL refers to
+      # the database by name, so no application change is needed.
+      #
+      # Derived, never typed: the role password is "<POSTGRES_PASSWORD>_mjolnir",
+      # created by postgres/init/bootstrap.sh from the same one value.
+      DATABASE_URL: postgresql://mjolnir:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_mjolnir@postgres:5432/mjolnir
       DATA_DIR: /app/data
       TUN_PUBLIC_BASE: ${TUN_PUBLIC_BASE}
       OPERATOR_AUTH_TOKEN: ${OPERATOR_AUTH_TOKEN}
@@ -176,13 +168,26 @@ services:
       dockerfile: mjolnir/builder/Dockerfile
     restart: unless-stopped
     depends_on:
-      mjolnir-postgres:
-        condition: service_healthy
+      # Waits for the BOOTSTRAP, not merely a healthy server: a failed
+      # bootstrap must stop this service starting against a cluster with no
+      # databases, rather than letting it fail later with an auth error.
+      postgres-init:
+        condition: service_completed_successfully
     env_file:
       - path: ./.env
         required: false
     environment:
-      DATABASE_URL: postgresql://mjolnir:${MJOLNIR_POSTGRES_PASSWORD:?set MJOLNIR_POSTGRES_PASSWORD in the root .env}@mjolnir-postgres:5432/postgres
+      # NOTE THE DATABASE NAME. mjolnir's database was historically called
+      # `postgres` — the default database of its own container, never renamed
+      # (D152 recorded it as the one place where database name != project
+      # name). In the shared cluster `postgres` is the superuser's maintenance
+      # database, so mjolnir's data lives in a database actually called
+      # `mjolnir`. The dump restores into it; nothing in hub's SQL refers to
+      # the database by name, so no application change is needed.
+      #
+      # Derived, never typed: the role password is "<POSTGRES_PASSWORD>_mjolnir",
+      # created by postgres/init/bootstrap.sh from the same one value.
+      DATABASE_URL: postgresql://mjolnir:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_mjolnir@postgres:5432/mjolnir
       DATA_DIR: /app/data
       TUN_PUBLIC_BASE: ${TUN_PUBLIC_BASE}
       OPERATOR_AUTH_TOKEN: ${OPERATOR_AUTH_TOKEN}
@@ -226,5 +231,3 @@ volumes:
     name: mjolnir_caddy_data
   caddy_config:
     name: mjolnir_caddy_config
-  postgres_data:
-    name: mjolnir_postgres_data

@@ -1,3 +1,11 @@
+# The shared cluster (D155). This project no longer runs its own Postgres:
+# `include:` pulls in the one cluster, which holds one database and one role
+# per service. The same fragment included by several projects deduplicates, so
+# `docker compose up smia-backend` still starts the cluster and this service and
+# nothing else.
+include:
+  - ../postgres/compose.yaml
+
 # D118: service names made unique (smia-postgres/smia-backend, not
 # postgres/backend) so the root compose.yaml's `include:` can merge this file
 # alongside mjolnir's, stabbur's and phonexa's without a service-name
@@ -30,25 +38,6 @@
 # compose up` and ignores under the root stack. See that file for why it is a
 # file and not `profiles:`.
 services:
-  smia-postgres:
-    # Stays on postgres:16 deliberately. The 16 -> 17 upgrade is
-    # postgres-consolidation's job and needs a dump/restore: bumping the image
-    # here would leave the server refusing to start against the existing PG16
-    # data directory in smia_smia-pg-data.
-    image: postgres:16
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: smia
-      POSTGRES_PASSWORD: ${SMIA_POSTGRES_PASSWORD:-smia}
-      POSTGRES_DB: smia
-    volumes:
-      - smia-pg-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U smia"]
-      interval: 2s
-      timeout: 3s
-      retries: 20
-
   smia-backend:
     build:
       # Context is the repository root so a later change can COPY from
@@ -59,8 +48,11 @@ services:
       dockerfile: smia/Dockerfile
     restart: unless-stopped
     depends_on:
-      smia-postgres:
-        condition: service_healthy
+      # Waits for the BOOTSTRAP, not merely a healthy server: a failed
+      # bootstrap must stop this service starting against a cluster with no
+      # databases, rather than letting it fail later with an auth error.
+      postgres-init:
+        condition: service_completed_successfully
     env_file:
       # smia-only provider credentials (D-T2): HF_TOKEN, DEEPL_TOKEN,
       # ELEVENLABS_TOKEN. Passed through, never required — a provider whose
@@ -70,7 +62,9 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg2://smia:${SMIA_POSTGRES_PASSWORD:-smia}@smia-postgres:5432/smia
+      # Derived, never typed: the role password is "<POSTGRES_PASSWORD>_smia",
+      # created by postgres/init/bootstrap.sh from the same one value.
+      DATABASE_URL: postgresql+psycopg2://smia:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_smia@postgres:5432/smia
       SMIA_AUTH_TOKEN: ${SMIA_AUTH_TOKEN}
       FLASK_DEBUG: "0"
     volumes:
@@ -115,12 +109,11 @@ services:
       # the postgres services' health, not on any backend's).
       start_period: 180s
 
-volumes:
-  # Explicit `name:` so this is the SAME Docker volume whether brought up via
-  # `cd smia && docker compose up` or through the root compose.yaml's
-  # `include:` — without it, Compose prefixes the volume name with whatever
-  # project is running, creating two entirely separate volumes and making
-  # every imported provider dataset "disappear" switching entry points
-  # (identical cause to stabbur's own D98 volume-naming fix).
-  smia-pg-data:
-    name: smia_smia-pg-data
+# No `volumes:` section any more. smia's only volume was its own Postgres data
+# directory, and that moved into the shared cluster (D155). Its providers/
+# directory is a bind mount, not a named volume.
+#
+# The key itself had to go, not just its contents: a `volumes:` key with
+# nothing but comments under it parses as null, and Compose v5.4.0 does not
+# reject that — it PANICS inside ApplyInclude ("interface conversion:
+# interface {} is nil"), with a Go stack trace and no mention of the file.

@@ -18,12 +18,13 @@
 # In the unified stack stabbur is reached through the gateway at /stabbur/*,
 # which adds the operator gate, never through a published port.
 #
+# The shared cluster publishes its own loopback port from
+# postgres/compose.override.yaml (127.0.0.1:5439), so this file no longer
+# maps a database port.
+#
 # Loopback only, always: never a public interface. (Both mappings bound
 # 0.0.0.0 before the merge — that was the drift D152 exists to stop.)
 services:
-  stabbur-postgres:
-    ports:
-      - "127.0.0.1:5434:5432"
   stabbur-backend:
     ports:
       - "127.0.0.1:5056:5056"

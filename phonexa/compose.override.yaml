@@ -16,6 +16,10 @@
 # In the unified stack phonexa is reached through Caddy at /phonexa/ (which
 # adds the operator-token gate), never through a published port.
 #
+# The shared cluster publishes its own loopback port from
+# postgres/compose.override.yaml (127.0.0.1:5439), so this file no longer
+# maps a database port.
+#
 # Loopback only, always: never a public interface.
 services:
   phonexa-postgres:

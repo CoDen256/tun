@@ -1,0 +1,69 @@
+# postgres — ONE cluster holding one database per service (D155).
+#
+# Replaces the four separate Postgres containers mjolnir, stabbur, smia and
+# phonexa each ran. What stays isolated: one database and one role per service,
+# each role reaching only its own database, each with a connection limit — so a
+# bad migration, a runaway query or an accidental DROP is still confined to one
+# service, which is what actually happens in practice. What becomes shared: the
+# Postgres process itself, and major-version upgrades. Both were already
+# correlated by sharing one host and one disk.
+#
+# The device path does not depend on this at all. `/ota/*`, `/blob/*` and
+# `/audio-manifest/*` are served off disk by the gateway with no process in the
+# path (D55), so the one zone that must never go down is unaffected by anything
+# in this file.
+#
+# This file is `include:`d by every project that needs a database, and the same
+# fragment included more than once deduplicates — verified. So
+# `docker compose up stabbur-backend` still starts this cluster and stabbur and
+# nothing else, which was the operator's condition for accepting consolidation.
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      # The superuser. Service roles are created by postgres-init below with
+      # DERIVED passwords ("<POSTGRES_PASSWORD>_<db>") — never typed.
+      POSTGRES_USER: tunadmin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tunadmin -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-shot. Creates the five databases and roles on EVERY boot, idempotently
+  # — see init/bootstrap.sh for why this cannot be
+  # /docker-entrypoint-initdb.d. Services wait on
+  # `service_completed_successfully`, so a failure here stops them starting
+  # against a cluster that has no databases rather than letting them fail
+  # later with an authentication error.
+  postgres-init:
+    image: postgres:17-alpine
+    # NOT `unless-stopped`: this is a one-shot that must exit 0 and stay
+    # exited. bin/check-standards.sh exempts it by name for exactly this
+    # reason.
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}
+      PGHOST: postgres
+      PG_ROLE_CONNECTION_LIMIT: ${PG_ROLE_CONNECTION_LIMIT:-20}
+    volumes:
+      - ./init:/init:ro
+    entrypoint: ["/bin/sh", "/init/bootstrap.sh"]
+
+volumes:
+  postgres-data:
+    # EXPLICIT name, and not optional. Without it the volume is
+    # `tun_postgres-data` through the root include and `postgres_postgres-data`
+    # from `cd postgres && docker compose up` — which is precisely how this
+    # host acquired a parallel `tun_caddy_data` / `tun_postgres_data` /
+    # `tun_stabbur-pg-data` generation alongside the real one. The cluster that
+    # holds ALL FIVE databases is the worst possible place to repeat that.
+    name: tun_postgres_cluster

@@ -542,6 +542,28 @@ echo | openssl s_client -connect <host>:443 -servername <host> 2>/dev/null \
 
 And never `docker compose down -v`.
 
+**And restore a dump AS THE SERVICE ROLE, never as the superuser** (P42):
+
+```sh
+# RIGHT — objects land owned by the role that will use them.
+docker compose exec -T postgres psql -U stabbur -d stabbur < stabbur.sql
+
+# WRONG — every table ends up owned by tunadmin, and stabbur then dies with
+# "permission denied for table alembic_version" only once it migrates, long
+# after a successful connection.
+docker compose exec -T postgres psql -U tunadmin -d stabbur < stabbur.sql
+```
+
+**And never answer Compose's orphan warning with `--remove-orphans` during a
+migration.** Once the per-service postgres services are removed from the
+compose files, their still-running containers become orphans of the `tun`
+project; `--remove-orphans` deletes exactly the containers holding the
+pre-migration data.
+
+The dumps are taken with `--no-owner` precisely so this works.
+`postgres/init/bootstrap.sh` repairs ownership on every boot as a safety net,
+but a database restored the wrong way stays broken until the next `up`.
+
 ### 8.3 Require a verified git-backup cycle, with a current dump per database
 
 Do not begin the cutover without this. "The backup service is configured" is
