@@ -1,4 +1,16 @@
-// D-H6: a bare shared bearer token, same shape as stabbur's/smia's auth.py
+// Shared operator auth, used by hub, builder and sync.
+//
+// Moved here from mjolnir/hub/src/auth.js by zone-isolation, verbatim: three
+// services now need the identical check, and the alternative was a third copy.
+// `unified-auth` replaces the whole mechanism with a gateway-verified marker
+// header; until then this is the one implementation.
+//
+// NOTE THE 302. requireAuth answers 401 only for paths containing `/api/` (or
+// ending in /verify or /publish) and REDIRECTS everything else to a login
+// page. That means an unauthenticated device sync request gets a 302 to HTML,
+// not a 401 — surprising, but it is the frozen behaviour and mjolnir-sync
+// copies it deliberately rather than "fixing" it out from under a device that
+// cannot be rolled back.
 // (D-N1) — one long-lived token, env-configured, no per-client identity, no
 // scopes. The one real difference from that pattern: stabbur protects a
 // JSON API consumed by its own SPA, which can attach `Authorization: Bearer`

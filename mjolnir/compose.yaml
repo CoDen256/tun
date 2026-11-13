@@ -130,6 +130,12 @@ services:
       STABBUR_AUTH_TOKEN: ${STABBUR_AUTH_TOKEN}
     volumes:
       - .:/app
+      # libs/ mounted at /libs, NOT /app/libs, so that the SAME relative
+      # import works in the repo and in the container: `/app` is `tun/mjolnir`
+      # and `/` is `tun`, so `../../../libs/` from a file two levels under
+      # either one resolves identically. Mounting it inside /app would need a
+      # different specifier in each place.
+      - ../libs:/libs:ro
       - /app/node_modules
       - /app/hub/node_modules
     healthcheck:
@@ -161,6 +167,47 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  # DEVICE PLANE. Split out of mjolnir-hub by zone-isolation so that
+  # redeploying the operator console cannot interrupt a device's progress
+  # sync, and a fault in either cannot take down the other. Shares the
+  # `mjolnir` database with the workbench but NEVER migrates it — exactly one
+  # service owns each schema.
+  mjolnir-sync:
+    build:
+      context: ..
+      dockerfile: mjolnir/sync/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://mjolnir:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_mjolnir@postgres:5432/mjolnir
+      TUN_PUBLIC_BASE: ${TUN_PUBLIC_BASE}
+      OPERATOR_AUTH_TOKEN: ${OPERATOR_AUTH_TOKEN}
+      DATA_DIR: /app/data
+      PORT: "8002"
+    volumes:
+      - .:/app
+      # libs/ mounted at /libs, NOT /app/libs, so that the SAME relative
+      # import works in the repo and in the container: `/app` is `tun/mjolnir`
+      # and `/` is `tun`, so `../../../libs/` from a file two levels under
+      # either one resolves identically. Mounting it inside /app would need a
+      # different specifier in each place.
+      - ../libs:/libs:ro
+      - /app/node_modules
+      - /app/hub/node_modules
+    healthcheck:
+      # Liveness only, and outside the auth gate on purpose: /_health is not
+      # part of the device contract and a probe must not need a credential.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8002/_health').then(r=>process.exit(0)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   mjolnir-builder:
     build:
@@ -195,6 +242,9 @@ services:
       STABBUR_AUTH_TOKEN: ${STABBUR_AUTH_TOKEN}
     volumes:
       - .:/app
+      # See the mjolnir-hub comment: /libs keeps one relative import working
+      # in both the repo and the container.
+      - ../libs:/libs:ro
       - /app/node_modules
       - /app/builder/node_modules
     healthcheck:

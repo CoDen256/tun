@@ -112,6 +112,24 @@
 	# treats both forms as equivalent (`url.pathname === "/mjolnir" ||
 	# url.pathname === "/mjolnir/"`); without the bare pattern here, that
 	# branch of hub's code is simply unreachable from outside the container.
+	# ---- /mjolnir/userdata/* : DEVICE PLANE, routed BEFORE the console ------
+	# zone-isolation split device progress sync out of the console into its own
+	# process. This block MUST be matched before @mjolnir below, or every sync
+	# request lands on the workbench instead — and because both are `handle`
+	# blocks, Caddy sequences them first-match-wins in written order, so the
+	# order of these two blocks IS the routing. Verified with
+	# `caddy adapt --adapter caddyfile` rather than by reading: the compiled
+	# route index for this block must be lower than @mjolnir's.
+	#
+	# No trailing-slash variant and no bare-path variant, deliberately: the
+	# device only ever requests /mjolnir/userdata/<uid>, never the prefix
+	# itself. Adding patterns here that hub used to answer would change what a
+	# bare /mjolnir/userdata returns.
+	@mjolnir_sync path /mjolnir/userdata/*
+	handle @mjolnir_sync {
+		reverse_proxy mjolnir-sync:8002
+	}
+
 	@mjolnir path /mjolnir /mjolnir/*
 	handle @mjolnir {
 		reverse_proxy mjolnir-hub:8000

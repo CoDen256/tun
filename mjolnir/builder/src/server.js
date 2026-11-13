@@ -7,7 +7,7 @@ import { jobLogLines, makeDbLogger } from "./jobLogs.js";
 import { recentBatches, occurrencesForBuild } from "./batchHistory.js";
 import { getActiveMeta } from "./logicBundle.js";
 import { renderShell, escapeHtml } from "./layout.js";
-import { requireAuth, renderLoginPage, handleLoginPost } from "./auth.js";
+import { requireAuth, renderLoginPage, handleLoginPost } from "../../../libs/jsservice/auth.js";
 import { shipOrderForDeck } from "./cardFlow.js";
 import { occurrencesPerCardForDeck } from "./deckFamilies.js";
 

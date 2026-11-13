@@ -17,7 +17,7 @@ import { list as listLogicBundles } from "./logicBundles.js";
 import { cardsList, stripHtml, getCardSlot } from "./cards.js";
 import { DECK_ALLOCATION, listDecks, updateDeckDescription } from "./decks.js";
 import { renderShell, escapeHtml } from "./layout.js";
-import { requireAuth, renderLoginPage, handleLoginPost } from "./auth.js";
+import { requireAuth, renderLoginPage, handleLoginPost } from "../../../libs/jsservice/auth.js";
 import { slugify } from "./slug.js";
 import {
   getOrCreate,
@@ -1014,7 +1014,7 @@ forcePublishBtn.addEventListener('click', async () => {
   });
 }
 
-export function createServer(pool, config) {
+export function createServer(pool, config, boot) {
   // bundle-session-management: reachable embedded here, with no local
   // `bundle-tool ui`/npx invocation required for a deployed instance.
   // Instantiated once (not per-request) — its session store is an
@@ -1440,55 +1440,12 @@ export function createServer(pool, config) {
         return sendJson(res, 200, { ok: true });
       }
 
-      // progress-sync-shim: the device-facing contract mod 2080's shim
-      // (patches/js/2080-progress-sync-shim.js) talks to — gated by the
-      // same shared operator-auth check above (task 4.2's decision), not a
-      // separate device token. D-S2: GET never reports "not found", it
-      // auto-creates factory defaults on first touch.
-      const USERDATA_PREFIX = "/mjolnir/userdata/";
-      if (url.pathname.startsWith(USERDATA_PREFIX) && url.pathname.length > USERDATA_PREFIX.length) {
-        // userdata-console (D-C1): this path segment is the real Firebase
-        // uid (D-S1) — `userdata`/`userdata_history` stay keyed by it
-        // unchanged. `device_state` is keyed by a *different*, locally-
-        // generated `deviceId` carried in the PATCH body, never by this uid.
-        const uid = decodeURIComponent(url.pathname.slice(USERDATA_PREFIX.length));
-        if (req.method === "GET") {
-          const { doc, created } = await getOrCreate(uid);
-          // D-S4: the startup restore module (patches/js/progress-sync-
-          // restore-companion.js) needs to tell "a real existing document"
-          // apart from "this GET call's own auto-creation" (D-S2) — mod
-          // 2080's own shim ignores this extra field entirely (it only ever
-          // reads the named fields it already knows about).
-          return sendJson(res, 200, created ? { ...doc, _justCreated: true } : doc);
-        }
-        if (req.method === "PATCH") {
-          // `deviceId` (D-C1/D-C2's now-removed device_state mechanism) and
-          // the device-status fields it used to ride alongside
-          // (activeBuildId/pendingBuildId/audioCached/audioTotal/
-          // lastFetchError) are stripped rather than merged into the synced
-          // doc — an older installed build may still send them, and they
-          // must never pollute the userdata document itself.
-          const STATUS_FIELDS = ["deviceId", "activeBuildId", "pendingBuildId", "audioCached", "audioTotal", "lastFetchError"];
-          const body = await readJson(req);
-          const patch = {};
-          for (const [key, value] of Object.entries(body)) {
-            if (!STATUS_FIELDS.includes(key)) patch[key] = value;
-          }
-          const doc = await merge(uid, patch);
-          return sendJson(res, 200, doc);
-        }
-        if (req.method === "POST") {
-          const doc = await readJson(req);
-          const written = await replace(uid, doc);
-          return sendJson(res, 200, written);
-        }
-        if (req.method === "DELETE") {
-          await remove(uid);
-          return sendJson(res, 200, { ok: true });
-        }
-        res.writeHead(405, { "Content-Type": "text/plain" });
-        return res.end("method not allowed");
-      }
+      // Device progress sync (/mjolnir/userdata/*) MOVED to `mjolnir-sync`
+      // (zone-isolation). It is the device plane; this is the operator plane.
+      // The gateway routes /mjolnir/userdata/* to that service BEFORE this
+      // one, so a request never reaches here. If you are looking for the
+      // handler, it is mjolnir/sync/src/server.js — copied byte for byte,
+      // because the device cannot be rolled back.
 
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("not found");
