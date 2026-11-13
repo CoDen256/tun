@@ -103,8 +103,8 @@ the behavior of any existing route. With phonexa absent, requests under the pref
 SHALL fail at the gate or as a proxy error, never as an open route.
 
 #### Scenario: mjolnir-only deployment
-- **WHEN** Caddy starts with neither `PHONEXA_UPSTREAM` nor `PHONEXA_AUTH_HASH`
-  set
+- **WHEN** Caddy starts with `PHONEXA_AUTH_HASH` unset (and, as written,
+  `PHONEXA_UPSTREAM` — retired, see below)
 - **THEN** it starts successfully and every existing route behaves exactly as
   before
 
@@ -112,13 +112,23 @@ SHALL fail at the gate or as a proxy error, never as an open route.
 - **WHEN** Caddy starts with `TUN_SITE_ADDRESS=:8080` and no phonexa variables
 - **THEN** it starts successfully and serves the main site as before
 
-### Requirement: The upstream is configurable with a sensible default
-The phonexa upstream SHALL default to `phonexa-backend:5050` and be overridable by
-`PHONEXA_UPSTREAM`.
+### Requirement: The upstream is the service name, not configuration
+The phonexa upstream SHALL be the service key `phonexa-backend:5050`, written
+literally in the Caddyfile and not configurable.
 
-#### Scenario: Default upstream
-- **WHEN** `PHONEXA_UPSTREAM` is unset
-- **THEN** requests are proxied to `phonexa-backend:5050` over the shared network
+*Corrected 2026-11-13 (D150/D151): this requirement read "SHALL default to
+`phonexa-backend:5050` and be overridable by `PHONEXA_UPSTREAM`". The override
+existed only because a bare Docker service name resolved across two separate
+Compose projects solely through the `tun-shared` external network (D98/D104).
+One repository is one Compose project with one default network, so the name
+always resolves and there is nothing left to configure — `PHONEXA_UPSTREAM`,
+`STABBUR_UPSTREAM` and `SMIA_UPSTREAM` are all retired by D151 and typed in no
+`.env`. `bin/check-standards.sh` fails the build if one reappears.*
+
+#### Scenario: Reaching phonexa
+- **WHEN** an authenticated request arrives under `/phonexa/`
+- **THEN** it is proxied to `phonexa-backend:5050`, resolved on the Compose
+  project's default network with no network or upstream configuration
 
 ### Requirement: Setup requirements are documented
 `.env.example` and `DEPLOY.md` SHALL document how to derive `PHONEXA_AUTH_HASH`

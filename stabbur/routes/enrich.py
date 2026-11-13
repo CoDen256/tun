@@ -154,7 +154,16 @@ def _capture_youtube_clip(url: str, timecode: int) -> tuple[str | None, tuple[di
         # IP, at which point setting this env var (no code change) is
         # the fix, not touching this route again.
         cookies_file = os.environ.get("YTDLP_COOKIES_FILE")
-        if cookies_file and os.path.exists(cookies_file):
+        # `isfile`, not `exists`: compose bind-mounts ./cookies.txt here, and
+        # when that path does not exist on the host (it is gitignored, so it
+        # never does in a fresh clone) Docker CREATES A DIRECTORY at it. With
+        # `exists` the directory passed this check and `shutil.copyfile` below
+        # raised IsADirectoryError, taking down the whole manual-link audio
+        # capture rather than just proceeding without cookies. Found 2026-11-13
+        # with a real directory sitting at stabbur/cookies.txt from an earlier
+        # `docker compose up`. A directory now means "no cookies configured",
+        # which is exactly what it represents.
+        if cookies_file and os.path.isfile(cookies_file):
             # yt-dlp doesn't just read this file, it writes updated
             # cookies back to it after the session — discovered live as
             # a crash (`OSError: Read-only file system`) against a

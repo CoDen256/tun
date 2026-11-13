@@ -248,3 +248,63 @@ ignore rules, and a real `docker build` of each image's COPY stage against the
 root context. Result: 31.3 MB and 880 files sent to the daemon, down from
 ~940 MB and 41,678 files.
 
+## The password rename broke the backup service, and it was caught before it ran
+
+Splitting the postgres passwords into four per-database keys renamed mjolnir's
+from `POSTGRES_PASSWORD` to `MJOLNIR_POSTGRES_PASSWORD`. `backup/entrypoint.sh`
+reads it by name in two places — the `pg_dump` for mjolnir and a startup
+`:?`-guard assertion — and previously received it through
+`env_file: ../mjolnir/.env`, which the monorepo deleted.
+
+So the backup container would have refused to start with
+`set POSTGRES_PASSWORD, mjolnirs own password via env_file`. Loudly, thanks to
+the existing `:?` guard, and not silently — but broken, and broken in the one
+service whose failure is only noticed a day later at the next scheduled run.
+
+Fixed by renaming the variable in `entrypoint.sh` to match, rather than mapping
+the new name back to the old one in compose: the variable should say which
+database it belongs to, which is the whole point of having four of them. All
+four variables `entrypoint.sh` requires are now asserted present in the
+rendered config.
+
+The general lesson for the remaining three changes: a configuration rename is
+not done when the compose files agree with each other. It is done when every
+*consumer* agrees — including shell scripts, which no amount of
+`docker compose config` will check.
+
+## A verification harness destroyed two real volumes (P41)
+
+Recorded because it happened during this change's own verification, and because
+the mechanism is not obvious.
+
+`docker compose down -v` removes every volume the **project declares**, not the
+subset its running containers mount. The root `compose.yaml` `include:`s all
+four projects, so the project declares all nine named volumes no matter which
+services are started.
+
+The full-stack boot harness redirected all nine to `verify_*` names and
+asserted, before starting anything, that no real name survived in the rendered
+config — its `down -v` was safe and verified so afterwards. A second, narrower
+harness built later to run `bin/ota-verify.sh` redirected only
+`caddy_data`/`caddy_config` and started **only** the `caddy` service.
+`docker inspect` on that container was clean: four mounts, none of them real.
+Its `down -v` nonetheless destroyed `mjolnir_postgres_data` and
+`smia_smia-pg-data`.
+
+Both were local development databases on the operator's own machine; the VPS
+was never touched by any part of this work. `mjolnir` is restorable from
+`tun-backup/mjolnir.sql` (31 MB, committed the same day). `smia` has no dump,
+because smia is still outside the backup set — the gap this effort already
+identified and `postgres-consolidation` closes. Its content is derived
+(lookup cache plus imported corpora) and rebuildable from the tracked
+`smia/providers/` via `smia/scripts/import_*.py`.
+
+The lesson generalises past this incident and is why it is P41 rather than a
+footnote: **this change's own design.md warns twice that volume identity is the
+sharpest hazard in the whole restructure, and the warning was still not enough,
+because it was aimed at "dump the wrong volume" rather than "declare a volume
+you never mount".** The remaining three changes — `postgres-consolidation` most
+of all, which moves every database — must treat `-v` as forbidden against the
+root project and must assert redirection over the *rendered* volume list rather
+than a remembered one.
+

@@ -16,11 +16,21 @@ Not part of the service itself — run once per batch, by hand:
 
 from __future__ import annotations
 
+import os
 import sys
+from pathlib import Path
 
 import requests
 
-PHONEXA_AUDIO = "/home/coden/dev/phonexa/lang/no/audio"
+# D150: phonexa is no longer a sibling checkout at /home/coden/dev/phonexa —
+# it is the `phonexa/` directory of this one repository. Derived from this
+# file's own location (tun/stabbur/scripts/ -> tun/) so the path is correct
+# from any working directory; override with PHONEXA_AUDIO_DIR if the lang
+# tree lives elsewhere on the host.
+PHONEXA_AUDIO = os.environ.get(
+    "PHONEXA_AUDIO_DIR",
+    str(Path(__file__).resolve().parents[2] / "phonexa" / "lang" / "no" / "audio"),
+)
 
 BATCHES = {
     1: dict(

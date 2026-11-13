@@ -1,8 +1,11 @@
 ## Running it
 
+phonexa is the `phonexa/` directory of the one `tun` repository (D150) — not a separate
+checkout. From a clone of `tun`:
+
 ```bash
-cp .env.example .env          # optional: only PHONEXA_POSTGRES_PASSWORD (default: phonexa)
-docker network create tun-shared   # once per host; the backend joins it (see below)
+cd phonexa
+cp .env.example .env          # optional: only AUDIO_BACKEND lives here
 docker compose up -d
 ```
 
@@ -12,17 +15,37 @@ head`) before it starts the server, so a fresh volume gets its schema with no ma
 Visit `http://localhost:5050`. The app, the database (`127.0.0.1:5432`) and Adminer are
 bound to loopback only.
 
+**No network to create.** One repository is one Compose project is one default network, so
+the `tun-shared` external network and the one-time `docker network create tun-shared` step
+this file used to document (D98/D104) are gone — every service reaches every other by its
+service key, with nothing to set up. *(Corrected 2026-11-13, D150: the instruction was real
+while phonexa was its own repo; following it now creates an unused network.)*
+
+**Where configuration lives (D151).** `PHONEXA_POSTGRES_PASSWORD` is **not** in
+`phonexa/.env` any more: the backup service reads it too, so it lives in the
+**repository-root** `.env` and is typed nowhere else. It still defaults to `phonexa`, which
+is the literal the existing `phonexa_postgres_data` volume was initialised with — so
+standalone `docker compose up` here works with no root `.env` at all. `phonexa/.env` holds
+only phonexa-local values (`AUDIO_BACKEND`); `DATABASE_URL` and `SMIA_BASE_URL` are derived
+in `compose.yaml` and typed nowhere.
+
+**Host ports come from `compose.override.yaml`**, which Compose auto-loads only when you run
+from inside this directory. The unified stack publishes nothing but the gateway.
+
 - **Adminer** (dev only): `docker compose --profile dev up -d` → `http://localhost:8081`
-  (server `phonexa-postgres`). Under `tun` the shared Adminer replaces it.
-- **Part of the Tun stack:** `tun/compose.yaml` `include:`s this file. Service and volume
-  names are `phonexa-`-prefixed so they don't collide with the other stacks'; the backend
-  joins the external `tun-shared` network so mjolnir's Caddy can reach it by name.
+  (server `phonexa-postgres`). In the unified stack the shared Adminer replaces it.
+- **Part of the Tun stack:** the repository-root `compose.yaml` `include:`s this file.
+  Service and volume names are `phonexa-`-prefixed so they don't collide with the other
+  projects'; mjolnir's Caddy reaches `phonexa-backend` by service name on the project's
+  default network.
 - **Local volume note (PG 16 → 17):** the database moved to Postgres 17 on a *new* volume,
   `phonexa_postgres_data`, which starts empty. An older local `phonexa_pgdata` volume (PG 16)
   is left untouched and is no longer used — a 17 image cannot start on it. Audio keeps
   using `phonexa_audio_data`, the same volume as before.
 - **Speech-to-text** for Shadowing's transcription comes from smia — see
-  `SMIA_BASE_URL`/`SMIA_AUTH_TOKEN` in `.env.example`. YouTube extraction needs `yt-dlp` +
+  `SMIA_BASE_URL`/`SMIA_AUTH_TOKEN` in `compose.yaml`. Neither is in any `.env.example`
+  any more (D151): the address is derived from smia's service key, and the token is shared
+  with smia so it lives in the repository-root `.env`. YouTube extraction needs `yt-dlp` +
   `ffmpeg`, both in the Docker image.
 
 ## Description

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-test/test_consonants_api.py — request-level checks for GET /api/v1/consonants.
+tests/test_consonants_api.py — request-level checks for GET /api/v1/consonants.
 
 Uses Flask's test client directly (no pytest — matches this repo's
-script-style test convention, see test/server_tests.py) against a live DB, so
+script-style test convention, see tests/server_tests.py) against a live DB, so
 languages/consonants seeded by scripts/seed_consonants.py are visible.
 
 Usage:
   docker compose up -d postgres
   DATABASE_URL=postgresql+psycopg2://phonexa:phonexa@localhost:5432/phonexa \
-  python test/test_consonants_api.py
+  python tests/test_consonants_api.py
 """
 
 from __future__ import annotations

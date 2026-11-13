@@ -25,7 +25,12 @@ else
 fi
 
 # --- D151: values that must be derived, never typed ------------------------
-dead='STABBUR_UPSTREAM|SMIA_UPSTREAM|PHONEXA_UPSTREAM|STABBUR_BASE_URL|STABBUR_UI_BASE|SMIA_BASE_URL|PHONEXA_AUTH_HASH'
+# PHONEXA_AUTH_HASH is deliberately NOT in this list. It is neither derivable
+# nor retired yet: mjolnir/compose.yaml reads it by interpolation and
+# mjolnir/.env.example documents it, so an operator who follows DEPLOY.md and
+# sets it would have tripped a false failure here. `unified-auth` retires it by
+# deriving the hash in the gateway's entrypoint; add it then, not now.
+dead='STABBUR_UPSTREAM|SMIA_UPSTREAM|PHONEXA_UPSTREAM|STABBUR_BASE_URL|STABBUR_UI_BASE|SMIA_BASE_URL'
 if hits=$(grep -nE "^($dead)=" $envs 2>/dev/null); then
   bad "D151: these are derivable or retired and must not be in any .env:"; note "$hits"
 else

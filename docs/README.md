@@ -78,7 +78,16 @@ One clone, no sibling checkouts. The APK build workspace at
 
 ## Status
 
-**P1 live** — OTA path deployed on the Contabo VPS, `bin/ota-verify.sh` 16/16
-(2026-10-20). **P2 next** — the one irreversible APK build; contract frozen in
-`11-ota-contract.md`, Q11–Q17 all settled. No OpenSpec change is open yet;
-`p2-native-ota` belongs in the `mjolnir` repo.
+**P1–P3 are all done** (2026-10-20 → 2026-10-22). The server is live, the one
+irreversible native OTA patch is installed and its whole acceptance gate is
+proven on device, and the first content payoff shipped as a file with no APK
+rebuild. See `12-p2-results.md` for the trace and **D73** for the closing
+record; `mjolnir`'s `p2-native-ota` change is archived.
+
+*(This block said "P2 next" until 2026-11-13 — three weeks after P2 actually
+landed. `10-roadmap.md` → "Right now" is the authority on current state; this
+is a summary of it, and when the two disagree the roadmap wins.)*
+
+**In flight now:** the monorepo restructure — `monorepo-merge` (this layout),
+then `postgres-consolidation`, `zone-isolation` and `unified-auth`. See
+D150–D153.

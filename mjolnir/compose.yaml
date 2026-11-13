@@ -22,12 +22,25 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    # PRODUCTION port shape. These are correct only when TUN_SITE_ADDRESS is a
+    # hostname, because that is what makes Caddy listen on 80/443 and obtain a
+    # certificate. The two settings are NOT coupled by Compose, and getting
+    # them out of step is silent: with the documented local value
+    # `TUN_SITE_ADDRESS=:8080` Caddy listens on 8080 inside the container,
+    # nothing is published on 8080, and the gateway is simply unreachable from
+    # the host — on a rootless-Docker host `up` fails outright instead
+    # ("cannot expose privileged port 80"). Found by a real boot test, 2026-11-13.
+    #
+    # For local plain-HTTP work use the root `compose.dev.yaml`, which
+    # overrides these three mappings to one loopback 8080:
+    #     docker compose -f compose.yaml -f compose.dev.yaml up
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"        # HTTP/3
     environment:
-      # Site address: a hostname in production (auto-HTTPS), ":8080" locally.
+      # Site address: a hostname in production (auto-HTTPS), ":8080" locally —
+      # and locally you must also use compose.dev.yaml, see the ports note above.
       TUN_SITE_ADDRESS: ${TUN_SITE_ADDRESS:?set TUN_SITE_ADDRESS in the root .env}
       OTA_TOKEN: ${OTA_TOKEN:?set OTA_TOKEN in the root .env}
       # The /stabbur, /smia and /phonexa upstreams are no longer configurable:
@@ -127,6 +140,35 @@ services:
       - .:/app
       - /app/node_modules
       - /app/hub/node_modules
+    healthcheck:
+      # monorepo-merge 4.4: same four-key shape as phonexa-backend's reference
+      # healthcheck. The *predicate* has to differ, and here is why.
+      #
+      # hub has no unauthenticated health route. src/auth.js's requireAuth()
+      # gates every path except its one carve-out, /mjolnir/login (D-H6), and
+      # answers a rejected request with 401 for anything under /api/ and a 302
+      # to the login page otherwise. /mjolnir/login is not reliably 200 either:
+      # src/server.js only mounts it when OPERATOR_AUTH_TOKEN is set, and falls
+      # through to the normal route list (404) when it is unset for local/dev.
+      #
+      # So this probe asserts liveness, not success: it passes on ANY HTTP
+      # status line. A 200, a 302 to /mjolnir/login, a 401 and a 404 all prove
+      # the same thing — the node process is up, accepting connections and
+      # routing. Only a connection refusal, a hang or a crashed process fails
+      # it. Deliberately weaker than phonexa's /ping check, because a
+      # strictly-stronger one here could only be made to pass by opening an
+      # unauthenticated route, which is a behaviour change this change does not
+      # make.
+      #
+      # node, not curl: this image is node:22-alpine + bash only (builder's has
+      # curl, hub's does not), and `node -e` is CommonJS by default so
+      # require() is fine. 127.0.0.1 rather than localhost: the server binds
+      # all interfaces and the literal skips any IPv6-first resolution.
+      test: ["CMD", "node", "-e", "const r=require('http').get({host:'127.0.0.1',port:8000,path:'/mjolnir/login'},s=>process.exit(s.statusCode?0:1));r.setTimeout(3000,()=>{r.destroy();process.exit(1)});r.on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   mjolnir-builder:
     build:
@@ -150,6 +192,22 @@ services:
       - .:/app
       - /app/node_modules
       - /app/builder/node_modules
+    healthcheck:
+      # Same shape and same liveness-not-success predicate as mjolnir-hub's
+      # above, for the same reason: builder/src/auth.js is hub's auth.js, and
+      # builder/src/server.js gates every route behind it except /builder/login
+      # — which, again, only exists while OPERATOR_AUTH_TOKEN is set. Any HTTP
+      # status proves the node process is alive and routing; only a refused
+      # connection or a hang fails the check.
+      #
+      # node rather than curl even though this image does install curl (for
+      # ffmpeg-adjacent ops scripting): keeping the probe byte-for-byte hub's,
+      # modulo the port and path, is the point of 4.4.
+      test: ["CMD", "node", "-e", "const r=require('http').get({host:'127.0.0.1',port:8001,path:'/builder/login'},s=>process.exit(s.statusCode?0:1));r.setTimeout(3000,()=>{r.destroy();process.exit(1)});r.on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
 volumes:
   # Explicit `name:` (not left to default to "<project>_<key>") so the

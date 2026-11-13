@@ -29,9 +29,32 @@ log() {
 run_backup() {
   if [ ! -d "$BACKUP_REPO/.git" ]; then
     log "entrypoint: cloning $BACKUP_REPO_URL (first run)..."
-    git clone "$BACKUP_REPO_URL" "$BACKUP_REPO"
-    git -C "$BACKUP_REPO" config user.email "backup@tun.local"
-    git -C "$BACKUP_REPO" config user.name "tun git-backup"
+    # Every step here is checked explicitly, for the SAME reason the dump
+    # section below documents at length: this function is called as
+    # `run_backup || log ...`, and `||` disables errexit for the entire
+    # function body recursively — so an unchecked failure here does not abort
+    # anything. Found live by a real boot test (2026-11-13): the clone failed
+    # with "Permission denied (publickey)", `git config`, `git add`,
+    # `git diff --cached`, `git commit` and `git push` then all failed inside
+    # a non-repository directory, and the container still logged
+    # "entrypoint: committed and pushed" and slept for 24h with 0 restarts.
+    # A backup service that reports success while backing up nothing is worse
+    # than one that crashes.
+    if ! git clone "$BACKUP_REPO_URL" "$BACKUP_REPO"; then
+      log "entrypoint: FATAL clone of $BACKUP_REPO_URL failed — check BACKUP_SSH_KEY_PATH is the right key and is a deploy key on that repo" >&2
+      return 1
+    fi
+    git -C "$BACKUP_REPO" config user.email "backup@tun.local" || { log "entrypoint: FATAL git config failed" >&2; return 1; }
+    git -C "$BACKUP_REPO" config user.name "tun git-backup" || { log "entrypoint: FATAL git config failed" >&2; return 1; }
+  fi
+
+  # Belt and braces: whatever happened above, refuse to continue unless there
+  # is a real repository to commit into. A later `git diff --cached --quiet`
+  # returns 128 (not 0 or 1) outside a repository, which would otherwise fall
+  # straight through to the commit/push path.
+  if [ ! -d "$BACKUP_REPO/.git" ]; then
+    log "entrypoint: FATAL $BACKUP_REPO is not a git repository — refusing to run" >&2
+    return 1
   fi
 
   mkdir -p "$BACKUP_REPO/blobs"
@@ -52,7 +75,7 @@ run_backup() {
   # failed attempt, regardless of how `run_backup`'s own exit status is
   # later handled by its caller.
   log "entrypoint: dumping mjolnir-postgres..."
-  if ! PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h mjolnir-postgres -U mjolnir \
+  if ! PGPASSWORD="$MJOLNIR_POSTGRES_PASSWORD" pg_dump -h mjolnir-postgres -U mjolnir \
       --restrict-key="$RESTRICT_KEY" \
       --no-owner \
       --no-privileges \
@@ -167,20 +190,31 @@ run_backup() {
   log "  phonexa-audio/: $before -> $after ($copied new)"
 
   cd "$BACKUP_REPO"
-  git add -A
+  if ! git add -A; then
+    log "entrypoint: FATAL git add failed" >&2
+    return 1
+  fi
 
   if git diff --cached --quiet; then
     log "entrypoint: no changes, nothing to commit"
     return 0
   fi
 
-  git commit -m "backup $(date -u +%Y-%m-%dT%H:%M:%SZ)" --quiet
-  git push --quiet
+  # Checked for the same errexit-suppression reason as the clone above: a
+  # failed push must never be logged as a successful backup.
+  if ! git commit -m "backup $(date -u +%Y-%m-%dT%H:%M:%SZ)" --quiet; then
+    log "entrypoint: FATAL commit failed" >&2
+    return 1
+  fi
+  if ! git push --quiet; then
+    log "entrypoint: FATAL push failed — the dumps are committed locally in $BACKUP_REPO but NOT on the remote" >&2
+    return 1
+  fi
   log "entrypoint: committed and pushed"
 }
 
 : "${BACKUP_REPO_URL:?set BACKUP_REPO_URL}"
-: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD, mjolnirs own password via env_file}"
+: "${MJOLNIR_POSTGRES_PASSWORD:?set MJOLNIR_POSTGRES_PASSWORD in the root .env}"
 : "${STABBUR_POSTGRES_PASSWORD:?set STABBUR_POSTGRES_PASSWORD}"
 : "${PHONEXA_POSTGRES_PASSWORD:?set PHONEXA_POSTGRES_PASSWORD}"
 

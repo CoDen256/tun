@@ -69,7 +69,7 @@ services:
       # only and never sent to the browser. Empty token = the 📝 action reports
       # "not configured" and everything else keeps working.
       SMIA_BASE_URL: http://smia-backend:5055
-      SMIA_AUTH_TOKEN: ${SMIA_AUTH_TOKEN:-}
+      SMIA_AUTH_TOKEN: ${SMIA_AUTH_TOKEN}
     volumes:
       - phonexa-audio-data:/data/audio
       # Bind mount (not a named volume): the admin export/import endpoints

@@ -33,7 +33,16 @@ phonexa SHALL declare its database and audio volumes with explicit `name:`s (`ph
 - **THEN** the dump succeeds without a client/server version mismatch
 
 ### Requirement: The backend is reachable by the reverse proxy and not publicly published
-`phonexa-backend` SHALL join the `tun-shared` network so the reverse proxy can reach it by service name, and SHALL publish its host ports on the loopback interface only.
+`phonexa-backend` SHALL be reachable by the reverse proxy under its service name, and SHALL publish its host ports on the loopback interface only.
+
+*Corrected 2026-11-13 (D150): this requirement read "SHALL join the
+`tun-shared` network". That network no longer exists — one repository is one
+Compose project is one default network, so the service name resolves with no
+network configuration at all. The reachability and loopback-only obligations
+are unchanged; only the mechanism naming is. Host ports now come from
+`phonexa/compose.override.yaml`, which Compose loads only for the primary
+compose file of the directory it runs in, so the unified stack publishes none
+of them (D152).*
 
 #### Scenario: Reverse proxy reachability
 - **WHEN** mjolnir's Caddy proxies to `phonexa-backend:5050`

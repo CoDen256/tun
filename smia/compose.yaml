@@ -16,7 +16,12 @@
 # Shared values (SMIA_POSTGRES_PASSWORD, SMIA_AUTH_TOKEN) are interpolated from the
 # ROOT .env — the one Compose reads for the project you invoke it in. Running
 # this file standalone from smia/ therefore needs them passed in:
-#   docker compose --env-file ../.env -f compose.yaml up
+#   docker compose --env-file ../.env up
+#
+# NOTE the absence of `-f compose.yaml`. Naming this file explicitly SUPPRESSES
+# compose.override.yaml, so it would publish no loopback ports at all — exactly
+# what the override exists to provide for a native venv. Verified: from smia/,
+# `-f compose.yaml` renders 0 published ports; without it, 2.
 # smia's own secrets (HF/DeepL/ElevenLabs) come from smia/.env via `env_file:`
 # below, which resolves relative to THIS file in both modes.
 #
@@ -77,6 +82,38 @@ services:
       # warning-but-not-failing for any file that is absent — the two Leipzig
       # archives and the nbno zip are the only gitignored exceptions.
       - ./providers:/app/providers:ro
+    healthcheck:
+      # monorepo-merge 4.4: same four-key shape as phonexa-backend's reference
+      # healthcheck — interval/timeout/retries/start_period — so there is one
+      # standard across all four backends.
+      #
+      # NOT /health, even though app.py defines one. Checked against auth.py:
+      # `register_auth`'s before_request exempts only `OPTIONS` preflights,
+      # `/ui` and `/ui/*`; its own comment states explicitly that "/providers,
+      # /health, and every lookup endpoint" still go through the bearer check.
+      # An unauthenticated probe of /health therefore gets 401 and this
+      # container would never become healthy. (/health is also the wrong shape
+      # for a probe regardless: it opens a session and queries the database.)
+      # So `/ui` it is — exempt, no database access, reads ui/index.html which
+      # the Dockerfile COPYs in, always 200.
+      #
+      # python, not curl: python:3.12-slim has none. urllib.urlopen raises on
+      # any non-2xx, which is why the exempt path above is load-bearing.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5055/ui', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # Deliberately far longer than the other three services' 15s, and the one
+      # value that is NOT uniform: scripts/bootstrap.py runs `alembic upgrade
+      # head` and then imports every provider dataset whose table is still
+      # empty (~9M rows) BEFORE it exec's app.py, so on a genuinely fresh
+      # smia_smia-pg-data volume nothing is listening on 5055 for a long time.
+      # A first import can still outlast even this, in which case the container
+      # reports unhealthy until the app starts and then recovers on the next
+      # interval. That is informational only: no service `depends_on`
+      # smia-backend, so nothing blocks on it (the backup service depends on
+      # the postgres services' health, not on any backend's).
+      start_period: 180s
 
 volumes:
   # Explicit `name:` so this is the SAME Docker volume whether brought up via

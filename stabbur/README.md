@@ -2,7 +2,9 @@
 
 *Stabbur: the storehouse on stilts — where you keep what you gathered.*
 
-The **learning content** service of the [Tun](../tun) ecosystem: captures come
+The **learning content** service of the [Tun](..) ecosystem — the `stabbur/`
+directory of the one `tun` repository since D150, not a sibling checkout.
+Captures come
 in from the browser, get triaged and enriched, and become **notes** — authored,
 reviewed content, language-agnostic. Owns the canonical learning audio.
 
@@ -41,5 +43,12 @@ eligibility filter (audio required, no exceptions) is Mjølnir's concern.
 
 ## Status
 
-Not implemented. Design: `../tun/docs/` (`03-data-model.md`, `02-services.md`,
-D74 for the note/card split rationale).
+Design: `docs/` at the repository root (`03-data-model.md`, `02-services.md`,
+D74 for the note/card split rationale) — was `../tun/docs/` while stabbur was
+its own repo (D150).
+
+*Correction, 2026-11-13: this section used to read "Not implemented". That is
+long false — notes, grammar rules, settings, captures and blob storage are all
+implemented, stabbur is deployed in the unified stack behind `/stabbur/`
+(D94/D118), and it collects 520 tests. Left recorded rather than silently
+replaced, per the documentation convention.*

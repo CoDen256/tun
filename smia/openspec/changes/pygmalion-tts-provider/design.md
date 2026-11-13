@@ -18,7 +18,11 @@ Existing `/tts` machinery this change builds on:
 - `scripts/bootstrap.py` — `_IMPORTS = [(table, run, args), …]`, each run only
   if its table is empty; `FileNotFoundError` is a skipped-with-warning, not a
   failure.
-- `compose.yml` bind-mounts `./providers` read-only at `/app/providers`.
+- `compose.yaml` bind-mounts `./providers` read-only at `/app/providers`
+  (the file was named `compose.yml` when this was written; renamed
+  2026-11-13 — D147's convention, D150's merge). The mount path resolves
+  relative to `smia/compose.yaml`, so it is the same bind mount whether the
+  stack is started from `smia/` or from the repository root.
 
 From `pygmalion-audio-fetch`, the manifest has one row per file:
 `{word, dialect, take, translation, url, path, status, bytes, sha256}`, and no

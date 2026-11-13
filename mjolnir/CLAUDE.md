@@ -2,12 +2,16 @@
 
 ## mjolnir — part of the Tun ecosystem
 
-This repo owns **everything that knows the Mjølnir bundle format or talks to the
-device**: the bundle tool, the JS patch set, the native patch source, the APK
-rebuild pipeline, the builder, and the device-facing hub.
+This directory owns **everything that knows the Mjølnir bundle format or talks
+to the device**: the bundle tool, the JS patch set, the native patch source, the
+APK rebuild pipeline, the builder, and the device-facing hub.
 
-Sibling repos: `tun` (deployment + ecosystem docs), `stabbur` (learning content),
-`smia` (linguistics), `phonexa` (phonetics lab), `hover-translate` (capture client).
+Since **D150** mjolnir is not its own repository: it is the `mjolnir/` directory
+of the one `tun` repo. Sibling *directories* of the same repo — not sibling
+checkouts — are `docs/` (deployment + ecosystem docs), `stabbur/` (learning
+content), `smia/` (linguistics), `phonexa/` (phonetics lab),
+`hover-translate/` (capture client) and `backup/` (the git-backup service).
+The root `CLAUDE.md` carries the ecosystem rules and the service standard.
 
 **Cross-repo design, decisions, pitfalls and the roadmap live in
 `docs/` (at the repo root) — start at `README.md`, then `07-decisions.md`.**
@@ -27,9 +31,10 @@ always read them before trusting §2 or §6:
 
 ## Note on naming
 
-The directory is `mjolnir`, but the npm package, the CLI binary
-(`bin/bundle-tool.js`) and the GitHub remote are still called `bundle-tool`.
-That is deliberate — the tool keeps its own name; only the repo was regrouped.
+The directory is `mjolnir`, but the npm package and the CLI binary
+(`bin/bundle-tool.js`) are still called `bundle-tool`, as was the GitHub remote
+this directory was merged in from (D150). That is deliberate — the tool keeps
+its own name; only the repo was regrouped.
 
 
 ## OpenSpec / Opsx Workflow Rules

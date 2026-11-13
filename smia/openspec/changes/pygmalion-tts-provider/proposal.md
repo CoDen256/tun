@@ -55,9 +55,10 @@ None.
   (`_IMPORTS` entry), `db/models.py`.
 - **Storage:** ~8 MB of mp3 bytes in the existing `tts_audio` table, via the
   existing `store()`; plus ~1,176 small rows in `pygmalion_audio`.
-- `compose.yml` already bind-mounts `./providers` read-only at
+- `compose.yaml` already bind-mounts `./providers` read-only at
   `/app/providers`, so the committed audio is visible to `bootstrap` with no
-  Dockerfile or compose change. A missing manifest is skipped with a warning,
+  Dockerfile or compose change. (The file was `smia/compose.yml` when this was
+  written; renamed 2026-11-13 — D147's convention, D150's merge.) A missing manifest is skipped with a warning,
   like every other provider's missing source file.
 - **No API shape change**: no new request or response fields, and the
   `GET /tts/{sha256}` route serves the audio unchanged.

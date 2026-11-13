@@ -38,7 +38,9 @@ Mjølnir app internals live in `mjolnir/docs/findings.md`, not in `docs/`.
 2. **Operator plane** — everything a human opens in a browser. One credential,
    enforced in the gateway.
 3. **Internal** — service-to-service calls, which never pass through the
-   gateway and carry `INTERNAL_TOKEN`.
+   gateway. Today they carry `STABBUR_AUTH_TOKEN` / `SMIA_AUTH_TOKEN` (two
+   values, both in the root `.env`); `unified-auth` collapses them into one
+   `INTERNAL_TOKEN` — planned, not yet done.
 
 ## Standards (D151, D152) — these are enforced, not aspirational
 
@@ -48,11 +50,21 @@ Mjølnir app internals live in `mjolnir/docs/findings.md`, not in `docs/`.
 - **Directory name = compose service key = hostname = database name = URL
   prefix.** No `container_name:` anywhere.
 - `restart: unless-stopped`; a health check for the service itself; host ports
-  on `127.0.0.1` behind the `dev` profile — only the gateway publishes.
-- One Postgres major version. One test layout per language (`pytest.ini` +
-  `tests/`). Migrations run on boot, and a service **serves before it
-  migrates** (`libs/`), so a database outage degrades pages instead of
-  preventing boot.
+  on `127.0.0.1`, published only by a per-project `compose.override.yaml` —
+  only the gateway publishes in the unified stack. **Not** a `dev` profile:
+  Compose has no per-port profile and all three workarounds fail (D152's
+  correction), and the override file is loaded only for the primary compose
+  file of the directory it runs in, which is what makes
+  `cd smia && docker compose up` publish ports while the root stack publishes
+  none.
+- One test layout per language (`pytest.ini` + `tests/`). One Postgres major
+  version *as the target*: smia is still deliberately on `postgres:16` and the
+  four databases are still four separate instances — `postgres-consolidation`
+  collapses them, which is also the only point a shared password can take
+  effect. Serving before migrating (shared `libs/`, so a database outage
+  degrades pages instead of preventing boot) is `zone-isolation`'s and
+  `unified-auth`'s work: planned, not yet done. Today each project runs its own
+  migrations on boot.
 - **No CI.** Deliberately (D152). Do not add a workflow.
 - Each project owns its `compose.yaml`; the root `include:`s them. Every
   project must stay runnable standalone.

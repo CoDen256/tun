@@ -1,3 +1,23 @@
+> **Annotation, 2026-11-13 (D150/D151 — `monorepo-merge`).** This change is
+> implemented and its outcome stands. Three *mechanism* statements below are now
+> false and are corrected here rather than rewritten, per the documentation
+> convention:
+>
+> - **"over `tun-shared`"** — that external network, and the one-time
+>   `docker network create`, are deleted. `http://smia-backend:5055` resolves on
+>   the single default network of the one Compose project. The dependency on
+>   `deployable-in-tun` "for `tun-shared` and env wiring" is now env wiring only.
+> - **`docker-compose.yml`** is now `phonexa/compose.yaml`.
+> - **"set `SMIA_AUTH_TOKEN` in phonexa's `.env` (same value as smia's)" /
+>   "document both in `.env.example`"** — exactly the duplication D151 forbids,
+>   and it is gone. `SMIA_AUTH_TOKEN` is used by more than one project, so it
+>   lives in the **repository-root** `.env` and is typed nowhere else;
+>   `SMIA_BASE_URL` is derived from smia's service key in
+>   `phonexa/compose.yaml` and appears in no `.env` at all. Neither is in
+>   `phonexa/.env.example`, which keeps only `AUDIO_BACKEND`. The
+>   "unset ⇒ transcription disabled with a clear message" behaviour is
+>   unchanged — the empty default is still in compose.
+
 ## 1. Backend proxy
 
 - [x] 1.1 Replace the faster-whisper block in `formanter.py` with `POST /transcribe` proxying to `{SMIA_BASE_URL}/stt` (`file → audio`, `language → lang`, `provider`, `Authorization: Bearer $SMIA_AUTH_TOKEN`), 60 s timeout, response `{provider, text}`

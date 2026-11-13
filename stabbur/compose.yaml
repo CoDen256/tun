@@ -46,7 +46,13 @@ services:
     environment:
       # Derived, never typed: assembled from STABBUR_POSTGRES_PASSWORD (root .env).
       DATABASE_URL: postgresql+psycopg2://stabbur:${STABBUR_POSTGRES_PASSWORD:-stabbur}@stabbur-postgres:5432/stabbur
-      STABBUR_AUTH_TOKEN: ${STABBUR_AUTH_TOKEN:-changeme}
+      # NO `:-changeme` default. An unset token must fail CLOSED, not fall back
+      # to a publicly-known string: auth.py's check is `if not token or
+      # provided != token -> 401`, so empty means "reject everything", which is
+      # the safe end. The old default also disagreed with mjolnir's
+      # `${STABBUR_AUTH_TOKEN}` (no default) — stabbur would have accepted
+      # `changeme` while builder sent an empty string and got 401 anyway.
+      STABBUR_AUTH_TOKEN: ${STABBUR_AUTH_TOKEN}
       FLASK_DEBUG: "0"
       # smia-enrichment-panel: the note editor's "Suggest" panels proxy
       # through this backend to smia. "smia-backend" is smia's own service
@@ -56,7 +62,7 @@ services:
       # address is derived from that service name, so it is no longer an
       # environment value anyone has to keep in sync.
       SMIA_BASE_URL: http://smia-backend:5055
-      SMIA_AUTH_TOKEN: ${SMIA_AUTH_TOKEN:-changeme}
+      SMIA_AUTH_TOKEN: ${SMIA_AUTH_TOKEN}
       # manual-link-audio-capture: optional, only read if the file at this
       # path actually exists inside the container (routes/enrich.py checks
       # os.path.exists before adding --cookies) — fine to leave unset/absent
@@ -73,6 +79,33 @@ services:
       # container rebuilds (D45 — stabbur owns the canonical learning audio).
       - stabbur-blobs:/app/blobs
       - ./cookies.txt:/app/cookies.txt:ro
+    healthcheck:
+      # monorepo-merge 4.4: same four-key shape as every other backend's
+      # healthcheck in this repository (phonexa-backend is the reference) so
+      # there is literally one standard: interval/timeout/retries/start_period.
+      #
+      # The probed path must be one auth.py exempts, or the container would be
+      # permanently unhealthy: `register_auth`'s before_request hook 401s every
+      # request without the bearer token except `/ui`, `/ui/*`, `/blob/*` and
+      # `/api/enrich/tts/preview/*`. stabbur has no /health and no /ping at all
+      # (verified: nothing in app.py or routes/ defines one), so `/ui` is the
+      # only genuinely always-200 unauthenticated route — it reads
+      # ui/index.html, which the Dockerfile COPYs in, and returns 200 with no
+      # database access at all. That last part matters: this probe says "the
+      # Flask process is serving", not "Postgres is reachable".
+      #
+      # python, not curl: curl IS present in this image (Dockerfile installs it
+      # for the deno install script), but urllib keeps the check identical to
+      # the other three services, two of which have no curl. urlopen raises on
+      # any non-2xx, so a 401 here would fail the check — which is exactly why
+      # the exempt path above is load-bearing.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5056/ui', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # Covers `alembic upgrade head` in scripts/bootstrap.py, which runs
+      # before the app is exec'd. No data-seeding step here (unlike smia).
+      start_period: 15s
 
 volumes:
   # Explicit `name:` so this is the SAME Docker volume whether brought up

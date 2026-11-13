@@ -1,3 +1,32 @@
+> **Annotation, 2026-11-13 (D150/D151/D152 — `monorepo-merge`).** This change
+> is implemented and its outcome stands: phonexa composes cleanly alongside the
+> other projects, publishes nothing publicly, and migrates its own schema on
+> boot. Four *mechanism* statements below are now false and are corrected here
+> rather than rewritten, per the documentation convention:
+>
+> - **`docker-compose.yml`** is now `phonexa/compose.yaml` (renamed with the
+>   rest of the convention; smia's was the last holdout).
+> - **"Join the backend to the `tun-shared` external network"** — `tun-shared`,
+>   every `external: true`, and the one-time `docker network create` step are
+>   deleted. One repository is one Compose project is one default network, so
+>   `phonexa-backend` resolves by service key with no network configuration.
+>   `include:` is still kept, so the flat-namespace / first-wins hazard this
+>   change's `phonexa-` prefixes exist for is still live.
+> - **"sibling" repos / "`tun`'s backup service"** — there are no siblings:
+>   `mjolnir/`, `stabbur/`, `smia/`, `backup/` and `phonexa/` are directories of
+>   one repository, and the backup service is `backup/` at its root.
+> - **`PHONEXA_POSTGRES_PASSWORD` "documented in a new `.env.example`" with a
+>   drift risk against `tun/.env.example`** — the key lives in the
+>   **repository-root** `.env` and nowhere else (D151), so the drift hazard is
+>   gone. `phonexa/.env.example` keeps only `AUDIO_BACKEND`. The default is
+>   still the literal `phonexa`, because Postgres applies a password only when
+>   initialising a fresh data directory and the existing
+>   `phonexa_postgres_data` volume carries that literal.
+>
+> Host port publishing moved to `phonexa/compose.override.yaml`; the 5432
+> collision this change worried about cannot happen in the unified stack,
+> which publishes no database port at all.
+
 ## Context
 
 `tun/compose.yaml` uses Compose `include:` to merge `mjolnir`'s, `stabbur`'s and `smia`'s compose files into one project. Three facts from those repos drive this change:

@@ -1,0 +1,26 @@
+# Local plain-HTTP overlay. NEVER used in production.
+#
+#     docker compose -f compose.yaml -f compose.dev.yaml up
+#
+# Why this file has to exist: the gateway's published ports and the address it
+# listens on are two independent settings. In production TUN_SITE_ADDRESS is a
+# hostname, Caddy listens on 80/443 and gets a certificate, and
+# mjolnir/compose.yaml's `ports:` are right. Locally TUN_SITE_ADDRESS is
+# `:8080`, Caddy listens on 8080 inside the container, and those mappings
+# publish the wrong ports — the gateway becomes unreachable from the host, and
+# on a rootless-Docker host `up` fails outright ("cannot expose privileged
+# port 80, only 1024 and above are allowed"). Found by a real boot test
+# (2026-11-13), not by reading.
+#
+# This is NOT a per-project `compose.override.yaml` (D152) and must not be
+# renamed into one. Those are auto-loaded by the directory they live in, which
+# is exactly what makes them safe for per-project dev ports. This overlay has
+# to be passed EXPLICITLY, so that it can never be picked up by a production
+# `docker compose up` at the root.
+#
+# `!override` replaces the three production mappings rather than appending to
+# them; without it Compose merges the lists and 80/443 come back.
+services:
+  caddy:
+    ports: !override
+      - "127.0.0.1:8080:8080"

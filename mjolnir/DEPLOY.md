@@ -1,10 +1,25 @@
 # Deploying mjolnir
 
-> **Status: re-verified 2026-10-25, 16 passed / 0 failed**, on `mjolnir`'s own
-> `compose.yaml`/`caddy/Caddyfile` layout (D84 — moved the entire deployable
+> **Deployment, configuration and first boot are now the root
+> [`../DEPLOY.md`](../DEPLOY.md).** mjolnir is a directory in the one `tun`
+> repository (D150, superseding D37/D84), not a separate checkout: there is
+> one clone, one root `.env`, one `docker compose up` from the root, and **no
+> `docker network create tun-shared`** — one repository is one Compose
+> project with one default network.
+>
+> This file keeps what is mjolnir's own and nowhere else: publishing a
+> bundle, logic bundles, rollback, the `/phonexa` gate Caddy implements, the
+> OTA data layout, and what must be backed up. Where it used to describe the
+> whole stack, it now points at the root file rather than repeating — and
+> contradicting — it.
+
+> **Status: re-verified 2026-10-25, 16 passed / 0 failed**, on this
+> `compose.yaml`/`caddy/Caddyfile` layout (D84 — which moved the deployable
 > stack here from `tun`; previously verified 2026-10-20 under the old
-> `tun`-owned layout). Re-run `bin/ota-verify.sh` after any future Caddy
-> change.
+> `tun`-owned layout). D150 has since made `tun` the one repository again,
+> but these files did not move: the gateway and the OTA pipeline still live
+> here and the root `compose.yaml` only `include:`s them. Re-run
+> `bin/ota-verify.sh` after any Caddy change.
 >
 > **The DNS record must stay grey-clouded (DNS only), never proxied (D57).**
 > A CDN in the body path re-encodes responses and breaks D49's sha256
@@ -12,13 +27,18 @@
 > intercepts the ACME HTTP-01 challenge so no certificate can be issued.
 
 One Contabo VPS, 8 GB / 100 GB (D35). Everything runs in one `docker compose`
-stack, **defined entirely in this repo (D84, superseding D75/D81)** — `tun`
-ships no deployable artifacts at all. The operator deploys `mjolnir` alone.
+stack. **Correction to this file's original claim** that the stack is
+"defined entirely in this repo (D84, superseding D75/D81)" and that `tun`
+"ships no deployable artifacts at all": D150 merged the six repositories into
+`tun`, which owns the root `compose.yaml`, the shared Adminer and the `backup`
+service. mjolnir still owns the **only** Caddy and the whole device-facing
+path; it is no longer the whole deployment.
 
 **Every device-facing path is a static file (D55)**, served by Caddy
 directly off disk — `hub`/`builder` never sit in front of the bundle or
-audio blobs. `docker compose up -d` brings up the whole stack: Caddy,
-Postgres, and `hub`'s/`builder`'s own HTTP servers (the operator console,
+audio blobs. `docker compose up -d` at the repository root brings up the whole
+ecosystem; mjolnir's share of it is `caddy`, `mjolnir-postgres`, and
+`mjolnir-hub`'s/`mjolnir-builder`'s own HTTP servers (the operator console,
 `hub-builder-operator-console`). No profiles — one command.
 
 **No node on the VPS host itself.** `hub` and `builder` each ship their own
@@ -29,75 +49,56 @@ a container restart picks up source changes without a rebuild.
 
 ## First deploy
 
-On the VPS, as a non-root user in the `docker` group:
+**See [`../DEPLOY.md`](../DEPLOY.md) §2.** One clone of `tun`, one
+`cp .env.example .env` at the root, `docker compose up -d --build` from the
+root. Do not clone mjolnir on its own and do not create a `tun-shared`
+network; neither exists any more.
 
-```sh
-# 1. Docker (Debian/Ubuntu) — the only thing installed on the host itself
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker "$USER"       # log out and back in
+What mjolnir needs from the configuration, all of it in the **root** `.env`
+(§3 there), named here so the mapping is obvious:
 
-# 2. The repo
-git clone <your-remote>/mjolnir.git && cd mjolnir
+| key | why mjolnir needs it |
+|---|---|
+| `TUN_SITE_ADDRESS` | Caddy's site block. Bare hostname ⇒ automatic HTTPS; `:8080` for local plain HTTP |
+| `TUN_PUBLIC_BASE` | the browser-facing base hub builds links from |
+| `OTA_TOKEN` | the device plane's bearer token on `/ota/*` |
+| `MJOLNIR_POSTGRES_PASSWORD` | **renamed** from this file's old `POSTGRES_PASSWORD` — one key per database (see the data hazard in root §3), required, no default |
+| `OPERATOR_AUTH_TOKEN` | hub's and builder's own login (D-H6). Required, not optional, once `/mjolnir/*` and `/builder/*` are live — without it both operator UIs are reachable by anyone who finds the hostname |
+| `STABBUR_AUTH_TOKEN` | builder's outbound calls into stabbur's API |
 
-# 3. Config
-cp .env.example .env
-openssl rand -hex 32                  # paste as OTA_TOKEN
-$EDITOR .env                          # set TUN_SITE_ADDRESS + TUN_PUBLIC_BASE
-```
+**`STABBUR_UPSTREAM`, `STABBUR_BASE_URL` and `STABBUR_UI_BASE` are gone from
+every `.env` and must not be re-added** (D151). They are derived in
+`compose.yaml` now:
 
-`.env` is gitignored. It must contain, at minimum:
+- `STABBUR_BASE_URL: http://stabbur-backend:5056` — the in-container fetch
+  (`pullNotes`/`pullGrammarRules`). D100's live failure was setting this to a
+  public `https://` URL, which made every scheduled run fail; it can no longer
+  be set wrong because it is not set by hand at all.
+- `STABBUR_UI_BASE: ${TUN_PUBLIC_BASE}/stabbur/ui` — the one browser-facing
+  value, used only for the Cards page's "open note" link a human clicks. Not
+  interchangeable with the above.
+- `caddy/Caddyfile` names `stabbur-backend`, `smia-backend` and
+  `phonexa-backend` directly. The four documented `STABBUR_UPSTREAM` options
+  existed only because a bare service name resolved across two stacks solely
+  via the `tun-shared` external network (D98/D104). One Compose project means
+  the name always resolves.
 
-```sh
-TUN_SITE_ADDRESS=tun.example.net      # bare hostname => automatic HTTPS
-TUN_PUBLIC_BASE=https://tun.example.net
-OTA_TOKEN=<the 64 hex chars you just generated>
-POSTGRES_PASSWORD=<a password for the mjolnir postgres user>
-
-# hub-builder-operator-console (D-H6) — required, not optional, once
-# Caddy's /mjolnir/* and /builder/* routes are live: without this, both
-# services' operator UIs are reachable by anyone who finds the hostname.
-OPERATOR_AUTH_TOKEN=<a long random token — this is what you type in at /mjolnir/login and /builder/login>
-
-# builder's OWN outbound fetch to stabbur's API (pullNotes/pullGrammarRules)
-# — must resolve from INSIDE the builder container, never a browser-facing
-# URL (D100: these were found conflated in a live deploy — STABBUR_BASE_URL
-# set to a public https:// URL caused every scheduled run to fail). Use
-# STABBUR_UPSTREAM's value below, not TUN_PUBLIC_BASE's.
-STABBUR_BASE_URL=http://backend:5056
-STABBUR_AUTH_TOKEN=<stabbur's shared bearer token — same value stabbur's own .env uses>
-
-# Caddy's /stabbur/* proxy target (D98/D99) — see .env.example and
-# caddy/Caddyfile for the full reasoning. RECOMMENDED when stabbur is a
-# second, independent `docker compose up` stack (the normal case): join a
-# shared external network once —
-#     docker network create tun-shared
-# — both this repo's compose.yaml (caddy, mjolnir-builder) and stabbur's own
-# compose.yaml (backend) already declare themselves as members of it.
-STABBUR_UPSTREAM=backend:5056
-```
-
-`hub`'s `STABBUR_UI_BASE` is different from both of the above: it's the one
-browser-facing value here, used only to build the Cards page's "open note"
-link a human clicks — it MUST be the public URL through Caddy
-(`https://<your-domain>/stabbur/ui`), never a Docker service name. Optional:
-unset just means that one link can't be built; the list itself still renders.
+mjolnir's own `.env` (`mjolnir/.env`, optional) holds only what nothing else
+uses: `PHONEXA_AUTH_HASH` (below), `SOURCE_LANG`, and the local-only
+`ALLOW_HTTP` / `ALLOW_NO_COMPANION`. Never set either of the last two on the
+VPS.
 
 **Point DNS at the box before starting Caddy** — an A record (and AAAA if you
 have v6) for that hostname. Caddy obtains the certificate on first start by
 answering a challenge on port 80, so DNS must already resolve and ports 80 and
 443 must be open in the Contabo firewall.
 
-```sh
-docker compose up -d
-docker compose logs -f caddy          # watch the certificate get issued
-```
+### The `/phonexa` gate
 
-### Optional: phonexa at `/phonexa`
-
-Skip this whole section unless phonexa is actually in the stack (that is
-`tun`'s `add-phonexa-to-stack`). With neither variable below set, Caddy's
-`/phonexa` route **fails closed**: it answers 401 to everything and never
-proxies to phonexa unauthenticated. Nothing else in this guide changes.
+phonexa is a directory in this repository and part of the stack, so this is no
+longer optional-and-elsewhere; it is simply the auth for one of Caddy's
+routes. With `PHONEXA_AUTH_HASH` unset, the `/phonexa` route **fails closed**:
+it answers 401 to everything and never proxies to phonexa unauthenticated.
 
 phonexa is mounted at `/phonexa`, exactly like `/stabbur` and `/smia`. Caddy
 strips the prefix and tells phonexa what it was via `X-Forwarded-Prefix`;
@@ -118,39 +119,46 @@ docker run --rm caddy:2-alpine caddy hash-password \
     --plaintext "<your OPERATOR_AUTH_TOKEN>"
 ```
 
-**2. Put it in the right `.env` — SINGLE-quoted.** A bcrypt hash contains
-`$`, which compose interpolates.
-
-*Which `.env`*: **either `mjolnir/.env` or `tun/.env`** — both work, whichever
-directory you deploy from (`tun/.env` wins if you set it in both).
-
-This was not always true, and the failure was nasty: until 2026-11-13 these
-were compose *valueless* keys, which resolve an included file's `.env` only in
-standalone mode. Deploying from `tun`, a hash set in `mjolnir/.env` was dropped
-from the container entirely, Caddy fell back to its locked fail-closed default,
-and **every login 401'd with a perfectly valid hash sitting in `.env`** —
-indistinguishable from a wrong password. `compose.yaml` now uses
-`${PHONEXA_AUTH_HASH:-<locked default>}`, which reads both. Regardless, confirm
-what actually arrived rather than what you wrote:
-
-```sh
-docker compose exec caddy printenv PHONEXA_AUTH_HASH
-```
+**2. Put it in `mjolnir/.env` — SINGLE-quoted.** A bcrypt hash contains `$`,
+which compose interpolates.
 
 ```sh
 PHONEXA_AUTH_HASH='<the hash from step 1>'
-# PHONEXA_UPSTREAM=phonexa-backend:5050    # default; set only to override
+```
+
+This is mjolnir's own value — only this Caddy consumes it — so it belongs in
+`mjolnir/.env` and in no other file (D151). Verified on Compose v5.4.0: an
+included file is interpolated with **its own directory's** `.env`, and the
+root `.env` wins only if it defines the same key. So a hash in `mjolnir/.env`
+reaches Caddy both standalone and through the root `include:`. Do not also put
+it in the root `.env`.
+
+> **Corrected, and the old failure is worth remembering.** Until 2026-11-13
+> these were compose *valueless* keys (`PHONEXA_AUTH_HASH:` with nothing after
+> the colon), which resolve an included file's `.env` only in standalone mode.
+> Deploying from the root, a hash set in `mjolnir/.env` was dropped from the
+> container entirely, Caddy fell back to its locked fail-closed default, and
+> **every login 401'd with a perfectly valid hash sitting in `.env`** —
+> indistinguishable from a wrong password. `compose.yaml` now uses
+> `${PHONEXA_AUTH_HASH:-<locked default>}`. (This was P35, and D151 retires
+> it: the hash is no longer hand-carried between two repositories' `.env`
+> files, because there is only one repository.)
+>
+> `PHONEXA_UPSTREAM` is also gone, with `STABBUR_UPSTREAM` and
+> `SMIA_UPSTREAM`: `caddy/Caddyfile` names `phonexa-backend:5050` directly.
+> Do not re-add it.
+
+Confirm what actually arrived rather than what you wrote:
+
+```sh
+docker compose exec caddy printenv PHONEXA_AUTH_HASH
 ```
 
 Single quotes are not cosmetic and double quotes do **not** work. Confirmed:
 both `PHONEXA_AUTH_HASH=$2a$14$abc.DEF/ghi` and the same value in double
 quotes reach the container as `$2a$14.DEF/ghi` — compose expanded `$abc` away
 — which still *looks* like a bcrypt hash, so the mistake shows up only as
-"every login fails". Verify after `up`:
-
-```sh
-docker compose exec caddy printenv PHONEXA_AUTH_HASH
-```
+"every login fails".
 
 **What you'll see in the browser:** go to `https://<your-host>/phonexa/` and
 you get the operating system's native basic-auth prompt, not hub's login
@@ -174,20 +182,26 @@ dropping the subdomain; `basic_auth` in front of phonexa is what bounds it.
 hash in the same change, or the old password keeps opening phonexa while the
 new one opens hub and builder.
 
-**Rollback.** Remove the two variables and `docker compose up -d`. The route
-returns to its fail-closed default; no existing route was ever touched.
+**Rollback.** Remove `PHONEXA_AUTH_HASH` and `docker compose up -d`. The
+route returns to its fail-closed default; no existing route is touched.
 
 ## Publish build #1 and prove the path
 
+Run from the **repository root** (that is where `docker compose` lives now):
+
 ```sh
 # Copy the stock bundle over from the laptop first, e.g.
-#   scp ~/dev/mjolnir/index.android.bundle vps:~/mjolnir/
+#   scp ~/dev/tun/mjolnir/index.android.bundle vps:~/tun/mjolnir/
 
 docker compose exec -e ALLOW_NO_COMPANION=1 mjolnir-hub \
   bin/ota-publish.sh index.android.bundle b000001 "base 6.0.3 · logic 0 · data 0 (stock)"
 
-bin/ota-verify.sh   # bash + curl only — runs fine directly on the host
+mjolnir/bin/ota-verify.sh   # bash + curl only — runs fine directly on the host
 ```
+
+The `exec` path is still `bin/ota-publish.sh`, unprefixed: `mjolnir-hub`
+bind-mounts **this directory** at `/app`, not the repository root. Only paths
+typed on the host gained the `mjolnir/` prefix.
 
 (`mjolnir-hub` bind-mounts the whole repo at `/app` and has node — no
 separate node-runtime container needed, unlike before `hub-builder-
@@ -288,9 +302,11 @@ CLI is a thin wrapper over the same module (D76/D-P2).
 ## Layout on the box
 
 ```
-mjolnir/
-  .env                 secrets — gitignored, back this up separately
-  compose.yaml
+tun/                   the one clone (root compose.yaml, root .env, docs/)
+  mjolnir/
+  .env                 mjolnir-only values — PHONEXA_AUTH_HASH, SOURCE_LANG.
+                       The shared secrets are in the ROOT .env; back that up
+  compose.yaml         include:d by the root compose.yaml
   hub/Dockerfile        hub's own HTTP server + the node runtime bin/ota-publish.sh runs in
   builder/Dockerfile    builder's own HTTP server (publish scheduling, forecast)
   caddy/Caddyfile
@@ -309,16 +325,19 @@ mjolnir/
 
 Two things, and the second is the one that gets forgotten:
 
-1. `.env` — losing `OTA_TOKEN` means a device running the baked-in bootstrap
-   token can no longer fetch. Keep it somewhere outside the VPS.
+1. The **root** `.env` (and `mjolnir/.env`, if you set the phonexa hash) —
+   losing `OTA_TOKEN` means a device running the baked-in bootstrap token can
+   no longer fetch. Keep it somewhere outside the VPS.
 2. `data/` — blobs are content-addressed, so `rsync -a` is naturally
    incremental and never rewrites an existing file.
 
-The `caddy_data` volume holds the TLS certificates. Losing it is survivable
+The `caddy_data` volume — Docker volume name **`mjolnir_caddy_data`**, set
+explicitly so it is the same volume whether the stack is started from here or
+from the repository root — holds the TLS certificates. Losing it is survivable
 (Caddy re-issues) but counts against Let's Encrypt rate limits, so avoid
 `docker compose down -v`.
 
-3. `pg_dump` of the `postgres` container's `postgres` database — this is
+3. `pg_dump` of the `mjolnir-postgres` service's `postgres` database — this is
    hub's and builder's entire ledger (decks, card_slots, card_content,
    publications, logic_bundles, pending_occurrences, occurrence_shipments,
    builder_config, **userdata, userdata_history** — progress-sync-shim's
@@ -330,14 +349,17 @@ The `caddy_data` volume holds the TLS certificates. Losing it is survivable
    (pure run-history bookkeeping, no FK tie to anything that matters — see
    D-B4b); `device_state` no longer exists at all (dropped entirely, D126).
 
-**This is no longer manual.** `tun`'s `backup` compose service (the
+**This is no longer manual.** The root `backup` compose service (the
 `compose-backup-service` change, superseding `git-backup`'s original host
 script + `cron` entry) automates all three — plus the equivalent for
-`stabbur`'s own Postgres and blob store, which had no backup story of any
-kind before it — as one more service in `tun/compose.yaml`: `docker compose
-up` and nothing else, no host-level step. See `tun/backup/entrypoint.sh`
-and `tun/openspec/changes/compose-backup-service/design.md` for the full
-reasoning (notably: no encryption, by informed choice — the data is
+`stabbur`'s and `phonexa`'s own Postgres and file stores, which had no backup
+story of any kind before it — as one more service in the root
+`compose.yaml`: `docker compose up` and nothing else, no host-level step.
+It reads mjolnir's password as `MJOLNIR_POSTGRES_PASSWORD` from the root
+`.env`. smia is **not** backed up yet; that comes with the planned
+`postgres-consolidation`. See `../DEPLOY.md` §7, `../backup/entrypoint.sh`
+and `../openspec/changes/archive/2026-11-04-compose-backup-service/design.md`
+for the full reasoning (notably: no encryption, by informed choice — the data is
 personal learning content, not credentials; no Docker socket mount —
 connects over the network with a real password instead).
 
@@ -350,12 +372,20 @@ connects over the network with a real password instead).
   the catch-all 404 instead of reaching the new route).
 - Caddy serves `data/` **read-only**. Publishing writes from the host, so a
   compromised Caddy cannot alter what the device fetches.
-- Postgres is deliberately not published to the host; only sibling containers
-  (`hub`, `builder`) reach it.
-- `hub`/`builder` bind-mount the repo rather than copying it in — a
+- `mjolnir-postgres` is deliberately not published to the host at all (no
+  `compose.override.yaml` here, unlike stabbur/smia/phonexa); only sibling
+  containers reach it — now by service name on the one default network, with
+  no network configuration (D150).
+- `mjolnir-hub`/`mjolnir-builder` bind-mount **this directory** (not the
+  repository root) at `/app`, rather than copying it in — a
   `git pull` plus `docker compose restart mjolnir-hub mjolnir-builder` picks
   up source changes; only rebuild (`docker compose up -d --build`) when
-  either package's `package.json`/`package-lock.json` changes.
+  either package's `package.json`/`package-lock.json` changes. Their **build
+  context is the repository root** (`context: ..`, `dockerfile:
+  mjolnir/hub/Dockerfile`) so a later change can `COPY` from a shared
+  `libs/`; the root `.dockerignore` is what keeps that context at ~31 MB
+  instead of ~10 GB, and it must never be edited without re-checking every
+  Dockerfile's `COPY` sources.
 - `TUN_SITE_ADDRESS=:8080` runs the same config over plain HTTP for local
   testing. `ALLOW_HTTP=1` lets the scripts work against it. Never set either on
   the VPS.

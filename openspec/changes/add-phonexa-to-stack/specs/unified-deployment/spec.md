@@ -4,7 +4,7 @@
 The system SHALL bring up every included service (`mjolnir`'s, `stabbur`'s, `smia`'s and `phonexa`'s own compose-defined services) from a single `docker compose up` run in the `tun` repository, with no other command required.
 
 #### Scenario: First boot on a fresh checkout
-- **WHEN** `tun`, `mjolnir`, `stabbur`, `smia` and `phonexa` are freshly cloned as sibling directories and `docker compose up` is run in `tun`
+- **WHEN** the repository is freshly cloned and `docker compose up` is run at its root (written as "`tun`, `mjolnir`, `stabbur`, `smia` and `phonexa` freshly cloned as sibling directories" — corrected 2026-11-13, D150: there are no sibling checkouts, they are directories of the one repository)
 - **THEN** every service defined in those repos' own compose files starts (except services gated behind a non-default compose profile), with no manual step in any of those repos beyond creating each repo's `.env`
 
 #### Scenario: phonexa's schema

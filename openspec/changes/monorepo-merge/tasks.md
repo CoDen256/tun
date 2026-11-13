@@ -113,13 +113,56 @@
       are reserved for the later changes.
 - [x] 4.2 Deleted every `container_name:`.
 - [x] 4.3 `restart: unless-stopped` on every long-running service.
-- [ ] 4.4 Backend healthchecks everywhere (only phonexa has one).
+- [x] 4.4 Backend healthchecks everywhere. All four backends now carry the
+      same four-key shape as phonexa's reference (interval/timeout/retries/
+      start_period). The *predicate* could not be uniform, because every one
+      of these services authenticates every route:
+      `stabbur-backend` -> `GET /ui` (auth.py exempts `/ui`, `/ui/*`,
+      `/blob/*`, `/api/enrich/tts/preview/*`; stabbur has **no** /health or
+      /ping at all), `smia-backend` -> `GET /ui` and deliberately **not**
+      `/health`, which app.py defines but auth.py does **not** exempt — an
+      unauthenticated probe of it 401s and `urlopen` raises on any non-2xx,
+      so that healthcheck could never have passed (verified empirically).
+      `mjolnir-hub`/`mjolnir-builder` have no unauthenticated route at all
+      (`/mjolnir/login` and `/builder/login` only exist while
+      OPERATOR_AUTH_TOKEN is set), so theirs is a **liveness** probe: a node
+      one-liner that exits 0 on *any* HTTP status (200/302/401/404 all prove
+      the process is up and routing) and 1 only on refusal/hang — tested
+      against a local server for all five cases. Probes are python-urllib in
+      the Flask images and node in the node images; no curl, since hub's
+      image has none. smia's `start_period` is the one non-uniform value
+      (180s): its bootstrap.py imports ~9M provider rows before it execs
+      app.py. Nothing `depends_on` any backend (`backup` depends on the
+      three *postgres* healthchecks), so none of this can block the stack.
 - [x] 4.5 All host port publishing bound to `127.0.0.1` and moved into a
       per-project `compose.override.yaml`. **A `dev` profile is impossible** —
       Compose has no per-port profile; see design.md's correction. The override
       mechanism is strictly better and was verified empirically.
-- [ ] 4.6 `pytest.ini` + `tests/` in all three Flask services; rename
-      phonexa's `test/` and give it a `pytest.ini`.
+- [x] 4.6 One test layout per language. `phonexa/test/` -> `phonexa/tests/`
+      (plain `mv`, 8.2 MB of .wav resources and references carried along),
+      plus `phonexa/pytest.ini` byte-identical to stabbur's and smia's
+      (`testpaths = tests`). Fixed the path references the rename broke:
+      `REFERENCES_DIR` was spelled `TESTS_DIR.parent / 'test' / 'references'`,
+      which after the rename resolved to a directory that no longer exists —
+      every `load_reference()` would have silently returned None ("nothing
+      recorded yet") instead of comparing. Also the `test/resources/*.wav`
+      case paths, the docstrings, and `phonexa/docs/arch-detailed.md`'s
+      `python test/server_tests.py` commands. Four recorded reference JSONs
+      still carry `"audio": "test/..."` in their `meta`; left alone on
+      purpose — that is provenance of a past recording, not a live path, and
+      it is never compared.
+      **Collection status** (`pytest -q --collect-only`): stabbur 520 tests,
+      clean. smia 265 tests; the only errors are three modules needing
+      `rich`, which is in smia/requirements-dev.txt — environment, not
+      layout. phonexa imports cleanly but collects **zero** tests: both of
+      its files are script-style (`server_tests.py` doesn't match
+      `test_*.py`; `test_consonants_api.py` has a `main()` and its own
+      `check()`, no `test_` functions, and needs a seeded live database).
+      pytest.ini therefore sets the convention there rather than enabling a
+      suite — converting those scripts is not in this change. Verified in a
+      throwaway venv; no project venv exists on this host.
+      mjolnir stays on node:test (`mjolnir/test/{unit,e2e}` driven by
+      package.json's `npm test`) — deliberately untouched, it is not Python.
 - [x] 4.7 Deleted `phonexa/.github/` entirely. `coden256.github.io/phonexa`
       stops being published, as the operator accepted.
 - [x] 4.9 **Found during the merge, not foreseen in the proposal:** each
@@ -143,26 +186,81 @@
 
 ## 5. Documentation
 
-- [ ] 5.1 `docs/07-decisions.md`: D135 gains its design; mark superseded or
+- [x] 5.1 `docs/07-decisions.md`: D135 gains its design; mark superseded or
       amend D37, D42, D84, D94, D98, D101, D104, D118, D119, D147. Supersede,
       never delete (CLAUDE.md convention).
-- [ ] 5.2 Retire P35 and P36 along with the config split that caused them.
-- [ ] 5.3 `docs/README.md`: repo map, "six working copies under /home/coden/dev".
-- [ ] 5.4 `DEPLOY.md`: one clone, no sibling layout, no network-create step.
-- [ ] 5.5 `docs/02-services.md`, `docs/13-operator-console-ux.md`: both are
+- [x] 5.2 **Done more precisely than asked.** P35/P36 are not blanket-retired:
+      each row now says WHICH HALF died. Gone is the cross-repo hand-carrying
+      of a hash between two `.env` files (what D151 retires). **Surviving and
+      explicitly kept:** Caddy's set-but-empty variable never falling back to a
+      `{$VAR:default}`, and compose mangling a `$`-containing value unless it is
+      single-quoted. Both still apply — `include:` is still used and
+      `PHONEXA_AUTH_HASH` is still a `$`-containing value in a `.env`.
+- [x] 5.3 `docs/README.md`: repo map replaced by a project table; the
+      session-opening instructions now say one root, no extra working
+      directories. Also fixed a three-week-stale Status block that still said
+      "P2 next" when `10-roadmap.md` and `12-p2-results.md` both record P1-P3
+      as done on 2026-10-22.
+- [x] 5.4 `DEPLOY.md` rewritten (653 lines) as the real runbook: one clone, no
+      sibling layout, no network creation, no `rsync` of smia's providers, the
+      four per-database passwords with the data hazard spelled out, and a §8
+      production-cutover section. `mjolnir/DEPLOY.md` corrected in place rather
+      than reduced to a pointer — it still uniquely owns publishing, logic
+      bundles, rollback and the OTA data layout.
+- [x] 5.5 `docs/02-services.md`, `docs/13-operator-console-ux.md`: both were
       written around `include:` across repos and one Adminer.
-- [ ] 5.6 Root `CLAUDE.md` + per-project `CLAUDE.md`; `mjolnir/docs/findings.md`
+- [x] 5.6 Root `CLAUDE.md` + per-project `CLAUDE.md` (incl. a new one for
+      hover-translate, which had none); `mjolnir/docs/findings.md`
       stays where it is.
-- [ ] 5.7 Grep the whole tree for `/home/coden/dev/<repo>` and for
+- [x] 5.7 Done — 18 files. Two were real defects, not stale prose:
+      `stabbur/scripts/seed_p4_notes.py` hardcoded
+      `/home/coden/dev/phonexa/lang/no/audio`, which no longer exists, so every
+      seeded note would have carried a dead audio path; and
+      `mjolnir/.env.example` still named the root key `POSTGRES_PASSWORD`, the
+      exact mismatch that broke `backup/entrypoint.sh`. Archived changes left
+      untouched by rule; ~45 `tun/docs/...`-style citations left alone
+      deliberately (they are repo-qualified references that still resolve).
+      Original wording: grep the whole tree for `/home/coden/dev/<repo>` and for
       `../<repo>/` path references and fix them.
 
 ## 6. Verification — the bar is "nothing changed"
 
-- [ ] 6.1 `bin/ota-verify.sh` passes 16/16, as at P1.
-- [ ] 6.2 `/ota/current.json` with a valid bearer returns the same bytes as
+- [x] 6.1 **`bin/ota-verify.sh`: 16 passed, 0 failed — "P1 path proven".**
+      Run against a synthetic payload with the **gateway as the only running
+      container** — no database, no application service — which simultaneously
+      evidences the `device-plane` scenario "every service stopped, the device
+      can still fetch". Note for whoever reruns this: the D49 chunked-transfer
+      check only holds above Caddy's response-buffer threshold, so a small or
+      highly compressible test bundle fails it spuriously (observed at 73 B and
+      at 74 kB of repetitive text, passing at 2 MB incompressible). That is a
+      property of the harness, not of the contract.
+- [ ] 6.2 **Runbook (needs the real payload, which is gitignored and lives on
+      the VPS).** What IS proven locally: the three device `handle` blocks are
+      byte-identical to pre-merge by per-block sha256
+      (ota=7ee6c1ac1065c75d, blob=d299b0b1ebe3e702, audio=e13f06b360d4cfa7),
+      the compiled Caddy route order puts them at indices 5-7 ahead of every
+      operator route and the catch-all, and `/srv` resolves to `mjolnir/data`.
+      Original: `/ota/current.json` with a valid bearer returns the same bytes as
       before the merge; without one, 401.
-- [ ] 6.3 `/stabbur/ui`, `/smia/ui`, `/mjolnir`, `/builder`, `/phonexa/` all
+- [x] 6.3 Verified in a real boot: `/stabbur/ui` 200, `/smia/ui` 200,
+      `/mjolnir` 302 to its login, `/builder` 302, `/phonexa/` 401 (fail-closed
+      by design), `/adminer` 308 then 200, `/` 404 body "mjolnir",
+      `/ota/current.json` 401 without a token and 404 **not 401** with one.
+      Degradation held: stabbur down -> only `/stabbur/ui` 502; smia down ->
+      only `/smia/ui` 502; device routes unaffected throughout. Original:
       respond exactly as they did before (200, 200, 302→login, 302→login, 401).
-- [ ] 6.4 Caddy is serving on the **same** TLS certificate — not a reissued one.
-- [ ] 6.5 Each project still comes up standalone from its own directory.
-- [ ] 6.6 A git-backup run completes and commits all expected files.
+- [ ] 6.4 **Runbook (no TLS locally — this host is rootless Docker and the
+      local mode is plain HTTP on 8080).** Proven locally instead: the volume
+      `mjolnir_caddy_data` keeps its exact name in the rendered config and
+      survived every harness run. `DEPLOY.md` §8.2 carries the post-boot
+      certificate assertion. Original: Caddy serves the **same** certificate.
+- [x] 6.5 Verified for all four, and the dev-port property with it:
+      standalone publishes loopback ports (stabbur 5056/5434, smia 5055/5433,
+      phonexa 5050/5432) while the root stack publishes only the gateway.
+- [ ] 6.6 **Runbook (needs the operator's real deploy key).** Proven locally:
+      all four variables `backup/entrypoint.sh` requires are present in the
+      rendered config, and the clone-failure path now aborts with exit 1 and a
+      diagnostic instead of logging "committed and pushed" — smoke-tested in a
+      throwaway container. A full successful cycle must be run on the VPS per
+      `DEPLOY.md` §8.3. Original: a git-backup run completes and commits all
+      expected files.

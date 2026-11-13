@@ -1,3 +1,25 @@
+> **Annotation, 2026-11-13 (D150/D151 — `monorepo-merge`).** This change is
+> implemented and its outcome stands: phonexa is in the unified stack and its
+> database and audio tree are in the backup set. Three *mechanism* statements
+> below are now false and are corrected here rather than rewritten, per the
+> documentation convention:
+>
+> - **`../phonexa/docker-compose.yml` / "five repos" / "a sibling `phonexa`
+>   checkout on the VPS".** There are no sibling checkouts. phonexa is the
+>   `phonexa/` directory of this one repository and the include is
+>   `./phonexa/compose.yaml`. No `git clone phonexa`, no fifth checkout.
+> - **`tun-shared` / `docker network create`.** Gone. One repository is one
+>   Compose project is one default network.
+> - **`PHONEXA_POSTGRES_PASSWORD` "must match phonexa's own `.env`" and "the
+>   backup service needs it passed explicitly because phonexa's compose reads
+>   it from phonexa's own `.env`".** The drift hazard this describes no longer
+>   exists: the key is defined **only** in the repository-root `.env` (D151) and
+>   read from there by both `phonexa/compose.yaml` and the backup service.
+>   `phonexa/.env` holds only `AUDIO_BACKEND`.
+>
+> Also note: `backup/entrypoint.sh` now reads mjolnir's password as
+> `MJOLNIR_POSTGRES_PASSWORD`, not `POSTGRES_PASSWORD`.
+
 ## Context
 
 `tun/compose.yaml` merges the siblings' compose files with `include:` and adds a shared Adminer and a `backup` service. `backup/entrypoint.sh` dumps `mjolnir-postgres` and `stabbur-postgres` with `pg_dump` (network + password, no Docker socket), renames `.tmp` → final only after **both** succeed, copies stabbur's flat blob volume with a per-file "copy if absent" loop (D129: `cp -rn` is unreliable), commits and pushes. The image has exactly one client, `postgresql-client-17`.

@@ -30,7 +30,7 @@ Reference management
 
 Reference file formats
 -----------------------
-  test/references/stream/{id}.json
+  tests/references/stream/{id}.json
     Layer 4: {response: {frames: [{voiced, f1, f2, f1_median, rms, ...}]}}
 
   tests/references/ws_median/{id}.json
@@ -39,7 +39,7 @@ Reference file formats
   tests/references/ws_stability/{id}.json
     Layer 6: stable vowel position (measured vs expected)
 
-  test/references/js_smoothing/{id}.json
+  tests/references/js_smoothing/{id}.json
     Created manually from browser verifyAllSmoothing() output.
     Format: {trail: [{f1, f2}, ...], median_n, stats, ...}
     Used by --js-check only.
@@ -84,7 +84,13 @@ except ImportError:
 HTTP_BASE           = 'http://localhost:5050'
 WS_URL              = 'ws://localhost:5051'
 TESTS_DIR           = Path(__file__).parent
-REFERENCES_DIR      = TESTS_DIR.parent / 'test' / 'references'
+# monorepo-merge 4.6: this directory is `tests/` now (one test layout per
+# language — pytest.ini's testpaths). It used to be spelled
+# `TESTS_DIR.parent / 'test' / 'references'`, which walked up to the
+# phonexa root and back down into a hard-coded `test` — the same
+# directory as TESTS_DIR only by coincidence, and broken outright by the
+# rename. Derived from TESTS_DIR now so it cannot drift again.
+REFERENCES_DIR      = TESTS_DIR / 'references'
 TOLERANCE_HZ        = 0      # 0 = exact (Praat is deterministic per machine)
 STABILITY_TOL_HZ    = 50     # Hz — generous tolerance for vowel stability tests
 WS_RECV_TIMEOUT     = 0.5
@@ -980,14 +986,14 @@ def run_js_median_check() -> None:
 
     Files required
     ~~~~~~~~~~~~~~
-    test/references/stream/{id}.json
+    tests/references/stream/{id}.json
       Layer 4 reference with raw per-frame f1/f2.  Run 'stream --update' first.
 
-    test/references/js_smoothing/{id}.json
+    tests/references/js_smoothing/{id}.json
       Output of browser verifyAllSmoothing() — format: {trail:[{f1,f2},...], ...}
       Create with:
         In browser console: await verifyAllSmoothing()
-        Copy each case's trail to test/references/js_smoothing/{id}.json
+        Copy each case's trail to tests/references/js_smoothing/{id}.json
     """
     js_dir = REFERENCES_DIR / 'js_smoothing'
     stream_dir = REFERENCES_DIR / 'stream'
@@ -997,7 +1003,7 @@ def run_js_median_check() -> None:
         print('  1. Start server:  python analyze_server.py')
         print('  2. Open browser on any page that loads realtime.js')
         print('  3. In console:    await verifyAllSmoothing()')
-        print('  4. Save each result to test/references/js_smoothing/{id}.json')
+        print('  4. Save each result to tests/references/js_smoothing/{id}.json')
         return
 
     print('\nJS ↔ Python median check')
@@ -1263,8 +1269,8 @@ CASES: dict[str, list[dict]] = {
         {'id': 'e', 'audio': 'lang/me/audio/e.wav', 'config': {}, 'slice_start': 0.0, 'slice_end': 1.0},
         {'id': 'e_open', 'audio': 'lang/me/audio/e_open.wav', 'config': {}, 'slice_start': 0.0, 'slice_end': 1.0},
         {'id': 'o', 'audio': 'lang/me/audio/o.wav', 'config': {}, 'slice_start': 0.0, 'slice_end': 1.0},
-        {'id': 'live_speech', 'audio': 'test/resources/live_speech.wav', 'config': {}, 'slice_start': 0.0, 'slice_end': 1.0},
-        {'id': 'u_practice', 'audio': 'test/resources/u_practice.wav', 'config': {}, 'slice_start': 0.0, 'slice_end': 1.0},
+        {'id': 'live_speech', 'audio': 'tests/resources/live_speech.wav', 'config': {}, 'slice_start': 0.0, 'slice_end': 1.0},
+        {'id': 'u_practice', 'audio': 'tests/resources/u_practice.wav', 'config': {}, 'slice_start': 0.0, 'slice_end': 1.0},
     ],
 
     'debug': [
@@ -1285,8 +1291,8 @@ CASES: dict[str, list[dict]] = {
         {'id': 'e_open', 'audio': 'lang/me/audio/e_open.wav', 'chunk_samples': 128, 'config': {}},
         {'id': 'o', 'audio': 'lang/me/audio/o.wav', 'chunk_samples': 128, 'config': {}},
         # Extended live-speech recording: tests real-word vowel sequence
-        {'id': 'live_speech', 'audio': 'test/resources/live_speech.wav', 'chunk_samples': 128, 'config': {}},
-        {'id': 'u_practice',  'audio': 'test/resources/u_practice.wav',  'chunk_samples': 128, 'config': {}},
+        {'id': 'live_speech', 'audio': 'tests/resources/live_speech.wav', 'chunk_samples': 128, 'config': {}},
+        {'id': 'u_practice',  'audio': 'tests/resources/u_practice.wav',  'chunk_samples': 128, 'config': {}},
     ],
 
 

@@ -25,4 +25,8 @@ diff-output/
 
 # --- Deploy (D84): secrets and served data, mirrors tun's old pattern ---
 .env
-data/
+# ANCHORED: an unanchored `data/` also matched 23 tracked smali files in
+# `base/smali.mjolnir.merged/**/data/` (Java packages named `data`). Tracked,
+# so nothing is lost today, but a re-extract of the APK base would silently
+# drop them. Only this project's generated OTA payload directory is meant.
+/data/

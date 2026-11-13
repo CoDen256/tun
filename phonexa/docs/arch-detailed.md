@@ -722,25 +722,25 @@ Returns `(f1, f2, f1_median, f2_median)` as rounded integers.
 
 ---
 
-## test/server_tests.py — Regression and Calibration Test Suite
+## tests/server_tests.py — Regression and Calibration Test Suite
 
 ```bash
 # Run a test layer
-python test/server_tests.py single_frame           # Layer 1 — /frames one-frame mode
-python test/server_tests.py frames                 # Layer 2 — /frames sliding window
-python test/server_tests.py debug                  # Layer 3 — /debug raw Praat
-python test/server_tests.py stream                 # Layer 4 — /stream per-frame
-python test/server_tests.py stream_median_stability # Layer 5 — stable vowel position
+python tests/server_tests.py single_frame           # Layer 1 — /frames one-frame mode
+python tests/server_tests.py frames                 # Layer 2 — /frames sliding window
+python tests/server_tests.py debug                  # Layer 3 — /debug raw Praat
+python tests/server_tests.py stream                 # Layer 4 — /stream per-frame
+python tests/server_tests.py stream_median_stability # Layer 5 — stable vowel position
 
 # Update saved references
-python test/server_tests.py stream --update
+python tests/server_tests.py stream --update
 
 # Compare current output against saved references
-python test/server_tests.py compare
+python tests/server_tests.py compare
 
 # Calibration: F1/F2 accuracy + stream vs /frames consistency
-python test/server_tests.py --calibrate              # all VOWEL_EXPECTED entries
-python test/server_tests.py --calibrate u_practice   # one case
+python tests/server_tests.py --calibrate              # all VOWEL_EXPECTED entries
+python tests/server_tests.py --calibrate u_practice   # one case
 ```
 
 ### Test layers
@@ -755,7 +755,7 @@ python test/server_tests.py --calibrate u_practice   # one case
 
 ### Calibration layer (`--calibrate`)
 
-Reads saved reference JSON files from `test/references/stream/` and `test/references/frames/` without running a live server. For each `case_id` in `VOWEL_EXPECTED`:
+Reads saved reference JSON files from `tests/references/stream/` and `tests/references/frames/` without running a live server. For each `case_id` in `VOWEL_EXPECTED`:
 
 - **Per-endpoint accuracy**: count voiced frames where F1 and F2 fall within `VOWEL_EXPECTED[id]` ranges; display as percentage with `✓` / `~` / `✗`
 - **F2 distribution**: bucket counts (`<600`, `600–900`, `900–1500`, `>1500`) plus mean and median
@@ -778,14 +778,14 @@ VOWEL_EXPECTED = {
 ### Reference files
 
 ```
-test/references/
+tests/references/
   single_frame/   {case_id}.json
   frames/         {case_id}.json
   debug/          {case_id}.json
   stream/         {case_id}.json
   stream_median_stability/  {case_id}.json
 
-test/resources/
+tests/resources/
   live_speech.wav
   u_practice.wav
   lang/me/audio/i.wav
