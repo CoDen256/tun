@@ -1,0 +1,206 @@
+## ADDED Requirements
+
+### Requirement: A verb note's lemma can be derived from its text
+The system SHALL show a "From text" action next to the Lemma field whenever
+the note's part of speech is `verb`, which sets `lemma` to the current
+`text` value with any leading Norwegian infinitive marker (`"å "`) removed.
+This action SHALL NOT be shown for any other part of speech.
+
+#### Scenario: Deriving a verb's lemma
+- **WHEN** the operator has `text = "å spise"` and `pos = verb`, and clicks
+  "From text" next to the Lemma field
+- **THEN** `lemma` is set to `"spise"`
+
+#### Scenario: Action hidden for non-verb parts of speech
+- **WHEN** the note's part of speech is anything other than `verb`
+- **THEN** no "From text" action is shown next to the Lemma field
+
+## MODIFIED Requirements
+
+### Requirement: Transcription, translations, and audio fields offer provider-sourced suggestions
+The system SHALL provide a combined suggest control next to the
+transcription field, the translations list, and the audio panel — a toggle
+that opens an accordion directly beneath/alongside the field it feeds, fused
+with a live, editable query field showing the value about to be used,
+defaulting to the note's `lemma` and falling back to `text` when no lemma is
+set. The accordion lists one row per currently configured provider for that
+kind, and letting the operator copy a chosen candidate into the note with
+one action. For a TTS provider that has no automatable lookup and instead
+returns a link to its own site for a human to check by hand, the audio panel
+SHALL show that link and accept a pasted-back result (a direct audio URL, or
+a YouTube URL with a timecode) instead of reporting it as a plain lookup
+failure.
+
+#### Scenario: Suggesting a transcription
+- **WHEN** the operator opens the transcription field's suggest control
+- **THEN** a panel opens beneath it showing one row per configured IPA
+  provider, each with its candidate(s) and a "Use" button that writes the
+  chosen candidate into the transcription field
+
+#### Scenario: Suggesting audio
+- **WHEN** the operator opens the audio panel's suggest control
+- **THEN** a panel opens showing one row per configured TTS provider with its
+  candidate(s), and using one attaches the resulting stabbur-stored audio to
+  the note (per the `smia-enrichment` capability's TTS handling)
+
+#### Scenario: Previewing a TTS candidate before using it
+- **WHEN** the operator is shown a TTS candidate in the audio suggest panel
+- **THEN** they can play that candidate's audio before deciding whether to
+  use it, on both the new-note and existing-note forms, without that
+  playback requiring the candidate to already be stored as the note's
+  attached audio
+
+#### Scenario: Query defaults to lemma, falls back to text
+- **WHEN** a `type=word` note has both `lemma` and `text` set, and the
+  operator opens any suggest control
+- **THEN** the query field shows and uses `lemma`, not `text`; for a note
+  with no `lemma` set (or a non-`word` type, which never has one), the query
+  field shows and uses `text`
+
+#### Scenario: Editing the shared query before or after opening
+- **WHEN** the operator edits a suggest control's query field and presses
+  Enter
+- **THEN** every provider in that panel is queried (or re-queried) with the
+  edited value, whether the panel was already open or still closed
+
+#### Scenario: A manual-link provider's row
+- **WHEN** a TTS provider's row (e.g. `forvo` or `filmot`) returns a link to
+  its own site rather than a playable candidate
+- **THEN** the row shows an "Open ↗" link to that site and an input for the
+  operator to paste back what they found there, instead of a "no entry
+  found" message
+
+#### Scenario: Pasting back a Forvo link
+- **WHEN** the operator pastes a direct audio URL into the `forvo` row and
+  submits it
+- **THEN** the resulting stabbur-stored audio is attached to the note, and
+  the existing trim control is available on it exactly as for any other
+  attached audio
+
+#### Scenario: Pasting back a filmot/YouTube link
+- **WHEN** the operator pastes a YouTube URL with a timecode into the
+  `filmot` row and submits it
+- **THEN** the resulting short audio clip is attached to the note, and the
+  existing trim control is available on it for the operator to narrow down
+  further — **known-blocked as of 2026-11-02**: this path is implemented but
+  still failing against real YouTube after several rounds of live
+  debugging (see `openspec/changes/archive/2026-11-02-manual-link-audio-capture/tasks.md`
+  task 6.3 for the full history); only the Forvo scenario above is currently
+  confirmed working
+
+### Requirement: Inflection paradigms are looked up read-only, for manual copy
+The system SHALL provide a combined suggest control — the same toggle +
+live, editable shared query + progressive-disclosure per-provider overrides
+used for transcription/translations/audio — for inflections, positioned
+below the note's own inflection fields rather than above them, opening a
+panel showing each configured provider's full paradigm as its own table,
+with each form individually copyable, and SHALL additionally let the
+operator fill a form directly into its matching inflection field on the
+note with one click, when that field exists for the note's current part of
+speech. A paradigm's forms SHALL be ordered the same way the note's own
+inflection fields are ordered, regardless of what order a provider's
+response happens to list them in. The system SHALL NOT auto-fill the note's
+inflection fields from a lookup on its own — every fill remains an explicit,
+per-field operator action.
+
+#### Scenario: Looking up inflections
+- **WHEN** the operator opens the inflections suggest control
+- **THEN** a panel opens, positioned below the note's inflection fields,
+  showing every configured inflections provider's paradigm as a separate
+  table, matching the note's current part-of-speech shape where the
+  provider's data supports it
+
+#### Scenario: Copying a form
+- **WHEN** the operator clicks a form's copy action in a provider's paradigm
+  table
+- **THEN** that form is copied for pasting anywhere; the note's inflection
+  fields are not modified automatically
+
+#### Scenario: Filling a form directly into its field
+- **WHEN** the operator clicks a form's "Fill" action in a provider's
+  paradigm table, and the note's current part-of-speech has a matching
+  inflection field for that paradigm key
+- **THEN** that field on the note form is set to the provider's value
+  immediately, without affecting any other inflection field
+
+#### Scenario: Fill is unavailable for a non-matching field
+- **WHEN** a provider's paradigm includes a key that has no corresponding
+  field for the note's current part of speech
+- **THEN** only the copy action is offered for that cell, not a fill action
+
+#### Scenario: Providers disagree
+- **WHEN** two providers report different forms for the same paradigm slot
+- **THEN** the panel surfaces the disagreement rather than silently picking
+  one provider's answer, and filling from one provider does not prevent
+  filling a different field from a different provider afterward
+
+#### Scenario: A paradigm's forms follow the note's own field order
+- **WHEN** a provider's response lists a verb paradigm's forms in some order
+  other than infinitiv/presens/preteritum/perfektum (the note form's own
+  order)
+- **THEN** the panel still displays them in infinitiv/presens/preteritum/
+  perfektum order, not whatever order the provider's response used
+
+### Requirement: Suggestion panels work on both new and existing notes
+The system SHALL make every suggestion panel — including the audio (TTS)
+panel — available on the new-note form and the existing-note editor alike,
+driven only by the form's current in-progress values — never requiring the
+note to already be saved. On the new-note form, using a TTS candidate SHALL
+attach the resulting audio to the note at creation time, as part of the same
+save action, rather than requiring the note to be created first and audio
+attached in a separate step. The new-note form's manual audio-upload control
+SHALL present and behave the same way as every provider's "Use" action —
+uploading immediately on click rather than deferring until the note is
+saved — so the operator gets the same immediate preview regardless of
+whether the audio came from a suggestion or a manual upload.
+
+#### Scenario: Suggesting on an unsaved note
+- **WHEN** the operator is filling in the new-note form and has not yet saved
+- **THEN** every suggestion panel is available and uses the form's current
+  field values as its default query, exactly as it would on an existing note
+
+#### Scenario: Using a TTS candidate while creating a new note
+- **WHEN** the operator clicks "Use" on a TTS candidate while filling in the
+  new-note form, then saves the note
+- **THEN** the created note already has that candidate's audio as its
+  `audio_blob`, with no additional attach step required after save
+
+#### Scenario: Using the manual-upload control while creating a new note
+- **WHEN** the operator picks a file in the new-note form's manual-upload
+  control and clicks its "Use" action
+- **THEN** the file is uploaded immediately and previewable before saving,
+  the same as any other provider's "Use" action
+
+#### Scenario: Choosing both a suggested candidate and a manually uploaded file
+- **WHEN** the operator both uses a TTS suggestion and separately uses the
+  manual-upload control before saving a new note
+- **THEN** whichever action happened most recently is what the created note's
+  `audio_blob` reflects
+
+### Requirement: Each provider row's query is independently editable and retriable
+The system SHALL default every provider's query within a panel to that
+panel's shared query field (`lemma || text`), but SHALL let the operator
+reveal and edit a per-provider override to re-fire just that row — so a
+provider with no entry for the shared query can be retried against a
+different input without affecting other providers' rows. The per-provider
+override input SHALL be hidden by default, revealed only via an explicit
+per-row action, so the common case (every provider sharing one query) has no
+extra visible controls.
+
+#### Scenario: Retrying a provider with a different input
+- **WHEN** a provider's row shows no result for the shared query, the
+  operator reveals that row's override, edits it, and retries
+- **THEN** only that provider is re-queried with the edited input; other
+  providers' rows and results are unaffected
+
+#### Scenario: Override starts empty, not copied from the shared query
+- **WHEN** the operator reveals a provider row's override input
+- **THEN** that input starts empty (with a placeholder), not prefilled with
+  the shared query's current value, so it reads unambiguously as a different
+  input rather than a copy
+
+#### Scenario: Collapsing an override falls back to the shared query
+- **WHEN** a provider row's override is revealed, then the operator
+  collapses it again without having retried
+- **THEN** that row's next retry uses the panel's shared query value, not a
+  stale override

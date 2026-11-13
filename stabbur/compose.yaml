@@ -1,0 +1,102 @@
+# D94: renamed from docker-compose.yml to compose.yaml, service names made
+# unique (stabbur-postgres, not postgres) so tun/compose.yaml's `include:`
+# can merge this file alongside mjolnir's without a service-name collision
+# — Compose silently keeps only the first included file's definition of a
+# colliding service name, dropping the second with no error, so this isn't
+# cosmetic.
+services:
+  stabbur-postgres:
+    # postgres-17-upgrade: matches mjolnir-postgres's exact tag (D-U3) —
+    # not just "some 17" — so the planned unified backup service needs
+    # exactly one pg_dump client version, not two. Postgres major versions
+    # are not binary-compatible on disk (D-U2), so this pairs with a new
+    # volume name below, not an in-place upgrade of the old one.
+    image: postgres:17-alpine
+    container_name: stabbur-postgres
+    environment:
+      POSTGRES_USER: stabbur
+      POSTGRES_PASSWORD: stabbur
+      POSTGRES_DB: stabbur
+    ports:
+      - "5434:5432"   # published for local dev (native venv connecting in); drop for a locked-down deploy
+    volumes:
+      - stabbur-pg-data-17:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stabbur"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  stabbur-backend:
+    build: .
+    container_name: stabbur-backend
+    depends_on:
+      stabbur-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://stabbur:stabbur@stabbur-postgres:5432/stabbur
+      STABBUR_AUTH_TOKEN: ${STABBUR_AUTH_TOKEN:-changeme}
+      FLASK_DEBUG: "0"
+      # smia-enrichment-panel: the note editor's "Suggest" panels proxy
+      # through this backend to smia — "smia-backend" is smia's own service
+      # name in its docker-compose.yml, deliberately not plain "backend"
+      # (which would collide with this very service's own name once both
+      # are merged under tun's `include:`, same D94 problem the postgres
+      # services hit).
+      SMIA_BASE_URL: ${SMIA_BASE_URL:-http://smia-backend:5055}
+      SMIA_AUTH_TOKEN: ${SMIA_AUTH_TOKEN:-changeme}
+      # manual-link-audio-capture: optional, only read if the file at this
+      # path actually exists inside the container (routes/enrich.py checks
+      # os.path.exists before adding --cookies) — fine to leave unset/absent
+      # until YouTube starts flagging this deployment's IP with "Sign in to
+      # confirm you're not a bot". To use it: export cookies.txt from an
+      # authenticated YouTube session in your browser (Netscape format —
+      # e.g. the "Get cookies.txt" extension), save it as ./cookies.txt next
+      # to this compose file (gitignored, never commit it — it's live
+      # session credentials), and uncomment the matching bind mount below.
+      YTDLP_COOKIES_FILE: /app/cookies.txt
+    volumes:
+      # Named volume, not baked into the image: blob bytes should survive
+      # container rebuilds (D45 — stabbur owns the canonical learning audio).
+      - stabbur-blobs:/app/blobs
+      - ./cookies.txt:/app/cookies.txt:ro
+    ports:
+      - "5056:5056"
+    networks:
+      # default: this project's own network, unchanged.
+      # tun-shared: lets mjolnir's Caddy reach this container by service
+      # name ("backend") when the two repos are run as two fully
+      # independent `docker compose up` stacks — see mjolnir's
+      # caddy/Caddyfile and .env.example (STABBUR_UPSTREAM) for the other
+      # side of this. One-time setup: `docker network create tun-shared`
+      # before bringing either stack up; both `compose up`s are otherwise
+      # unchanged. Harmless to omit if stabbur is only ever run standalone
+      # with nothing needing to reach it by Docker service name.
+      - default
+      - tun-shared
+
+networks:
+  default: {}
+  tun-shared:
+    external: true
+
+volumes:
+  # Explicit `name:` so this is the SAME Docker volume whether brought up
+  # via `cd stabbur && docker compose up` or through `tun/compose.yaml`'s
+  # `include:` — without it, Compose prefixes the volume name with whatever
+  # project is running (`stabbur_...` vs `tun_...`), creating two entirely
+  # separate volumes. Confirmed live: every note silently "disappeared"
+  # switching between the two entry points, because they'd never been in
+  # the same volume at all — same underlying cause as the `tun-shared`
+  # network needing an explicit shared name (D98); unnamed volumes have the
+  # identical per-project-prefix problem.
+  # postgres-17-upgrade (D-U2): kept defined, deliberately unused, so the
+  # pre-upgrade data is never deleted as a side effect of this change —
+  # the operator removes it by hand (tasks.md 3.1) only after a self-chosen
+  # cool-down period confirming the migration went cleanly.
+  stabbur-pg-data:
+    name: stabbur_stabbur-pg-data
+  stabbur-pg-data-17:
+    name: stabbur_stabbur-pg-data-17
+  stabbur-blobs:
+    name: stabbur_stabbur-blobs

@@ -1,0 +1,14 @@
+.env
+*.log
+__pycache__/
+.venv/
+node_modules/
+/blobs/
+.pytest_cache/
+# yt-dlp cookies file (manual-link-audio-capture) — session credentials
+# exported from an authenticated browser, never committed.
+/cookies.txt
+# Bulk-import source material (bulk-import-anki-csv) — ~450MB of .apkg
+# archives, third-party CSV exports, and the local candidate store.
+# All reproducible from their origins; never committed.
+/import
