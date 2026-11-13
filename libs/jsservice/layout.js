@@ -286,12 +286,19 @@ function escapeHtml(s) {
 // list, hand-copied, because it has no way to import JavaScript — if you add a
 // zone here, add it to mjolnir/caddy/status/index.html too.
 //
-// Paths are the gateway's, not any service's own: `/stabbur/` and `/smia/`
+// Paths are the gateway's, not any service's own: `/stabbur/*` and `/smia/*`
 // are handle_path routes that strip the prefix, `/mjolnir` and `/builder` are
-// passed through whole. `/stabbur/` and `/smia/` land on each service's own
-// root, which redirects to its UI; linking the deep `/stabbur/ui` form here
-// instead would encode one service's internal route layout into every other
-// service's chrome.
+// passed through whole.
+//
+// stabbur and smia are linked at their `/ui` page, not at their bare prefix,
+// and that is a measured decision rather than a style one: `/stabbur/` and
+// `/smia/` are each service's JSON API root, which answers
+// `401 {"error":"unauthorized"}` to a browser because the API wants a bearer
+// token no plain navigation carries. `/stabbur/ui` and `/smia/ui` are the
+// unauthenticated HTML shells that then fetch with the token. Linking the
+// bare prefix would put two dead links in every page of the console.
+// (Checked live, not assumed: /stabbur/ -> 401 application/json,
+// /stabbur/ui -> 200 text/html.)
 //
 // `/shadow/` is listed even though shadow is still being split out of phonexa
 // (zone-isolation section 3). Deliberately: a link to a zone that is not up
@@ -300,8 +307,8 @@ function escapeHtml(s) {
 export const ZONES = [
   { href: "/mjolnir", label: "workbench" },
   { href: "/builder", label: "builder" },
-  { href: "/stabbur/", label: "stabbur" },
-  { href: "/smia/", label: "smia" },
+  { href: "/stabbur/ui", label: "stabbur" },
+  { href: "/smia/ui", label: "smia" },
   { href: "/phonexa/", label: "phonexa" },
   { href: "/shadow/", label: "shadow" },
   { href: "/adminer", label: "adminer" },

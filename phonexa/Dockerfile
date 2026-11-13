@@ -9,6 +9,10 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+# ffmpeg stays: Formant Lab ingest and the trim endpoint decode uploaded
+# audio here. yt-dlp — the other thing that used to need it — left with
+# shadow (zone-isolation task 3.3), so the hang-prone download subprocess is
+# no longer in this image at all.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ffmpeg \
@@ -19,22 +23,24 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Backend
-COPY phonexa/formanter.py phonexa/shadowing.py ./
+COPY phonexa/formanter.py ./
 COPY phonexa/db/ ./db/
 COPY phonexa/alembic.ini .
 COPY phonexa/alembic/ ./alembic/
 COPY phonexa/scripts/ ./scripts/
 
 # Frontend assets
-COPY phonexa/index.html phonexa/editor.html phonexa/debug.html phonexa/shadow.html phonexa/praat.html phonexa/sounds.html phonexa/tokens.html phonexa/drill.html phonexa/settings.html phonexa/consonants.html phonexa/processor.js ./
+COPY phonexa/index.html phonexa/editor.html phonexa/debug.html phonexa/praat.html phonexa/sounds.html phonexa/tokens.html phonexa/drill.html phonexa/consonants.html phonexa/processor.js ./
 COPY phonexa/js/ ./js/
 COPY phonexa/css/ ./css/
 COPY phonexa/lang/ ./lang/
 
-RUN chmod +x /app/scripts/docker-entrypoint.sh
-
 EXPOSE 5050
 
-# Entrypoint applies Alembic migrations, then execs CMD.
-ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
-CMD ["python", "formanter.py"]
+# One entrypoint shape across all three Python services (zone-isolation):
+# scripts/bootstrap.py binds the port first and migrates in the background.
+# The old ENTRYPOINT (scripts/docker-entrypoint.sh: `alembic upgrade head`
+# then exec) is gone — it could not start at all with the database down, which
+# took the vowel chart, Formant Lab and live speech down with it even though
+# none of them read a row. Needs `/libs` on PYTHONPATH; see compose.yaml.
+CMD ["python", "-m", "scripts.bootstrap"]

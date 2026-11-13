@@ -37,6 +37,15 @@ def register_auth(app):
         # database-exploration UI, chicken-and-egg otherwise). The data
         # those pages fetch (/providers, /health, and every lookup
         # endpoint) still goes through this check normally.
+
+        # /_health is the container probe (libs/pyservice/bootstrap.py): it
+        # reports serving-vs-ready and carries no data, and a Docker health
+        # check cannot present a credential. Exempt for the same reason /ui
+        # is, one step further out — without this the probe gets 401 and the
+        # container is permanently unhealthy.
+        if request.path == "/_health":
+            return None
+
         if request.path == "/ui" or request.path.startswith("/ui/"):
             return None
 

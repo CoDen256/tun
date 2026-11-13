@@ -1,3 +1,9 @@
+// VENDORED from phonexa/js/vad.js when shadow was split out of phonexa
+// (zone-isolation task 3.1). Byte-identical apart from this header.
+// Two pages in two services need it and `libs/` has no browser-asset home
+// yet (zone-isolation task 4.1 adds one); until then this is D46's
+// vendoring rule, applied deliberately rather than by accident. If you
+// change the phonexa copy, change this one.
 /**
  * vad.js — energy-based voice-activity detection, shared between shadow.js
  * (sentence AND chapter segmentation on huge uploaded files — entirely

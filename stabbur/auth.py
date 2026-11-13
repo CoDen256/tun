@@ -28,6 +28,15 @@ def register_auth(app):
         # stored as a stabbur blob — for the same reason: an <audio src=...>
         # can't attach an Authorization header, and the sha256 itself is the
         # only thing identifying the content either way.
+
+        # /_health is the container probe (libs/pyservice/bootstrap.py): it
+        # reports serving-vs-ready and carries no data, and a Docker health
+        # check cannot present a credential. Exempt for the same reason /ui
+        # is, one step further out — without this the probe gets 401 and the
+        # container is permanently unhealthy.
+        if request.path == "/_health":
+            return None
+
         if request.path == "/ui" or request.path.startswith("/ui/"):
             return None
         if request.path.startswith("/blob/"):

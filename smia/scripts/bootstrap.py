@@ -1,22 +1,42 @@
 """
-scripts/bootstrap.py — the Docker image's entrypoint (`CMD` in `Dockerfile`):
-runs migrations, imports each provider's data only if its table is still
-empty (so a container restart against an already-populated Postgres volume
-doesn't re-import ~9M rows every time), then starts the Flask app.
+scripts/bootstrap.py — smia's container entrypoint (`CMD` in `Dockerfile`),
+and now one of three identical spellings of the same mechanism
+(libs/pyservice/bootstrap.py).
 
-Missing source files (e.g. `providers/` not bind-mounted) are warned about,
-not fatal — the service still starts with those providers simply returning
-no candidates, same as any other "unknown word" response.
+It used to be: `alembic upgrade head`, then import each provider's data whose
+table is still empty, THEN exec the Flask app — so with Postgres unreachable
+the container died before binding 5055 and `/smia` answered 502, and on a
+genuinely empty database nothing listened for as long as ~9M rows took to
+import.
+
+Now: bind the port first, migrate in the background behind a readiness flag,
+and import providers AFTER readiness rather than ahead of it. The split is
+deliberate and is the one place this file differs from stabbur's and
+phonexa's: "ready" means the schema is current, which is true the moment
+alembic finishes. An import is seeding, not schema — gating readiness on it
+would report smia as degraded for an hour of perfectly correct serving, and a
+failing import would be retried every five seconds forever.
+
+Still imported only if the target table is empty, so a restart against a
+populated database re-imports nothing. Missing source files (e.g. `providers/`
+not bind-mounted) are warned about, not fatal — the service serves with those
+providers simply returning no candidates, same as any other "unknown word"
+response.
 """
 
 from __future__ import annotations
 
 import glob
 import os
-import subprocess
 import sys
 
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
+
+from pyservice.bootstrap import create_bootstrap, register_db_guard, register_health
+from pyservice.migrate import upgrade_head
+
+from app import app  # Flask app + its auth hook, registered before the guard below
 
 from db.session import get_engine
 from scripts import (
@@ -113,26 +133,59 @@ def _table_is_empty(table: str) -> bool:
         return conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() == 0
 
 
-def main() -> None:
-    subprocess.run(["alembic", "upgrade", "head"], check=True)
+def _import_providers() -> None:
+    """Runs once, after the schema is ready, on the bootstrap thread.
 
+    Every failure is caught here rather than allowed to propagate: an
+    exception escaping this function would be caught by the bootstrap loop,
+    which would mark smia NOT ready and retry — re-running alembic and every
+    import on a five-second interval. One broken provider dump must cost that
+    provider's candidates, nothing else.
+    """
     for table, run, args in _IMPORTS:
-        is_empty = table() if callable(table) else _table_is_empty(table)
-        if not is_empty:
-            label = table.__name__ if callable(table) else table
-            print(f"[bootstrap] {label} already populated, skipping import", file=sys.stderr)
-            continue
+        label = table.__name__ if callable(table) else table
         try:
+            is_empty = table() if callable(table) else _table_is_empty(table)
+            if not is_empty:
+                print(f"[bootstrap] {label} already populated, skipping import", file=sys.stderr)
+                continue
             resolved_args = args() if callable(args) else args
             run(*resolved_args)
         except FileNotFoundError as exc:
             print(f"[bootstrap] skipping {run.__module__}: {exc}", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001 — see the docstring
+            print(f"[bootstrap] import {label} FAILED, continuing: {exc}", file=sys.stderr)
 
-    # exec, not subprocess.run: replaces this process (PID 1 in the
-    # container) so signals (SIGTERM on `docker stop`) reach the Flask
-    # process directly, and the full inherited environment (DATABASE_URL,
-    # SMIA_AUTH_TOKEN, ...) carries over automatically.
-    os.execvp("python", ["python", "app.py"])
+
+def main() -> None:
+    # smia owns the `smia` database's migrations outright — nothing else
+    # writes that schema.
+    boot = create_bootstrap(
+        name="smia-backend",
+        prepare=upgrade_head,
+        on_ready=_import_providers,
+    )
+    boot.start()
+
+    register_health(app, boot)
+
+    # Guard everything except the UI shell. smia is a lookup service: every
+    # route other than /ui reads the cache tables or the provider tables, so
+    # the default is the guard and the exemption is the short list. /ui itself
+    # is read off disk (and is already auth-exempt for the same reason), so
+    # the console still renders and shows the degraded state rather than
+    # disappearing behind a 502.
+    register_db_guard(
+        app,
+        boot,
+        exempt=("/ui",),
+        db_errors=(OperationalError,),
+    )
+
+    # use_reloader=False even in debug: the reloader forks a second process,
+    # and two bootstrap threads would race one migration table.
+    debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+    app.run(host="0.0.0.0", port=5055, debug=debug, use_reloader=False)
 
 
 if __name__ == "__main__":

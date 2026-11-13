@@ -229,11 +229,15 @@ def register_db_guard(
                              non-database features (phonexa's live formant
                              analysis, its static pages) must keep working
                              through a database outage — blocking those would
-                             re-create the cascade this change removes.
-      exempt=("/ui",)        guard everything else. For a service that is
-                             essentially all database (stabbur, smia), where
-                             the short list is what must still render: the UI
-                             shell and the disk-backed routes.
+                             re-create the cascade this change removes, and an
+                             allowlist would silently block the NEXT
+                             database-free route someone adds.
+      exempt=("/ui",)        with no `protect`, guard everything else. For a
+                             service that is essentially all database
+                             (stabbur, smia), where the short list is what
+                             must still render: the UI shell and the
+                             disk-backed routes. `exempt` also applies inside
+                             `protect` mode, as a carve-out.
 
     `db_errors` is the exception classes that mean "the database went away"
     (SQLAlchemy's OperationalError for all three services). Passed in rather
@@ -268,10 +272,14 @@ def register_db_guard(
         path = request.path
         if path == HEALTH_PATH:
             return None
-        if protect is not None:
-            return _degraded_response() if _matches(path, protect) else None
+        # `exempt` wins in both modes: under `protect` it is the carve-out for
+        # a database-free endpoint that happens to sit under a guarded prefix
+        # (phonexa's /api/v1/youtube-extract shells to yt-dlp and reads no
+        # row), which is otherwise unreachable without moving the route.
         if _matches(path, exempt):
             return None
+        if protect is not None:
+            return _degraded_response() if _matches(path, protect) else None
         return _degraded_response()
 
     if db_errors:

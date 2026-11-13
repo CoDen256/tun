@@ -13,7 +13,7 @@
 <header>
   <h1>Settings</h1>
   <p>Per-profile configuration and Shadowing progress</p>
-  <a href="index.html"  class="editor-link">← Vowel Chart</a>
+  <a href="__PHONEXA_PREFIX__/index.html" class="editor-link">← Vowel Chart</a>
   <a href="shadow.html" class="editor-link">🗣 Shadowing</a>
   <span id="userPicker" class="user-picker"></span>
 </header>
@@ -42,9 +42,23 @@
 
 </div>
 
-<!-- Prefix injected by formanter.py (X-Forwarded-Prefix) — empty when mounted
-     at the root. Must precede every js/ tag: API_BASE is read at load time. -->
-<script>window.PHONEXA_PREFIX = "__PHONEXA_PREFIX__"; var API_BASE = window.PHONEXA_PREFIX || '';</script>
+<!-- Two prefixes, injected by app.py's _serve_page.
+     SHADOW_PREFIX  — where THIS service is mounted (X-Forwarded-Prefix,
+                      '/shadow' behind the gateway, empty standalone). Every
+                      data call goes here: API_BASE.
+     PHONEXA_PREFIX — where phonexa is mounted IN THE BROWSER. Used only for
+                      links a human follows (Vowel Chart, Edit languages, the
+                      Formant Lab handoff). Data never goes here: shadow's
+                      backend proxies profiles/settings/Praat itself, so an
+                      XHR never has to cross the gateway's per-prefix auth
+                      boundary. See phonexa_client.py.
+     Must precede every js/ tag: API_BASE is read at load time. -->
+<script>
+  window.SHADOW_PREFIX = "__SHADOW_PREFIX__";
+  window.PHONEXA_PREFIX = "__PHONEXA_PREFIX__";
+  var API_BASE = window.SHADOW_PREFIX || '';
+  var PHONEXA_BASE = window.PHONEXA_PREFIX || '';
+</script>
 <script src="js/user.js"></script>
 <script src="js/settings.js"></script>
 </body>

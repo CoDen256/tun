@@ -49,23 +49,41 @@ services:
       # created by postgres/init/bootstrap.sh from the same one value.
       DATABASE_URL: postgresql+psycopg2://phonexa:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_phonexa@postgres:5432/phonexa
       AUDIO_STORAGE_ROOT: /data/audio
-      # Speech-to-text for Shadowing is proxied to smia (stt-via-smia). The
-      # address is derived from smia's service key, never configured. The token
-      # is shared with smia, so it comes from the root .env; it is server-side
-      # only and never sent to the browser. Empty token = the 📝 action reports
-      # "not configured" and everything else keeps working.
-      SMIA_BASE_URL: http://smia-backend:5055
-      SMIA_AUTH_TOKEN: ${SMIA_AUTH_TOKEN}
+      # SMIA_BASE_URL/SMIA_AUTH_TOKEN used to be here, for Shadowing's
+      # speech-to-text. They moved to shadow/compose.yaml with /transcribe
+      # (zone-isolation task 3.3): phonexa makes no call to smia any more.
+      #
+      # Where SHADOW is in the BROWSER's URL space — for the "🗣 Shadowing"
+      # and "⚙ Settings" header links only. This is NOT an upstream: phonexa
+      # never calls shadow. It is the gateway's own mount point for shadow,
+      # so it is derived from the Caddyfile, not configured.
+      SHADOW_PUBLIC_PREFIX: /shadow
+      # Python's answer to jsservice's /libs mount: shared code goes on the
+      # import path, since Python has no file-relative import. /libs (not
+      # /app/libs) keeps the one spelling `pyservice.bootstrap` working in the
+      # container and in a native venv (PYTHONPATH=../libs from here).
+      PYTHONPATH: /libs
     volumes:
       - phonexa-audio-data:/data/audio
+      # Read-only: a service may import the shared bootstrap, never edit it.
+      - ../libs:/libs:ro
       # Bind mount (not a named volume): the admin export/import endpoints
       # must read/write the git-tracked phonexa/db-export/ directory, not an
       # ephemeral copy baked into the image by Dockerfile's COPY. Resolves
       # relative to this file.
       - ./db-export:/app/db-export
     healthcheck:
-      # python:3.12-slim has no curl.
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5050/ping', timeout=3)"]
+      # Serving is not ready (zone-isolation). /ping still exists and still
+      # returns {"ok": true} unconditionally — which is exactly why it is no
+      # longer the probe: it proves the process is alive, and since
+      # scripts/bootstrap.py replaced the migrate-then-exec entrypoint, being
+      # alive no longer implies having a schema.
+      #
+      # /_health answers 200 ready / 503 degraded (libs/pyservice/bootstrap.py).
+      # phonexa has no auth gate of its own, so nothing to exempt here.
+      # python:3.12-slim has no curl; the shared script uses urllib and prints
+      # the body, so .State.Health.Log carries the reason.
+      test: ["CMD", "python", "/libs/pyservice/healthcheck.py", "http://localhost:5050/_health"]
       interval: 10s
       timeout: 5s
       retries: 5

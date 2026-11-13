@@ -34,6 +34,12 @@ include:
   # Its own development Adminer is behind a `dev` profile, so it does not
   # start here; use the shared one below.
   - ./phonexa/compose.yaml
+  # shadow was split out of phonexa by zone-isolation task 3: the shadowing
+  # domain, its own database, its own pages, and the three stateless
+  # endpoints only it ever called. It is listed AFTER phonexa for readability
+  # only — `include:` order decides nothing but which definition of a
+  # colliding name wins, and `shadow-backend` collides with nothing.
+  - ./shadow/compose.yaml
 
 services:
   # One database-exploration tool for the one cluster (D-T3, D155). Log in as

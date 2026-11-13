@@ -3,6 +3,12 @@
 // read-only Shadowing progress overview. Profile switching itself is
 // js/user.js's shared picker, mounted in this page's header like everywhere
 // else — switching profiles here just re-renders this page's two sections.
+//
+// This page moved from phonexa to shadow with the zone-isolation split, and
+// it moved WHOLE: both of its sections are shadowing concerns and neither
+// mentions vowels. The profile picker and the `settings` rows it reads still
+// belong to phonexa — shadow's backend proxies /api/v1/users and
+// /api/v1/settings there, so every fetch below is still API_BASE.
 
 const DEFAULT_TRANSCRIBE_PROVIDER = 'hf_whisper';
 
@@ -17,8 +23,8 @@ async function loadTranscribeSettings() {
   return { provider: (typeof stored.provider === 'string' && stored.provider) || DEFAULT_TRANSCRIBE_PROVIDER };
 }
 
-// Providers come from smia (via phonexa's /transcribe/providers), so a new
-// smia provider shows up here with no phonexa change. If smia can't be
+// Providers come from smia (via shadow's /transcribe/providers), so a new
+// smia provider shows up here with no shadow change. If smia can't be
 // reached, still show the saved choice so the form stays usable.
 async function renderTranscribeForm() {
   const cfg = await loadTranscribeSettings();

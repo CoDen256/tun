@@ -34,10 +34,17 @@
  * Recordings themselves are NOT persisted server-side — only done/text are
  * durable progress; a recording is lost on reload, same as always.
  *
- * Transcription goes through phonexa's own POST /transcribe, which proxies to
+ * Transcription goes through shadow's own POST /transcribe, which proxies to
  * smia's speech-to-text (smia's address/token never reach the browser). The
  * provider (e.g. hf_whisper) comes from the per-user 'transcribeBackend'
- * Setting (configured on settings.html).
+ * Setting (configured on settings.html). That Setting row lives in PHONEXA's
+ * database — shadow's backend proxies /api/v1/settings and /api/v1/users to
+ * phonexa so this file still only ever talks to API_BASE. See
+ * shadow/phonexa_client.py for what that costs when phonexa is down.
+ *
+ * Moved out of phonexa by zone-isolation task 3. Only two things changed in
+ * this file: API_BASE is now shadow's prefix, and the Formant Lab handoff
+ * below uses PHONEXA_BASE because Formant Lab stayed with the vowel domain.
  */
 
 const MAX_NONWAV_SLICE_SEC = 1800;      // 30 min cap on real-time capture for non-WAV formats
@@ -571,7 +578,15 @@ async function openSegmentInFormantLab(seg, row) {
     const { samples, sampleRate } = extractMonoSlice(currentBuffer, off.startMs, off.endMs);
     const blob = encodeWavBlob(samples, sampleRate);
     const buffer = await blob.arrayBuffer();
-    const win = window.open('praat.html?ingestFromOpener=1', '_blank');
+    // Formant Lab lives in PHONEXA, a different service behind a different
+    // gateway prefix since the zone-isolation split — hence PHONEXA_BASE
+    // rather than a relative path. The handoff itself is unchanged: nothing
+    // is uploaded, a plain ArrayBuffer crosses via postMessage, and both
+    // pages are the same ORIGIN behind the gateway so the origin check
+    // below still passes. (Standalone, on two different ports, they are not
+    // the same origin and this handoff does not work — behind the gateway,
+    // which is how shadow is actually used, it does.)
+    const win = window.open(PHONEXA_BASE + '/praat.html?ingestFromOpener=1', '_blank');
     if (!win) { status.textContent = 'Popup blocked — allow popups for this site and try again'; return; }
     status.textContent = 'Opening in Formant Lab…';
     const onMessage = e => {

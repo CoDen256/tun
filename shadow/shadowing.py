@@ -3,7 +3,16 @@ shadowing.py — Shadowing feature's server-side persistence: per-user media
 identity (recognizing a re-uploaded file by its client-computed fingerprint,
 NOT by storing audio), a chapter/sentence segment tree, manual split/merge
 editing, and per-segment progress tracking. Split out from formanter.py
-given its size; registered there as a Blueprint.
+given its size; registered in app.py as a Blueprint.
+
+Split out of phonexa into its own service (zone-isolation task 3). The only
+thing that changed in the move: `db.get(User, user_id)` is gone. `users`
+lives in phonexa's database and the one cross-domain foreign key
+(shadowing_media.user_id -> users.id) was dropped per D42, so the profile
+check now asks phonexa over HTTP (phonexa_client.verify_user) and ACCEPTS
+the id when phonexa cannot be reached — losing a validation is the
+degradation we accept; refusing the write would be the cascade this split
+exists to prevent.
 
 Audio is NEVER stored or decoded here. An earlier version of this file did
 exactly that (streamed upload + server-side Praat decode for segmentation
@@ -24,7 +33,8 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from db.models import ShadowingMedia, ShadowingSegment, User
+import phonexa_client
+from db.models import ShadowingMedia, ShadowingSegment
 from db.session import get_sessionmaker
 
 shadowing_bp = Blueprint('shadowing', __name__)
@@ -74,7 +84,8 @@ def find_or_create_shadowing_media():
         return jsonify({'error': 'userId and fingerprint are required'}), 400
 
     with get_sessionmaker()() as db:
-        if db.get(User, user_id) is None:
+        # None = phonexa could not be asked; that is not "no such user".
+        if phonexa_client.verify_user(user_id) is False:
             return jsonify({'error': 'no such user'}), 404
         media = db.query(ShadowingMedia).filter_by(user_id=user_id, fingerprint=fingerprint).first()
         if media is not None:

@@ -1,3 +1,13 @@
+// VENDORED from phonexa/js/spectro.js when shadow was split out of phonexa
+// (zone-isolation task 3.1). Byte-identical apart from this header and the note below.
+// Two pages in two services need it and `libs/` has no browser-asset home
+// yet (zone-isolation task 4.1 adds one); until then this is D46's
+// vendoring rule, applied deliberately rather than by accident. If you
+// change the phonexa copy, change this one.
+//
+// NOTE: runPraatAnalysis posts to API_BASE + '/analyze-praat' — shadow's own
+// route, which proxies to phonexa (parselmouth stayed with the vowel
+// domain). Nothing in this file had to change.
 /**
  * spectro.js — shared Praat-spectrogram rendering, mean-F1/F2-over-range
  * analysis, drag-to-adjust-slice, and playback-cursor machinery. Extracted

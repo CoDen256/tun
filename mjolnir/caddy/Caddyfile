@@ -261,6 +261,57 @@
 		}
 	}
 
+	# ---- /shadow : shadowing practice, operator-gated here ---------------
+	# Split out of phonexa by zone-isolation task 3. Same handle_path +
+	# X-Forwarded-Prefix shape as /stabbur, /smia and /phonexa above — shadow
+	# serves its own routes unprefixed and templates its pages from the
+	# header, exactly as phonexa does.
+	#
+	# ROUTE ORDER IS NOT A CONCERN HERE, unlike /mjolnir/userdata above.
+	# `/shadow/*` and `/phonexa/*` are disjoint path spaces: no request can
+	# match both, so no ordering between them can send traffic to the wrong
+	# service. Confirmed with `caddy adapt --adapter caddyfile` anyway — the
+	# device blocks must keep their compiled positions, and this block must
+	# compile BEFORE the catch-all `handle {}` at the bottom, which is the
+	# failure mode that actually bites in this file (see the long comment
+	# above /mjolnir).
+	#
+	# THE REDIRECT IS LOAD-BEARING, for exactly phonexa's reason: every asset
+	# and page link in shadow's HTML is RELATIVE (`css/index.css`,
+	# `js/shadow.js`, `settings.html`). At `/shadow` with no trailing slash a
+	# browser resolves those against `/`, so they escape this block and hit
+	# the catch-all below.
+	#
+	# AUTH. shadow has none of its own — profiles are name-only with no
+	# password, inherited from phonexa along with the pages. So the gate is
+	# here, in front of everything this block matches, with the SAME
+	# credential and the SAME derived hash phonexa uses: one operator
+	# credential, two prefixes. Rotating OPERATOR_AUTH_TOKEN means
+	# regenerating PHONEXA_AUTH_HASH, which now gates two zones instead of
+	# one. The fail-closed default is the same discarded-plaintext bcrypt
+	# hash, for the same reason: an unconfigured deploy rejects every request
+	# here rather than serving shadow open.
+	#
+	# Shadow's browser code never calls phonexa directly, deliberately: a
+	# cross-prefix XHR would have to re-satisfy this gate. shadow's backend
+	# proxies profiles, settings and /analyze-praat instead
+	# (shadow/phonexa_client.py), over the internal network, which never
+	# passes through this gateway at all.
+	#
+	# No WebSocket here and no `-Sec-WebSocket-Extensions` strip: /stream is
+	# phonexa's live mic tracker and stayed with the vowel domain. Shadow
+	# uploads can still be several MB (a recorded slice posted to
+	# /transcribe), and as with /phonexa no request-body limit is set.
+	redir /shadow /shadow/ 308
+	handle_path /shadow/* {
+		basic_auth {
+			operator {$PHONEXA_AUTH_HASH:$2a$14$4O3NlHoGMD2./6FpyxpKAell6n5PkW1TaayAPbIKyg4GgwZfc8ESO}
+		}
+		reverse_proxy shadow-backend:5051 {
+			header_up X-Forwarded-Prefix /shadow
+		}
+	}
+
 	# ---- /adminer : tun/compose.yaml's shared Adminer (D-T3) -------------
 	# Only reachable this way when deployed via tun's `include:` unification
 	# (D94/D101) — that's the only compose file defining a service literally
@@ -286,16 +337,56 @@
 		respond "mjolnir" 404
 	}
 
+	# ---- handle_errors : the status page (zone-isolation 4.3) -----------
+	# Without this, a zone whose container is down answers with Caddy's
+	# default error response — a bare status line, no body, no navigation, no
+	# way back to the zones that ARE up. Independent processes are the point
+	# of zone-isolation; one dead process producing a dead-end browser tab
+	# undoes most of the benefit for the operator.
+	#
+	# What is served instead: caddy/status/index.html, a static file inside
+	# THIS container, rendered by `templates`. No upstream, no database, no
+	# JavaScript. It cannot itself fail for the reason the page exists.
+	#
+	# handle_errors is SITE-WIDE — it cannot be scoped to one handle block —
+	# so the device plane has to be excluded by hand, below, and is.
 	handle_errors {
+		# DEVICE PLANE: never HTML, ever. /ota/*, /blob/*, /audio-manifest/*
+		# and /mjolnir/userdata/* are a frozen contract (docs/11-ota-contract.md,
+		# D55) consumed by an APK in the field that cannot be rolled back.
+		# Native parses the status code; handing it a styled HTML body where
+		# it expects a bare 404 would be a contract change made by accident,
+		# in a file whose device blocks are otherwise untouchable.
+		#
+		# `respond "" {err.status_code}` reproduces exactly what Caddy's
+		# default error handler produced before this block existed: the
+		# status, an empty body, and no Content-Type. Verified byte-for-byte
+		# against the pre-change gateway, not assumed — a missing /ota object
+		# answered 404 with Content-Length: 0 and no Content-Type both
+		# before and after.
+		#
+		# This matcher must stay in sync with the device blocks at the top of
+		# this file. It is the only place in handle_errors where adding a
+		# path is a device-contract decision rather than a cosmetic one.
 		@device path /ota/* /blob/* /audio-manifest/* /mjolnir/userdata/*
 		handle @device {
 			respond "" {err.status_code}
 		}
+
+		# Everything else — the operator plane — gets the status page.
+		#
+		# `rewrite * /index.html` repoints the request at the one template;
+		# the browser's original path survives as
+		# {http.request.orig_uri.path}, which is what the page reads to name
+		# the unreachable zone. (It survives handle_path's prefix strip too:
+		# a 502 on /stabbur/ui still reports orig_uri.path = /stabbur/ui,
+		# confirmed live against a stopped stabbur-backend.)
+		#
+		# `status {err.status_code}` is load-bearing: file_server answers 200
+		# by default, so without it a down zone would report success while
+		# displaying an error page — wrong for curl, for monitoring and for
+		# anything that reads status codes rather than pixels.
 		handle {
-			map {path} {zone} {
-				~^/stabbur stabbur
-				default    unknown
-			}
 			rewrite * /index.html
 			root * /etc/caddy/status
 			templates

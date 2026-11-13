@@ -4,9 +4,16 @@ formanter.py
 Flask app serving both the original realtime/Praat formant pipeline below
 (unchanged since this file was still called analyze_server.py — never touch
 this section without explicit instruction) and the DB-backed REST API for
-languages/samples/tokens/vowels/users/settings/Formant-Lab ingest/YouTube
-extraction added later (see db/models.py's docstring for the schema
-rationale, and this file's own later sections for the route list).
+languages/samples/tokens/vowels/users/settings/Formant-Lab ingest added
+later (see db/models.py's docstring for the schema rationale, and this
+file's own later sections for the route list).
+
+Shadowing is NOT here any more: zone-isolation task 3 split it into the
+`shadow` service, with its own database, its own pages and the three
+stateless endpoints only it ever called (/transcribe,
+/transcribe/providers, /api/v1/youtube-extract). `users` and `settings`
+stayed here — shadow reads them over HTTP, since D42 forbids the foreign
+key that used to join the two domains.
 
 Realtime/Praat pipeline (frozen; dual-ceiling Praat formant tracker)
 ---------------------------------------------------------------------
@@ -36,9 +43,10 @@ B  above rms_floor, no valid formants — all Praat outputs included for diagnos
 C  voiced — all fields populated including f1_median / f2_median
 
 Install:  pip install -r requirements.txt  (flask, flask-sock, parselmouth,
-          numpy, SQLAlchemy/psycopg2/alembic, yt-dlp — see requirements.txt)
-Optional (for /transcribe): a reachable smia — set SMIA_BASE_URL / SMIA_AUTH_TOKEN
-          (transcription is proxied to smia's /stt; no local speech model)
+          numpy, SQLAlchemy/psycopg2/alembic — see requirements.txt)
+
+No smia dependency and no yt-dlp any more: both left with shadow. phonexa
+now depends on the gateway and the database, and on nothing else.
 """
 
 from __future__ import annotations
@@ -936,196 +944,21 @@ def run_full_praat_analysis(samples: np.ndarray, sample_rate: float, config: dic
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Transcription — proxied to smia's POST /stt (stt-via-smia). phonexa runs no
-# speech-recognition model itself: smia owns the providers and their
-# credentials. smia's address and bearer token stay server-side — the browser
-# only ever talks to the two routes below, never to smia or a provider.
+# Transcription and YouTube extraction LIVED HERE and are now shadow's.
+#
+# zone-isolation task 3.3 moved /transcribe, /transcribe/providers and
+# /api/v1/youtube-extract to the shadow service, verbatim. All three were
+# stateless — no model, no session, no file — and all three were called by
+# the shadowing pages only. phonexa therefore no longer talks to smia at
+# all, and the two hang-prone subprocesses (yt-dlp, ffmpeg) left with them,
+# which is most of what process isolation buys the vowel chart here.
+#
+# The yt-dlp comment that used to sit above /api/v1/youtube-extract called it
+# "Formant Lab ingest-mode entry point". That was wrong: js/shadow.js was its
+# only caller anywhere in the tree. Formant Lab ingests a dropped file or a
+# blob handed over by postMessage (js/ingest.js, js/praat.js) and never a
+# URL — which is exactly why the endpoint could move without touching it.
 # ══════════════════════════════════════════════════════════════════════════════
-
-import requests  # noqa: E402
-from urllib.parse import urlsplit  # noqa: E402
-
-SMIA_STT_TIMEOUT_SEC = 60
-SMIA_PROVIDERS_TIMEOUT_SEC = 5
-
-
-def _smia_config():
-    """(base_url, bearer_token) from the environment; token may be empty."""
-    return (
-        os.environ.get('SMIA_BASE_URL', 'http://smia-backend:5055').rstrip('/'),
-        os.environ.get('SMIA_AUTH_TOKEN', ''),
-    )
-
-
-def _smia_not_configured():
-    return jsonify({'error': 'Transcription is not configured (SMIA_AUTH_TOKEN is not set on the server)'}), 503
-
-
-def _smia_unreachable(base_url):
-    # Host only — never echo the token, and requests' own error text can carry
-    # more than the caller needs.
-    return jsonify({'error': f'smia not reachable at {urlsplit(base_url).netloc or base_url}'}), 503
-
-
-def _smia_error_response(resp):
-    """Relay a non-2xx smia answer to the browser without leaking credentials."""
-    if resp.status_code in (401, 403):
-        # Our own token was refused — not something the browser's user can fix,
-        # and a bare 401 here would read as phonexa's own login failing.
-        return jsonify({'error': "smia rejected phonexa's credentials (check SMIA_AUTH_TOKEN)"}), 502
-    try:
-        body = resp.json()
-    except ValueError:
-        body = {}
-    out = {'error': body.get('error') or f'smia returned HTTP {resp.status_code}'}
-    if 'available' in body:
-        out['available'] = body['available']
-    return jsonify(out), resp.status_code
-
-
-@app.route('/transcribe', methods=['POST'])
-def http_transcribe():
-    """
-    Speech-to-text via smia (POST /stt). Called once per sentence slice by the
-    shadowing page.
-
-    Request (multipart/form-data)
-    ------------------------------
-    file      — audio file
-    provider  — smia STT provider (e.g. 'hf_whisper'); smia requires one and
-                answers 400 with the available list when it is missing
-    language  — optional ISO 639-1 hint (e.g. 'sv'), forwarded to smia as
-                ``lang``; omitted when empty
-
-    Response
-    --------
-    { provider, text }   (text is '' when no speech was detected)
-    """
-    uploaded_file = request.files.get('file')
-    if not uploaded_file:
-        return jsonify({'error': 'No file uploaded'}), 400
-
-    base_url, token = _smia_config()
-    if not token:
-        return _smia_not_configured()
-
-    form = {}
-    provider = (request.form.get('provider') or '').strip()
-    if provider:
-        form['provider'] = provider
-    language = (request.form.get('language') or '').strip()
-    if language:
-        form['lang'] = language
-
-    try:
-        resp = requests.post(
-            f'{base_url}/stt',
-            headers={'Authorization': f'Bearer {token}'},
-            files={'audio': (uploaded_file.filename or 'slice.wav', uploaded_file.stream,
-                             uploaded_file.mimetype or 'application/octet-stream')},
-            data=form,
-            timeout=SMIA_STT_TIMEOUT_SEC,
-        )
-    except requests.RequestException:
-        return _smia_unreachable(base_url)
-
-    if not resp.ok:
-        return _smia_error_response(resp)
-    try:
-        body = resp.json()
-    except ValueError:
-        return jsonify({'error': 'smia returned an unreadable response'}), 502
-    return jsonify({'provider': body.get('provider', provider), 'text': body.get('text') or ''})
-
-
-@app.route('/transcribe/providers', methods=['GET'])
-def http_transcribe_providers():
-    """The speech-to-text providers smia currently offers: { providers: [name, ...] }."""
-    base_url, token = _smia_config()
-    if not token:
-        return _smia_not_configured()
-    try:
-        resp = requests.get(
-            f'{base_url}/providers',
-            headers={'Authorization': f'Bearer {token}'},
-            timeout=SMIA_PROVIDERS_TIMEOUT_SEC,
-        )
-    except requests.RequestException:
-        return _smia_unreachable(base_url)
-    if not resp.ok:
-        return _smia_error_response(resp)
-    try:
-        providers = resp.json().get('stt', [])
-    except (ValueError, AttributeError):
-        return jsonify({'error': 'smia returned an unreadable response'}), 502
-    return jsonify({'providers': providers})
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# YouTube audio extraction — Formant Lab ingest-mode entry point. Shells out to
-# yt-dlp (which itself shells out to ffmpeg for the audio-extraction
-# postprocessing step — see the Dockerfile). Always argument-list subprocess
-# calls (never shell=True/string interpolation) since the URL is untrusted
-# user input reaching a shell-adjacent tool.
-# ══════════════════════════════════════════════════════════════════════════════
-
-import re          # noqa: E402
-import shutil      # noqa: E402
-import subprocess  # noqa: E402
-
-YOUTUBE_MAX_DURATION_SEC = 2 * 60 * 60  # ~2h cap — same unbounded-decode risk Shadowing hit, avoided up front
-
-
-@app.route('/api/v1/youtube-extract', methods=['POST'])
-def youtube_extract():
-    data = request.get_json(silent=True) or {}
-    url = (data.get('url') or '').strip()
-    if not re.match(r'^https?://', url):
-        return jsonify({'error': 'a valid http(s) URL is required'}), 400
-
-    try:
-        probe = subprocess.run(
-            ['yt-dlp', '-j', '--no-playlist', url],
-            capture_output=True, text=True, timeout=30,
-        )
-    except subprocess.TimeoutExpired:
-        return jsonify({'error': 'Timed out fetching video info'}), 504
-    if probe.returncode != 0:
-        return jsonify({'error': 'Could not fetch video info: ' + (probe.stderr or '').strip()[:300]}), 400
-    try:
-        info = json.loads(probe.stdout)
-    except json.JSONDecodeError:
-        return jsonify({'error': 'Could not parse video info'}), 502
-    duration = info.get('duration')
-    if duration and duration > YOUTUBE_MAX_DURATION_SEC:
-        return jsonify({
-            'error': f'Video is {duration / 60:.0f} min — longer than the '
-                     f'{YOUTUBE_MAX_DURATION_SEC // 60} min cap for this feature',
-        }), 400
-
-    tmp_dir = tempfile.mkdtemp(prefix='ytaudio-')
-
-    @after_this_request
-    def _cleanup(response):
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        return response
-
-    out_template = os.path.join(tmp_dir, 'audio.%(ext)s')
-    try:
-        dl = subprocess.run(
-            ['yt-dlp', '--no-playlist', '-f', 'bestaudio', '-x', '--audio-format', 'wav', '-o', out_template, url],
-            capture_output=True, text=True, timeout=600,
-        )
-    except subprocess.TimeoutExpired:
-        return jsonify({'error': 'Timed out downloading/extracting audio'}), 504
-    if dl.returncode != 0:
-        return jsonify({'error': 'Download failed: ' + (dl.stderr or '').strip()[:300]}), 502
-
-    wav_path = os.path.join(tmp_dir, 'audio.wav')
-    if not os.path.exists(wav_path):
-        return jsonify({'error': 'Extraction did not produce an audio file'}), 502
-    return send_file(wav_path, mimetype='audio/wav', as_attachment=False)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Phase 0 DB browsing (read-only) — lets you actually listen to what the
@@ -1962,9 +1795,8 @@ def serve_audio(storage_key):
     return send_file(store.get_path(storage_key), conditional=True)
 
 
-from shadowing import shadowing_bp  # noqa: E402
-
-app.register_blueprint(shadowing_bp)
+# (`from shadowing import shadowing_bp` + register_blueprint used to be here.
+#  shadowing.py moved to the shadow service — zone-isolation task 3.1.)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1972,6 +1804,11 @@ app.register_blueprint(shadowing_bp)
 # db/models.py's User docstring) and a generic per-user JSONB key/value
 # store, used today for the IPA chart's filter persistence and Shadowing's
 # transcription-backend config.
+#
+# Both tables STAY here after the shadow split (zone-isolation task 3.2).
+# shadow proxies /api/v1/users and /api/v1/settings to these routes rather
+# than holding a second copy — one owner per table, and the cross-domain
+# foreign key that used to express it is gone instead of duplicated.
 # ══════════════════════════════════════════════════════════════════════════════
 
 from db.models import Setting, User  # noqa: E402
@@ -2005,8 +1842,9 @@ def create_user():
 
 
 def _require_user_id() -> int | None:
-    """Every settings/shadowing route is scoped by a `userId` query param —
-    there's no session/cookie to derive it from (see User's docstring)."""
+    """Every settings route is scoped by a `userId` query param — there's no
+    session/cookie to derive it from (see User's docstring). shadow scopes
+    its own routes the same way and passes the id through to this service."""
     raw = request.args.get('userId')
     try:
         return int(raw)
@@ -2064,18 +1902,33 @@ def _prefix() -> str:
     return request.headers.get('X-Forwarded-Prefix', '').rstrip('/')
 
 
+def _shadow_prefix() -> str:
+    """Where SHADOW is in the browser's URL space.
+
+    Shadowing left phonexa (zone-isolation task 3), so the "🗣 Shadowing" and
+    "⚙ Settings" header links now point at another service behind another
+    gateway prefix and cannot stay relative. This is a browser-facing path,
+    NOT an upstream address — phonexa makes no call to shadow at all, in
+    either direction of this change. Defaulted to the gateway's own mount
+    point and set in compose.yaml, so it is derived rather than configured.
+    """
+    return os.environ.get('SHADOW_PUBLIC_PREFIX', '/shadow').rstrip('/')
+
+
 def _serve_page(filename: str):
-    """Serve an HTML page with the prefix substituted in.
+    """Serve an HTML page with the prefixes substituted in.
 
     Only HTML is read-and-rewritten; every other asset streams through
     send_from_directory untouched. The pages declare the prefix as a global
     (`window.PHONEXA_PREFIX`) before loading any js/, which reads it back
-    once as API_BASE — see js/utils.js."""
+    once as API_BASE — see js/utils.js. __SHADOW_PREFIX__ is a plain href
+    substitution for the two links into the shadow service; no js/ file
+    reads it."""
     path = Path(app.root_path) / filename
     html = path.read_text(encoding='utf-8')
-    return html.replace('__PHONEXA_PREFIX__', _prefix()), 200, {
-        'Content-Type': 'text/html; charset=utf-8'
-    }
+    html = html.replace('__PHONEXA_PREFIX__', _prefix())
+    html = html.replace('__SHADOW_PREFIX__', _shadow_prefix())
+    return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
 
 
 @app.route('/')

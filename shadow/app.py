@@ -33,13 +33,14 @@ whole finding. Short version: NOT audio storage (there is no audio to
 store, shadow mounts no volume), but profiles, settings and /analyze-praat,
 proxied server-side so the browser only ever talks to /shadow/*.
 
-SERVE-BEFORE-MIGRATE. Not implemented here yet: `libs/pyservice/bootstrap.py`
-is being written separately (zone-isolation task 1.2) and this service will
-adopt it with stabbur, smia and phonexa in one pass. Until then shadow uses
-phonexa's existing mechanism — scripts/docker-entrypoint.sh runs
-`alembic upgrade head` and then execs this app — which means a database
-outage at START still blocks the boot. Known, scoped, and the reason /ping
-below already distinguishes serving from ready.
+SERVE-BEFORE-MIGRATE. This module defines the app and nothing else; the
+container runs it through scripts/bootstrap.py, which binds the port first
+and migrates in the background behind a readiness flag
+(libs/pyservice/bootstrap.py, zone-isolation task 1.2 — the same shape
+phonexa, stabbur and smia use). That is also where the `/_health` route and
+the per-prefix database guard come from, which is why neither is here. The
+`python app.py` fallback at the bottom is for a native dev run only and
+does neither.
 """
 
 from __future__ import annotations
@@ -67,7 +68,6 @@ from flask_cors import CORS
 from werkzeug.utils import safe_join
 
 import phonexa_client
-from db.session import get_sessionmaker
 from shadowing import shadowing_bp
 
 app = Flask(__name__)
@@ -81,23 +81,16 @@ app.register_blueprint(shadowing_bp)
 
 @app.route('/ping')
 def ping():
-    """200 whenever the process is serving. `db` says whether the schema is
-    actually reachable, so a service that is up but has no database is
-    visibly degraded rather than quietly wrong.
+    """Liveness, matching phonexa's /ping: 200 whenever the process serves.
 
-    The container healthcheck probes this and only checks the status code:
-    "the Flask process is serving", not "Postgres is reachable". That is the
-    same line stabbur's healthcheck already draws, and it is what lets the
-    page-level degradation below be the thing that reports a database
-    outage.
+    Deliberately NOT the container healthcheck. With serve-before-migrate,
+    "the process is alive" no longer implies "the schema is there", so the
+    probe is `/_health` — registered by scripts/bootstrap.py, 200 ready /
+    503 degraded. This route stays because it is cheap, unconditional and
+    the one thing you can curl to tell "shadow is down" from "shadow has no
+    database".
     """
-    db_ok = True
-    try:
-        with get_sessionmaker()() as db:
-            db.execute(__import__('sqlalchemy').text('SELECT 1'))
-    except Exception:
-        db_ok = False
-    return jsonify({'ok': True, 'db': db_ok, 'status': 'ready' if db_ok else 'degraded'})
+    return jsonify({'ok': True})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -433,4 +426,4 @@ def serve_static(path):
 
 if __name__ == '__main__':
     print('shadow — HTTP :5051')
-    app.run(host='0.0.0.0', port=5051, threaded=True)
+    app.run(host='0.0.0.0', port=5051, threaded=True, debug=False)

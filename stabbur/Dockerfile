@@ -39,4 +39,9 @@ COPY stabbur/scripts/ ./scripts/
 
 EXPOSE 5056
 
+# Unchanged command, different contract (zone-isolation): scripts/bootstrap.py
+# now binds the port FIRST and migrates in the background, so the container
+# serves (degraded) with Postgres down instead of crash-looping. It imports
+# libs/pyservice, which is mounted at /libs with PYTHONPATH set in
+# compose.yaml — not COPYed, so one copy of that contract exists.
 CMD ["python", "-m", "scripts.bootstrap"]

@@ -59,7 +59,6 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     Text,
-    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -291,6 +290,10 @@ class User(Base):
     purely to scope Settings and Shadowing data per person on a shared
     machine; there is no password and the "current" user is just a plain id
     the client remembers in localStorage, not a security boundary.
+
+    Still the owner of profile identity after the shadow split: shadow's
+    `shadowing_media.user_id` refers to these ids over HTTP, with no foreign
+    key (D42).
     """
     __tablename__ = "users"
 
@@ -299,7 +302,10 @@ class User(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
 
     settings: Mapped[list["Setting"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    shadowing_media: Mapped[list["ShadowingMedia"]] = relationship(back_populates="user", cascade="all, delete-orphan", order_by="ShadowingMedia.created_at")
+    # No `shadowing_media` relationship any more: those rows live in shadow's
+    # database (zone-isolation task 3.2). Deleting a profile here no longer
+    # cascades to its shadowing media — a real consequence of dropping the
+    # cross-service FK, named here rather than discovered later.
 
 
 class Setting(Base):
@@ -322,72 +328,9 @@ class Setting(Base):
     user: Mapped["User"] = relationship(back_populates="settings")
 
 
-class ShadowingMedia(Base):
-    """
-    One long-audio file (audiobook/video audio) a user is shadowing — audio
-    bytes are NEVER stored server-side (decoding/storing a multi-hour file
-    here was tried and reverted: it meant a multi-GB server-side decode on
-    upload, again on split, and again on every single chapter-audio
-    request, since nothing was cached between requests). Instead, `fingerprint`
-    (a client-computed hash of file size + a few sampled byte ranges — see
-    js/shadow.js's computeFingerprint, never the whole file) is how a
-    re-uploaded file is recognized as "the same one": POST
-    /api/v1/shadowing/media/find-or-create looks up (user_id, fingerprint)
-    and returns the existing row (with its segments/progress) instead of
-    creating a new one. Segmentation itself runs client-side (js/vad.js);
-    this table only ever receives the resulting ms boundaries.
-    """
-    __tablename__ = "shadowing_media"
-    __table_args__ = (UniqueConstraint("user_id", "fingerprint"),)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-
-    fingerprint: Mapped[str] = mapped_column(Text, nullable=False)
-    original_filename: Mapped[str | None] = mapped_column(Text)
-    file_size_bytes: Mapped[int | None] = mapped_column()
-    duration_ms: Mapped[int | None] = mapped_column(Integer)
-    sample_rate_hz: Mapped[int | None] = mapped_column(Integer)
-    channels: Mapped[int | None] = mapped_column(SmallInteger)
-
-    # Last-used segmentation sliders — re-shown pre-filled when reopened.
-    sentence_silence_ms: Mapped[int | None] = mapped_column(Integer)
-    chapter_silence_ms: Mapped[int | None] = mapped_column(Integer)
-
-    created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
-    updated_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
-
-    user: Mapped["User"] = relationship(back_populates="shadowing_media")
-    segments: Mapped[list["ShadowingSegment"]] = relationship(
-        back_populates="media", cascade="all, delete-orphan", order_by="ShadowingSegment.order_index"
-    )
-
-
-class ShadowingSegment(Base):
-    """
-    One chapter or sentence of a ShadowingMedia's segmentation. Chapters and
-    sentences share one table (kind='chapter'|'sentence') rather than two,
-    with chapters as the (parent_segment_id IS NULL) top level and sentences
-    pointing at their containing chapter — real relational rows, not a JSONB
-    array, because manual split/merge is per-row CRUD and ordering/
-    containment queries benefit from an indexed FK + order_index.
-    `done`/`text` are the only durable "progress" — the user's own recorded
-    take is deliberately never persisted (stays ephemeral client-side, to
-    keep storage bounded for multi-hour books).
-    """
-    __tablename__ = "shadowing_segments"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    media_id: Mapped[int] = mapped_column(ForeignKey("shadowing_media.id", ondelete="CASCADE"), nullable=False)
-    kind: Mapped[str] = mapped_column(Text, nullable=False)  # 'chapter'|'sentence'
-    parent_segment_id: Mapped[int | None] = mapped_column(ForeignKey("shadowing_segments.id", ondelete="CASCADE"))
-    order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    start_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    text: Mapped[str | None] = mapped_column(Text)  # transcript
-    done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
-    updated_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
-
-    media: Mapped["ShadowingMedia"] = relationship(back_populates="segments")
-    parent: Mapped["ShadowingSegment | None"] = relationship(remote_side=[id])
+# ShadowingMedia and ShadowingSegment used to be defined here. zone-isolation
+# task 3.2 moved them to shadow/db/models.py, in shadow's own database, and
+# dropped the one foreign key that crossed the two domains
+# (shadowing_media.user_id -> users.id) per D42. `users` and `settings` stayed
+# here; shadow holds a plain integer and asks this service over HTTP whether
+# the profile exists.

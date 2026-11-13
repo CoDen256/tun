@@ -127,6 +127,14 @@ export function createServer(config, boot) {
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("not found");
     } catch (err) {
+      // A connection-level failure means the database went away AFTER this
+      // service was ready. Flip readiness back so the next request gets an
+      // honest 503 and the health check reports degraded, rather than every
+      // request 500ing with a driver stack trace until someone restarts it.
+      boot.noteError(err);
+      if (boot.isConnectionError(err)) {
+        return sendJson(res, 503, { error: "database unavailable" });
+      }
       console.error(err);
       sendJson(res, 500, { error: err.message });
     }

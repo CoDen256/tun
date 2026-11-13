@@ -102,49 +102,21 @@ def export_sample(s) -> dict:
     }
 
 
-def export_shadowing_segment(seg, local_id_map: dict[int, int], next_id: list[int]) -> dict:
-    """`id`/`parentId` here are per-export-file local sequence numbers (not
-    the real DB id) — they only need to resolve parent_segment_id within the
-    same media's segment list on import, never across media or tables."""
-    local_id = next_id[0]
-    next_id[0] += 1
-    local_id_map[seg.id] = local_id
-    return {
-        "id": local_id, "kind": seg.kind,
-        "parentId": local_id_map.get(seg.parent_segment_id) if seg.parent_segment_id is not None else None,
-        "orderIndex": seg.order_index, "startMs": seg.start_ms, "endMs": seg.end_ms,
-        "text": seg.text, "done": seg.done,
-    }
-
-
-def export_shadowing_media(m) -> dict:
-    local_id_map: dict[int, int] = {}
-    next_id = [1]
-    # Parents (chapters) must be assigned a local id before any child
-    # references them — `segments` is already ordered by order_index with
-    # kind='chapter' rows first per ShadowingMedia.segments' relationship
-    # order, but sort defensively by (parent is None desc, order_index) too.
-    ordered = sorted(m.segments, key=lambda s: (s.parent_segment_id is not None, s.order_index))
-    return {
-        "originalFilename": m.original_filename, "fileSizeBytes": m.file_size_bytes,
-        "fingerprint": m.fingerprint, "durationMs": m.duration_ms,
-        "sampleRateHz": m.sample_rate_hz, "channels": m.channels,
-        "sentenceSilenceMs": m.sentence_silence_ms, "chapterSilenceMs": m.chapter_silence_ms,
-        "createdAt": m.created_at.isoformat() if m.created_at else None,
-        "segments": [export_shadowing_segment(s, local_id_map, next_id) for s in ordered],
-    }
+# export_shadowing_segment / export_shadowing_media used to be here.
+# Shadowing moved to the `shadow` service with its own database
+# (zone-isolation task 3), so this export — which is phonexa's database,
+# dumped through phonexa's models — can no longer see those rows and must
+# not pretend to. Shadowing data is covered by the backup service, which
+# backs up all five databases including `shadow`.
 
 
 def export_user(u, user_dir: Path) -> None:
     user_dir.mkdir(parents=True, exist_ok=True)
     settings = {s.key: s.value for s in u.settings}
     (user_dir / "settings.json").write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
-    if u.shadowing_media:
-        (user_dir / "shadowing.json").write_text(json.dumps(
-            [export_shadowing_media(m) for m in u.shadowing_media], indent=2, ensure_ascii=False,
-        ) + "\n")
-    else:
-        (user_dir / "shadowing.json").unlink(missing_ok=True)
+    # No shadowing.json: those rows are shadow's now (see above). An existing
+    # one from before the split is left on disk untouched rather than deleted
+    # — it is the last snapshot taken while phonexa still owned the data.
 
 
 def export_all(out_dir: Path) -> dict:

@@ -1,3 +1,7 @@
+/* VENDORED from phonexa/css/index.css when shadow was split out of phonexa
+   (zone-isolation task 3.1). Byte-identical apart from this header. Shared
+   look across two services with no `libs/` browser-asset home yet — D46's
+   vendoring rule, applied deliberately. Change both copies together. */
 :root {
     --bg:#1a2636; --surface:#213040; --border:#2e4560;
     --muted:#6a8298; --card:#223042; --sidebar:#1e2e40;

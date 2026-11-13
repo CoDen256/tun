@@ -1061,8 +1061,10 @@ export function createServer(pool, config, boot) {
   const workbenchHandler = createWorkbenchHandler({ patchesDir: config.workbenchPatchesDir || "patches" });
 
   return http.createServer(async (req, res) => {
+    // Declared OUTSIDE the try so the catch below can use it — the error
+    // path needs to know whether the caller wanted JSON or HTML.
+    const url = new URL(req.url, "http://localhost");
     try {
-      const url = new URL(req.url, "http://localhost");
 
       // Mounted before the operator-auth gate below would otherwise apply
       // per-route — checked explicitly here instead, since the workbench's
@@ -1520,6 +1522,24 @@ export function createServer(pool, config, boot) {
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("not found");
     } catch (err) {
+      // See mjolnir/sync/src/server.js: readiness is a current state, so a
+      // connection-level error degrades the service instead of leaking a
+      // driver error as a 500 on every subsequent request.
+      if (boot) boot.noteError(err);
+      if (boot && boot.isConnectionError(err)) {
+        if (wantsJson(url.pathname)) {
+          return sendJson(res, 503, { error: "database unavailable" });
+        }
+        res.writeHead(503, { "Content-Type": "text/html; charset=utf-8" });
+        return res.end(renderShell({
+          title: "mjolnir — database unavailable",
+          activeHref: url.pathname,
+          body: `<div class="page-head"><div><h2>Database unavailable</h2>
+            <div class="page-sub">The database became unreachable while this
+            page was loading. Retrying automatically; devices are
+            unaffected.</div></div></div>`,
+        }));
+      }
       console.error(err);
       sendJson(res, 500, { error: err.message });
     }

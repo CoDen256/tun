@@ -4,8 +4,8 @@ scripts/import_db_from_json.py — db-export/*.json -> DB (destructive rebuild).
 
 The JSON *is* the next state of the world: truncates every table this tool
 owns (languages/samples/sample_analyses/vowels/tokens, plus
-users/settings/shadowing_media/shadowing_segments — cascades handle any FK
-regardless of nullability) inside one transaction, then re-inserts
+users/settings — cascades handle any FK regardless of nullability) inside
+one transaction, then re-inserts
 everything in dependency order, remapping ids as it goes since
 RESTART IDENTITY means every row gets a fresh id. Any failure rolls back the
 whole transaction — old state untouched.
@@ -13,8 +13,11 @@ whole transaction — old state untouched.
 Audio bytes are never touched here — Sample/Token audio lives in
 AUDIO_STORAGE_ROOT and is backed up/restored separately from this JSON
 snapshot (a missing file just 404s on playback until provisioned,
-non-fatal). ShadowingMedia carries no audio at all — only a client-computed
-fingerprint used to recognize a re-uploaded file, see db/models.py.
+non-fatal).
+
+Shadowing is NOT handled here any more (zone-isolation task 3): those two
+tables moved to the `shadow` service's own database. See the TRUNCATE in
+import_all() for the one hazard that created.
 
 Upsert-based restore was rejected (see the original design doc): it has to
 answer an irreducibly ambiguous question (is a DB row absent from the JSON
@@ -38,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import text  # noqa: E402
 
-from db.models import Language, Sample, SampleAnalysis, Setting, ShadowingMedia, ShadowingSegment, Token, User, Vowel  # noqa: E402
+from db.models import Language, Sample, SampleAnalysis, Setting, Token, User, Vowel  # noqa: E402
 from db.session import get_sessionmaker  # noqa: E402
 
 
@@ -70,31 +73,9 @@ def import_sample(db, sd: dict, language_id: int | None, analyses_dir: Path) -> 
     return sample.id, analysis_id_map
 
 
-def import_shadowing_media(db, md: dict, user_id: int) -> None:
-    media = ShadowingMedia(
-        user_id=user_id, original_filename=md.get("originalFilename"), file_size_bytes=md.get("fileSizeBytes"),
-        fingerprint=md.get("fingerprint", ""), duration_ms=md.get("durationMs"), sample_rate_hz=md.get("sampleRateHz"),
-        channels=md.get("channels"), sentence_silence_ms=md.get("sentenceSilenceMs"), chapter_silence_ms=md.get("chapterSilenceMs"),
-    )
-    db.add(media)
-    db.flush()
-
-    # `id`/`parentId` in the export are local sequence numbers scoped to this
-    # media's own segment list (see export_shadowing_segment) — resolve
-    # chapters (parentId is null) before their child sentences so parent FKs
-    # always point at an already-inserted row.
-    segments = md.get("segments") or []
-    local_to_db_id: dict[int, int] = {}
-    for sd in sorted(segments, key=lambda s: s.get("parentId") is not None):
-        seg = ShadowingSegment(
-            media_id=media.id, kind=sd.get("kind", "sentence"),
-            parent_segment_id=local_to_db_id.get(sd["parentId"]) if sd.get("parentId") is not None else None,
-            order_index=sd.get("orderIndex", 0), start_ms=sd.get("startMs", 0), end_ms=sd.get("endMs", 0),
-            text=sd.get("text"), done=bool(sd.get("done")),
-        )
-        db.add(seg)
-        db.flush()
-        local_to_db_id[sd["id"]] = seg.id
+# import_shadowing_media used to be here. Shadowing moved to the `shadow`
+# service with its own database (zone-isolation task 3), so this tool — which
+# rebuilds PHONEXA's database — can neither read nor write those rows.
 
 
 def import_user(db, name: str, users_dir: Path) -> None:
@@ -109,18 +90,28 @@ def import_user(db, name: str, users_dir: Path) -> None:
         for key, value in settings.items():
             db.add(Setting(user_id=user.id, key=key, value=value))
 
-    shadowing_path = user_dir / "shadowing.json"
-    if shadowing_path.exists():
-        for md in json.loads(shadowing_path.read_text()):
-            import_shadowing_media(db, md, user.id)
+    # A pre-split shadowing.json may still be sitting in the export dir; it
+    # is deliberately ignored. Those rows belong to the `shadow` database now
+    # and are restored from the backup service's dump of it, not from here.
 
 
 def import_all(export_dir: Path) -> dict:
     Session = get_sessionmaker()
     with Session() as db:
         db.execute(text(
+            # shadowing_media/shadowing_segments are gone from this list:
+            # they are not in this database any more (zone-isolation task 3).
+            #
+            # READ THIS BEFORE RUNNING THIS TOOL. `users ... RESTART IDENTITY`
+            # hands every profile a NEW id, and shadow's
+            # shadowing_media.user_id refers to the old ones with no foreign
+            # key to stop it (D42). Before the split, CASCADE deleted the
+            # shadowing rows along with the users and the rebuild was
+            # self-consistent; now it silently orphans every shadowing media
+            # row instead. Re-import phonexa only alongside a matching
+            # restore of the `shadow` database, or re-point user_id by hand.
             "TRUNCATE languages, samples, sample_analyses, vowels, tokens, "
-            "users, settings, shadowing_media, shadowing_segments RESTART IDENTITY CASCADE"
+            "users, settings RESTART IDENTITY CASCADE"
         ))
 
         index = json.loads((export_dir / "index.json").read_text()) if (export_dir / "index.json").exists() else []
