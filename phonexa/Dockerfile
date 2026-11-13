@@ -1,0 +1,36 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Backend
+COPY formanter.py shadowing.py .
+COPY db/ ./db/
+COPY alembic.ini .
+COPY alembic/ ./alembic/
+COPY scripts/ ./scripts/
+
+# Frontend assets
+COPY index.html editor.html debug.html shadow.html praat.html sounds.html tokens.html drill.html settings.html consonants.html processor.js ./
+COPY js/ ./js/
+COPY css/ ./css/
+COPY lang/ ./lang/
+
+RUN chmod +x /app/scripts/docker-entrypoint.sh
+
+EXPOSE 5050
+
+# Entrypoint applies Alembic migrations, then execs CMD.
+ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
+CMD ["python", "formanter.py"]

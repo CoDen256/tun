@@ -1,0 +1,2191 @@
+"""
+formanter.py
+============
+Flask app serving both the original realtime/Praat formant pipeline below
+(unchanged since this file was still called analyze_server.py — never touch
+this section without explicit instruction) and the DB-backed REST API for
+languages/samples/tokens/vowels/users/settings/Formant-Lab ingest/YouTube
+extraction added later (see db/models.py's docstring for the schema
+rationale, and this file's own later sections for the route list).
+
+Realtime/Praat pipeline (frozen; dual-ceiling Praat formant tracker)
+---------------------------------------------------------------------
+HTTP   :5050  —  /ping  /frames  /debug
+Stream :5050  —  /stream (flask-sock WebSocket on the SAME port/process —
+                  there is no separate :5051 server; an older revision of
+                  this file ran the stream on its own `websockets`-library
+                  port, and some comments/commit messages elsewhere still
+                  say ":5051" out of habit from that era)
+
+Algorithm (see ``_run_praat_analysis`` for the full pipeline)
+--------------------------------------------------------------
+1. Run Burg LPC with two ceiling configs:
+     SCAN (wide ceiling, many poles)  — primary, handles all vowels
+     BACK (narrow ceiling, 2 poles)   — back-vowel disambiguation
+2. Prefer BACK when its F2 is well below ceiling AND substantially lower
+   than SCAN's F2 (F3-as-F2 confusion fix).
+3. Phantom-resonance fix: close front vowels (/i/, /y/) sometimes produce
+   a spurious LPC pole between F1 and the real F2; re-scan to skip it.
+4. Continuity: un-swap F1/F2 if tracks cross between frames.
+5. Stream only: server-side sliding median (JS-style rounding to match browser).
+
+Stream frame states
+--------------------
+A  below rms_floor  — Praat skipped; only {t_ms, voiced, rms, is_above_rms}
+B  above rms_floor, no valid formants — all Praat outputs included for diagnostics
+C  voiced — all fields populated including f1_median / f2_median
+
+Install:  pip install -r requirements.txt  (flask, flask-sock, parselmouth,
+          numpy, SQLAlchemy/psycopg2/alembic, yt-dlp — see requirements.txt)
+Optional (for /transcribe): a reachable smia — set SMIA_BASE_URL / SMIA_AUTH_TOKEN
+          (transcription is proxied to smia's /stt; no local speech model)
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import os
+import tempfile
+from collections import deque
+from dataclasses import dataclass, field
+
+import numpy as np
+import parselmouth
+from parselmouth.praat import call
+
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+from flask_sock import Sock
+
+app = Flask(__name__)
+CORS(app)
+sock = Sock(app)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Constants
+# ══════════════════════════════════════════════════════════════════════════════
+
+F1_VALID_RANGE      = (150, 1100)   # Hz — accepted range after Praat
+F2_VALID_RANGE      = (400, 3200)   # Hz
+SEGMENT_STEP_MS  = 10    # ms — step between segment analyses
+SEGMENT_SAMPLES  = 4096  # samples per segment — ~93 ms at 44 100 Hz
+
+# Legacy FRONT config shown in /analyze-debug for comparison only
+_DEBUG_LEGACY_FRONT_CFG = dict(
+    time_step=0.010, max_number_of_formants=3,
+    maximum_formant=4200.0, window_length=0.025, pre_emphasis_from=50.0,
+)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Configuration
+# ══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class ConnConfig:
+    """
+    All tunable analysis parameters for one connection or request.
+
+    HTTP endpoints use defaults.  The debug page sends ``{type:'config', …}``
+    WebSocket messages to change parameters live.
+
+    Field groups
+    ~~~~~~~~~~~~
+    SCAN / BACK     → Praat ``to_formant_burg()`` kwargs
+    back_*          → dual-ceiling selection criterion
+    rms_floor       → energy gate (0 = disabled)
+    median_n        → sliding-median window size (WS only)
+    """
+    # ── SCAN (primary analysis) ───────────────────────────────────────────────
+    max_f:        float = 5000
+    n_formants:   int   = 5
+    window_ms:    float = 25
+    pre_emphasis: float = 50
+
+    # ── BACK (back-vowel disambiguation) ─────────────────────────────────────
+    back_ceiling:       float = 1800
+    back_ceiling_ratio: float = 0.95
+    back_front_ratio:   float = 0.75
+
+    # ── Energy gate ──────────────────────────────────────────────────────────
+    rms_floor: float = 0.005   # RMS threshold; 0 = gate disabled
+
+    # ── Smoothing ────────────────────────────────────────────────────────────
+    median_n: int = 5
+
+    # ── Segment layout (/frames only) ────────────────────────────────────────
+    single_segment:  bool = True   # True = whole slice → one frame
+    segment_samples: int  = 4096   # window size when single_segment=False
+    segment_step_ms: int  = 10     # step in ms when single_segment=False
+
+    def update_from_dict(self, updates: dict) -> None:
+        """Apply *updates*, coercing each value to the field's declared type."""
+        for name, value in updates.items():
+            if hasattr(self, name):
+                try:
+                    current = getattr(self, name)
+                    if isinstance(current, bool):
+                        setattr(self, name, bool(value))
+                    else:
+                        setattr(self, name, type(current)(value))
+                except (TypeError, ValueError):
+                    pass
+
+    def _shared_burg_kwargs(self) -> dict:
+        return dict(time_step=0.010, window_length=self.window_ms / 1000,
+                    pre_emphasis_from=self.pre_emphasis)
+
+    def scan_burg_kwargs(self) -> dict:
+        return dict(**self._shared_burg_kwargs(),
+                    max_number_of_formants=self.n_formants,
+                    maximum_formant=self.max_f)
+
+    def back_burg_kwargs(self) -> dict:
+        return dict(**self._shared_burg_kwargs(),
+                    max_number_of_formants=2,
+                    maximum_formant=self.back_ceiling)
+
+    def phantom_scan_kwargs(self) -> dict:
+        return dict(**self._shared_burg_kwargs(),
+                    max_number_of_formants=max(5, self.n_formants),
+                    maximum_formant=self.max_f)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Per-frame continuity state
+# ══════════════════════════════════════════════════════════════════════════════
+
+class ConnState:
+    """
+    Prevents F1/F2 track swaps between consecutive frames.
+    If swapping the current values reduces distance to the previous frame,
+    they are swapped before returning.
+    No EMA — smoothing is done separately via sliding median.
+    """
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self.previous_f1: float | None = None
+        self.previous_f2: float | None = None
+
+    def apply_continuity(self, f1: float, f2: float) -> tuple[int, int]:
+        if self.previous_f1 is not None:
+            dist_as_is   = abs(f1 - self.previous_f1) + abs(f2 - self.previous_f2)
+            dist_swapped = abs(f2 - self.previous_f1) + abs(f1 - self.previous_f2)
+            if dist_swapped < dist_as_is:
+                f1, f2 = f2, f1
+        self.previous_f1, self.previous_f2 = f1, f2
+        return round(f1), round(f2)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Analysis result — all intermediate values from one window
+# ══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class FormantAnalysis:
+    """
+    Full diagnostic record of one analysis window.
+    Produced by ``_run_praat_analysis``; continuity and median are applied
+    separately so callers (WS vs HTTP) can handle them differently.
+    """
+    sound_duration_ms:       float
+    is_valid_sound_duration: bool
+
+    # Raw Praat outputs from each config
+    f1_back:             float | None = None
+    f2_back:             float | None = None
+    f1_scan:             float | None = None
+    f2_scan:             float | None = None
+
+    # Dual-ceiling selection
+    used_back_config:    bool | None  = None
+
+    # After selection + phantom fix (pre-continuity)
+    f1_raw:              float | None = None
+    f2_raw:              float | None = None
+    phantom_fix_applied: bool | None  = None
+
+    # Range validity
+    is_valid_f1_range:   bool | None  = None
+    is_valid_f2_range:   bool | None  = None
+
+    # Final summary (continuity and median applied by callers)
+    voiced: bool = False
+
+
+@dataclass
+class SegmentInfo:
+    """Positional and size metadata for one analysis segment."""
+    at_ms:       int
+    at:          int
+    index:       int
+    samples:     int
+    duration_ms: float
+    step_ms:     int
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Analysis state — shared by /frames and /stream
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Analysis state — shared by /frames and /stream
+# ══════════════════════════════════════════════════════════════════════════════
+
+class AnalysisState:
+    """
+    Continuity correction + median windows for one analysis session.
+    Used by both /frames (one instance per request) and StreamingSession
+    (one instance per WebSocket connection).
+    apply_voiced() is the single call that advances both state machines.
+    """
+
+    def __init__(self, median_n: int = 5) -> None:
+        self.continuity = ConnState()
+        self.median_f1  = deque(maxlen=median_n)
+        self.median_f2  = deque(maxlen=median_n)
+
+    def apply_voiced(self, f1_raw: float, f2_raw: float) -> tuple[int, int, int, int]:
+        """
+        Apply continuity correction then update the median window.
+        Returns (f1, f2, f1_median, f2_median).
+        """
+        f1, f2 = self.continuity.apply_continuity(f1_raw, f2_raw)
+        self.median_f1.append(f1)
+        self.median_f2.append(f2)
+        return f1, f2, _js_median(self.median_f1), _js_median(self.median_f2)
+
+    def resize_median(self, new_n: int) -> None:
+        if self.median_f1.maxlen != new_n:
+            self.median_f1 = deque(self.median_f1, maxlen=new_n)
+            self.median_f2 = deque(self.median_f2, maxlen=new_n)
+
+    def reset(self) -> None:
+        self.continuity.reset()
+        self.median_f1.clear()
+        self.median_f2.clear()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Per-connection streaming session (/stream WebSocket)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class StreamingSession:
+    """
+    All mutable state for one WebSocket connection.
+    The ring buffer accumulates incoming chunks; every SEGMENT_STEP_MS of new
+    audio, analyse_segment_to_frame() is called with the ring content and the
+    session's AnalysisState.
+    """
+
+    def __init__(self) -> None:
+        self.config      = ConnConfig()
+        self.sample_rate = 44_100
+        self._init_state()
+
+    def _init_state(self) -> None:
+        self.ring                   = deque(maxlen=SEGMENT_SAMPLES)
+        self.total_samples_received = 0
+        self.segment_index          = 0
+        self.analysis_state         = AnalysisState(self.config.median_n)
+
+    def reinit_stream(self, sample_rate: int) -> None:
+        self.sample_rate = sample_rate
+        self._init_state()
+
+    def reset_stream(self) -> None:
+        self.ring.clear()
+        self.total_samples_received = 0
+        self.segment_index          = 0
+        self.analysis_state.reset()
+
+    def update_config(self, updates: dict) -> None:
+        old_n = self.config.median_n
+        self.config.update_from_dict(updates)
+        new_n = self.config.median_n
+        if new_n != old_n:
+            self.analysis_state.resize_median(new_n)
+        self.analysis_state.continuity.reset()
+
+    def accept_chunk(self, samples: np.ndarray) -> None:
+        self.ring.extend(samples)
+        self.total_samples_received += len(samples)
+
+    @property
+    def segment_at_ms(self) -> int:
+        """End position of the latest segment in ms (from stream start)."""
+        return round(self.total_samples_received / self.sample_rate * 1000)
+
+    @property
+    def segment_step(self) -> int:
+        return max(1, int(self.sample_rate * SEGMENT_STEP_MS / 1000))
+
+    @property
+    def ring_is_full(self) -> bool:
+        return len(self.ring) >= SEGMENT_SAMPLES
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Audio helpers
+# ══════════════════════════════════════════════════════════════════════════════
+
+def decode_int16_pcm(raw_bytes: bytes) -> np.ndarray:
+    """Int16 PCM bytes → float64 samples in [-1, 1]."""
+    return np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float64) / 32768.0
+
+
+# Magic-byte prefixes for audio container formats
+_AUDIO_FILE_MAGIC = {b'RIFF': '.wav', b'FORM': '.aiff', b'fLaC': '.flac', b'OggS': '.ogg'}
+
+
+def decode_audio(
+        audio_data,
+        sample_rate_hint: int = 44_100,
+) -> tuple[np.ndarray, int]:
+    """
+    Decode audio to (float64 samples, sample_rate).
+
+    audio_data — bytes OR a Flask upload object (has a .read() method).
+
+    Detection by magic bytes:
+      RIFF/FORM/fLaC/OggS/ID3/\xff\xfb  →  audio file format
+        Written to a temp file, decoded by parselmouth (supports WAV,
+        AIFF, FLAC, MP3, OGG and other formats parselmouth can read).
+      Anything else  →  raw int16 PCM
+        Decoded directly; sample_rate = sample_rate_hint (from config).
+    """
+    raw: bytes = audio_data.read() if hasattr(audio_data, 'read') else bytes(audio_data)
+    magic  = raw[:4]
+    suffix = _AUDIO_FILE_MAGIC.get(magic)
+    if suffix is None and (magic[:3] == b'ID3'
+                           or magic[:2] in (b'\xff\xfb', b'\xff\xfa', b'\xff\xf3')):
+        suffix = '.mp3'
+
+    if suffix:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(raw)
+            tmp_path = tmp.name
+        try:
+            snd = parselmouth.Sound(tmp_path)
+            return snd.values[0].astype(np.float64), int(snd.sampling_frequency)
+        finally:
+            os.unlink(tmp_path)
+
+    # Raw int16 PCM — sample_rate must be known by the caller
+    return decode_int16_pcm(raw).astype(np.float64), sample_rate_hint
+
+
+def parse_wav_or_pcm(raw_bytes: bytes) -> tuple[np.ndarray, int]:
+    """Legacy alias — used by /analyze-debug."""
+    return decode_audio(raw_bytes, sample_rate_hint=44_100)
+
+
+def trim_to_slice_fraction(samples: np.ndarray, start: float, end: float) -> np.ndarray:
+    n = len(samples)
+    return samples[int(start * n):int(end * n)]
+
+
+def read_slice_fraction_headers(http_request) -> tuple[float, float]:
+    start = float(http_request.headers.get('X-Slice-Start', 0))
+    end   = float(http_request.headers.get('X-Window-End',   1))
+    return start, end
+
+
+def compute_rms(samples: np.ndarray) -> float:
+    return float(np.sqrt(np.mean(samples ** 2)))
+
+
+def make_praat_sound(samples: np.ndarray, sample_rate: float) -> parselmouth.Sound:
+    return parselmouth.Sound(samples, sampling_frequency=float(sample_rate))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Praat interface
+# ══════════════════════════════════════════════════════════════════════════════
+
+def extract_formants_at_midpoint(
+        sound: parselmouth.Sound,
+        burg_kwargs: dict,
+) -> tuple[float | None, float | None]:
+    """
+    Run Burg LPC; return (F1, F2) at the sound midpoint.
+    F1 is range-checked; F2 is left unchecked here so phantom values
+    can reach ``fix_phantom_resonance`` intact.
+    Returns (None, None) on NaN or F1 out of range.
+    """
+    try:
+        track       = sound.to_formant_burg(**burg_kwargs)
+        midpoint    = sound.duration / 2
+        f1          = track.get_value_at_time(1, midpoint)
+        f2          = track.get_value_at_time(2, midpoint)
+        if math.isnan(f1) or math.isnan(f2):
+            return None, None
+        if not (F1_VALID_RANGE[0] <= f1 <= F1_VALID_RANGE[1]):
+            return None, None
+        return f1, f2
+    except Exception:
+        return None, None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Algorithm
+# ══════════════════════════════════════════════════════════════════════════════
+
+def select_best_formants(
+        f1_back: float | None, f2_back: float | None,
+        f1_scan: float | None, f2_scan: float | None,
+        config:  ConnConfig,
+) -> tuple[float | None, float | None, bool | None]:
+    """
+    Dual-ceiling selection.  Returns (f1, f2, used_back_config).
+    ``used_back_config`` is None when both configs failed.
+
+    NOTE: the comparisons must stay inside the ``and`` chain so Python's
+    short-circuit evaluation skips them when ``f2_back`` is None.
+    Extracting them into named variables would cause a TypeError.
+    """
+    back_has_result = f1_back is not None and f2_back is not None
+    scan_has_result = f1_scan is not None and f2_scan is not None
+
+    prefer_back = (
+            back_has_result and scan_has_result
+            and f2_back < config.back_ceiling * config.back_ceiling_ratio
+            and f2_back < f2_scan * config.back_front_ratio
+    )
+
+    if prefer_back:
+        return f1_back, f2_back, True
+    elif scan_has_result:
+        return f1_scan, f2_scan, False
+    elif back_has_result:
+        return f1_back, f2_back, True   # last-resort fallback
+    else:
+        return None, None, None
+
+
+def fix_phantom_resonance(
+        f1: float, f2: float,
+        sound: parselmouth.Sound,
+        config: ConnConfig,
+) -> tuple[float, float]:
+    """
+    Correct a phantom LPC pole for close front vowels.
+    Signature: F1 < 350 Hz AND F2/F1 < 1.7.
+    Re-scans with more poles and returns the first candidate > F1×2
+    within F2_VALID_RANGE.  Returns (f1, f2) unchanged on failure.
+    """
+    if not (f1 < 350 and (f2 / f1) < 1.7):
+        return f1, f2
+    try:
+        track    = sound.to_formant_burg(**config.phantom_scan_kwargs())
+        midpoint = sound.duration / 2
+        for pole in range(2, config.phantom_scan_kwargs()['max_number_of_formants'] + 2):
+            candidate = track.get_value_at_time(pole, midpoint)
+            if (not math.isnan(candidate)
+                    and candidate > f1 * 2.0
+                    and F2_VALID_RANGE[0] <= candidate <= F2_VALID_RANGE[1]):
+                return f1, candidate
+    except Exception:
+        pass
+    return f1, f2
+
+
+def _run_praat_analysis(snd: parselmouth.Sound, cfg: ConnConfig) -> FormantAnalysis:
+    """
+    Full Praat pipeline for one analysis window.  Returns all intermediate
+    values as a ``FormantAnalysis``.  Does NOT apply continuity or median —
+    those are applied separately by the caller.
+    """
+    duration_ms    = round(snd.duration * 1000, 1)
+    valid_duration = snd.duration >= cfg.window_ms / 1000
+
+    if not valid_duration:
+        return FormantAnalysis(sound_duration_ms=duration_ms,
+                               is_valid_sound_duration=False)
+
+    f1_back, f2_back = extract_formants_at_midpoint(snd, cfg.back_burg_kwargs())
+    f1_scan, f2_scan = extract_formants_at_midpoint(snd, cfg.scan_burg_kwargs())
+
+    f1_raw, f2_raw, used_back = select_best_formants(
+        f1_back, f2_back, f1_scan, f2_scan, cfg
+    )
+
+    if f1_raw is None:
+        # Both configs failed — return State-B base (raw Praat values exposed)
+        return FormantAnalysis(
+            sound_duration_ms=duration_ms, is_valid_sound_duration=True,
+            f1_back=f1_back, f2_back=f2_back,
+            f1_scan=f1_scan, f2_scan=f2_scan,
+            used_back_config=used_back,
+        )
+
+    f1_before, f2_before = f1_raw, f2_raw
+    f1_raw, f2_raw       = fix_phantom_resonance(f1_raw, f2_raw, snd, cfg)
+    phantom_applied      = (f1_raw != f1_before or f2_raw != f2_before)
+
+    is_valid_f1 = F1_VALID_RANGE[0] <= f1_raw <= F1_VALID_RANGE[1]
+    is_valid_f2 = F2_VALID_RANGE[0] <= f2_raw <= F2_VALID_RANGE[1]
+
+    return FormantAnalysis(
+        sound_duration_ms=duration_ms, is_valid_sound_duration=True,
+        f1_back=f1_back, f2_back=f2_back,
+        f1_scan=f1_scan, f2_scan=f2_scan,
+        used_back_config=used_back,
+        f1_raw=f1_raw,   f2_raw=f2_raw,
+        phantom_fix_applied=phantom_applied,
+        is_valid_f1_range=is_valid_f1,
+        is_valid_f2_range=is_valid_f2,
+        voiced=(is_valid_f1 and is_valid_f2),
+    )
+
+
+
+def _js_median(values: deque) -> int:
+    """
+    Sliding median matching JavaScript ``Math.round()`` rounding:
+    halfway values always round up (0.5 → 1), unlike Python's banker's rounding.
+    """
+    s = sorted(values)
+    m = len(s) // 2
+    return s[m] if len(s) % 2 else int((s[m - 1] + s[m]) / 2 + 0.5)
+
+
+def _nullable_round(value: float | None, ndigits: int = 1) -> float | None:
+    return None if value is None else round(value, ndigits)
+
+
+def _build_silent_frame(seg: SegmentInfo, rms: float) -> dict:
+    """State A: below rms_floor — Praat not called."""
+    return {
+        'segment': {
+            'at_ms':       seg.at_ms,
+            'at':          seg.at,
+            'index':       seg.index,
+            'samples':     seg.samples,
+            'duration_ms': seg.duration_ms,
+            'step_ms':     seg.step_ms,
+        },
+        'voiced':       False,
+        'rms':          rms,
+        'is_above_rms': False,
+    }
+
+
+def _build_analysis_frame(
+        seg: SegmentInfo, rms: float, analysis: FormantAnalysis,
+        f1: int | None, f2: int | None, f1_median: int | None,
+        f2_median: int | None, median_n: int,
+) -> dict:
+    """State B (unvoiced) or State C (voiced): Praat was called."""
+    return {
+        'segment': {
+            'at_ms':            seg.at_ms,
+            'at':               seg.at,
+            'index':            seg.index,
+            'samples':          seg.samples,
+            'duration_ms':      seg.duration_ms,
+            'step_ms':          seg.step_ms,
+            'is_valid_duration': analysis.is_valid_sound_duration,
+        },
+        'voiced':               analysis.voiced,
+        'rms':                  rms,
+        'is_above_rms':         True,
+        'f1_back':              _nullable_round(analysis.f1_back),
+        'f2_back':              _nullable_round(analysis.f2_back),
+        'f1_scan':              _nullable_round(analysis.f1_scan),
+        'f2_scan':              _nullable_round(analysis.f2_scan),
+        'used_back_config':     analysis.used_back_config,
+        'phantom_fix_applied':  analysis.phantom_fix_applied,
+        'f1_raw':               _nullable_round(analysis.f1_raw),
+        'f2_raw':               _nullable_round(analysis.f2_raw),
+        'is_valid_f1_range':    analysis.is_valid_f1_range,
+        'is_valid_f2_range':    analysis.is_valid_f2_range,
+        'f1': f1, 'f2': f2, 'f1_median': f1_median,
+        'f2_median': f2_median, 'median_n': median_n,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Shared analysis pipeline — used by /frames and /stream
+# ══════════════════════════════════════════════════════════════════════════════
+
+def analyse_segment_to_frame(
+        segment: np.ndarray, sample_rate: float,
+        seg: SegmentInfo, config: ConnConfig, state: AnalysisState,
+) -> dict:
+    """Full analysis pipeline: audio segment → rich frame dict."""
+    rms = round(compute_rms(segment), 6)
+    if config.rms_floor > 0 and rms < config.rms_floor:
+        return _build_silent_frame(seg, rms)
+    sound    = make_praat_sound(segment, sample_rate)
+    analysis = _run_praat_analysis(sound, config)
+    f1 = f2 = f1_median = f2_median = None
+    if analysis.voiced:
+        f1, f2, f1_median, f2_median = state.apply_voiced(
+            analysis.f1_raw, analysis.f2_raw
+        )
+    return _build_analysis_frame(
+        seg=seg, rms=rms, analysis=analysis,
+        f1=f1, f2=f2, f1_median=f1_median, f2_median=f2_median,
+        median_n=config.median_n,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HTTP endpoints
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/ping')
+def ping():
+    return jsonify({'ok': True})
+
+
+@app.route('/frames', methods=['POST'])
+def http_frames():
+    """
+    Whole-file rich frame analysis — the file-equivalent of /stream.
+
+    Slides a SEGMENT_SAMPLES window over the audio (or a slice of it)
+    and returns a rich frame per step.  Each frame has the same structure as
+    a /stream frame, enabling shared client-side rendering.
+
+    Request  (multipart/form-data)
+    --------------------------------
+    file          — audio file (any format supported by parselmouth)
+    config        — JSON ConnConfig overrides  (optional)
+    window_start  — slice start, 0.0–1.0       (optional, default 0.0)
+    window_end    — slice end,   0.0–1.0       (optional, default 1.0)
+
+    Response
+    --------
+    {
+      frames:          [{t_ms, voiced, rms, is_above_rms, f1, f2,
+                         f1_median, f2_median, f1_raw, f2_raw, ...}],
+      duration_ms:     float,   full audio duration in ms
+      sliced_from_ms:  float,   slice start position in the full audio
+      sliced_to_ms:    float,   slice end   position in the full audio
+      window_start:    float,
+      window_end:      float,
+    }
+
+    The t_ms field in each frame is milliseconds from the slice start (0 at
+    the first analysed window), consistent with t_ms in /stream frames.
+    """
+    uploaded_file = request.files.get('file')
+    if not uploaded_file:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    # Extract /frames-specific params before building ConnConfig
+    # (segment_samples / segment_step_ms are not ConnConfig fields)
+    try:
+        config_dict = json.loads(request.form.get('config', '{}'))
+    except Exception:
+        config_dict = {}
+    sample_rate_hint    = int(config_dict.pop('sample_rate',    44_100))
+    print(config_dict)
+    config = ConnConfig()
+    config.update_from_dict(config_dict)
+
+    slice_start = float(request.form.get('slice_start', 0.0))
+    slice_end   = float(request.form.get('slice_end',   1.0))
+
+    try:
+        all_samples, sample_rate = decode_audio(uploaded_file, sample_rate_hint)
+        audio_duration_ms = round(len(all_samples) / sample_rate * 1000, 1)
+
+        # Apply optional slice
+        n_total         = len(all_samples)
+        slice_start_idx = int(n_total * slice_start)
+        slice_end_idx   = int(n_total * slice_end)
+        sliced          = all_samples[slice_start_idx:slice_end_idx]
+        slice_start_ms  = round(slice_start * audio_duration_ms, 1)
+        slice_end_ms    = round(slice_end   * audio_duration_ms, 1)
+        slice_samples   = len(sliced)
+
+        # single_segment=True: whole slice → one frame. False: sliding window
+        if config.single_segment:
+            seg_n = slice_samples; seg_step = slice_samples
+            step_ms = round(slice_samples / sample_rate * 1000)
+        else:
+            seg_n = config.segment_samples
+            seg_step = max(1, round(sample_rate * config.segment_step_ms / 1000))
+            step_ms  = config.segment_step_ms
+        state = AnalysisState(config.median_n)
+        frames: list[dict] = []
+        segment_idx = 0
+        for cursor in range(seg_n, slice_samples + 1, seg_step):
+            audio_seg = sliced[cursor - seg_n: cursor]
+            seg_info  = SegmentInfo(
+                at_ms=round(cursor / sample_rate * 1000), at=cursor,
+                index=segment_idx, samples=seg_n,
+                duration_ms=round(seg_n / sample_rate * 1000, 1),
+                step_ms=step_ms,
+            )
+            try:
+                frame = analyse_segment_to_frame(
+                    segment=audio_seg, sample_rate=sample_rate,
+                    seg=seg_info, config=config, state=state,
+                )
+            except Exception:
+                frame = _build_silent_frame(seg_info, 0.0)
+            frames.append(frame)
+            segment_idx += 1
+
+        return jsonify({
+            'audio_duration_ms': audio_duration_ms,
+            'slice': {
+                'start':       slice_start,
+                'end':         slice_end,
+                'start_ms':    slice_start_ms,
+                'end_ms':      slice_end_ms,
+                'duration_ms': round(slice_end_ms - slice_start_ms, 1),
+                'samples':     slice_samples,
+            },
+            'frames': frames,
+        })
+    except Exception as error:
+        return jsonify({'error': str(error)}), 500
+
+
+@app.route('/debug', methods=['POST'])
+def http_debug():
+    """
+    Diagnostic endpoint — raw Praat output from FRONT, BACK, SCAN configs.
+
+    Accepts the same multipart input as /frames:
+      file        — audio file or raw int16 PCM
+      config      — JSON with optional slice_start (default 0.15)
+                    and slice_end (default 0.85) as extra keys
+
+    Intentionally does NOT use the shared analysis pipeline — all Praat calls
+    are explicit so the raw diagnostic output is always visible.
+    """
+    uploaded_file = request.files.get('file')
+    if not uploaded_file:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    try:
+        config_dict = json.loads(request.form.get('config', '{}'))
+    except Exception:
+        config_dict = {}
+    sample_rate_hint = int(config_dict.pop('sample_rate', 44_100))
+    slice_start      = float(config_dict.pop('slice_start', 0.15))
+    slice_end        = float(config_dict.pop('slice_end',   0.85))
+
+    try:
+        audio_samples, sample_rate = decode_audio(uploaded_file, sample_rate_hint)
+        analysis_samples           = trim_to_slice_fraction(audio_samples, slice_start, slice_end)
+        sound       = make_praat_sound(analysis_samples, sample_rate)
+        midpoint    = sound.duration / 2
+        default_cfg = ConnConfig()
+        configs_out = {}
+
+        for name, burg_kwargs in [
+            ('FRONT', _DEBUG_LEGACY_FRONT_CFG),
+            ('BACK',  default_cfg.back_burg_kwargs()),
+            ('SCAN',  default_cfg.scan_burg_kwargs()),
+        ]:
+            try:
+                track  = sound.to_formant_burg(**burg_kwargs)
+                max_n  = burg_kwargs['max_number_of_formants'] + 1
+                values = {}
+                for pole in range(1, max_n + 1):
+                    freq = track.get_value_at_time(pole, midpoint)
+                    try:
+                        bw = track.get_bandwidth_at_time(pole, midpoint)
+                        bw_val = None if math.isnan(bw) else round(bw, 1)
+                    except Exception:
+                        bw_val = None
+                    values[f'F{pole}']  = None if math.isnan(freq) else round(freq, 1)
+                    values[f'BW{pole}'] = bw_val
+                configs_out[name] = {
+                    'ceiling':  burg_kwargs['maximum_formant'],
+                    'n':        burg_kwargs['max_number_of_formants'],
+                    'formants': values,
+                }
+            except Exception as error:
+                configs_out[name] = {'error': str(error)}
+
+        return jsonify({
+            'sample_rate':   sample_rate,
+            'duration_ms':   round(len(analysis_samples) / sample_rate * 1000),
+            'analysis_t_ms': round(midpoint * 1000),
+            'slice_start':   slice_start,
+            'slice_end':     slice_end,
+            'configs':       configs_out,
+        })
+    except Exception as error:
+        return jsonify({'error': str(error)}), 500
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Praat-faithful static analysis (editor token audio — NOT the live practice
+# pipeline above). Deliberately bypasses dual-ceiling selection, continuity
+# correction, phantom-resonance fixing and median smoothing entirely: those
+# exist to stabilise a noisy real-time microphone stream, and were fighting
+# the editor's own parameter fields in confusing ways on clean, static
+# recordings. This calls parselmouth's bare to_formant_burg / to_pitch /
+# to_spectrogram — the exact same defaults Praat itself ships with — and
+# returns every native analysis frame verbatim, the way Praat's own Formant
+# listing / Pitch listing / spectrogram would.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/analyze-praat', methods=['POST'])
+def http_analyze_praat():
+    """
+    Request (multipart/form-data)
+    ------------------------------
+    file    — audio file
+    config  — JSON, all optional (Praat's own dialog defaults otherwise):
+              max_number_of_formants (5), maximum_formant (5500),
+              window_length (0.025 s), pre_emphasis_from (50 Hz),
+              formant_time_step (0 = auto, i.e. window_length / 4),
+              pitch_floor (75), pitch_ceiling (600),
+              pitch_time_step (0 = auto)
+
+    Response
+    --------
+    {
+      duration_ms,
+      formants:    [{t_ms, f1..f5, b1..b5}],   // null where Praat has no value
+      pitch:       [{t_ms, f0}],                // f0 null where unvoiced
+      spectrogram: {times_ms, freqs_hz, power_db},  // power_db[time][freq]
+    }
+    """
+    uploaded_file = request.files.get('file')
+    if not uploaded_file:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    try:
+        config = json.loads(request.form.get('config', '{}'))
+    except Exception:
+        config = {}
+
+    try:
+        samples, sample_rate = decode_audio(uploaded_file)
+        result = run_full_praat_analysis(samples, sample_rate, config)
+        return jsonify(result)
+    except Exception as error:
+        return jsonify({'error': str(error)}), 500
+
+
+def run_full_praat_analysis(samples: np.ndarray, sample_rate: float, config: dict) -> dict:
+    """The literal-Praat-defaults analysis /analyze-praat exposes, factored out
+    so /api/v1/samples/<id>/analyze (Phase 5) can run the exact same pipeline
+    server-side against a persisted sample's own stored audio, not just a
+    client-uploaded file."""
+    max_number_of_formants = float(config.get('max_number_of_formants', 5))
+    maximum_formant         = float(config.get('maximum_formant', 5500))
+    window_length           = float(config.get('window_length', 0.025))
+    pre_emphasis_from       = float(config.get('pre_emphasis_from', 50))
+    formant_time_step       = float(config.get('formant_time_step', 0)) or None
+    pitch_floor             = float(config.get('pitch_floor', 75))
+    pitch_ceiling           = float(config.get('pitch_ceiling', 600))
+    pitch_time_step         = float(config.get('pitch_time_step', 0)) or None
+
+    sound = make_praat_sound(samples, sample_rate)
+
+    formant = sound.to_formant_burg(
+        time_step=formant_time_step,
+        max_number_of_formants=max_number_of_formants,
+        maximum_formant=maximum_formant,
+        window_length=window_length,
+        pre_emphasis_from=pre_emphasis_from,
+    )
+    formants_out = []
+    for t in formant.xs():
+        row = {'t_ms': round(t * 1000, 1)}
+        for i in range(1, 6):
+            f = formant.get_value_at_time(i, t)
+            b = formant.get_bandwidth_at_time(i, t)
+            row[f'f{i}'] = None if math.isnan(f) else round(f, 1)
+            row[f'b{i}'] = None if math.isnan(b) else round(b, 1)
+        formants_out.append(row)
+
+    pitch = sound.to_pitch(time_step=pitch_time_step, pitch_floor=pitch_floor, pitch_ceiling=pitch_ceiling)
+    pitch_out = [
+        {'t_ms': round(t * 1000, 1), 'f0': None if freq <= 0 else round(float(freq), 1)}
+        for t, freq in zip(pitch.xs(), pitch.selected_array['frequency'])
+    ]
+
+    spectrogram = sound.to_spectrogram()
+    power_db = 10 * np.log10(np.maximum(spectrogram.values, 1e-20) / 4e-10)   # Praat's own dB reference (2e-5 Pa)²
+    spectrogram_out = {
+        'times_ms': [round(t * 1000, 1) for t in spectrogram.xs()],
+        'freqs_hz': [round(f, 1) for f in spectrogram.ys()],
+        'power_db': [[round(v, 1) for v in column] for column in power_db.T],   # → [time][freq]
+    }
+
+    return {
+        'duration_ms': round(sound.duration * 1000, 1),
+        'formants': formants_out,
+        'pitch': pitch_out,
+        'spectrogram': spectrogram_out,
+        'config': {
+            'max_number_of_formants': max_number_of_formants, 'maximum_formant': maximum_formant,
+            'window_length': window_length, 'pre_emphasis_from': pre_emphasis_from,
+            'pitch_floor': pitch_floor, 'pitch_ceiling': pitch_ceiling,
+        },
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Transcription — proxied to smia's POST /stt (stt-via-smia). phonexa runs no
+# speech-recognition model itself: smia owns the providers and their
+# credentials. smia's address and bearer token stay server-side — the browser
+# only ever talks to the two routes below, never to smia or a provider.
+# ══════════════════════════════════════════════════════════════════════════════
+
+import requests  # noqa: E402
+from urllib.parse import urlsplit  # noqa: E402
+
+SMIA_STT_TIMEOUT_SEC = 60
+SMIA_PROVIDERS_TIMEOUT_SEC = 5
+
+
+def _smia_config():
+    """(base_url, bearer_token) from the environment; token may be empty."""
+    return (
+        os.environ.get('SMIA_BASE_URL', 'http://smia-backend:5055').rstrip('/'),
+        os.environ.get('SMIA_AUTH_TOKEN', ''),
+    )
+
+
+def _smia_not_configured():
+    return jsonify({'error': 'Transcription is not configured (SMIA_AUTH_TOKEN is not set on the server)'}), 503
+
+
+def _smia_unreachable(base_url):
+    # Host only — never echo the token, and requests' own error text can carry
+    # more than the caller needs.
+    return jsonify({'error': f'smia not reachable at {urlsplit(base_url).netloc or base_url}'}), 503
+
+
+def _smia_error_response(resp):
+    """Relay a non-2xx smia answer to the browser without leaking credentials."""
+    if resp.status_code in (401, 403):
+        # Our own token was refused — not something the browser's user can fix,
+        # and a bare 401 here would read as phonexa's own login failing.
+        return jsonify({'error': "smia rejected phonexa's credentials (check SMIA_AUTH_TOKEN)"}), 502
+    try:
+        body = resp.json()
+    except ValueError:
+        body = {}
+    out = {'error': body.get('error') or f'smia returned HTTP {resp.status_code}'}
+    if 'available' in body:
+        out['available'] = body['available']
+    return jsonify(out), resp.status_code
+
+
+@app.route('/transcribe', methods=['POST'])
+def http_transcribe():
+    """
+    Speech-to-text via smia (POST /stt). Called once per sentence slice by the
+    shadowing page.
+
+    Request (multipart/form-data)
+    ------------------------------
+    file      — audio file
+    provider  — smia STT provider (e.g. 'hf_whisper'); smia requires one and
+                answers 400 with the available list when it is missing
+    language  — optional ISO 639-1 hint (e.g. 'sv'), forwarded to smia as
+                ``lang``; omitted when empty
+
+    Response
+    --------
+    { provider, text }   (text is '' when no speech was detected)
+    """
+    uploaded_file = request.files.get('file')
+    if not uploaded_file:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    base_url, token = _smia_config()
+    if not token:
+        return _smia_not_configured()
+
+    form = {}
+    provider = (request.form.get('provider') or '').strip()
+    if provider:
+        form['provider'] = provider
+    language = (request.form.get('language') or '').strip()
+    if language:
+        form['lang'] = language
+
+    try:
+        resp = requests.post(
+            f'{base_url}/stt',
+            headers={'Authorization': f'Bearer {token}'},
+            files={'audio': (uploaded_file.filename or 'slice.wav', uploaded_file.stream,
+                             uploaded_file.mimetype or 'application/octet-stream')},
+            data=form,
+            timeout=SMIA_STT_TIMEOUT_SEC,
+        )
+    except requests.RequestException:
+        return _smia_unreachable(base_url)
+
+    if not resp.ok:
+        return _smia_error_response(resp)
+    try:
+        body = resp.json()
+    except ValueError:
+        return jsonify({'error': 'smia returned an unreadable response'}), 502
+    return jsonify({'provider': body.get('provider', provider), 'text': body.get('text') or ''})
+
+
+@app.route('/transcribe/providers', methods=['GET'])
+def http_transcribe_providers():
+    """The speech-to-text providers smia currently offers: { providers: [name, ...] }."""
+    base_url, token = _smia_config()
+    if not token:
+        return _smia_not_configured()
+    try:
+        resp = requests.get(
+            f'{base_url}/providers',
+            headers={'Authorization': f'Bearer {token}'},
+            timeout=SMIA_PROVIDERS_TIMEOUT_SEC,
+        )
+    except requests.RequestException:
+        return _smia_unreachable(base_url)
+    if not resp.ok:
+        return _smia_error_response(resp)
+    try:
+        providers = resp.json().get('stt', [])
+    except (ValueError, AttributeError):
+        return jsonify({'error': 'smia returned an unreadable response'}), 502
+    return jsonify({'providers': providers})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# YouTube audio extraction — Formant Lab ingest-mode entry point. Shells out to
+# yt-dlp (which itself shells out to ffmpeg for the audio-extraction
+# postprocessing step — see the Dockerfile). Always argument-list subprocess
+# calls (never shell=True/string interpolation) since the URL is untrusted
+# user input reaching a shell-adjacent tool.
+# ══════════════════════════════════════════════════════════════════════════════
+
+import re          # noqa: E402
+import shutil      # noqa: E402
+import subprocess  # noqa: E402
+
+YOUTUBE_MAX_DURATION_SEC = 2 * 60 * 60  # ~2h cap — same unbounded-decode risk Shadowing hit, avoided up front
+
+
+@app.route('/api/v1/youtube-extract', methods=['POST'])
+def youtube_extract():
+    data = request.get_json(silent=True) or {}
+    url = (data.get('url') or '').strip()
+    if not re.match(r'^https?://', url):
+        return jsonify({'error': 'a valid http(s) URL is required'}), 400
+
+    try:
+        probe = subprocess.run(
+            ['yt-dlp', '-j', '--no-playlist', url],
+            capture_output=True, text=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Timed out fetching video info'}), 504
+    if probe.returncode != 0:
+        return jsonify({'error': 'Could not fetch video info: ' + (probe.stderr or '').strip()[:300]}), 400
+    try:
+        info = json.loads(probe.stdout)
+    except json.JSONDecodeError:
+        return jsonify({'error': 'Could not parse video info'}), 502
+    duration = info.get('duration')
+    if duration and duration > YOUTUBE_MAX_DURATION_SEC:
+        return jsonify({
+            'error': f'Video is {duration / 60:.0f} min — longer than the '
+                     f'{YOUTUBE_MAX_DURATION_SEC // 60} min cap for this feature',
+        }), 400
+
+    tmp_dir = tempfile.mkdtemp(prefix='ytaudio-')
+
+    @after_this_request
+    def _cleanup(response):
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return response
+
+    out_template = os.path.join(tmp_dir, 'audio.%(ext)s')
+    try:
+        dl = subprocess.run(
+            ['yt-dlp', '--no-playlist', '-f', 'bestaudio', '-x', '--audio-format', 'wav', '-o', out_template, url],
+            capture_output=True, text=True, timeout=600,
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Timed out downloading/extracting audio'}), 504
+    if dl.returncode != 0:
+        return jsonify({'error': 'Download failed: ' + (dl.stderr or '').strip()[:300]}), 502
+
+    wav_path = os.path.join(tmp_dir, 'audio.wav')
+    if not os.path.exists(wav_path):
+        return jsonify({'error': 'Extraction did not produce an audio file'}), 502
+    return send_file(wav_path, mimetype='audio/wav', as_attachment=False)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 0 DB browsing (read-only) — lets you actually listen to what the
+# migration loaded instead of just reading storage_key strings off a table.
+# Expect this to be superseded by a real ingestion/library API in Phase 1+.
+# ══════════════════════════════════════════════════════════════════════════════
+
+import re  # noqa: E402
+
+from sqlalchemy import func  # noqa: E402
+
+from db.session import get_sessionmaker  # noqa: E402
+from db.models import Consonant, Language, Sample, SampleAnalysis, Token, Vowel  # noqa: E402
+from db.storage import get_audio_store, is_local_url, storage_key_from_url, url_from_storage_key  # noqa: E402
+import tarfile  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from flask import send_file, abort, after_this_request  # noqa: E402
+
+
+def _language_json(lang: Language) -> dict:
+    return {
+        'id': lang.id, 'key': lang.key, 'label': lang.label,
+        'color': lang.color, 'sortOrder': lang.sort_order, 'enabled': lang.enabled,
+    }
+
+
+@app.route('/api/v1/languages')
+def list_languages():
+    with get_sessionmaker()() as db:
+        langs = db.query(Language).order_by(Language.sort_order).all()
+        return jsonify([_language_json(lang) for lang in langs])
+
+
+@app.route('/api/v1/languages', methods=['POST'])
+def create_language():
+    data = request.get_json(silent=True) or {}
+    key = (data.get('key') or '').strip()
+    label = (data.get('label') or '').strip()
+    if not key or not re.match(r'^[a-z0-9][a-z0-9-]*$', key):
+        return jsonify({'error': 'key is required and must be lowercase alphanumeric/hyphen'}), 400
+    if not label:
+        return jsonify({'error': 'label is required'}), 400
+    with get_sessionmaker()() as db:
+        if db.query(Language).filter_by(key=key).first() is not None:
+            return jsonify({'error': f'a language with key {key!r} already exists'}), 400
+        max_order = db.query(func.max(Language.sort_order)).scalar() or 0
+        lang = Language(key=key, label=label, color=data.get('color') or '#7eb8f7', sort_order=max_order + 1)
+        db.add(lang)
+        db.commit()
+        db.refresh(lang)
+        return jsonify(_language_json(lang)), 201
+
+
+@app.route('/api/v1/languages/<int:language_id>', methods=['PATCH'])
+def patch_language(language_id):
+    data = request.get_json(silent=True) or {}
+    with get_sessionmaker()() as db:
+        lang = db.get(Language, language_id)
+        if lang is None:
+            return jsonify({'error': 'not found'}), 404
+        if 'label' in data:
+            lang.label = data['label']
+        if 'color' in data:
+            lang.color = data['color']
+        if 'sortOrder' in data:
+            lang.sort_order = int(data['sortOrder'])
+        if 'enabled' in data:
+            lang.enabled = bool(data['enabled'])
+        db.commit()
+        db.refresh(lang)
+        return jsonify(_language_json(lang))
+
+
+@app.route('/api/v1/languages/<int:language_id>', methods=['DELETE'])
+def delete_language(language_id):
+    """Destructive — cascades to every Vowel/Sample (and in turn every
+    Token/SampleAnalysis) under this language, per db/models.py's
+    relationship cascades. Audio bytes aren't part of that DB cascade, so
+    collect each local sample's storage_key before the commit and delete the
+    files afterward (best-effort — never risk orphaning a successful DB
+    commit on a filesystem error, and never delete files ahead of a commit
+    that might still roll back)."""
+    with get_sessionmaker()() as db:
+        lang = db.get(Language, language_id)
+        if lang is None:
+            return jsonify({'error': 'not found'}), 404
+        storage_keys = [storage_key_from_url(s.url) for s in lang.samples if s.url and is_local_url(s.url)]
+        db.delete(lang)
+        db.commit()
+    store = get_audio_store()
+    for key in storage_keys:
+        try:
+            store.delete(key)
+        except Exception:
+            pass
+    return jsonify({'ok': True, 'deletedSamples': len(storage_keys)})
+
+
+@app.route('/api/v1/samples', methods=['POST'])
+def ingest_sample():
+    """
+    Phase 1 of the ingestion redesign: the one place new audio enters the
+    library from here on. Always a SLICE — the caller (Formant Lab's
+    ingestion mode, Shadowing's "save to library") already decoded the
+    source file client-side and extracted exactly the range it wants kept,
+    so there's no separate "trim on save" step here: the uploaded bytes ARE
+    the sample, start to finish.
+
+    Request (multipart/form-data)
+    ------------------------------
+    file        — audio bytes (any format decode_audio() can read; the
+                  ingestion UIs always send WAV from encodeWavBlob())
+    languageId  — required int — which Language this sample belongs to
+    text        — required str — what's being said; also becomes part of
+                  the storage filename, so it's mandatory up front rather
+                  than something you can leave blank and fill in later
+    phonemic    — optional str
+
+    Response: the created Sample's library-browser shape (same fields
+    /api/v1/sounds returns per row) plus 201.
+    """
+    uploaded_file = request.files.get('file')
+    if not uploaded_file:
+        return jsonify({'error': 'No file uploaded'}), 400
+    language_id = request.form.get('languageId')
+    text = (request.form.get('text') or '').strip()
+    if not language_id:
+        return jsonify({'error': 'languageId is required'}), 400
+    if not text:
+        return jsonify({'error': 'text is required'}), 400
+
+    try:
+        raw = uploaded_file.read()
+        samples, sample_rate = decode_audio(raw)
+        duration_ms = round(len(samples) / sample_rate * 1000)
+
+        store = get_audio_store()
+        with get_sessionmaker()() as db:
+            language = db.get(Language, int(language_id))
+            if language is None:
+                return jsonify({'error': f'No language with id {language_id}'}), 400
+
+            # lang/<lang-key>/ingested/<slugified-text>.wav — auto-suffixed (-2, -3, ...)
+            # if that language+text combination is already taken, so a save never
+            # silently overwrites or blocks on a duplicate recording of the same word.
+            slug = re.sub(r'[/\\\x00-\x1f]', '_', text) or 'untitled'
+            suffix, storage_key = 0, None
+            while True:
+                suffix += 1
+                candidate = f'lang/{language.key}/ingested/{slug}{"" if suffix == 1 else f"-{suffix}"}.wav'
+                if db.query(Sample).filter_by(url=url_from_storage_key(candidate)).first() is None:
+                    storage_key = candidate
+                    break
+            store.put_bytes(raw, storage_key)
+
+            sample = Sample(
+                url=url_from_storage_key(storage_key),
+                original_filename=uploaded_file.filename,
+                content_type=uploaded_file.content_type,
+                duration_ms=duration_ms,
+                sample_rate_hz=sample_rate,
+                channels=1,
+                language_id=int(language_id),
+                text=text,
+                phonemic=request.form.get('phonemic') or None,
+            )
+            db.add(sample)
+            db.commit()
+            db.refresh(sample)
+            return jsonify({
+                'id': sample.id,
+                'url': sample.url,
+                'audioUrl': f'{_prefix()}/audio/{storage_key}',
+                'durationMs': sample.duration_ms,
+                'text': sample.text,
+                'phonemic': sample.phonemic,
+            }), 201
+    except Exception as error:
+        return jsonify({'error': str(error)}), 500
+
+
+def normalize_to_db_url(raw: str) -> str:
+    """Mirrors migrate_legacy_to_db.py's own normalization: external links are
+    used as-is; anything else is treated as a storage key (stripping a leading
+    "/audio/" — our own serving route prefix — and/or leading slash first)."""
+    if raw.startswith(('http://', 'https://')):
+        return raw
+    key = raw
+    if key.startswith('/audio/'):
+        key = key[len('/audio/'):]
+    return url_from_storage_key(key.lstrip('/'))
+
+
+def _token_json(t: Token) -> dict:
+    return {
+        'id': t.id, 'symbol': t.symbol, 'vowelId': t.vowel_id,
+        'charStart': t.char_start, 'charEnd': t.char_end,
+        'timeStartMs': t.time_start_ms, 'timeEndMs': t.time_end_ms,
+        'activeAnalysisId': t.active_analysis_id,
+        'manualF1': t.manual_f1, 'manualF2': t.manual_f2,
+    }
+
+
+@app.route('/api/v1/samples/find-or-create', methods=['POST'])
+def find_or_create_sample():
+    """Lets Formant Lab's legacy editor-launched path (a bare audio URL, no
+    DB id) get a real Sample row to attach tokens/analyses to, without
+    requiring every sample to have gone through the ingestion endpoint."""
+    data = request.get_json(silent=True) or {}
+    raw_url = (data.get('url') or '').strip()
+    if not raw_url:
+        return jsonify({'error': 'url is required'}), 400
+    db_url = normalize_to_db_url(raw_url)
+    with get_sessionmaker()() as db:
+        existing = db.query(Sample).filter_by(url=db_url).one_or_none()
+        if existing:
+            return jsonify({'id': existing.id})
+        language_id = data.get('languageId')
+        sample = Sample(
+            url=db_url, text=data.get('text') or None,
+            language_id=int(language_id) if language_id else None,
+        )
+        db.add(sample)
+        db.commit()
+        db.refresh(sample)
+        return jsonify({'id': sample.id}), 201
+
+
+@app.route('/api/v1/samples/<int:sample_id>')
+def get_sample(sample_id):
+    with get_sessionmaker()() as db:
+        sample = db.get(Sample, sample_id)
+        if sample is None:
+            return jsonify({'error': 'not found'}), 404
+        local = bool(sample.url) and is_local_url(sample.url)
+        storage_key = storage_key_from_url(sample.url) if local else None
+        return jsonify({
+            'id': sample.id, 'url': sample.url,
+            'audioUrl': f'{_prefix()}/audio/{storage_key}' if storage_key else sample.url,
+            'text': sample.text, 'phonemic': sample.phonemic,
+            'languageId': sample.language_id, 'durationMs': sample.duration_ms,
+            'tokens': [_token_json(t) for t in sample.tokens],
+            'analyses': [{
+                'id': a.id, 'version': a.version, 'config': a.config,
+                'createdAt': a.created_at.isoformat() if a.created_at else None,
+            } for a in sample.analyses],
+        })
+
+
+@app.route('/api/v1/samples/<int:sample_id>', methods=['PATCH'])
+def patch_sample(sample_id):
+    """Fixes up text/phonemic/language on an already-saved sample — NEVER
+    touches url/storage key, so the filename picked at ingest time stays put."""
+    data = request.get_json(silent=True) or {}
+    with get_sessionmaker()() as db:
+        sample = db.get(Sample, sample_id)
+        if sample is None:
+            return jsonify({'error': 'not found'}), 404
+        if 'text' in data:
+            sample.text = data['text'] or None
+        if 'phonemic' in data:
+            sample.phonemic = data['phonemic'] or None
+        if 'languageId' in data:
+            sample.language_id = int(data['languageId']) if data['languageId'] else None
+        db.commit()
+        return jsonify({'id': sample.id, 'text': sample.text, 'phonemic': sample.phonemic, 'languageId': sample.language_id})
+
+
+@app.route('/api/v1/samples/<int:sample_id>', methods=['DELETE'])
+def delete_sample(sample_id):
+    """Cascades to the sample's Tokens/SampleAnalyses per db/models.py's
+    relationship cascades; any vowel that had this sample as its
+    representative just loses that pointer (ON DELETE SET NULL). Commit the
+    DB delete first, then best-effort remove the audio file — same ordering
+    rationale as DELETE /api/v1/languages/<id>."""
+    with get_sessionmaker()() as db:
+        sample = db.get(Sample, sample_id)
+        if sample is None:
+            return jsonify({'error': 'not found'}), 404
+        storage_key = storage_key_from_url(sample.url) if sample.url and is_local_url(sample.url) else None
+        db.delete(sample)
+        db.commit()
+    if storage_key:
+        try:
+            get_audio_store().delete(storage_key)
+        except Exception:
+            pass
+    return jsonify({'ok': True})
+
+
+@app.route('/api/v1/samples/<int:sample_id>/trim', methods=['POST'])
+def trim_sample(sample_id):
+    """Overwrites the sample's stored audio with a client-trimmed version
+    (multipart: file=<trimmed wav>, trimStartMs=<how much was cut from the
+    front>). Every Token's time_start_ms/time_end_ms and every
+    SampleAnalysis's formants/pitch t_ms get shifted by -trimStartMs (and
+    dropped if they fall outside the new, shorter duration) — this is what
+    "preserves F1/F2": the same analysis data, just re-indexed to match the
+    new timeline, never recomputed or approximated. Destructive — the
+    original untrimmed bytes are gone; confirmed client-side before this is
+    called."""
+    uploaded_file = request.files.get('file')
+    if not uploaded_file:
+        return jsonify({'error': 'file is required'}), 400
+    try:
+        trim_start_ms = float(request.form.get('trimStartMs', 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'trimStartMs must be a number'}), 400
+
+    with get_sessionmaker()() as db:
+        sample = db.get(Sample, sample_id)
+        if sample is None:
+            return jsonify({'error': 'not found'}), 404
+        if not sample.url or not is_local_url(sample.url):
+            return jsonify({'error': 'only locally-stored audio can be trimmed'}), 400
+        storage_key = storage_key_from_url(sample.url)
+
+        raw = uploaded_file.read()
+        samples_arr, sample_rate = decode_audio(raw)
+        new_duration_ms = len(samples_arr) / sample_rate * 1000
+
+        get_audio_store().put_bytes(raw, storage_key)   # overwrite in place — same storage_key
+
+        sample.duration_ms = round(new_duration_ms)
+        sample.sample_rate_hz = int(sample_rate)
+        sample.channels = 1
+
+        def shift_ms(ms):
+            if ms is None:
+                return None
+            return max(0.0, min(new_duration_ms, ms - trim_start_ms))
+
+        tokens_updated = 0
+        for token in sample.tokens:
+            token.time_start_ms = shift_ms(token.time_start_ms)
+            token.time_end_ms = shift_ms(token.time_end_ms)
+            tokens_updated += 1
+
+        def shift_rows(rows):
+            out = []
+            for row in rows or []:
+                t_ms = row.get('t_ms')
+                if t_ms is None:
+                    continue
+                new_t = t_ms - trim_start_ms
+                if new_t < 0 or new_t > new_duration_ms:
+                    continue
+                out.append({**row, 't_ms': round(new_t, 1)})
+            return out
+
+        analyses_updated = 0
+        for analysis in sample.analyses:
+            analysis.formants = shift_rows(analysis.formants)
+            analysis.pitch = shift_rows(analysis.pitch)
+            analyses_updated += 1
+
+        db.commit()
+        return jsonify({
+            'ok': True, 'durationMs': sample.duration_ms,
+            'tokensUpdated': tokens_updated, 'analysesUpdated': analyses_updated,
+        })
+
+
+@app.route('/api/v1/samples/<int:sample_id>/analyses/<int:analysis_id>')
+def get_sample_analysis(sample_id, analysis_id):
+    with get_sessionmaker()() as db:
+        a = db.query(SampleAnalysis).filter_by(id=analysis_id, sample_id=sample_id).one_or_none()
+        if a is None:
+            return jsonify({'error': 'not found'}), 404
+        return jsonify({'id': a.id, 'version': a.version, 'config': a.config, 'formants': a.formants, 'pitch': a.pitch})
+
+
+@app.route('/api/v1/samples/<int:sample_id>/analyze', methods=['POST'])
+def analyze_sample(sample_id):
+    """The "💾 Save this analysis" action — unlike /analyze-praat (which
+    analyzes a client-uploaded ephemeral buffer for ingestion mode), this runs
+    the identical Praat pipeline against the SAMPLE'S OWN STORED AUDIO and
+    always persists a new SampleAnalysis row. There is no not-saved preview
+    variant here — once a sample is in the library, every analysis attempt is
+    real history."""
+    data = request.get_json(silent=True) or {}
+    config = data.get('config') or {}
+    try:
+        with get_sessionmaker()() as db:
+            sample = db.get(Sample, sample_id)
+            if sample is None:
+                return jsonify({'error': 'not found'}), 404
+            if not sample.url or not is_local_url(sample.url):
+                return jsonify({'error': 'sample has no locally-stored audio to analyze'}), 400
+            store = get_audio_store()
+            storage_key = storage_key_from_url(sample.url)
+            if not store.exists(storage_key):
+                return jsonify({'error': 'audio file missing from storage'}), 404
+            with open(store.get_path(storage_key), 'rb') as f:
+                raw = f.read()
+            samples_arr, sample_rate = decode_audio(raw)
+            result = run_full_praat_analysis(samples_arr, sample_rate, config)
+            analysis = SampleAnalysis(
+                sample_id=sample.id, version='praat-default-v1',
+                config=result['config'], formants=result['formants'], pitch=result['pitch'],
+            )
+            db.add(analysis)
+            db.commit()
+            db.refresh(analysis)
+            return jsonify({
+                'id': analysis.id, 'version': analysis.version, 'config': analysis.config,
+                'formants': analysis.formants, 'pitch': analysis.pitch,
+                'createdAt': analysis.created_at.isoformat() if analysis.created_at else None,
+            }), 201
+    except Exception as error:
+        return jsonify({'error': str(error)}), 500
+
+
+@app.route('/api/v1/samples/<int:sample_id>/tokens', methods=['POST'])
+def create_token(sample_id):
+    data = request.get_json(silent=True) or {}
+    with get_sessionmaker()() as db:
+        sample = db.get(Sample, sample_id)
+        if sample is None:
+            return jsonify({'error': 'not found'}), 404
+        token = Token(
+            sample_id=sample.id,
+            symbol=data.get('symbol') or '',
+            vowel_id=data.get('vowelId') or None,
+            char_start=int(data.get('charStart', 0)),
+            char_end=int(data.get('charEnd', 0)),
+            time_start_ms=data.get('timeStartMs'),
+            time_end_ms=data.get('timeEndMs'),
+        )
+        db.add(token)
+        db.commit()
+        db.refresh(token)
+        return jsonify(_token_json(token)), 201
+
+
+@app.route('/api/v1/tokens/<int:token_id>', methods=['PATCH'])
+def patch_token(token_id):
+    data = request.get_json(silent=True) or {}
+    with get_sessionmaker()() as db:
+        token = db.get(Token, token_id)
+        if token is None:
+            return jsonify({'error': 'not found'}), 404
+        if 'symbol' in data:
+            token.symbol = data['symbol'] or ''
+        if 'vowelId' in data:
+            token.vowel_id = data['vowelId'] or None
+        if 'charStart' in data:
+            token.char_start = int(data['charStart'])
+        if 'charEnd' in data:
+            token.char_end = int(data['charEnd'])
+        if 'timeStartMs' in data:
+            token.time_start_ms = data['timeStartMs']
+        if 'timeEndMs' in data:
+            token.time_end_ms = data['timeEndMs']
+        if 'activeAnalysisId' in data:
+            token.active_analysis_id = data['activeAnalysisId'] or None
+        if 'manualF1' in data:
+            token.manual_f1 = data['manualF1']
+        if 'manualF2' in data:
+            token.manual_f2 = data['manualF2']
+        db.commit()
+        db.refresh(token)
+        return jsonify(_token_json(token))
+
+
+@app.route('/api/v1/tokens/<int:token_id>', methods=['DELETE'])
+def delete_token(token_id):
+    with get_sessionmaker()() as db:
+        token = db.get(Token, token_id)
+        if token is None:
+            return jsonify({'error': 'not found'}), 404
+        db.delete(token)
+        db.commit()
+        return jsonify({'ok': True})
+
+
+def _mean_f1_f2_for_range(analysis, time_start_ms, time_end_ms) -> tuple[float | None, float | None]:
+    """Mean F1/F2 over [time_start_ms, time_end_ms] from one SampleAnalysis's
+    formant track — same logic as js/praat.js's computeMeansForRange(),
+    parameterized by analysis so it can be reused across ANY of a sample's
+    analyses, not just the token's currently-active one (see list_tokens'
+    per-token `analyses[]`, which lets the Token Browser preview what each
+    analysis session would give before switching to it)."""
+    if analysis is None or time_start_ms is None or time_end_ms is None:
+        return None, None
+    formants = analysis.formants or []
+    f1s = [r['f1'] for r in formants if r.get('f1') is not None and time_start_ms <= r.get('t_ms', -1) <= time_end_ms]
+    f2s = [r['f2'] for r in formants if r.get('f2') is not None and time_start_ms <= r.get('t_ms', -1) <= time_end_ms]
+    f1 = sum(f1s) / len(f1s) if f1s else None
+    f2 = sum(f2s) / len(f2s) if f2s else None
+    return f1, f2
+
+
+def _token_mean_f1_f2(t: Token) -> tuple[float | None, float | None]:
+    """The token's "current" F1/F2 — manual_f1/f2 (a direct human
+    measurement) wins when present, else the mean over its active analysis."""
+    if t.manual_f1 is not None and t.manual_f2 is not None:
+        return t.manual_f1, t.manual_f2
+    return _mean_f1_f2_for_range(t.active_analysis, t.time_start_ms, t.time_end_ms)
+
+
+@app.route('/api/v1/tokens')
+def list_tokens():
+    """Flat, joined-for-display list backing the Token Browser — also used
+    by the editor's vowel-assignment picker (?languageId=), to list a
+    vowel's currently-assigned tokens (?vowelId=), and by index.html's chart
+    bootstrap (which also needs the computed f1/f2 and the sample's audioUrl,
+    since it no longer reads static samples.json for token-scatter data)."""
+    language_id = request.args.get('languageId')
+    vowel_id = request.args.get('vowelId')
+    with get_sessionmaker()() as db:
+        q = (
+            db.query(Token, Sample, Language)
+            .join(Sample, Token.sample_id == Sample.id)
+            .outerjoin(Language, Sample.language_id == Language.id)
+        )
+        if language_id:
+            q = q.filter(Sample.language_id == int(language_id))
+        if vowel_id:
+            q = q.filter(Token.vowel_id == int(vowel_id))
+        rows = q.order_by(Token.id).all()
+        out = []
+        for t, s, lang in rows:
+            f1, f2 = _token_mean_f1_f2(t)
+            local = bool(s.url) and is_local_url(s.url)
+            audio_url = f'{_prefix()}/audio/{storage_key_from_url(s.url)}' if local else s.url
+            analyses = []
+            for a in s.analyses:
+                af1, af2 = _mean_f1_f2_for_range(a, t.time_start_ms, t.time_end_ms)
+                analyses.append({
+                    'id': a.id, 'version': a.version,
+                    'f1': round(af1) if af1 is not None else None, 'f2': round(af2) if af2 is not None else None,
+                })
+            out.append({
+                'id': t.id, 'symbol': t.symbol, 'vowelId': t.vowel_id,
+                'vowelSymbol': t.vowel.symbols[0] if t.vowel and t.vowel.symbols else None,
+                'sampleId': s.id, 'sampleText': s.text, 'audioUrl': audio_url,
+                'charStart': t.char_start, 'charEnd': t.char_end,
+                'timeStartMs': t.time_start_ms, 'timeEndMs': t.time_end_ms,
+                'f1': round(f1) if f1 is not None else None, 'f2': round(f2) if f2 is not None else None,
+                'manualF1': t.manual_f1, 'manualF2': t.manual_f2,
+                'activeAnalysisId': t.active_analysis_id, 'analyses': analyses,
+                'languageKey': lang.key if lang else None,
+                'createdAt': t.created_at.isoformat() if t.created_at else None,
+                'updatedAt': t.updated_at.isoformat() if t.updated_at else None,
+            })
+        return jsonify(out)
+
+
+@app.route('/api/v1/admin/export', methods=['POST'])
+def admin_export():
+    """Thin wrapper around scripts/export_db_to_json.py — writes db-export/
+    at the repo root (same path the CLI script defaults to), so the usual
+    `git status`/`git add db-export`/`git commit` promotion flow works
+    whether the export was triggered here or from the command line."""
+    from scripts.export_db_to_json import export_all
+    try:
+        counts = export_all(Path('db-export').resolve())
+        return jsonify(counts)
+    except Exception as error:
+        return jsonify({'error': str(error)}), 500
+
+
+@app.route('/api/v1/admin/import', methods=['POST'])
+def admin_import():
+    """Destructive rebuild from db-export/ — see scripts/import_db_from_json.py.
+    Requires an explicit {"confirm": true} body: a cheap guard against this
+    write endpoint (no auth exists yet, see db/models.py's module docstring
+    for why that's an accepted risk for now) being hit by accident."""
+    data = request.get_json(silent=True) or {}
+    if not data.get('confirm'):
+        return jsonify({'error': 'confirm:true is required to run a destructive import'}), 400
+    from scripts.import_db_from_json import import_all
+    try:
+        counts = import_all(Path('db-export').resolve())
+        return jsonify(counts)
+    except Exception as error:
+        return jsonify({'error': str(error)}), 500
+
+
+@app.route('/api/v1/admin/audio-backup')
+def admin_audio_backup():
+    """Streams the whole audio storage root as a .tar.gz — the DB export/
+    import above explicitly never touches audio bytes (a storageKey with no
+    file just 404s until provisioned), so this is the separate mechanism for
+    backing up the actual audio, made reachable with one request instead of
+    reaching into the Docker volume by hand."""
+    store = get_audio_store()
+    root = getattr(store, 'root', None)
+    if root is None:
+        return jsonify({'error': 'current AUDIO_BACKEND has no local root to archive'}), 400
+    tmp = tempfile.NamedTemporaryFile(suffix='.tar.gz', delete=False)
+    tmp.close()
+    try:
+        with tarfile.open(tmp.name, 'w:gz') as tar:
+            tar.add(root, arcname='audio')
+        filename = f"phonexa-audio-backup-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.tar.gz"
+
+        @after_this_request
+        def _cleanup(response):
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+            return response
+
+        return send_file(tmp.name, as_attachment=True, download_name=filename, conditional=False)
+    except Exception as error:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        return jsonify({'error': str(error)}), 500
+
+
+def _representative_audio_url(v: Vowel) -> str | None:
+    rep = v.representative_sample
+    if rep is None or not rep.url:
+        return None
+    if is_local_url(rep.url):
+        return f'{_prefix()}/audio/{storage_key_from_url(rep.url)}'
+    return rep.url
+
+
+def _vowel_full_json(v: Vowel) -> dict:
+    out = {
+        'id': v.id, 'languageId': v.language_id, 'symbols': v.symbols,
+        'heightBackness': [v.height, v.backness], 'type': v.type, 'rounded': v.rounded,
+        'desc': v.desc, 'f1': v.f1, 'f2': v.f2, 'wikiUrl': v.wiki_url,
+        'representativeSampleId': v.representative_sample_id,
+        'representativeAudioUrl': _representative_audio_url(v),
+        'sortOrder': v.sort_order, 'target': None,
+    }
+    if v.target_height is not None or v.target_backness is not None:
+        out['target'] = {
+            'heightBackness': [v.target_height, v.target_backness],
+            'rounded': v.target_rounded, 'f1': v.target_f1, 'f2': v.target_f2,
+        }
+    return out
+
+
+def _apply_vowel_fields(v: Vowel, data: dict) -> None:
+    """Shared field-assignment for create/patch — only touches keys present in `data`."""
+    if 'symbols' in data:
+        v.symbols = data['symbols'] or []
+    if 'heightBackness' in data:
+        hb = data['heightBackness'] or [0, 0]
+        v.height, v.backness = hb[0], hb[1]
+    if 'type' in data:
+        v.type = data['type'] or 'short'
+    if 'rounded' in data:
+        v.rounded = bool(data['rounded'])
+    if 'desc' in data:
+        v.desc = data['desc']
+    if 'f1' in data:
+        v.f1 = data['f1']
+    if 'f2' in data:
+        v.f2 = data['f2']
+    if 'wikiUrl' in data:
+        v.wiki_url = data['wikiUrl']
+    if 'sortOrder' in data:
+        v.sort_order = int(data['sortOrder'])
+    if 'representativeSampleId' in data:
+        v.representative_sample_id = data['representativeSampleId'] or None
+    if 'target' in data:
+        target = data['target']
+        if target:
+            v.target_height, v.target_backness = target['heightBackness'][0], target['heightBackness'][1]
+            v.target_rounded = target.get('rounded')
+            v.target_f1, v.target_f2 = target.get('f1'), target.get('f2')
+        else:
+            v.target_height = v.target_backness = v.target_rounded = v.target_f1 = v.target_f2 = None
+
+
+@app.route('/api/v1/vowels')
+def list_vowels():
+    language_id = request.args.get('languageId')
+    with get_sessionmaker()() as db:
+        q = db.query(Vowel)
+        if language_id:
+            q = q.filter_by(language_id=int(language_id))
+        vowels = q.order_by(Vowel.sort_order).all()
+        return jsonify([_vowel_full_json(v) for v in vowels])
+
+
+@app.route('/api/v1/languages/<int:language_id>/vowels', methods=['POST'])
+def create_vowel(language_id):
+    data = request.get_json(silent=True) or {}
+    with get_sessionmaker()() as db:
+        language = db.get(Language, language_id)
+        if language is None:
+            return jsonify({'error': 'not found'}), 404
+        max_order = db.query(func.max(Vowel.sort_order)).filter_by(language_id=language_id).scalar() or 0
+        hb = data.get('heightBackness') or [0, 0]
+        v = Vowel(
+            language_id=language_id, symbols=data.get('symbols') or [],
+            height=hb[0], backness=hb[1], type=data.get('type', 'short'),
+            rounded=bool(data.get('rounded')), sort_order=max_order + 1,
+        )
+        _apply_vowel_fields(v, data)
+        db.add(v)
+        db.commit()
+        db.refresh(v)
+        return jsonify(_vowel_full_json(v)), 201
+
+
+@app.route('/api/v1/vowels/<int:vowel_id>', methods=['PATCH'])
+def patch_vowel(vowel_id):
+    data = request.get_json(silent=True) or {}
+    with get_sessionmaker()() as db:
+        v = db.get(Vowel, vowel_id)
+        if v is None:
+            return jsonify({'error': 'not found'}), 404
+        _apply_vowel_fields(v, data)
+        db.commit()
+        db.refresh(v)
+        return jsonify(_vowel_full_json(v))
+
+
+@app.route('/api/v1/vowels/<int:vowel_id>', methods=['DELETE'])
+def delete_vowel(vowel_id):
+    """Tokens pointing at this vowel just become unassigned (Token.vowel_id
+    is ON DELETE SET NULL) — they aren't deleted."""
+    with get_sessionmaker()() as db:
+        v = db.get(Vowel, vowel_id)
+        if v is None:
+            return jsonify({'error': 'not found'}), 404
+        db.delete(v)
+        db.commit()
+        return jsonify({'ok': True})
+
+
+@app.route('/api/v1/languages/<key>/vowels')
+def get_language_vowels(key):
+    """Read-only — what the public chart viewer calls to resolve each
+    vowel's representative-sample audio from the DB."""
+    with get_sessionmaker()() as db:
+        language = db.query(Language).filter_by(key=key).one_or_none()
+        if language is None:
+            return jsonify({'error': 'not found'}), 404
+        vowels = db.query(Vowel).filter_by(language_id=language.id).order_by(Vowel.sort_order).all()
+        return jsonify([_vowel_full_json(v) for v in vowels])
+
+
+@app.route('/api/v1/languages/<key>/full')
+def get_language_full(key):
+    """DB-sourced equivalent of the old static lang/<key>/lang.json — what
+    index.html's chart bootstrap reads instead of that static file."""
+    with get_sessionmaker()() as db:
+        language = db.query(Language).filter_by(key=key).one_or_none()
+        if language is None:
+            return jsonify({'error': 'not found'}), 404
+        vowels = db.query(Vowel).filter_by(language_id=language.id).order_by(Vowel.sort_order).all()
+        return jsonify({
+            'key': language.key, 'label': language.label, 'color': language.color,
+            'vowels': [_vowel_full_json(v) for v in vowels],
+        })
+
+
+def _consonant_audio_url(c: Consonant) -> str | None:
+    rep = c.representative_sample
+    if rep is None or not rep.url:
+        return None
+    if is_local_url(rep.url):
+        return f'{_prefix()}/audio/{storage_key_from_url(rep.url)}'
+    return rep.url
+
+
+def _consonant_json(c: Consonant) -> dict:
+    return {
+        'id': c.id, 'languageId': c.language_id, 'symbols': c.symbols,
+        'manner': c.manner, 'passivePlace': c.passive_place,
+        'activeArticulator': c.active_articulator, 'voicing': c.voicing,
+        'secondaryArticulation': c.secondary_articulation, 'syllabic': c.syllabic,
+        'coarticulatedPlace': c.coarticulated_place, 'desc': c.desc, 'wikiUrl': c.wiki_url,
+        'representativeSampleId': c.representative_sample_id,
+        'representativeAudioUrl': _consonant_audio_url(c),
+        'sortOrder': c.sort_order,
+    }
+
+
+@app.route('/api/v1/consonants')
+def list_consonants():
+    """Read-only — no write endpoints needed since there's no consonant
+    editor UI in scope (data entry is scripts/seed_consonants.py only)."""
+    language_id = request.args.get('languageId')
+    with get_sessionmaker()() as db:
+        q = db.query(Consonant)
+        if language_id:
+            q = q.filter_by(language_id=int(language_id))
+        consonants = q.order_by(Consonant.sort_order).all()
+        return jsonify([_consonant_json(c) for c in consonants])
+
+
+@app.route('/api/v1/sounds')
+def list_sounds():
+    """Named /sounds rather than /samples: every sample row is "a sound" in
+    the sense this browser cares about (has it got audio, does the file
+    exist) — whether or not it's been assigned a language/text/tokens yet."""
+    try:
+        store = get_audio_store()
+        with get_sessionmaker()() as db:
+            samples = db.query(Sample).order_by(Sample.id).all()
+            rows = []
+            for s in samples:
+                local = bool(s.url) and is_local_url(s.url)
+                storage_key = storage_key_from_url(s.url) if local else None
+                rows.append({
+                    'id': s.id,
+                    'storageKey': storage_key,
+                    'sourceUrl': None if local else s.url,
+                    'originalFilename': s.original_filename,
+                    'durationMs': s.duration_ms,
+                    'text': s.text,
+                    'phonemic': s.phonemic,
+                    'languageId': s.language_id,
+                    'hasFile': bool(storage_key) and store.exists(storage_key),
+                    'audioUrl': f'{_prefix()}/audio/{storage_key}' if storage_key else s.url,
+                    'createdAt': s.created_at.isoformat() if s.created_at else None,
+                    'updatedAt': s.updated_at.isoformat() if s.updated_at else None,
+                })
+            return jsonify(rows)
+    except Exception as error:
+        return jsonify({'error': str(error)}), 500
+
+
+@app.route('/audio/<path:storage_key>')
+def serve_audio(storage_key):
+    store = get_audio_store()
+    if not store.exists(storage_key):
+        abort(404)
+    return send_file(store.get_path(storage_key), conditional=True)
+
+
+from shadowing import shadowing_bp  # noqa: E402
+
+app.register_blueprint(shadowing_bp)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Users + Settings — simple named profiles (no auth/password, see
+# db/models.py's User docstring) and a generic per-user JSONB key/value
+# store, used today for the IPA chart's filter persistence and Shadowing's
+# transcription-backend config.
+# ══════════════════════════════════════════════════════════════════════════════
+
+from db.models import Setting, User  # noqa: E402
+
+
+def _user_json(u: User) -> dict:
+    return {'id': u.id, 'name': u.name, 'createdAt': u.created_at.isoformat() if u.created_at else None}
+
+
+@app.route('/api/v1/users')
+def list_users():
+    with get_sessionmaker()() as db:
+        users = db.query(User).order_by(User.id).all()
+        return jsonify([_user_json(u) for u in users])
+
+
+@app.route('/api/v1/users', methods=['POST'])
+def create_user():
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name is required'}), 400
+    with get_sessionmaker()() as db:
+        if db.query(User).filter_by(name=name).first() is not None:
+            return jsonify({'error': f'a profile named {name!r} already exists'}), 400
+        user = User(name=name)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return jsonify(_user_json(user)), 201
+
+
+def _require_user_id() -> int | None:
+    """Every settings/shadowing route is scoped by a `userId` query param —
+    there's no session/cookie to derive it from (see User's docstring)."""
+    raw = request.args.get('userId')
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+@app.route('/api/v1/settings')
+def list_settings():
+    user_id = _require_user_id()
+    if user_id is None:
+        return jsonify({'error': 'userId query param is required'}), 400
+    with get_sessionmaker()() as db:
+        rows = db.query(Setting).filter_by(user_id=user_id).all()
+        return jsonify({s.key: s.value for s in rows})
+
+
+@app.route('/api/v1/settings/<key>', methods=['PUT'])
+def put_setting(key):
+    user_id = _require_user_id()
+    if user_id is None:
+        return jsonify({'error': 'userId query param is required'}), 400
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or 'value' not in data:
+        return jsonify({'error': 'body must be {"value": ...}'}), 400
+    with get_sessionmaker()() as db:
+        if db.get(User, user_id) is None:
+            return jsonify({'error': 'no such user'}), 404
+        row = db.query(Setting).filter_by(user_id=user_id, key=key).first()
+        if row is None:
+            row = Setting(user_id=user_id, key=key, value=data['value'])
+            db.add(row)
+        else:
+            row.value = data['value']
+        db.commit()
+        return jsonify({'key': key, 'value': data['value']})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Static frontend
+# ══════════════════════════════════════════════════════════════════════════════
+
+from werkzeug.utils import safe_join  # noqa: E402
+
+
+def _prefix() -> str:
+    """The path prefix this request arrived under, '' when mounted at the root.
+
+    Set by the reverse proxy (`header_up X-Forwarded-Prefix /phonexa` in
+    mjolnir's Caddyfile) alongside stripping that prefix off the path, so
+    every route below stays prefix-agnostic while the URLs we hand back to
+    the browser carry it. Same form stabbur's and smia's app.py use (D46).
+    Empty in standalone development — nothing to configure there.
+    """
+    return request.headers.get('X-Forwarded-Prefix', '').rstrip('/')
+
+
+def _serve_page(filename: str):
+    """Serve an HTML page with the prefix substituted in.
+
+    Only HTML is read-and-rewritten; every other asset streams through
+    send_from_directory untouched. The pages declare the prefix as a global
+    (`window.PHONEXA_PREFIX`) before loading any js/, which reads it back
+    once as API_BASE — see js/utils.js."""
+    path = Path(app.root_path) / filename
+    html = path.read_text(encoding='utf-8')
+    return html.replace('__PHONEXA_PREFIX__', _prefix()), 200, {
+        'Content-Type': 'text/html; charset=utf-8'
+    }
+
+
+@app.route('/')
+def serve_index():
+    return _serve_page('index.html')
+
+
+@app.route('/<path:path>')
+def serve_static(path):
+    if path.endswith('.html'):
+        # send_from_directory's safe_join rules still apply: resolve the
+        # request against the app directory and refuse anything escaping it
+        # before reading the file ourselves.
+        safe = safe_join(app.root_path, path)
+        if safe is None or not os.path.isfile(safe):
+            abort(404)
+        return _serve_page(os.path.relpath(safe, app.root_path))
+    return send_from_directory('.', path)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WebSocket streaming
+# ══════════════════════════════════════════════════════════════════════════════
+
+@sock.route('/stream')
+def stream_ws(ws) -> None:
+    """
+    WebSocket streaming endpoint (flask-sock, same port as HTTP).
+
+    Audio flow
+    ~~~~~~~~~~
+    Client sends 128-sample Int16 binary frames continuously.
+    Server accumulates samples in the ring buffer and analyses every
+    SEGMENT_STEP_MS of new audio.
+
+    Three frame states per analysis window:
+      A  rms < rms_floor  → skip Praat; send silent frame
+      B  Praat ran, no valid F1/F2 → send diagnostic frame (voiced=false)
+      C  voiced → send full frame with continuity + median applied
+
+    Control messages
+    ~~~~~~~~~~~~~~~~
+      {type:'init',   sample_rate}  → full restart
+      {type:'reset'}                → flush analysis state, keep config
+      {type:'config', <fields>}     → update ConnConfig live
+    """
+    session                     = StreamingSession()
+    samples_since_last_analysis = 0
+
+    try:
+        while True:
+            message = ws.receive()
+
+            # ── Text: control message ──────────────────────────────────────
+            if isinstance(message, str):
+                try:
+                    payload  = json.loads(message)
+                    msg_type = payload.get('type', '')
+
+                    if msg_type == 'init':
+                        session.reinit_stream(int(payload.get('sample_rate', 44_100)))
+                        samples_since_last_analysis = 0
+
+                    elif msg_type == 'reset':
+                        session.reset_stream()
+                        samples_since_last_analysis = 0
+
+                    elif msg_type == 'config':
+                        session.update_config(payload)
+
+                except Exception:
+                    pass
+                continue
+
+            # ── Binary: PCM audio chunk ────────────────────────────────────
+            if len(message) < 64:
+                continue
+
+            chunk = decode_int16_pcm(message)
+            session.accept_chunk(chunk)
+            samples_since_last_analysis += len(chunk)
+
+            if not session.ring_is_full:
+                continue
+            if samples_since_last_analysis < session.segment_step:
+                continue
+            samples_since_last_analysis = 0
+
+            audio_seg = np.array(session.ring)
+            n         = len(audio_seg)
+            seg_info  = SegmentInfo(
+                at_ms=session.segment_at_ms, at=session.total_samples_received,
+                index=session.segment_index, samples=n,
+                duration_ms=round(n / session.sample_rate * 1000, 1),
+                step_ms=SEGMENT_STEP_MS,
+            )
+            try:
+                frame = analyse_segment_to_frame(
+                    segment=audio_seg, sample_rate=session.sample_rate,
+                    seg=seg_info, config=session.config, state=session.analysis_state,
+                )
+                session.segment_index += 1
+                ws.send(json.dumps({'frames': [frame]}))
+            except Exception as error:
+                ws.send(json.dumps({'frames': [], 'error': str(error)}))
+
+    except Exception:
+        pass
+
+
+if __name__ == '__main__':
+    print('HTTP + WebSocket :5050')
+    app.run(host='0.0.0.0', port=5050, threaded=True, debug=False)

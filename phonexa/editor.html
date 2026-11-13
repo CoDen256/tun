@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IPA Language Editor</title>
+  <link rel="stylesheet" href="css/editor.css">
+  <link rel="stylesheet" href="css/index.css">
+  <style>
+    /* ── Vowels/Samples tab switcher ───────────────────────────────────────────── */
+    .section-tabs-bar { display:flex; gap:2px; padding:6px 10px 0; border-bottom:1px solid var(--border); margin-bottom:0; }
+    .section-tab-btn  { padding:5px 12px; border-radius:6px 6px 0 0; font-size:.72rem; font-weight:700; cursor:pointer; border:1px solid var(--border); border-bottom:none; background:var(--surface); color:var(--muted); transition:background .15s,color .15s; }
+    .section-tab-btn.active { background:#253850; color:#7eb8f7; border-color:#7eb8f7; }
+
+    /* ── Sample cards ──────────────────────────────────────────────────────────── */
+    .sample-card { position:relative; background:var(--card); border:2px solid var(--border); border-radius:10px; padding:10px 28px 8px 10px; cursor:pointer; transition:border-color .12s; }
+    .sample-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:6px; padding:6px 8px; }
+    .sample-card:hover { border-color:#3a5878; }
+    .sample-card.active { }
+    .sc-text     { font-size:.88rem; font-family:Georgia,'Noto Serif',serif; color:#d8e8f4; }
+    .sc-phonemic { font-size:.7rem; color:var(--muted); font-style:italic; margin-top:2px; }
+    .sc-tokens   { display:flex; flex-wrap:wrap; gap:3px; margin-top:4px; }
+    .sc-token-chip { font-size:.65rem; padding:1px 6px; border-radius:10px; border:1px solid #2e4560; color:#7eb8f7; font-family:Georgia,serif; }
+
+    /* ── Token rows ────────────────────────────────────────────────────────────── */
+    .token-row       { background:#0d1a28; border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:6px; }
+    .token-row.active { }
+    .tok-sym-sel     { background:var(--input,#1a2e48); border:1px solid var(--border); border-radius:5px; color:#d8e8f4; padding:3px 6px; font-size:.82rem; font-family:Georgia,serif; min-width:50px; outline:none; cursor:pointer; }
+    .tok-analysis    { font-size:.65rem; font-family:monospace; padding:2px 6px; border-radius:4px; }
+    .tok-analysis.ok { color:#34d399; background:#34d39911; }
+    .tok-analysis.pending { color:#4a6888; }
+
+    /* ── Waveform ───────────────────────────────────────────────────────────────── */
+    .waveform-wrap { position:relative; width:100%; height:64px; background:#0d1a28; border:1px solid #1e3048; border-radius:6px; overflow:hidden; cursor:col-resize; user-select:none; }
+    #seWaveCanvas  { display:block; width:100%; height:100%; }
+
+
+    /* ── Text range selector ───────────────────────────────────────────────────── */
+    .tok-text-sel { font-family:Georgia,'Noto Serif',serif; font-size:.95rem; padding:4px 2px; line-height:1.6; cursor:col-resize; user-select:none; background:#0d1a28; border:1px solid var(--border); border-radius:5px; min-height:28px; overflow-x:auto; white-space:nowrap; }
+    .tok-text-sel .tc { transition:background .08s,color .08s; display:inline-block; }
+  </style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="index.html" class="back-btn">← Chart</a>
+  <a href="shadow.html" class="back-btn">🗣 Shadowing</a>
+  <a href="praat.html" class="back-btn" target="_blank">🔬 Formant Lab</a>
+  <a href="sounds.html" class="back-btn" target="_blank">🔊 Sound Library</a>
+  <h1>Language Editor</h1>
+</div>
+
+<div class="lang-tab-bar" id="langTabBar">
+  <div id="langTabs" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap"></div>
+  <button class="btn btn-secondary btn-sm" id="newLangBtn" type="button">+ New language</button>
+</div>
+
+<div class="editor-body">
+
+  <div class="main-col">
+    <div class="chart-section">
+      <div class="view-tabs" style="padding:6px 10px 0;display:flex;align-items:flex-end;gap:2px">
+        <button class="view-tab active" id="tabIpa" type="button">IPA Chart</button>
+        <button class="view-tab" id="tabFormant" type="button">Formant Plot</button>
+        <div style="margin-left:auto;display:flex;gap:4px;align-items:flex-end">
+          <button class="cardinal-toggle active" id="averagesToggle" title="Show average F1/F2 vowel dots" type="button">◎ Averages</button>
+          <button class="cardinal-toggle" id="tokensToggle" title="Show token measurements on formant chart" type="button">◉ Tokens</button>
+          <button class="cardinal-toggle" id="cardinalToggle" title="Show cardinal vowels" type="button">Cardinals</button>
+          <button class="cardinal-toggle" id="soloToggle" title="Show only current vowel" type="button" style="display:none">Only current</button>
+        </div>
+      </div>
+      <div style="position:relative">
+        <div class="chart-panel active" id="panelIpa">
+          <svg class="chart-svg" id="chartIpa" viewBox="50 60 1110 600"></svg>
+        </div>
+        <div class="chart-panel" id="panelFormant">
+          <svg class="chart-svg" id="chartFormant" viewBox="20 30 1170 680"></svg>
+        </div>
+      </div>
+      <p class="chart-hint" id="chartHint">Select a language to start editing</p>
+    </div>
+
+    <div class="content-section" id="contentSection" style="display:none">
+      <!-- Vowels panel -->
+      <div id="vowelPanel">
+        <div class="section-head">
+          <span class="section-title" id="sectionTitle">Vowels</span>
+          <button class="btn btn-secondary btn-sm" id="addVowelBtn" type="button">+ Add Vowel</button>
+        </div>
+        <div class="vowel-cards" id="vowelCards"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="resize-handle" id="resizeHandle"></div>
+
+  <div class="editor-pane" id="editorPane">
+    <div class="lang-meta-form" id="langMetaForm" style="display:none">
+      <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap">
+        <div class="field" style="flex:none;width:72px"><label>Key</label><input type="text" id="fKey" style="width:100%" disabled title="Set at creation — not editable"></div>
+        <div class="field" style="flex:none;width:128px"><label>Label</label><input type="text" id="fLabel" style="width:100%"></div>
+        <div style="display:flex;flex-direction:column;gap:3px;padding-bottom:2px">
+          <label style="font-size:.62rem;color:var(--muted)">Color</label>
+          <input type="color" id="fColor">
+        </div>
+      </div>
+    </div>
+    <div id="veInline" class="ve-inline" style="display:none"></div>
+    <div class="editor-pane-hint" id="editorPaneHint">Select a vowel on the chart or card to edit</div>
+  </div>
+
+</div>
+
+<div id="vowelPicker"><div class="picker-title">Choose vowel</div><div id="pickerItems"></div></div>
+<div id="tip" class="tip"></div>
+<div class="toast" id="toast"></div>
+
+<!-- Prefix injected by formanter.py (X-Forwarded-Prefix) — empty when mounted
+     at the root. Must precede every js/ tag: API_BASE is read at load time. -->
+<script>window.PHONEXA_PREFIX = "__PHONEXA_PREFIX__"; var API_BASE = window.PHONEXA_PREFIX || '';</script>
+<script src="js/utils.js"></script>
+<script src="js/geometry.js"></script>
+<script src="js/tooltip.js"></script>
+<script src="js/diphthong.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/editor-geometry.js"></script>
+<script src="js/editor-vowels.js"></script>
+<script src="js/editor-lang.js"></script>
+<script src="js/editor-tokens.js"></script>
+<script src="js/editor-form.js"></script>
+
+<script>
+  // ─── State ────────────────────────────────────────────────────────────────────
+  const state = {
+    langs:{}, selKey:null, langDraft:null,
+    vowelIdx:null, vowelDraft:null, vowelDirty:false,
+    chartTab:'ipa',
+    pickingMode: null,  // null | 'ipa' | 'ipa-target' | 'formant'
+    showCardinals: false,
+    showOtherVowels: true,
+    langOrder: [],
+    cardinalLangData: null,  // {key,label,color,vowels} for the Cardinals overlay — fetched on demand
+    // Per-language DB cache (tokens/samples) for the token-assignment picker
+    // — see js/editor-tokens.js's ensureDbLanguageData(). Vowels themselves
+    // now live directly on state.langDraft.vowels (each already carries its
+    // own DB `id`/representativeSampleId/representativeAudioUrl).
+    dbLanguageTokens: null,
+    dbLanguageSamples: null,
+  };
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function toast(msg,dur=2200){ const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),dur); }
+
+  // ─── Overrides for shared chart scripts ───────────────────────────────────────
+  var LANGS = {};
+  var refAnalyzed = null, refVowelMeta = null;
+  // Minimal filters stub — editor always shows all vowels; showTokens is user-toggled
+  if (typeof filters === 'undefined')
+    var filters = { showAverages:true, showTokens:false, languages:new Set(), roundness:new Set(),
+      vtype:new Set(), length:new Set(), ipaBase:new Set() };
+  function passesFilters(lk, v) { return true; }
+  function isCompareMode() { return false; }
+  function playUrl(url) { if (!url) return; new Audio(url).play().catch(()=>{}); }
+
+  // Clicking a vowel on the chart opens it for editing
+  function onVowelClicked(v, lang, lk) {
+    if (!state.langDraft) return;
+    if (state.pickingMode) return;
+    const idx = (state.langDraft.vowels || []).findIndex(w =>
+            w === v ||
+            (
+                    w.symbols?.[0] === v.symbols?.[0] &&
+                    Math.abs((w.heightBackness?.[0]??0) - (v.heightBackness?.[0]??0)) < 0.01 &&
+                    Math.abs((w.heightBackness?.[1]??0) - (v.heightBackness?.[1]??0)) < 0.01
+            )
+    );
+    if (idx < 0) return;
+    if (state.vowelIdx !== null && state.vowelDraft !== null && state.vowelDraft.symbols?.[0]) {
+      const original = state.vowelIdx >= 0 ? state.langDraft.vowels?.[state.vowelIdx] : null;
+      const changed = !original || JSON.stringify(original) !== JSON.stringify(state.vowelDraft);
+      if (state.vowelIdx < 0) (state.langDraft.vowels = state.langDraft.vowels||[]).push(state.vowelDraft);
+      else state.langDraft.vowels[state.vowelIdx] = state.vowelDraft;
+      if (changed) markUnsaved();
+    }
+    openVowelEditor(idx);
+  }
+
+  // ─── Coordinate inverses ──────────────────────────────────────────────────────
+  function trapToHB(px, py) {
+    const h = Math.max(0, Math.min(1, (py-TRAP.TL.y)/(TRAP.BL.y-TRAP.TL.y)));
+    const fX = TRAP.TL.x + h*(TRAP.BL.x-TRAP.TL.x);
+    return { h:+h.toFixed(4), b:+Math.max(0,Math.min(1,(px-fX)/(TRAP.TR.x-fX))).toFixed(4) };
+  }
+  function posToFormant(px, py) {
+    return {
+      f2: Math.round(Math.max(F2MIN, Math.min(F2MAX, F2MAX-(px-FP.x0)/(FP.x1-FP.x0)*(F2MAX-F2MIN)))),
+      f1: Math.round(Math.max(F1MIN, Math.min(F1MAX, F1MIN+(py-FP.y0)/(FP.y1-FP.y0)*(F1MAX-F1MIN)))),
+    };
+  }
+
+  // ─── Pick mode: SVG click listener ───────────────────────────────────────────
+  function attachPickListeners() {
+    [['chartIpa', ['ipa','ipa-target']], ['chartFormant', ['formant','formant-target']]].forEach(([id, modes]) => {
+      const svg = document.getElementById(id); if (!svg) return;
+      if (svg._pickHandler) { svg.removeEventListener('click', svg._pickHandler); svg._pickHandler = null; }
+      if (!svg.querySelector('.pick-bg')) {
+        const [vx,vy,vw,vh]=svg.getAttribute('viewBox').split(' ').map(Number);
+        const bg = $s('rect',{x:vx,y:vy,width:vw,height:vh,fill:'transparent','pointer-events':'all',class:'pick-bg'});
+        svg.insertBefore(bg, svg.firstChild);
+      }
+      const active = state.pickingMode && state.vowelDraft && modes.includes(state.pickingMode);
+      svg.style.cursor = active ? 'crosshair' : '';
+      if (!active) return;
+
+      const handler = e => {
+        const pt = svgPt(svg, e.clientX, e.clientY);
+        if (state.pickingMode === 'ipa') {
+          const {h,b} = trapToHB(pt.x, pt.y);
+          state.vowelDraft.heightBackness = [h, b];
+
+        } else if (state.pickingMode === 'ipa-target') {
+          const {h,b} = trapToHB(pt.x, pt.y);
+          if (!state.vowelDraft.target) {
+            state.vowelDraft.target = {heightBackness:[h,b], rounded:state.vowelDraft.rounded, f1:null, f2:null};
+          } else {
+            state.vowelDraft.target.heightBackness = [h, b];
+          }
+
+        } else if (state.pickingMode === 'formant') {
+          const {f1,f2} = posToFormant(pt.x, pt.y);
+          state.vowelDraft.f1 = f1;
+          state.vowelDraft.f2 = f2;
+        } else if (state.pickingMode === 'formant-target') {
+          const {f1,f2} = posToFormant(pt.x, pt.y);
+          if (!state.vowelDraft.target) state.vowelDraft.target = {heightBackness:[...(state.vowelDraft.heightBackness||[0.5,0.5])],rounded:false,f1:null,f2:null};
+          state.vowelDraft.target.f1 = f1;
+          state.vowelDraft.target.f2 = f2;
+        }
+
+        state.pickingMode = null;
+        svg.style.cursor = '';
+        svg.removeEventListener('click', handler);
+        svg._pickHandler = null;
+        markUnsaved();
+        syncCoordsToForm();
+        renderEditorAll();
+        renderVowelCards();
+      };
+      svg._pickHandler = handler;
+      svg.addEventListener('click', handler);
+    });
+  }
+
+  // ─── Main render ──────────────────────────────────────────────────────────────
+  function renderEditorAll() {
+    Object.keys(LANGS).forEach(k => delete LANGS[k]);
+
+    if (state.showCardinals && state.cardinalLangData)
+      LANGS.cardinal = state.cardinalLangData;
+
+    if (state.langDraft?.key) {
+      let vowels = [...(state.langDraft.vowels || [])];
+      if (state.vowelIdx !== null && state.vowelDraft !== null) {
+        if (state.vowelIdx < 0) vowels.push(state.vowelDraft);
+        else vowels[state.vowelIdx] = state.vowelDraft;
+      }
+      if (!state.showOtherVowels && state.vowelIdx !== null) {
+        const activeIdx = state.vowelIdx < 0 ? vowels.length - 1 : state.vowelIdx;
+        vowels = vowels[activeIdx] ? [vowels[activeIdx]] : [];
+      }
+      LANGS[state.langDraft.key] = {...state.langDraft, vowels};
+    }
+
+    renderIpa();
+    renderFormant();
+    attachPickListeners();
+
+    const hint = document.getElementById('chartHint');
+    if (hint) {
+      const msgs = {ipa:'Click chart to set position','ipa-target':'Click chart to set target position',formant:'Click formant chart to set F1/F2','formant-target':'Click formant chart to set target F1/F2'};
+      if (state.pickingMode && msgs[state.pickingMode]) hint.textContent = msgs[state.pickingMode];
+      else hint.innerHTML = state.langDraft
+              ? 'Click a vowel to edit · <b>Pick</b> buttons set chart position'
+              : 'Select a language to start editing';
+    }
+
+    const ph = document.getElementById('editorPaneHint');
+    if (ph) ph.style.display = state.vowelIdx === null ? 'block' : 'none';
+  }
+</script>
+<script>
+  async function init() {
+    initEditorUI();
+    await loadLanguages();
+    renderEditorAll();
+  }
+  init();
+</script>
+</body>
+</html>

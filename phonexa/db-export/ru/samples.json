@@ -1,0 +1,1149 @@
+[
+  {
+    "id": 220,
+    "url": "file://lang/ru/audio/auto/i.mp3",
+    "originalFilename": "i.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "i",
+    "phonemic": "/i/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "i",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "i"
+        ],
+        "timeStartMs": 532,
+        "timeEndMs": 642,
+        "activeAnalysisId": null,
+        "manualF1": 272.0,
+        "manualF2": 2755.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 221,
+    "url": "file://lang/ru/audio/easy/mir.mp3",
+    "originalFilename": "mir.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "мир",
+    "phonemic": "/mʲir/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "i",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "i"
+        ],
+        "timeStartMs": 658,
+        "timeEndMs": 994,
+        "activeAnalysisId": null,
+        "manualF1": 488.0,
+        "manualF2": 2188.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 222,
+    "url": "file://lang/ru/audio/easy/ego.mp3",
+    "originalFilename": "ego.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "его",
+    "phonemic": "/jɪˈvo/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɪ"
+        ],
+        "timeStartMs": 764,
+        "timeEndMs": 874,
+        "activeAnalysisId": null,
+        "manualF1": 388.0,
+        "manualF2": 1965.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 223,
+    "url": "file://lang/ru/audio/forvo/perehod.mp3",
+    "originalFilename": "perehod.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "переход",
+    "phonemic": "/pʲɪrʲɪˈxot/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɪ"
+        ],
+        "timeStartMs": 64,
+        "timeEndMs": 121,
+        "activeAnalysisId": null,
+        "manualF1": 472.0,
+        "manualF2": 2533.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 224,
+    "url": "file://lang/ru/audio/easy/uje.mp3",
+    "originalFilename": "uje.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "уже",
+    "phonemic": "/ʊˈʐɛ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ʊ"
+        ],
+        "timeStartMs": 587,
+        "timeEndMs": 730,
+        "activeAnalysisId": null,
+        "manualF1": 383.0,
+        "manualF2": 839.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 225,
+    "url": null,
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "тупая",
+    "phonemic": "/tʊˈpajə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 226,
+    "url": "file://lang/ru/audio/easy/srazu.mp3",
+    "originalFilename": "srazu.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "сразу",
+    "phonemic": "/ˈsrazʊ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [
+          4,
+          5
+        ],
+        "vowelSymbols": [
+          "ʊ"
+        ],
+        "timeStartMs": 1535,
+        "timeEndMs": 1647,
+        "activeAnalysisId": null,
+        "manualF1": 298.0,
+        "manualF2": 669.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 227,
+    "url": "file://lang/ru/audio/auto/i_bar.mp3",
+    "originalFilename": "i_bar.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɨ",
+    "phonemic": "/ɨ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɨ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɨ"
+        ],
+        "timeStartMs": 501,
+        "timeEndMs": 748,
+        "activeAnalysisId": null,
+        "manualF1": 325.0,
+        "manualF2": 1637.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 228,
+    "url": "file://lang/ru/audio/easy/byl.mp3",
+    "originalFilename": "byl.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "был",
+    "phonemic": "/bɨl/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɨ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɨ"
+        ],
+        "timeStartMs": 703,
+        "timeEndMs": 899,
+        "activeAnalysisId": null,
+        "manualF1": 286.0,
+        "manualF2": 980.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 229,
+    "url": "file://lang/ru/audio/rufe/yu.mp3",
+    "originalFilename": "yu.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ю",
+    "phonemic": "/jʉ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʉ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ʉ"
+        ],
+        "timeStartMs": 574,
+        "timeEndMs": 716,
+        "activeAnalysisId": null,
+        "manualF1": 368.0,
+        "manualF2": 516.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 230,
+    "url": "file://lang/ru/audio/easy/svou.mp3",
+    "originalFilename": "svou.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "свою",
+    "phonemic": "/svɐˈjʉ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʉ",
+        "position": [
+          3,
+          4
+        ],
+        "vowelSymbols": [
+          "ʉ"
+        ],
+        "timeStartMs": 1005,
+        "timeEndMs": 1445,
+        "activeAnalysisId": null,
+        "manualF1": 339.0,
+        "manualF2": 905.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 231,
+    "url": "file://lang/ru/audio/auto/u.mp3",
+    "originalFilename": "u.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "u",
+    "phonemic": "/u/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "u",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "u"
+        ],
+        "timeStartMs": 575,
+        "timeEndMs": 761,
+        "activeAnalysisId": null,
+        "manualF1": 291.0,
+        "manualF2": 504.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 232,
+    "url": "file://lang/ru/audio/easy/emu.mp3",
+    "originalFilename": "emu.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ему",
+    "phonemic": "/jɪˈmu/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "u",
+        "position": [
+          2,
+          3
+        ],
+        "vowelSymbols": [
+          "u"
+        ],
+        "timeStartMs": 1033,
+        "timeEndMs": 1416,
+        "activeAnalysisId": null,
+        "manualF1": 284.0,
+        "manualF2": 508.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 233,
+    "url": "file://lang/ru/audio/rufe/ye.mp3",
+    "originalFilename": "ye.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "е",
+    "phonemic": "/je/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "e",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "e"
+        ],
+        "timeStartMs": 632,
+        "timeEndMs": 695,
+        "activeAnalysisId": null,
+        "manualF1": 381.0,
+        "manualF2": 2579.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 234,
+    "url": "file://lang/ru/audio/forvo/meste.mp3",
+    "originalFilename": "meste.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "месте",
+    "phonemic": "/ˈmʲestʲɪ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "e",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "e"
+        ],
+        "timeStartMs": 156,
+        "timeEndMs": 292,
+        "activeAnalysisId": null,
+        "manualF1": 335.0,
+        "manualF2": 2329.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 235,
+    "url": "file://lang/ru/audio/rufe/yo.mp3",
+    "originalFilename": "yo.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ё",
+    "phonemic": "/jo/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "o",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "o"
+        ],
+        "timeStartMs": 732,
+        "timeEndMs": 895,
+        "activeAnalysisId": null,
+        "manualF1": 428.0,
+        "manualF2": 788.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 236,
+    "url": "file://lang/ru/audio/easy/moe.mp3",
+    "originalFilename": "moe.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "моё",
+    "phonemic": "/mɐˈjo/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɵ",
+        "position": [
+          2,
+          3
+        ],
+        "vowelSymbols": [
+          "ɵ"
+        ],
+        "timeStartMs": 1121,
+        "timeEndMs": 1378,
+        "activeAnalysisId": null,
+        "manualF1": 552.0,
+        "manualF2": 826.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 237,
+    "url": "file://lang/ru/audio/easy/jivet.mp3",
+    "originalFilename": "jivet.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "живёт",
+    "phonemic": "/ʐɨˈvot/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɵ",
+        "position": [
+          3,
+          4
+        ],
+        "vowelSymbols": [
+          "ɵ"
+        ],
+        "timeStartMs": 1104,
+        "timeEndMs": 1304,
+        "activeAnalysisId": null,
+        "manualF1": 530.0,
+        "manualF2": 801.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 238,
+    "url": "file://lang/ru/audio/easy/mira.mp3",
+    "originalFilename": "mira.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "мира",
+    "phonemic": "/ˈmʲirə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [
+          3,
+          4
+        ],
+        "vowelSymbols": [
+          "ə"
+        ],
+        "timeStartMs": 1196,
+        "timeEndMs": 1325,
+        "activeAnalysisId": null,
+        "manualF1": 656.0,
+        "manualF2": 1310.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 239,
+    "url": "file://lang/ru/audio/easy/etomu.mp3",
+    "originalFilename": "etomu.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "этому",
+    "phonemic": "/ˈetəmʊ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [
+          2,
+          3
+        ],
+        "vowelSymbols": [
+          "ə"
+        ],
+        "timeStartMs": 965,
+        "timeEndMs": 1092,
+        "activeAnalysisId": null,
+        "manualF1": 524.0,
+        "manualF2": 1352.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 240,
+    "url": "file://lang/ru/audio/easy/odnovremenno.mp3",
+    "originalFilename": "odnovremenno.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "одновременно",
+    "phonemic": "/ɐdnəvrʲɪˈmʲenə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [
+          11,
+          12
+        ],
+        "vowelSymbols": [
+          "ə"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 241,
+    "url": "file://lang/ru/audio/auto/o.mp3",
+    "originalFilename": "o.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "o",
+    "phonemic": "/o/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "o",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "o"
+        ],
+        "timeStartMs": 717,
+        "timeEndMs": 967,
+        "activeAnalysisId": null,
+        "manualF1": 398.0,
+        "manualF2": 767.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 242,
+    "url": "file://lang/ru/audio/easy/tot.mp3",
+    "originalFilename": "tot.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "тот",
+    "phonemic": "/tot/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "o",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "o"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 243,
+    "url": "file://lang/ru/audio/auto/e_open.mp3",
+    "originalFilename": "e_open.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɛ",
+    "phonemic": "/ɛ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɛ"
+        ],
+        "timeStartMs": 370,
+        "timeEndMs": 550,
+        "activeAnalysisId": null,
+        "manualF1": 451.0,
+        "manualF2": 1139.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 244,
+    "url": "file://lang/ru/audio/easy/etot.mp3",
+    "originalFilename": "etot.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "этот",
+    "phonemic": "/ˈetət/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɛ"
+        ],
+        "timeStartMs": 536,
+        "timeEndMs": 658,
+        "activeAnalysisId": null,
+        "manualF1": 470.0,
+        "manualF2": 1853.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 245,
+    "url": "file://lang/ru/audio/forvo/ona.mp3",
+    "originalFilename": "ona.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "она",
+    "phonemic": "/ɐˈna/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʌ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ʌ"
+        ],
+        "timeStartMs": 54,
+        "timeEndMs": 153,
+        "activeAnalysisId": null,
+        "manualF1": 558.0,
+        "manualF2": 1315.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 246,
+    "url": "file://lang/ru/audio/easy/hotel.mp3",
+    "originalFilename": "hotel.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "хотел",
+    "phonemic": "/xɐˈtʲel/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʌ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ʌ"
+        ],
+        "timeStartMs": 550,
+        "timeEndMs": 642,
+        "activeAnalysisId": null,
+        "manualF1": 696.0,
+        "manualF2": 1387.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 247,
+    "url": "file://lang/ru/audio/easy/stoyala.mp3",
+    "originalFilename": "stoyala.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "стояла",
+    "phonemic": "/stɐˈjalə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʌ",
+        "position": [
+          2,
+          3
+        ],
+        "vowelSymbols": [
+          "ʌ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 248,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/d/da/Ru-%D0%B3%D0%BE%D0%BB%D0%BE%D0%B2%D0%B0.ogg/Ru-%D0%B3%D0%BE%D0%BB%D0%BE%D0%B2%D0%B0.ogg.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "голова",
+    "phonemic": "/ɡələˈva/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʌ",
+        "position": [
+          3,
+          4
+        ],
+        "vowelSymbols": [
+          "ʌ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 249,
+    "url": "file://lang/ru/audio/auto/a.mp3",
+    "originalFilename": "a.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "a",
+    "phonemic": "/a/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "a",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "a"
+        ],
+        "timeStartMs": 555,
+        "timeEndMs": 624,
+        "activeAnalysisId": null,
+        "manualF1": 799.0,
+        "manualF2": 1134.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 250,
+    "url": "file://lang/ru/audio/easy/nami.mp3",
+    "originalFilename": "nami.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "нами",
+    "phonemic": "/ˈnamʲɪ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "a",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "a"
+        ],
+        "timeStartMs": 733,
+        "timeEndMs": 1008,
+        "activeAnalysisId": null,
+        "manualF1": 783.0,
+        "manualF2": 1188.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 251,
+    "url": "file://lang/ru/audio/auto/a_back.ogg",
+    "originalFilename": "a_back.ogg",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɑ",
+    "phonemic": "/ɑ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɑ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɑ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 252,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/f/fb/Ru-%D0%BF%D0%B0%D0%BB%D0%BA%D0%B0.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "палка",
+    "phonemic": "/ˈpalkə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɑ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɑ"
+        ],
+        "timeStartMs": 196,
+        "timeEndMs": 287,
+        "activeAnalysisId": null,
+        "manualF1": 531.0,
+        "manualF2": 932.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 253,
+    "url": "file://lang/ru/audio/forvo/kal.mp3",
+    "originalFilename": "kal.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "кал",
+    "phonemic": "/kal/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɑ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɑ"
+        ],
+        "timeStartMs": 183,
+        "timeEndMs": 260,
+        "activeAnalysisId": null,
+        "manualF1": 592.0,
+        "manualF2": 1087.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 254,
+    "url": "file://lang/ru/audio/rufe/ya.mp3",
+    "originalFilename": "ya.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "я",
+    "phonemic": "/ja/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "a",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "a"
+        ],
+        "timeStartMs": 650,
+        "timeEndMs": 781,
+        "activeAnalysisId": null,
+        "manualF1": 866.0,
+        "manualF2": 1283.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 255,
+    "url": "file://lang/ru/audio/easy/chasti.mp3",
+    "originalFilename": "chasti.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "части",
+    "phonemic": "/ˈtʃastʲɪ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "æ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "æ"
+        ],
+        "timeStartMs": 673,
+        "timeEndMs": 816,
+        "activeAnalysisId": null,
+        "manualF1": 687.0,
+        "manualF2": 1340.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 256,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/0/05/Ru-%D0%BF%D1%8F%D1%82%D1%8C.ogg/Ru-%D0%BF%D1%8F%D1%82%D1%8C.ogg.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "пять",
+    "phonemic": "/pʲatʲ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "æ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "æ"
+        ],
+        "timeStartMs": 329,
+        "timeEndMs": 453,
+        "activeAnalysisId": null,
+        "manualF1": 611.0,
+        "manualF2": 1786.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  }
+]

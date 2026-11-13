@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IPA Vowel Chart</title>
+  <link rel="stylesheet" href="css/index.css">
+</head>
+<body>
+
+<header>
+  <h1>IPA Vowel Chart</h1>
+  <p>Use filters → · Hover for details · Click dot or letter to play</p>
+  <button class="reload-btn" id="reloadBtn" type="button">
+    <span class="reload-icon">↺</span> Reload languages
+  </button>
+  <a href="editor.html"     class="editor-link">✎ Edit languages</a>
+  <a href="consonants.html" class="editor-link">👄 Consonant Chart</a>
+  <a href="debug.html"     class="editor-link">Diagnosis</a>
+  <a href="shadow.html"    class="editor-link">🗣 Shadowing</a>
+  <a href="praat.html"     class="editor-link" target="_blank">🔬 Formant Lab</a>
+  <a href="sounds.html"    class="editor-link" target="_blank">🔊 Sound Library</a>
+  <a href="tokens.html"    class="editor-link" target="_blank">⌸ Token Browser</a>
+  <a href="drill.html"     class="editor-link" target="_blank">🎙 Token Drill</a>
+  <a href="settings.html"  class="editor-link">⚙ Settings</a>
+  <button class="practice-btn" id="practiceTrigger" type="button">🎤 Practice</button>
+  <span id="userPicker" class="user-picker"></span>
+</header>
+
+<!-- ── Practice panel (bottom bar) ──────────────────────────────── -->
+<div id="practicePanel">
+  <!-- Real-time stats (shown when Live is active) -->
+  <div id="rtStats" style="display:none;font-size:.6rem;color:#34d399;padding:2px 14px;background:#0a1520;border-bottom:1px solid #1a2e44;font-family:monospace"></div>
+  <div class="pp-columns">
+    <!-- ── Left: Your recording ── -->
+    <div class="pp-col">
+      <div class="pp-row">
+        <span class="pp-server" id="ppServer">Server offline</span>
+        <button class="pp-btn" id="ppLive" type="button" title="Real-time formant trail on formant chart">⬤ Live</button>
+        <button class="pp-btn" id="ppRecord">● Rec</button>
+        <span class="rec-dot" id="recDot"></span>
+        <button class="pp-btn" id="ppPlay" disabled>▶</button>
+        <button class="pp-btn" id="ppCompare" disabled title="Play reference, then yours — silence-trimmed">⇄</button>
+        <button class="pp-btn" id="ppClear" disabled>✕</button>
+        <button class="pp-close" id="ppClose" style="margin-left:auto">✕</button>
+      </div>
+      <div class="pp-status" id="ppStatus">Record a vowel</div>
+      <div id="waveInfo" style="display:none;font-size:.58rem;color:var(--muted);text-align:center"></div>
+      <div class="pp-spectro-wrap" id="waveWrap" style="display:none">
+        <canvas id="waveCanvas"></canvas>
+        <canvas id="waveOverlay"></canvas>
+        <div id="ppLiveMeans" class="pp-live-label"></div>
+      </div>
+    </div>
+    <!-- ── Right: Reference vowel ── -->
+    <div class="pp-col">
+      <div class="pp-row">
+        <span class="pp-col-title" id="refColTitle" style="flex:0;white-space:nowrap">Reference</span>
+        <button class="pp-btn" id="refPlay" disabled>▶</button>
+        <span class="pp-formants" id="refSpecified"></span>
+      </div>
+      <div class="pp-status" id="refStatus">Click a vowel on the chart</div>
+      <div id="refWaveInfo" style="display:none;font-size:.58rem;color:var(--muted);text-align:center"></div>
+      <div class="pp-spectro-wrap" id="refWaveWrap" style="display:none">
+        <canvas id="refWaveCanvas"></canvas>
+        <canvas id="refWaveOverlay"></canvas>
+        <div id="refLiveMeans" class="pp-live-label"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  Loading language data…
+</div>
+
+<div id="app">
+  <div class="page-layout">
+    <div class="chart-row">
+      <div class="chart-col">
+        <div class="view-tabs">
+          <button class="view-tab active" id="tabIpa"     type="button">IPA Chart</button>
+          <button class="view-tab"        id="tabFormant" type="button">Formant Plot</button>
+        </div>
+        <div class="chart-panel active" id="panelIpa">
+          <div class="chart-wrap">
+            <svg class="chart-svg" id="chartIpa" viewBox="0 0 1200 720"></svg>
+          </div>
+          <div class="legend">
+            <b>·</b> exact position &nbsp;|&nbsp; left = unrounded &nbsp;|&nbsp; right = rounded &nbsp;|&nbsp; shared dot → click to pick
+          </div>
+        </div>
+        <div class="chart-panel" id="panelFormant">
+          <div class="chart-wrap">
+            <svg class="chart-svg" id="chartFormant" viewBox="0 0 1200 720"></svg>
+          </div>
+          <div class="legend">
+            X: <b>F2 (Hz)</b> high→left (front) &nbsp;|&nbsp; Y: <b>F1 (Hz)</b> high→bottom (open)
+          </div>
+        </div>
+      </div>
+      <aside class="sidebar">
+        <div class="sb-header">
+          <span class="sb-header-title">Filters</span>
+          <button class="sb-clear-btn" id="clearAllFilters">Clear all</button>
+        </div>
+        <div class="sb-count" id="sbCount"></div>
+        <div class="sb-divider"></div>
+        <div class="sb-body" id="sidebarBody"></div>
+      </aside>
+    </div>
+    <div class="detail-section" id="detailSection"></div>
+  </div>
+</div>
+
+<div id="vowelPicker">
+  <div class="picker-title">Choose vowel</div>
+  <div id="pickerItems"></div>
+</div>
+<div id="tip" class="tip"></div>
+
+<!-- ── Language loader (JSON via fetch) ─────────────────────────────────────── -->
+<!-- Prefix injected by formanter.py (X-Forwarded-Prefix) — empty when mounted
+     at the root. Must precede every js/ tag: API_BASE is read at load time. -->
+<script>window.PHONEXA_PREFIX = "__PHONEXA_PREFIX__"; var API_BASE = window.PHONEXA_PREFIX || '';</script>
+<script src="js/utils.js"></script>
+<script src="js/user.js"></script>
+<script src="js/lang.js"></script>
+<script src="js/geometry.js"></script>
+<script src="js/filters.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/vad.js"></script>
+<script src="js/spectro.js"></script>
+<script src="js/tooltip.js"></script>
+<script src="js/diphthong.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/practice.js"></script>
+<script src="js/realtime.js"></script>
+<script>
+  // Wire Live button
+  document.getElementById('ppLive')?.addEventListener('click', toggleLive);
+</script>
+<script>
+  async function init() {
+    if (!Object.keys(LANGS).length) {
+      console.warn('No languages loaded — check the backend / DB connection');
+    }
+    UserLib.mountPicker('userPicker').catch(e => console.warn('User picker failed:', e.message));
+    await restoreFilters().catch(e => console.warn('Filter restore failed:', e.message));
+    document.getElementById('loading').style.display = 'none';
+    buildSidebar();
+    renderAll();
+  }
+
+  // ─── Reload button — re-runs the same DB-backed bootstrap as page load ────────
+  document.getElementById('reloadBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('reloadBtn');
+    btn.classList.add('spinning');
+    btn.disabled = true;
+
+    for (const key of Object.keys(LANGS)) delete LANGS[key];
+    try {
+      await loadLanguages();  // already calls init()/buildSidebar()/renderAll() when done
+    } catch (e) {
+      console.error('Reload failed:', e);
+    }
+
+    btn.classList.remove('spinning');
+    btn.disabled = false;
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,2022 @@
+[
+  {
+    "id": 257,
+    "url": "file://lang/en/audio/ipa/green.mp3",
+    "originalFilename": "green.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "iː",
+    "phonemic": "/iː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "i",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "i"
+        ],
+        "timeStartMs": 86,
+        "timeEndMs": 474,
+        "activeAnalysisId": null,
+        "manualF1": 251.0,
+        "manualF2": 1700.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 258,
+    "url": "file://lang/en/audio/ipa/green_word.mp3",
+    "originalFilename": "green_word.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "green",
+    "phonemic": "/ɡriːn/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "i",
+        "position": [
+          2,
+          4
+        ],
+        "vowelSymbols": [
+          "i"
+        ],
+        "timeStartMs": 135,
+        "timeEndMs": 250,
+        "activeAnalysisId": null,
+        "manualF1": 321.0,
+        "manualF2": 2028.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 259,
+    "url": "file://lang/en/audio/h95/heed.wav",
+    "originalFilename": "heed.wav",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "heed",
+    "phonemic": "/hiːd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "i",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "i"
+        ],
+        "timeStartMs": 253,
+        "timeEndMs": 439,
+        "activeAnalysisId": null,
+        "manualF1": 346.0,
+        "manualF2": 2426.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 260,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-feet.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "feet",
+    "phonemic": "/fiːt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "i",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "i"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 261,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-seen.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "seen",
+    "phonemic": "/siːn/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "i",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "i"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 262,
+    "url": "file://lang/en/audio/ipa/pink.mp3",
+    "originalFilename": "pink.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɪ",
+    "phonemic": "/ɪ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɪ"
+        ],
+        "timeStartMs": 61,
+        "timeEndMs": 169,
+        "activeAnalysisId": null,
+        "manualF1": 306.0,
+        "manualF2": 2395.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 263,
+    "url": "file://lang/en/audio/ipa/pink_word.mp3",
+    "originalFilename": "pink_word.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "pink",
+    "phonemic": "/pɪŋk/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɪ"
+        ],
+        "timeStartMs": 57,
+        "timeEndMs": 164,
+        "activeAnalysisId": null,
+        "manualF1": 466.0,
+        "manualF2": 1980.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 264,
+    "url": "file://lang/en/audio/h95/hid.wav",
+    "originalFilename": "hid.wav",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "hid",
+    "phonemic": "/hɪd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɪ"
+        ],
+        "timeStartMs": 216,
+        "timeEndMs": 357,
+        "activeAnalysisId": null,
+        "manualF1": 390.0,
+        "manualF2": 2091.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 265,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-kit.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "kit",
+    "phonemic": "/kɪt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 266,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-bit.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "bit",
+    "phonemic": "/bɪt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 267,
+    "url": "file://lang/en/audio/ipa/red.mp3",
+    "originalFilename": "red.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɛ",
+    "phonemic": "/ɛ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɛ"
+        ],
+        "timeStartMs": 65,
+        "timeEndMs": 175,
+        "activeAnalysisId": null,
+        "manualF1": 528.0,
+        "manualF2": 1765.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 268,
+    "url": "file://lang/en/audio/ipa/red_word.mp3",
+    "originalFilename": "red_word.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "red",
+    "phonemic": "/rɛd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɛ"
+        ],
+        "timeStartMs": 66,
+        "timeEndMs": 196,
+        "activeAnalysisId": null,
+        "manualF1": 594.0,
+        "manualF2": 1539.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 269,
+    "url": "file://lang/en/audio/h95/head.wav",
+    "originalFilename": "head.wav",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "head",
+    "phonemic": "/hɛd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "ɛ"
+        ],
+        "timeStartMs": 231,
+        "timeEndMs": 356,
+        "activeAnalysisId": null,
+        "manualF1": 623.0,
+        "manualF2": 1860.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 270,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-dress.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "dress",
+    "phonemic": "/drɛs/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [
+          2,
+          3
+        ],
+        "vowelSymbols": [
+          "ɛ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 271,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-bed.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "bed",
+    "phonemic": "/bɛd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɛ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 272,
+    "url": "file://lang/en/audio/ipa/sand.mp3",
+    "originalFilename": "sand.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "æ",
+    "phonemic": "/æ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "æ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "æ"
+        ],
+        "timeStartMs": 81,
+        "timeEndMs": 248,
+        "activeAnalysisId": null,
+        "manualF1": 598.0,
+        "manualF2": 1707.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 273,
+    "url": "file://lang/en/audio/ipa/sand_word.mp3",
+    "originalFilename": "sand_word.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "sand",
+    "phonemic": "/sænd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "æ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "æ"
+        ],
+        "timeStartMs": 156,
+        "timeEndMs": 319,
+        "activeAnalysisId": null,
+        "manualF1": 508.0,
+        "manualF2": 1894.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 274,
+    "url": "file://lang/en/audio/h95/had.wav",
+    "originalFilename": "had.wav",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "had",
+    "phonemic": "/hæd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "æ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "æ"
+        ],
+        "timeStartMs": 235,
+        "timeEndMs": 403,
+        "activeAnalysisId": null,
+        "manualF1": 660.0,
+        "manualF2": 1954.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 275,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-trap.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "trap",
+    "phonemic": "/træp/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "æ",
+        "position": [
+          2,
+          3
+        ],
+        "vowelSymbols": [
+          "æ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 276,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-cat.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "cat",
+    "phonemic": "/kæt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "æ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "æ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 277,
+    "url": "file://lang/en/audio/ipa/coffee.mp3",
+    "originalFilename": "coffee.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɑ",
+    "phonemic": "/ɑ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɑ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɑ"
+        ],
+        "timeStartMs": 152,
+        "timeEndMs": 346,
+        "activeAnalysisId": null,
+        "manualF1": 633.0,
+        "manualF2": 1050.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 278,
+    "url": "file://lang/en/audio/ipa/coffee_word.mp3",
+    "originalFilename": "coffee_word.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "coffee",
+    "phonemic": "/ˈkɑːfi/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɑ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɑ"
+        ],
+        "timeStartMs": 148,
+        "timeEndMs": 284,
+        "activeAnalysisId": null,
+        "manualF1": 724.0,
+        "manualF2": 1078.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 279,
+    "url": "file://lang/en/audio/h95/hod.wav",
+    "originalFilename": "hod.wav",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "hod",
+    "phonemic": "/hɑːd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɑ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɑ"
+        ],
+        "timeStartMs": 243,
+        "timeEndMs": 428,
+        "activeAnalysisId": null,
+        "manualF1": 795.0,
+        "manualF2": 1276.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 280,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-father.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "father",
+    "phonemic": "/ˈfɑːðər/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɑ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɑ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 281,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-palm.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "palm",
+    "phonemic": "/pɑːm/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɑ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɑ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 282,
+    "url": "file://lang/en/audio/ipa/mauve.mp3",
+    "originalFilename": "mauve.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɔ",
+    "phonemic": "/ɔ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɔ"
+        ],
+        "timeStartMs": 101,
+        "timeEndMs": 335,
+        "activeAnalysisId": null,
+        "manualF1": 447.0,
+        "manualF2": 718.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 283,
+    "url": "file://lang/en/audio/ipa/mauve_word.mp3",
+    "originalFilename": "mauve_word.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "mauve",
+    "phonemic": "/mɔːv/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "ɔ"
+        ],
+        "timeStartMs": 187,
+        "timeEndMs": 383,
+        "activeAnalysisId": null,
+        "manualF1": 631.0,
+        "manualF2": 891.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 284,
+    "url": "file://lang/en/audio/h95/hawed.wav",
+    "originalFilename": "hawed.wav",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "hawed",
+    "phonemic": "/hɔːd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [
+          1,
+          4
+        ],
+        "vowelSymbols": [
+          "ɔ"
+        ],
+        "timeStartMs": 288,
+        "timeEndMs": 467,
+        "activeAnalysisId": null,
+        "manualF1": 688.0,
+        "manualF2": 1051.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 285,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-thought.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "thought",
+    "phonemic": "/θɔːt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [
+          2,
+          6
+        ],
+        "vowelSymbols": [
+          "ɔ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 286,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-claw.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "claw",
+    "phonemic": "/klɔː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [
+          2,
+          4
+        ],
+        "vowelSymbols": [
+          "ɔ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 287,
+    "url": "file://lang/en/audio/ipa/wood.mp3",
+    "originalFilename": "wood.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ʊ",
+    "phonemic": "/ʊ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ʊ"
+        ],
+        "timeStartMs": 74,
+        "timeEndMs": 290,
+        "activeAnalysisId": null,
+        "manualF1": 174.0,
+        "manualF2": 1243.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 288,
+    "url": "file://lang/en/audio/ipa/wood_word.mp3",
+    "originalFilename": "wood_word.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "wood",
+    "phonemic": "/wʊd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "ʊ"
+        ],
+        "timeStartMs": 74,
+        "timeEndMs": 197,
+        "activeAnalysisId": null,
+        "manualF1": 410.0,
+        "manualF2": 917.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 289,
+    "url": "file://lang/en/audio/h95/hood.wav",
+    "originalFilename": "hood.wav",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "hood",
+    "phonemic": "/hʊd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "ʊ"
+        ],
+        "timeStartMs": 218,
+        "timeEndMs": 362,
+        "activeAnalysisId": null,
+        "manualF1": 490.0,
+        "manualF2": 1033.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 290,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-foot.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "foot",
+    "phonemic": "/fʊt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "ʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 291,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-put.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "put",
+    "phonemic": "/pʊt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 292,
+    "url": "file://lang/en/audio/ipa/blue.mp3",
+    "originalFilename": "blue.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "u",
+    "phonemic": "/uː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "u",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "u"
+        ],
+        "timeStartMs": 171,
+        "timeEndMs": 303,
+        "activeAnalysisId": null,
+        "manualF1": 275.0,
+        "manualF2": 576.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 293,
+    "url": "file://lang/en/audio/ipa/blue_word.mp3",
+    "originalFilename": "blue_word.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "blue",
+    "phonemic": "/bluː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "u",
+        "position": [
+          2,
+          4
+        ],
+        "vowelSymbols": [
+          "u"
+        ],
+        "timeStartMs": 142,
+        "timeEndMs": 247,
+        "activeAnalysisId": null,
+        "manualF1": 320.0,
+        "manualF2": 821.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 294,
+    "url": "file://lang/en/audio/h95/whod.wav",
+    "originalFilename": "whod.wav",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "who'd",
+    "phonemic": "/huːd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "u",
+        "position": [
+          2,
+          4
+        ],
+        "vowelSymbols": [
+          "u"
+        ],
+        "timeStartMs": 220,
+        "timeEndMs": 385,
+        "activeAnalysisId": null,
+        "manualF1": 366.0,
+        "manualF2": 909.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 295,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-goose.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "goose",
+    "phonemic": "/ɡuːs/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "u",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "u"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 296,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-food.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "food",
+    "phonemic": "/fuːd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "u",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "u"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 297,
+    "url": "file://lang/en/audio/sa/strut.mp3",
+    "originalFilename": "strut.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ʌ",
+    "phonemic": "/ʌ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʌ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ʌ"
+        ],
+        "timeStartMs": 105,
+        "timeEndMs": 392,
+        "activeAnalysisId": null,
+        "manualF1": 627.0,
+        "manualF2": 941.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 298,
+    "url": "file://lang/en/audio/sa/cut_word.mp3",
+    "originalFilename": "cut_word.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "cut",
+    "phonemic": "/kʌt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʌ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ʌ"
+        ],
+        "timeStartMs": 504,
+        "timeEndMs": 603,
+        "activeAnalysisId": null,
+        "manualF1": 646.0,
+        "manualF2": 1339.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 299,
+    "url": "file://lang/en/audio/h95/hud.wav",
+    "originalFilename": "hud.wav",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "hud",
+    "phonemic": "/hʌd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʌ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ʌ"
+        ],
+        "timeStartMs": 203,
+        "timeEndMs": 403,
+        "activeAnalysisId": null,
+        "manualF1": 665.0,
+        "manualF2": 1291.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 300,
+    "url": "https://dictionary.cambridge.org/media/english/us_pron/s/str/strut/strut.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "strut",
+    "phonemic": "/strʌt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʌ",
+        "position": [
+          3,
+          4
+        ],
+        "vowelSymbols": [
+          "ʌ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 301,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-bus.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "bus",
+    "phonemic": "/bʌs/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʌ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ʌ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 302,
+    "url": "file://lang/en/audio/ipa/dust.mp3",
+    "originalFilename": "dust.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ə",
+    "phonemic": "/ə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ə"
+        ],
+        "timeStartMs": 64,
+        "timeEndMs": 205,
+        "activeAnalysisId": null,
+        "manualF1": 569.0,
+        "manualF2": 1247.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 303,
+    "url": "file://lang/en/audio/ipa/dust_word.mp3",
+    "originalFilename": "dust_word.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "dust",
+    "phonemic": "/dəst/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ə"
+        ],
+        "timeStartMs": 62,
+        "timeEndMs": 193,
+        "activeAnalysisId": null,
+        "manualF1": 701.0,
+        "manualF2": 1250.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 304,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-about.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "about",
+    "phonemic": "/əˈbaʊt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ə"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 305,
+    "url": "file://lang/en/audio/ipa/purple.mp3",
+    "originalFilename": "purple.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɝ",
+    "phonemic": "/ɝː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɝ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɝ",
+          "ɛː"
+        ],
+        "timeStartMs": 49,
+        "timeEndMs": 197,
+        "activeAnalysisId": null,
+        "manualF1": 420.0,
+        "manualF2": 1087.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 306,
+    "url": "file://lang/en/audio/ipa/purple_word.mp3",
+    "originalFilename": "purple_word.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "purple",
+    "phonemic": "/ˈpɜːrpl/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɝ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "ɝ",
+          "ɛː"
+        ],
+        "timeStartMs": 64,
+        "timeEndMs": 156,
+        "activeAnalysisId": null,
+        "manualF1": 489.0,
+        "manualF2": 1112.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 307,
+    "url": "file://lang/en/audio/h95/heard.wav",
+    "originalFilename": "heard.wav",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "heard",
+    "phonemic": "/hɜːrd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɝ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "ɝ",
+          "ɛː"
+        ],
+        "timeStartMs": 251,
+        "timeEndMs": 466,
+        "activeAnalysisId": null,
+        "manualF1": 506.0,
+        "manualF2": 1406.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 308,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-nurse.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "nurse",
+    "phonemic": "/nɜːrs/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɝ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "ɝ",
+          "ɛː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 309,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-bird.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "bird",
+    "phonemic": "/bɜːrd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɝ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "ɝ",
+          "ɛː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 310,
+    "url": "file://lang/en/audio/ipa/ei.mp3",
+    "originalFilename": "ei.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "eɪ",
+    "phonemic": "/eɪ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "eɪ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "eɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 311,
+    "url": "file://lang/en/audio/ipa/jade_word.mp3",
+    "originalFilename": "jade_word.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "jade",
+    "phonemic": "/dʒeɪd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "eɪ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "eɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 312,
+    "url": "file://lang/en/audio/h95/hayed.wav",
+    "originalFilename": "hayed.wav",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "hayed",
+    "phonemic": "/heɪd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "eɪ",
+        "position": [
+          1,
+          4
+        ],
+        "vowelSymbols": [
+          "eɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 313,
+    "url": "file://lang/en/audio/ipa/gold.mp3",
+    "originalFilename": "gold.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "oʊ",
+    "phonemic": "/oʊ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "oʊ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "oʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 314,
+    "url": "file://lang/en/audio/ipa/gold_word.mp3",
+    "originalFilename": "gold_word.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "gold",
+    "phonemic": "/ɡoʊld/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "oʊ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "oʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 315,
+    "url": "file://lang/en/audio/h95/hoed.wav",
+    "originalFilename": "hoed.wav",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "hoed",
+    "phonemic": "/hoʊd/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "oʊ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "oʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 316,
+    "url": "file://lang/en/audio/ipa/ai.mp3",
+    "originalFilename": "ai.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "aɪ",
+    "phonemic": "/aɪ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aɪ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "aɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 317,
+    "url": "file://lang/en/audio/ipa/lime.mp3",
+    "originalFilename": "lime.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "lime",
+    "phonemic": "/laɪm/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aɪ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "aɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 318,
+    "url": "file://lang/en/audio/ipa/au.mp3",
+    "originalFilename": "au.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "aʊ",
+    "phonemic": "/aʊ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aʊ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "aʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 319,
+    "url": "file://lang/en/audio/ipa/brown.mp3",
+    "originalFilename": "brown.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "brown",
+    "phonemic": "/braʊn/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aʊ",
+        "position": [
+          2,
+          4
+        ],
+        "vowelSymbols": [
+          "aʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 320,
+    "url": "file://lang/en/audio/ipa/oi.mp3",
+    "originalFilename": "oi.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɔɪ",
+    "phonemic": "/ɔɪ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔɪ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɔɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 321,
+    "url": "file://lang/en/audio/ipa/turquoise.mp3",
+    "originalFilename": "turquoise.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "turquoise",
+    "phonemic": "/ˈtɜːrkwɔɪz/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔɪ",
+        "position": [
+          4,
+          7
+        ],
+        "vowelSymbols": [
+          "ɔɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  }
+]

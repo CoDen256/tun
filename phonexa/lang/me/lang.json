@@ -1,0 +1,85 @@
+{
+  "key": "me",
+  "label": "Denys",
+  "color": "#fb7185",
+  "vowels": [
+    {
+      "ipa": "i",
+      "h": 0.05,
+      "b": 0,
+      "rounded": false,
+      "type": "variable",
+      "desc": "Close front unrounded",
+      "f1": 271.48,
+      "f2": 2380.4,
+      "ipaAudio": "lang/me/audio/i.wav",
+      "wikiUrl": "https://en.wikipedia.org/wiki/Close_front_unrounded_vowel",
+      "words": []
+    },
+    {
+      "ipa": "ɨ",
+      "h": 0,
+      "b": 0.7,
+      "rounded": false,
+      "type": "variable",
+      "desc": "Close central unrounded",
+      "f1": 339.86,
+      "f2": 1854.85,
+      "ipaAudio": "lang/me/audio/i_bar.wav",
+      "wikiUrl": "https://en.wikipedia.org/wiki/Close_central_unrounded_vowel",
+      "words": []
+    },
+    {
+      "ipa": "u",
+      "h": 0.09,
+      "b": 1,
+      "rounded": true,
+      "type": "variable",
+      "desc": "Close back rounded",
+      "f1": 317.03,
+      "f2": 565.81,
+      "ipaAudio": "lang/me/audio/u.wav",
+      "wikiUrl": "https://en.wikipedia.org/wiki/Close_back_rounded_vowel",
+      "words": []
+    },
+    {
+      "ipa": "o",
+      "h": 0.61,
+      "b": 1,
+      "rounded": true,
+      "type": "variable",
+      "desc": "Mid front rounded ɔ̝/o̞",
+      "f1": 526.83,
+      "f2": 803.64,
+      "ipaAudio": "lang/me/audio/o.wav",
+      "wikiUrl": "https://en.wikipedia.org/wiki/Mid_back_rounded_vowel",
+      "words": []
+    },
+    {
+      "ipa": "ɛ",
+      "h": 0.57,
+      "b": 0,
+      "rounded": false,
+      "type": "variable",
+      "desc": "Open-mid front unrounded",
+      "f1": 629.02,
+      "f2": 1830.72,
+      "ipaAudio": "lang/me/audio/e_open.wav",
+      "wikiUrl": "https://en.wikipedia.org/wiki/Open-mid_front_unrounded_vowel",
+      "words": []
+    },
+    {
+      "ipa": "a",
+      "h": 1,
+      "b": 0.25,
+      "rounded": false,
+      "type": "variable",
+      "desc": "Open front unrounded",
+      "f1": 853.77,
+      "f2": 1309.47,
+      "ipaAudio": "lang/me/audio/a.wav",
+      "wikiUrl": "https://en.wikipedia.org/wiki/Open_front_unrounded_vowel",
+      "words": []
+    }
+  ]
+}

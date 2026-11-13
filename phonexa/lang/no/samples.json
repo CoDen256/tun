@@ -1,0 +1,1991 @@
+[
+  {
+    "text": "iː",
+    "audio": "lang/no/audio/auto/i_long.mp3",
+    "phonemic": "/iː/",
+    "tokens": [
+      {
+        "symbol": "iː",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [329, 564],
+          "f1": 256,
+          "f2": 2410,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "iː"
+  },
+  {
+    "text": "de",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/2/29/No-de.ogg/No-de.ogg.mp3",
+    "phonemic": "/deː/",
+    "tokens": [
+      {
+        "symbol": "iː",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [146, 318],
+          "f1": 238,
+          "f2": 2174,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "skive",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/3/36/LL-Q9043_%28nor%29-Telaneo-skive.wav/LL-Q9043_%28nor%29-Telaneo-skive.wav.mp3",
+    "phonemic": "/ˈʃiːvə/",
+    "tokens": [
+      {
+        "symbol": "iː",
+        "position": [2, 3],
+        "analysis": {
+          "slice": [362, 462],
+          "f1": 295,
+          "f2": 2700,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ɪ",
+    "audio": "lang/no/audio/mjolnir/i/i_short.mp3",
+    "phonemic": "/ɪ/",
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [137, 195],
+          "f1": 352,
+          "f2": 2211,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "ɪ"
+  },
+  {
+    "text": "ikke",
+    "audio": "lang/no/audio/mjolnir/i/ikke.mp3",
+    "phonemic": "/ˈɪkə/",
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [115, 153],
+          "f1": 369,
+          "f2": 2288,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "skille",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/0/0d/LL-Q9043_%28nor%29-Telaneo-skille.wav/LL-Q9043_%28nor%29-Telaneo-skille.wav.mp3",
+    "phonemic": "/ˈʃɪlə/",
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [2, 3],
+        "analysis": {
+          "slice": [346, 409],
+          "f1": 392,
+          "f2": 2228,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "yː",
+    "audio": "lang/no/audio/auto/y_long.mp3",
+    "phonemic": "/yː/",
+    "tokens": [
+      {
+        "symbol": "yː",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [346, 538],
+          "f1": 262,
+          "f2": 2182,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "yː"
+  },
+  {
+    "text": "sky",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/5/50/LL-Q9043_%28nor%29-Telaneo-sky.wav/LL-Q9043_%28nor%29-Telaneo-sky.wav.mp3",
+    "phonemic": "/ʃyː/",
+    "tokens": [
+      {
+        "symbol": "yː",
+        "position": [2, 3],
+        "analysis": {
+          "slice": [401, 442],
+          "f1": 316,
+          "f2": 2372,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ʏ",
+    "audio": "lang/no/audio/mjolnir/y/y_short.mp3",
+    "phonemic": "/ʏ/",
+    "tokens": [
+      {
+        "symbol": "ʏ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [156, 227],
+          "f1": 362,
+          "f2": 2096,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "ʏ"
+  },
+  {
+    "text": "unnskyld",
+    "audio": "lang/no/audio/mjolnir/y/unnskyld.mp3",
+    "phonemic": "/ˈʉnʃʏl/",
+    "tokens": [
+      {
+        "symbol": "ʏ",
+        "position": [5, 6],
+        "analysis": {
+          "slice": [526, 584],
+          "f1": 457,
+          "f2": 1856,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "nytt",
+    "audio": "lang/no/audio/mjolnir/y/nytt.mp3",
+    "phonemic": "/nʏtː/",
+    "tokens": [
+      {
+        "symbol": "ʏ",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [231, 324],
+          "f1": 394,
+          "f2": 2258,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "yndi",
+    "audio": "lang/no/audio/dict/yndi.mp3",
+    "phonemic": "/ˈʏndɪ/",
+    "tokens": [
+      {
+        "symbol": "ʏ",
+        "position": [0, 1],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "yndi",
+    "audio": "lang/no/audio/yndi.mp3",
+    "phonemic": "/ˈʏndɪ/",
+    "tokens": [
+      {
+        "symbol": "ʏ",
+        "position": [0, 1],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "skydd",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/e/ef/LL-Q9043_%28nor%29-Telaneo-skydd.wav/LL-Q9043_%28nor%29-Telaneo-skydd.wav.mp3",
+    "phonemic": "/ʃʏdː/",
+    "tokens": [
+      {
+        "symbol": "ʏ",
+        "position": [2, 3],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ʉː",
+    "audio": "lang/no/audio/auto/u_bar_long.mp3",
+    "phonemic": "/ʉː/",
+    "tokens": [
+      {
+        "symbol": "ʉː",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [337, 580],
+          "f1": 270,
+          "f2": 1908,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "ʉː"
+  },
+  {
+    "text": "sju",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/b/b2/LL-Q9043_%28nor%29-Telaneo-sju.wav/LL-Q9043_%28nor%29-Telaneo-sju.wav.mp3",
+    "phonemic": "/ʃʉː/",
+    "tokens": [
+      {
+        "symbol": "ʉː",
+        "position": [2, 3],
+        "analysis": {
+          "slice": [463, 593],
+          "f1": 242,
+          "f2": 1614,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ajourføre",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/3/3e/Nb-ajourf%C3%B8re.ogg/Nb-ajourf%C3%B8re.ogg.mp3",
+    "phonemic": "/aˈʒʉːrføːrə/",
+    "tokens": [
+      {
+        "symbol": "ʉː",
+        "position": [2, 4],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ʉ",
+    "audio": "lang/no/audio/mjolnir/ue/ue_short.mp3",
+    "phonemic": "/ʉ/",
+    "tokens": [
+      {
+        "symbol": "ʉ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [107, 179],
+          "f1": 411,
+          "f2": 1882,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "ʉ"
+  },
+  {
+    "text": "hun",
+    "audio": "lang/no/audio/mjolnir/ue/hun.mp3",
+    "phonemic": "/hʉn/",
+    "tokens": [
+      {
+        "symbol": "ʉ",
+        "position": [1, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "kunne",
+    "audio": "lang/no/audio/mjolnir/ue/kunne.mp3",
+    "phonemic": "/ˈkʉnə/",
+    "tokens": [
+      {
+        "symbol": "ʉ",
+        "position": [1, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "unnskyld",
+    "audio": "lang/no/audio/mjolnir/ue/unnskyld.mp3",
+    "phonemic": "/ˈʉnʃʏl/",
+    "tokens": [
+      {
+        "symbol": "ʉ",
+        "position": [0, 1],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ull",
+    "audio": "lang/no/audio/dict/ull.mp3",
+    "phonemic": "/ʉlː/",
+    "tokens": [
+      {
+        "symbol": "ʉ",
+        "position": [0, 1],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "skuffe",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/f/fc/LL-Q9043_%28nor%29-Telaneo-skuffe.wav/LL-Q9043_%28nor%29-Telaneo-skuffe.wav.mp3",
+    "phonemic": "/ˈskʉfə/",
+    "tokens": [
+      {
+        "symbol": "ʉ",
+        "position": [2, 3],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "uː",
+    "audio": "lang/no/audio/auto/u_long.mp3",
+    "phonemic": "/uː/",
+    "tokens": [
+      {
+        "symbol": "uː",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [356, 570],
+          "f1": 384,
+          "f2": 507,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "uː"
+  },
+  {
+    "text": "skog",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/0/01/LL-Q9043_%28nor%29-Telaneo-skog.wav/LL-Q9043_%28nor%29-Telaneo-skog.wav.mp3",
+    "phonemic": "/skuːɡ/",
+    "tokens": [
+      {
+        "symbol": "uː",
+        "position": [2, 3],
+        "analysis": {
+          "slice": [433, 556],
+          "f1": 359,
+          "f2": 428,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "for",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/c/ca/LL-Q9043_%28nor%29-Teodor605-f%C3%B4r.wav/LL-Q9043_%28nor%29-Teodor605-f%C3%B4r.wav.mp3",
+    "phonemic": "/fɔr/",
+    "tokens": [
+      {
+        "symbol": "uː",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [349, 469],
+          "f1": 280,
+          "f2": 777,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ʊ",
+    "audio": "lang/no/audio/mjolnir/u/u_short.mp3",
+    "phonemic": "/ʊ/",
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [138, 191],
+          "f1": 463,
+          "f2": 905,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "ʊ"
+  },
+  {
+    "text": "sukker",
+    "audio": "lang/no/audio/mjolnir/u/sukker.mp3",
+    "phonemic": "/ˈsʊkər/",
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [217, 274],
+          "f1": 396,
+          "f2": 1083,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "hvor",
+    "audio": "lang/no/audio/mjolnir/u/hvor.mp3",
+    "phonemic": "/vʊr/",
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [2, 3],
+        "analysis": {
+          "slice": [167, 218],
+          "f1": 443,
+          "f2": 1269,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "rom",
+    "audio": "lang/no/audio/mjolnir/u/rom.mp3",
+    "phonemic": "/rʊm/",
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [1, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "bukk",
+    "audio": "lang/no/audio/mjolnir/u/bukk.mp3",
+    "phonemic": "/bʊkː/",
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [1, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "fordi",
+    "audio": "lang/no/audio/mjolnir/u/fordi.mp3",
+    "phonemic": "/fʊrˈdiː/",
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [1, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "loff",
+    "audio": "lang/no/audio/dict/loff.mp3",
+    "phonemic": "/lɔfː/",
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [1, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "journal",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/e/e3/No-journal.ogg/No-journal.ogg.mp3",
+    "phonemic": "/ʒʊrˈnɑːl/",
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [1, 3],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "eː",
+    "audio": "lang/no/audio/auto/e_long.mp3",
+    "phonemic": "/eː/",
+    "tokens": [
+      {
+        "symbol": "eː",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [324, 515],
+          "f1": 470,
+          "f2": 2147,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "eː"
+  },
+  {
+    "text": "skje",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/1/1d/LL-Q9043_%28nor%29-Telaneo-skje.wav/LL-Q9043_%28nor%29-Telaneo-skje.wav.mp3",
+    "phonemic": "/ʃeː/",
+    "tokens": [
+      {
+        "symbol": "eː",
+        "position": [3, 4],
+        "analysis": {
+          "slice": [369, 512],
+          "f1": 450,
+          "f2": 2278,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 2000,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ɛ",
+    "audio": "lang/no/audio/mjolnir/e/e_short.mp3",
+    "phonemic": "/ɛ/",
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [143, 182],
+          "f1": 585,
+          "f2": 1908,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "ɛ"
+  },
+  {
+    "text": "etter",
+    "audio": "lang/no/audio/mjolnir/e/etter.mp3",
+    "phonemic": "/ˈɛtər/",
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [67, 132],
+          "f1": 579,
+          "f2": 1908,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "menn",
+    "audio": "lang/no/audio/mjolnir/e/menn.mp3",
+    "phonemic": "/mɛnː/",
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [161, 210],
+          "f1": 614,
+          "f2": 1759,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "skjell",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/9/98/LL-Q9043_%28nor%29-Telaneo-skjell.wav/LL-Q9043_%28nor%29-Telaneo-skjell.wav.mp3",
+    "phonemic": "/ʃɛlː/",
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [3, 4],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "øː",
+    "audio": "lang/no/audio/auto/oe_long.mp3",
+    "phonemic": "/øː/",
+    "tokens": [
+      {
+        "symbol": "øː",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [324, 557],
+          "f1": 407,
+          "f2": 1528,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "øː"
+  },
+  {
+    "text": "sjø",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/1/1b/LL-Q9043_%28nor%29-Telaneo-sj%C3%B8.wav/LL-Q9043_%28nor%29-Telaneo-sj%C3%B8.wav.mp3",
+    "phonemic": "/ʃøː/",
+    "tokens": [
+      {
+        "symbol": "øː",
+        "position": [2, 3],
+        "analysis": {
+          "slice": [369, 534],
+          "f1": 500,
+          "f2": 1420,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ɘ",
+    "audio": "lang/no/audio/mjolnir/er/er.mp3",
+    "phonemic": "/ɘ/",
+    "tokens": [
+      {
+        "symbol": "ɘ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [232, 286],
+          "f1": 445,
+          "f2": 1870,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "ɘ"
+  },
+  {
+    "text": "jenter",
+    "audio": "lang/no/audio/mjolnir/er/jenter.mp3",
+    "phonemic": "/ˈjɛntər/",
+    "tokens": [
+      {
+        "symbol": "ɘ",
+        "position": [4, 6],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "skriver",
+    "audio": "lang/no/audio/mjolnir/er/skriver.mp3",
+    "phonemic": "/ˈskriːvər/",
+    "tokens": [
+      {
+        "symbol": "ɘ",
+        "position": [5, 7],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "œ",
+    "audio": "lang/no/audio/mjolnir/oe/oe_short.mp3",
+    "phonemic": "/œ/",
+    "tokens": [
+      {
+        "symbol": "œ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [93, 154],
+          "f1": 595,
+          "f2": 1491,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "œ"
+  },
+  {
+    "text": "født",
+    "audio": "lang/no/audio/mjolnir/oe/foedt.mp3",
+    "phonemic": "/føtː/",
+    "tokens": [
+      {
+        "symbol": "œ",
+        "position": [1, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "skjønner",
+    "audio": "lang/no/audio/mjolnir/oe/skjoenner.mp3",
+    "phonemic": "/ˈʃœnər/",
+    "tokens": [
+      {
+        "symbol": "œ",
+        "position": [3, 4],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "øst",
+    "audio": "lang/no/audio/dict/oest.mp3",
+    "phonemic": "/œst/",
+    "tokens": [
+      {
+        "symbol": "œ",
+        "position": [0, 1],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "skjønne",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/5/5e/LL-Q9043_%28nor%29-Telaneo-skj%C3%B8nne.wav/LL-Q9043_%28nor%29-Telaneo-skj%C3%B8nne.wav.mp3",
+    "phonemic": "/ˈʃœnə/",
+    "tokens": [
+      {
+        "symbol": "œ",
+        "position": [3, 4],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ə",
+    "audio": "lang/no/audio/mjolnir/schwa/schwa.mp3",
+    "phonemic": "/ə/",
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [126, 175],
+          "f1": 633,
+          "f2": 1441,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "ə"
+  },
+  {
+    "text": "bare",
+    "audio": "lang/no/audio/mjolnir/schwa/bare.mp3",
+    "phonemic": "/ˈbɑːrə/",
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [3, 4],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "dette",
+    "audio": "lang/no/audio/mjolnir/schwa/dette.mp3",
+    "phonemic": "/ˈdɛtə/",
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [4, 5],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "krysse",
+    "audio": "lang/no/audio/dict/krysse.mp3",
+    "phonemic": "/ˈkrʏsə/",
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [5, 6],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "berike",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/6/64/LL-Q9043_%28nor%29-Telaneo-berike.wav/LL-Q9043_%28nor%29-Telaneo-berike.wav.mp3",
+    "phonemic": "/bəˈriːkə/",
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [1, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "oː",
+    "audio": "lang/no/audio/auto/o_long.mp3",
+    "phonemic": "/oː/",
+    "tokens": [
+      {
+        "symbol": "oː",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [343, 548],
+          "f1": 426,
+          "f2": 765,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "oː"
+  },
+  {
+    "text": "slå",
+    "audio": "/lang/no/audio/slaa.mp3",
+    "phonemic": "/sloː/",
+    "tokens": [
+      {
+        "symbol": "oː",
+        "position": [2, 3],
+        "analysis": {
+          "slice": [410, 546],
+          "f1": 452,
+          "f2": 805,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ɔ",
+    "audio": "lang/no/audio/mjolnir/o/o_short.mp3",
+    "phonemic": "/ɔ/",
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [301, 339],
+          "f1": 610,
+          "f2": 955,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "ɔ"
+  },
+  {
+    "text": "for",
+    "audio": "lang/no/audio/mjolnir/o/for.mp3",
+    "phonemic": "/fɔr/",
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [258, 293],
+          "f1": 662,
+          "f2": 1216,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "som",
+    "audio": "lang/no/audio/mjolnir/o/som.mp3",
+    "phonemic": "/sɔm/",
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [370, 441],
+          "f1": 535,
+          "f2": 1028,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "jobb",
+    "audio": "lang/no/audio/mjolnir/o/jobb.mp3",
+    "phonemic": "/jɔbː/",
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [1, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "åtte",
+    "audio": "lang/no/audio/mjolnir/o/aatte.mp3",
+    "phonemic": "/ˈɔtə/",
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [0, 1],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "og",
+    "audio": "lang/no/audio/dict/og.mp3",
+    "phonemic": "/ɔɡ/",
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [998, 1150],
+          "f1": 959,
+          "f2": 2013,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "skjold",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/2/2d/LL-Q9043_%28nor%29-Telaneo-skjold.wav/LL-Q9043_%28nor%29-Telaneo-skjold.wav.mp3",
+    "phonemic": "/ʃɔlː/",
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [3, 4],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "slåss",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/a/a5/LL-Q9043_%28nor%29-Telaneo-sl%C3%A5ss.wav/LL-Q9043_%28nor%29-Telaneo-sl%C3%A5ss.wav.mp3",
+    "phonemic": "/sloːsː/",
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [2, 3],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ɑ",
+    "audio": "lang/no/audio/mjolnir/a/a_short.mp3",
+    "phonemic": "/ɑ/",
+    "tokens": [
+      {
+        "symbol": "ɑ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [220, 292],
+          "f1": 795,
+          "f2": 1173,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "ɑ"
+  },
+  {
+    "text": "alle",
+    "audio": "lang/no/audio/mjolnir/a/alle.mp3",
+    "phonemic": "/ˈɑlə/",
+    "tokens": [
+      {
+        "symbol": "ɑ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [74, 127],
+          "f1": 686,
+          "f2": 1042,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "av",
+    "audio": "lang/no/audio/dict/av.mp3",
+    "phonemic": "/ɑv/",
+    "tokens": [
+      {
+        "symbol": "ɑ",
+        "position": [0, 1],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "hagle",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/3/38/LL-Q9043_%28nor%29-Telaneo-hagle.wav/LL-Q9043_%28nor%29-Telaneo-hagle.wav.mp3",
+    "phonemic": "/ˈhɑːɡlə/",
+    "tokens": [
+      {
+        "symbol": "ɑ",
+        "position": [1, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "pensjonist",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/9/93/LL-Q9043_%28nor%29-Telaneo-pensjonist.wav/LL-Q9043_%28nor%29-Telaneo-pensjonist.wav.mp3",
+    "phonemic": "/pɑŋʃʊˈnist/",
+    "tokens": [
+      {
+        "symbol": "ɑ",
+        "position": [1, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ɑː",
+    "audio": "lang/no/audio/auto/a_back_long.mp3",
+    "phonemic": "/ɑː/",
+    "tokens": [
+      {
+        "symbol": "ɑː",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [342, 550],
+          "f1": 661,
+          "f2": 967,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 2000,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "ɑː"
+  },
+  {
+    "text": "dag",
+    "audio": "lang/no/audio/mjolnir/a/dag.mp3",
+    "phonemic": "/dɑːɡ/",
+    "tokens": [
+      {
+        "symbol": "ɑː",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [183, 314],
+          "f1": 728,
+          "f2": 1056,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "hale",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/3/32/LL-Q9043_%28nor%29-Telaneo-hale.wav/LL-Q9043_%28nor%29-Telaneo-hale.wav.mp3",
+    "phonemic": "/ˈhɑːlə/",
+    "tokens": [
+      {
+        "symbol": "ɑː",
+        "position": [1, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "æ",
+    "audio": "lang/no/audio/mjolnir/ae/ae_short.mp3",
+    "phonemic": "/æ/",
+    "tokens": [
+      {
+        "symbol": "æ",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [179, 248],
+          "f1": 941,
+          "f2": 1468,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "æ"
+  },
+  {
+    "text": "vært",
+    "audio": "lang/no/audio/mjolnir/ae/vaert.mp3",
+    "phonemic": "/væːrt/",
+    "tokens": [
+      {
+        "symbol": "æ",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [122, 165],
+          "f1": 872,
+          "f2": 1326,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "æsj",
+    "audio": "lang/no/audio/dict/aesj.mp3",
+    "phonemic": "/æʃ/",
+    "tokens": [
+      {
+        "symbol": "æ",
+        "position": [0, 1],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "kjerring",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/9/91/LL-Q9043_%28nor%29-Telaneo-kjerring.wav/LL-Q9043_%28nor%29-Telaneo-kjerring.wav.mp3",
+    "phonemic": "/ˈçæːrɪŋ/",
+    "tokens": [
+      {
+        "symbol": "æ",
+        "position": [2, 3],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "krasj",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/b/ba/LL-Q9043_%28nor%29-Telaneo-krasj.wav/LL-Q9043_%28nor%29-Telaneo-krasj.wav.mp3",
+    "phonemic": "/kræʃ/",
+    "tokens": [
+      {
+        "symbol": "æ",
+        "position": [2, 3],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "æː",
+    "audio": "lang/no/audio/mjolnir/ae/ae_long.mp3",
+    "phonemic": "/æː/",
+    "tokens": [
+      {
+        "symbol": "æː",
+        "position": [0, 2],
+        "analysis": {
+          "slice": [222, 448],
+          "f1": 921,
+          "f2": 1394,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": "æː"
+  },
+  {
+    "text": "æː",
+    "audio": "https://testcalst.hf.ntnu.no/sfiles/Norwegian/Words_MP3/Bergen_Normal_AOFMF7OIAK64OB91.mp3#Æ",
+    "phonemic": "/æː/",
+    "tokens": [
+      {
+        "symbol": "æː",
+        "position": [0, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "lærer",
+    "audio": "lang/no/audio/mjolnir/ae/laerer.mp3",
+    "phonemic": "/ˈlæːrər/",
+    "tokens": [
+      {
+        "symbol": "æː",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [252, 575],
+          "f1": 928,
+          "f2": 1401,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "kjerning",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/5/55/Nb-kjerning.ogg/Nb-kjerning.ogg.mp3",
+    "phonemic": "/ˈçæːrnɪŋ/",
+    "tokens": [
+      {
+        "symbol": "æː",
+        "position": [2, 3],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ærlig",
+    "audio": "https://upload.wikimedia.org/wikipedia/commons/transcoded/b/ba/LL-Q9043_%28nor%29-Teodor605-%C3%A6rlig.wav/LL-Q9043_%28nor%29-Teodor605-%C3%A6rlig.wav.mp3",
+    "phonemic": "/ˈæːrlɪ/",
+    "tokens": [
+      {
+        "symbol": "æː",
+        "position": [0, 1],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "sau",
+    "audio": "lang/no/audio/mjolnir/aeue/sau.mp3",
+    "phonemic": "/sæʉ/",
+    "tokens": [
+      {
+        "symbol": "æʉ",
+        "position": [1, 3],
+        "analysis": null
+      }
+    ],
+    "representative": "æʉ"
+  },
+  {
+    "text": "tau",
+    "audio": "lang/no/audio/mjolnir/aeue/tau.mp3",
+    "phonemic": "/tæʉ/",
+    "tokens": [
+      {
+        "symbol": "æʉ",
+        "position": [1, 3],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "Europa",
+    "audio": "lang/no/audio/mjolnir/aeue/europa.mp3",
+    "phonemic": "/æʉˈroːpɑ/",
+    "tokens": [
+      {
+        "symbol": "æʉ",
+        "position": [0, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "hei",
+    "audio": "lang/no/audio/mjolnir/aei/hei.mp3",
+    "phonemic": "/hæɪ/",
+    "tokens": [
+      {
+        "symbol": "æɪ",
+        "position": [1, 3],
+        "analysis": null
+      }
+    ],
+    "representative": "æɪ"
+  },
+  {
+    "text": "nei",
+    "audio": "lang/no/audio/mjolnir/aei/nei.mp3",
+    "phonemic": "/næɪ/",
+    "tokens": [
+      {
+        "symbol": "æɪ",
+        "position": [1, 3],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "bein",
+    "audio": "lang/no/audio/mjolnir/aei/bein.mp3",
+    "phonemic": "/bæɪn/",
+    "tokens": [
+      {
+        "symbol": "æɪ",
+        "position": [1, 3],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "gøy",
+    "audio": "lang/no/audio/mjolnir/oey/goey.mp3",
+    "phonemic": "/ɡœʏ/",
+    "tokens": [
+      {
+        "symbol": "œʏ",
+        "position": [1, 3],
+        "analysis": null
+      }
+    ],
+    "representative": "œʏ"
+  },
+  {
+    "text": "øye",
+    "audio": "lang/no/audio/mjolnir/oey/oeye.mp3",
+    "phonemic": "/ˈœʏə/",
+    "tokens": [
+      {
+        "symbol": "œʏ",
+        "position": [0, 2],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "høyre",
+    "audio": "lang/no/audio/mjolnir/oey/hoeyre.mp3",
+    "phonemic": "/ˈhœʏrə/",
+    "tokens": [
+      {
+        "symbol": "œʏ",
+        "position": [1, 3],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "God morgen",
+    "audio": "lang/no/audio/god_morgen.mp3",
+    "phonemic": null,
+    "tokens": [
+      {
+        "symbol": "uː",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [152, 244],
+          "f1": 535,
+          "f2": 755,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "God dag",
+    "audio": "lang/no/audio/god_dag.mp3",
+    "phonemic": null,
+    "tokens": [
+      {
+        "symbol": "uː",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [97, 143],
+          "f1": 598,
+          "f2": 1207,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "mot",
+    "audio": "/lang/no/audio/mot.mp3",
+    "phonemic": null,
+    "tokens": [
+      {
+        "symbol": "uː",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [119, 262],
+          "f1": 533,
+          "f2": 1844,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 20,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "mening",
+    "audio": "lang/no/audio/mjolnir/mening.mp3",
+    "phonemic": null,
+    "tokens": [
+      {
+        "symbol": "eː",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [486, 585],
+          "f1": 465.47,
+          "f2": 1762.98,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ledig",
+    "audio": "lang/no/audio/mjolnir/ledig.mp3",
+    "phonemic": null,
+    "tokens": [
+      {
+        "symbol": "eː",
+        "position": [1, 2],
+        "analysis": {
+          "slice": [243, 319],
+          "f1": 546.33,
+          "f2": 2174.04,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "enig",
+    "audio": "lang/no/audio/mjolnir/enig.mp3",
+    "phonemic": null,
+    "tokens": [
+      {
+        "symbol": "eː",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [195, 275],
+          "f1": 487.14,
+          "f2": 2430.5,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "ɑː",
+    "audio": "lang/no/audio/pavei/a.wav",
+    "phonemic": null,
+    "tokens": [
+      {
+        "symbol": "ɑː",
+        "position": [0, 1],
+        "analysis": {
+          "slice": [195, 275],
+          "f1": 634.14,
+          "f2": 912.8,
+          "max_f": 5000,
+          "n_formants": 5,
+          "window_ms": 25,
+          "pre_emphasis": 50,
+          "back_ceiling": 1800,
+          "back_ceiling_ratio": 0.95,
+          "back_front_ratio": 0.75,
+          "rms_floor": 0.005,
+          "median_n": 5
+        }
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "asia",
+    "audio": "lang/no/audio/pavei/asia.wav",
+    "phonemic": null,
+    "tokens": [
+      {
+        "symbol": "ɑː",
+        "position": [0, 1],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "svar",
+    "audio": "lang/no/audio/pavei/svar.wav",
+    "phonemic": null,
+    "tokens": [
+      {
+        "symbol": "ɑː",
+        "position": [2, 3],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  },
+  {
+    "text": "staver",
+    "audio": "lang/no/audio/pavei/staver.wav",
+    "phonemic": null,
+    "tokens": [
+      {
+        "symbol": "ɑː",
+        "position": [0, 1],
+        "analysis": null
+      }
+    ],
+    "representative": null
+  }
+]
