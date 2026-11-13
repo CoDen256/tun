@@ -1,0 +1,215 @@
+# mjolnir — one stack, one VPS. This file still stands alone (`cd mjolnir
+# && docker compose up` works unchanged) — D94 additionally lets
+# `tun/compose.yaml` `include:` it alongside `stabbur`'s own compose file
+# for a combined "one git pull + one docker compose up" across both repos,
+# superseding D84's "mjolnir deploys alone" framing now that stabbur needs
+# deploying too.
+#
+# The full stack now exists (hub-builder-operator-console shipped), so this
+# is one profile-free `docker compose up -d`: caddy, postgres, hub, builder.
+# Set every required var in `.env` first — see .env.example and DEPLOY.md.
+# D-H6: OPERATOR_AUTH_TOKEN gates hub's/builder's own operator routes; it is
+# NOT optional for a real deploy (Caddy exposes both publicly at /mjolnir/*
+# and /builder/*) even though each service's own config loader treats it as
+# optional for local/dev ergonomics.
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: mjolnir-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"        # HTTP/3
+    environment:
+      # Site address: a hostname in production (auto-HTTPS), ":8080" locally.
+      TUN_SITE_ADDRESS: ${TUN_SITE_ADDRESS:?set TUN_SITE_ADDRESS in .env}
+      OTA_TOKEN: ${OTA_TOKEN:?set OTA_TOKEN in .env}
+      # Where stabbur actually is — see caddy/Caddyfile's own comment on
+      # this var for the full set of cases. No default: an unset
+      # STABBUR_UPSTREAM must fail loudly, not silently serve a broken
+      # /stabbur/* route.
+      #
+      # Recommended, verified working: STABBUR_UPSTREAM=backend:5056, with
+      # this caddy service (below) and stabbur's own `backend` service both
+      # joined to the external `tun-shared` network — one `docker network
+      # create tun-shared` before bringing either stack up, for the first
+      # time only. This is what "two independent `docker compose up`s,
+      # configure .env of both" actually resolves to: the two stacks stay
+      # fully independent, this one shared network is the only coupling.
+      STABBUR_UPSTREAM: ${STABBUR_UPSTREAM:?set STABBUR_UPSTREAM in .env}
+      # Where smia actually is — see caddy/Caddyfile's own comment on this
+      # var. Defaulted, not required like STABBUR_UPSTREAM above: smia's
+      # operator UI at /smia/* is a convenience route, not load-bearing for
+      # the device-facing stack (stabbur's own backend talks to smia
+      # directly via its own SMIA_BASE_URL, never through this Caddy route)
+      # — an unset/wrong value 502s only that one route, it doesn't block
+      # the stack from starting. Default matches smia's own compose's
+      # "smia-backend" network alias (D118).
+      SMIA_UPSTREAM: ${SMIA_UPSTREAM:-smia-backend:5055}
+      # ---- phonexa (optional) -----------------------------------------
+      # Both are optional: mjolnir must stay deployable with no phonexa at
+      # all, and an unconfigured hash must make /phonexa/* reject every
+      # request rather than serve phonexa open.
+      #
+      # THE DEFAULTS ARE SPELLED OUT HERE, NOT LEFT TO THE CADDYFILE, and
+      # the hash default is a verbatim copy of the Caddyfile's own
+      # fail-closed default (a bcrypt hash of a random string generated
+      # once and discarded). That duplication is deliberate — found live
+      # 2026-11-13, after a deploy where the operator's hash was in
+      # mjolnir/.env and every login still 401'd:
+      #
+      #   compose resolves an included file's `.env` for ${VAR}
+      #   INTERPOLATION, but NOT for a VALUELESS pass-through key
+      #   (`PHONEXA_AUTH_HASH:` with nothing after the colon). Under tun's
+      #   `include:` such a key resolves to null and is dropped from the
+      #   container entirely, so Caddy silently used its own locked
+      #   default and no password worked. Standalone (`cd mjolnir &&
+      #   docker compose up`) the same key resolves fine from this repo's
+      #   .env — which is why it passed verification and still broke on
+      #   the real deploy.
+      #
+      # The `${VAR:-default}` form below works in BOTH modes, from this
+      # repo's own .env, and still fails closed when unset. `$` is escaped
+      # as `$$` so compose emits the literal hash.
+      PHONEXA_UPSTREAM: ${PHONEXA_UPSTREAM:-phonexa-backend:5050}
+      PHONEXA_AUTH_HASH: ${PHONEXA_AUTH_HASH:-$$2a$$14$$4O3NlHoGMD2./6FpyxpKAell6n5PkW1TaayAPbIKyg4GgwZfc8ESO}
+    networks:
+      - default
+      - tun-shared
+    extra_hosts:
+      # Fallback only — load-bearing solely if STABBUR_UPSTREAM is instead
+      # set to host.docker.internal:<published-port> (stabbur run
+      # independently, no shared network, reached via its host-published
+      # port). Docker Desktop defines this name on its own; plain Linux
+      # Docker (this project's actual VPS target) does not, without this
+      # entry. Note this path depends on the host's NAT/hairpin routing
+      # actually reaching a published port from inside a bridge network,
+      # which is not reliable in every environment (confirmed to fail
+      # inside at least one nested-Docker sandbox) — prefer tun-shared
+      # above unless there's a specific reason not to share a network.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data:/srv:ro                   # served read-only; publishing writes from the host
+      - caddy_data:/data                 # TLS certs — LOSING THIS MEANS RE-ISSUING CERTS
+      - caddy_config:/config
+
+  mjolnir-postgres:
+    image: postgres:17-alpine
+    container_name: mjolnir-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_USER: mjolnir
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Deliberately NOT published to the host: only sibling containers reach it.
+    healthcheck:
+      # -d postgres is required: pg_isready with no -d defaults to a database
+      # named after -U's value ("mjolnir"), which doesn't exist — POSTGRES_DB
+      # above is "postgres". Harmless to the healthcheck's pass/fail result
+      # (pg_isready still reports the server as accepting connections even
+      # when the probed database doesn't exist) but spams
+      # `FATAL: database "mjolnir" does not exist` into the logs forever,
+      # every 10s, drowning out real problems.
+      test: ["CMD-SHELL", "pg_isready -U mjolnir -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # hub-builder-operator-console: hub owns the schema (`card_slots`,
+  # `decks`, `publications`, `build_jobs`, `occurrence_shipments`,
+  # `pending_occurrences`, `builder_config`, `job_logs`); builder is the
+  # only other writer — both point at the same logical database (02-
+  # services.md's "separate logical DB per service" is per *ecosystem*
+  # service, not split further between these two, which already share
+  # everything by design, D-P3). Bind-mounted, not copied into the image —
+  # own `Dockerfile`s install deps at build time; source comes from the
+  # checkout, not a layer, so `git pull` + restart is enough.
+  mjolnir-hub:
+    build:
+      context: .
+      dockerfile: hub/Dockerfile
+    container_name: mjolnir-hub
+    restart: unless-stopped
+    depends_on:
+      mjolnir-postgres:
+        condition: service_healthy
+    # `.env` passes through most config as-is (STABBUR_UI_BASE,
+    # OPERATOR_AUTH_TOKEN, TUN_PUBLIC_BASE, ALLOW_HTTP, …) — only the
+    # container-specific, computed values are overridden below.
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://mjolnir:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@mjolnir-postgres:5432/postgres
+      DATA_DIR: /app/data
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/hub/node_modules
+
+  mjolnir-builder:
+    build:
+      context: .
+      dockerfile: builder/Dockerfile
+    container_name: mjolnir-builder
+    restart: unless-stopped
+    depends_on:
+      mjolnir-postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://mjolnir:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@mjolnir-postgres:5432/postgres
+      DATA_DIR: /app/data
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/builder/node_modules
+    networks:
+      # tun-shared: so STABBUR_BASE_URL can be a plain service name
+      # ("backend:5056") instead of a URL that has to work from inside this
+      # specific container — this is builder's own outbound fetch to
+      # stabbur's API (pullNotes/pullGrammarRules), not a browser-facing
+      # link (that's STABBUR_UI_BASE, which stays a public URL through
+      # Caddy — see .env.example). Not needed if deployed via tun's
+      # `include:` instead (D94), same reasoning as the caddy service above.
+      - default
+      - tun-shared
+
+  # stabbur joins via tun/compose.yaml's `include:` (D94) when both are
+  # deployed together that way, or via the `tun-shared` external network
+  # above when run as two fully independent stacks — its own compose.yaml
+  # stays independent either way. smia/phonexa joining is still an open
+  # question (tun/docs/02-services.md).
+
+networks:
+  default: {}
+  tun-shared:
+    # One-time setup, before bringing EITHER this stack or tun/compose.yaml's
+    # unified stack up for the first time:
+    #   docker network create tun-shared
+    # Required regardless of deployment mode — confirmed 2026-10-26 that
+    # `include:` (D94) cannot clear `external: true` back off from an
+    # included file, so tun/compose.yaml needs this exact same one-time step
+    # too, not a free pass. (An earlier version of this comment claimed
+    # otherwise; it was never actually verified and was wrong.)
+    external: true
+
+volumes:
+  # Explicit `name:` (not left to default to "<project>_<key>") so the
+  # actual Docker volume is the SAME one regardless of which project
+  # references it. Without this, running via `cd mjolnir && docker compose
+  # up` creates `mjolnir_postgres_data`, while running the identical file
+  # through `tun/compose.yaml`'s `include:` creates a *different* volume,
+  # `tun_postgres_data` — confirmed live: every card_slots/decks/
+  # publications row silently "disappeared" switching between the two
+  # entry points, because they were never in the same volume at all. Same
+  # Docker-level cause as D98's networks needing an explicit shared name;
+  # unnamed volumes have the identical per-project-prefix problem.
+  caddy_data:
+    name: mjolnir_caddy_data
+  caddy_config:
+    name: mjolnir_caddy_config
+  postgres_data:
+    name: mjolnir_postgres_data

@@ -1,0 +1,5 @@
+# The decompiled base is a byte-faithful apktool artifact — never normalize it,
+# or a rebuilt APK could differ from the frozen P2 base.
+base/** -text
+base/mjolnir.merged.apk binary
+base/smali.mjolnir.merged/assets/index.android.bundle binary

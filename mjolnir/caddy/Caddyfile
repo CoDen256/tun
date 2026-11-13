@@ -1,0 +1,292 @@
+# mjolnir — the only thing the phone talks to (D84: single deployable
+# stack, owned entirely by this repo — `tun` ships no deployable artifacts).
+#
+# P1 serves everything device-facing straight off disk (D55). Python/Node is
+# never in the path of the 6 MB bundle or the audio blobs.
+#
+# Frozen-contract rules enforced here — see tun/docs/11-ota-contract.md:
+#   D49  gzip is TRANSPORT-level only. sha256/size in current.json describe
+#        the UNCOMPRESSED bundle. Never serve a pre-gzipped file as an opaque
+#        body: the hash would never match and native can never be fixed.
+#   P23  the /ota/* token is GET-only.
+#   D26  rollback = rewriting current.json. So it must never be cached.
+#
+# No global options block: `email` with an empty value is a parse error, and
+# Let's Encrypt does not require one. To get expiry warnings, add by hand:
+#     { email you@example.net }
+
+{$TUN_SITE_ADDRESS} {
+	log {
+		output stdout
+		format console
+	}
+
+	encode gzip
+
+	# ---- /ota/* : token-gated, read-only -------------------------------
+	handle /ota/* {
+		@bad_token not header Authorization "Bearer {$OTA_TOKEN}"
+		respond @bad_token "unauthorized" 401 {
+			close
+		}
+
+		@not_read not method GET HEAD
+		respond @not_read "method not allowed" 405 {
+			close
+		}
+
+		# Rollback must take effect on the next launch, never later.
+		header /ota/current.json Cache-Control "no-store"
+
+		# A buildId is permanent and its bundle is immutable.
+		header /ota/bundle/* Cache-Control "public, max-age=31536000, immutable"
+
+		root * /srv
+		# No `precompressed`: D49 requires transport-level gzip only, so the
+		# body native hashes is always the uncompressed bundle.
+		file_server
+	}
+
+	# ---- /blob/<sha256> : content-addressed, immutable ------------------
+	# Unguessable by construction; the hash in the url IS the capability.
+	handle /blob/* {
+		@not_read not method GET HEAD
+		respond @not_read "method not allowed" 405 {
+			close
+		}
+		header Cache-Control "public, max-age=31536000, immutable"
+		root * /srv
+		file_server
+	}
+
+	# ---- /audio-manifest/<buildId>.json : unauthenticated, immutable -----
+	# D-P1 (audio-cache-prefetch): a second, plain copy of the same content
+	# as /ota/<buildId>/audio.json (builder's audio-snapshot step writes
+	# both) — the prefetcher companion has no way to read the OTA bearer
+	# token back, so it fetches this unauthenticated copy instead. Same
+	# "the content isn't sensitive, the buildId that selects it is already
+	# baked into the bundle in plaintext" reasoning /blob/* already relies
+	# on. A given buildId's manifest never changes once published, so this
+	# is immutable the same way /blob/* and /ota/bundle/* already are.
+	# Replaces the retired /audio-by-card/* block (D121/D122, D-P6) — the
+	# device now resolves cardId → sha256 itself from this manifest instead
+	# of hitting a name-based static file.
+	handle /audio-manifest/* {
+		@not_read not method GET HEAD
+		respond @not_read "method not allowed" 405 {
+			close
+		}
+		header Cache-Control "public, max-age=31536000, immutable"
+		root * /srv
+		file_server
+	}
+
+	# ---- service UIs, mounted as each is written (D46) ------------------
+	# D-H6: uncommented only after the shared-bearer-token auth check on
+	# both services was verified working (task 7.3) — never the other way
+	# around. Both services 401/redirect-to-/login on their own for any
+	# request without a valid token or cookie; Caddy adds nothing auth-wise
+	# here, it only routes.
+	#
+	# MUST be `handle` blocks, not bare `reverse_proxy` directives. Every
+	# other route in this file (/ota, /blob, /stabbur, the final catch-all)
+	# is a `handle` block, and Caddy sequences all `handle` blocks together,
+	# first-match-wins, in the order written. A bare directive mixed into a
+	# file that otherwise uses `handle` throughout does NOT slot into that
+	# same sequence — Caddy's global default directive ordering places
+	# `reverse_proxy` after the `handle` group regardless of where it's
+	# written in the file, so it silently never runs: the unconditional
+	# `handle {}` catch-all at the end matches every request first and the
+	# bare `reverse_proxy` lines are unreachable. Confirmed via
+	# `caddy adapt --adapter caddyfile`: a bare `reverse_proxy /mjolnir/*`
+	# compiled to route index 6, two full positions after the catch-all's
+	# index 4 — every request to /mjolnir/* or /builder/* 404'd before this
+	# fix, regardless of path (bare, trailing-slash, or deep).
+	#
+	# Two path patterns per block, not one: Caddy's `/mjolnir/*` matcher
+	# requires the literal "/" before the wildcard, so it does NOT match the
+	# bare path a person actually types (`/mjolnir`, no trailing slash) —
+	# only `/mjolnir/` and anything deeper. hub's own route handler already
+	# treats both forms as equivalent (`url.pathname === "/mjolnir" ||
+	# url.pathname === "/mjolnir/"`); without the bare pattern here, that
+	# branch of hub's code is simply unreachable from outside the container.
+	@mjolnir path /mjolnir /mjolnir/*
+	handle @mjolnir {
+		reverse_proxy mjolnir-hub:8000
+	}
+	@builder path /builder /builder/*
+	handle @builder {
+		reverse_proxy mjolnir-builder:8001
+	}
+
+	# stabbur serves its own routes (/ui, /api/*, /blob/*, /blobs) unprefixed
+	# — handle_path strips /stabbur before forwarding, so stabbur's own code
+	# never needs to know the prefix exists. X-Forwarded-Prefix tells
+	# stabbur's /ui page what prefix the browser is actually using, so it
+	# can template its own asset/API URLs to match (app.py's ui_index()).
+	#
+	# The upstream is configurable, not hardcoded, because this repo's own
+	# compose.yaml is deployable more than one way (D94), and a bare Docker
+	# service name only resolves when both stacks share a network. Set
+	# STABBUR_UPSTREAM in .env to whichever applies — in order of preference:
+	#   - "backend:5056"  — RECOMMENDED, verified working. Two fully
+	#     independent `docker compose up` stacks, joined by one shared
+	#     external network (`tun-shared` in compose.yaml, both this
+	#     service and stabbur's `backend` service attached to it — one
+	#     `docker network create tun-shared` the first time, nothing else
+	#     changes about either stack). This is what "run two docker
+	#     compose, configure .env of both" actually resolves to.
+	#   - "backend:5056"  — same value when deployed via tun's `include:`
+	#     instead (D94), but NOT "no extra setup": `include:` cannot clear
+	#     an included file's `external: true` network declaration back off
+	#     (confirmed, D104), so the one-time `docker network create
+	#     tun-shared` is still required under this mode too.
+	#   - "host.docker.internal:5056" — stabbur's own stack, no shared
+	#     network, reached via its host-published port instead (needs the
+	#     caddy service's extra_hosts entry below). Depends on the host's
+	#     NAT/hairpin routing actually reaching a published port from a
+	#     bridge network, which is not reliable in every environment —
+	#     confirmed to fail inside at least one nested-Docker sandbox.
+	#     Fall back to this only if joining a shared network isn't an option.
+	#   - a real hostname/IP — stabbur deployed elsewhere entirely.
+	# `handle_path` needs a single literal prefix to strip, so it can't take
+	# the two-pattern form `handle`/`@matcher` above use for the bare-path
+	# case — there's nothing meaningful to strip from a bare `/stabbur`
+	# anyway. Redirect it to the trailing-slash form instead, which
+	# `handle_path /stabbur/*` already matches correctly.
+	redir /stabbur /stabbur/ 308
+	handle_path /stabbur/* {
+		reverse_proxy {$STABBUR_UPSTREAM} {
+			header_up X-Forwarded-Prefix /stabbur
+		}
+	}
+	# smia serves its own routes (/ui, /providers, /health, /ipa, ...)
+	# unprefixed — handle_path strips /smia before forwarding, same pattern
+	# as /stabbur above, including the X-Forwarded-Prefix hint for its own
+	# ui_index() (app.py, mirrors stabbur's exactly, D46/D118).
+	#
+	# SMIA_UPSTREAM mirrors STABBUR_UPSTREAM's own choices exactly — set it
+	# in .env to whichever applies:
+	#   - "smia-backend:5055" — RECOMMENDED. Either two independent
+	#     `docker compose up` stacks sharing the `tun-shared` external
+	#     network, or this repo + smia's own compose brought up together via
+	#     tun's `include:` (D94) — same value either way. smia's own
+	#     compose.yaml/docker-compose.yml aliases its backend service as
+	#     "smia-backend" on tun-shared specifically so this name resolves
+	#     under both modes without colliding with this repo's own "backend"
+	#     service (same collision D94 already renamed stabbur-postgres to
+	#     avoid).
+	#   - "host.docker.internal:5055" — smia's own stack, no shared network,
+	#     reached via its host-published port instead. Same caveats as
+	#     STABBUR_UPSTREAM's equivalent fallback above.
+	#   - a real hostname/IP — smia deployed elsewhere entirely.
+	redir /smia /smia/ 308
+	handle_path /smia/* {
+		reverse_proxy {$SMIA_UPSTREAM} {
+			header_up X-Forwarded-Prefix /smia
+		}
+	}
+	# ---- /phonexa : the phonetics lab, operator-gated here ---------------
+	# Same handle_path + X-Forwarded-Prefix shape as /stabbur and /smia above
+	# — phonexa's frontend became prefix-aware (its own path-prefix-routing
+	# change: X-Forwarded-Prefix -> window.PHONEXA_PREFIX -> API_BASE, the
+	# third service to adopt stabbur's pattern, D46/D119). This supersedes
+	# the dedicated-hostname site block this file used to carry at the
+	# bottom (D148's routing half): that existed only because phonexa's
+	# absolute `fetch('/api/v1/...')` paths and its `location.host +
+	# '/stream'` WebSocket could not be told what prefix they were under.
+	# They can now, so phonexa needs no hostname, no DNS record and no
+	# certificate of its own.
+	#
+	# THE REDIRECT IS LOAD-BEARING, more than /stabbur's. Every asset and
+	# page link in phonexa's HTML is RELATIVE (`css/index.css`,
+	# `js/shadow.js`, `shadow.html`). At `/phonexa` with no trailing slash a
+	# browser resolves those against `/`, so they escape this block entirely
+	# and hit the catch-all below — a blank page whose 404s point at mjolnir
+	# rather than at the missing slash.
+	#
+	# AUTH. phonexa has none of its own: profiles are name-only with no
+	# password, and it exposes destructive database import/export endpoints
+	# (and a static route that serves any file in its app directory). So the
+	# gate is here, in front of everything this block matches — static
+	# assets, `/ping` and `/api/v1/admin/*` alike. phonexa's own healthcheck
+	# is container-internal and needs no exemption.
+	#
+	# The credential is the operator token the rest of the stack already
+	# uses (D-H6's OPERATOR_AUTH_TOKEN), username fixed to `operator`. It
+	# cannot be consumed directly — hub and builder verify that token in
+	# their own application code, while `basic_auth` only accepts a
+	# bcrypt/argon hash — so the operator derives one, once:
+	#
+	#     docker run --rm caddy:2-alpine caddy hash-password \
+	#         --plaintext "$OPERATOR_AUTH_TOKEN"
+	#
+	# and puts it in .env as PHONEXA_AUTH_HASH, SINGLE-QUOTED (a bcrypt hash
+	# contains `$`, which compose would otherwise interpolate away). Nothing
+	# links the two automatically: ROTATING OPERATOR_AUTH_TOKEN MEANS
+	# REGENERATING THIS HASH.
+	#
+	# FAIL-CLOSED DEFAULT. The hash defaults to a real bcrypt hash of a
+	# random string that was generated, used once and discarded — nobody
+	# knows its plaintext, so an unconfigured deploy rejects every request
+	# here instead of serving phonexa open. (Verified to survive the
+	# Caddyfile parser with its `$`s intact; and Caddy falls back to a
+	# `{$VAR:default}` default only when the variable is ABSENT, never when
+	# it is set-but-empty — hence the valueless key form in compose.yaml.)
+	# With phonexa simply not deployed, an authenticated request 502s, the
+	# same as /stabbur and /smia when their service is down.
+	#
+	# NOTE: phonexa now shares this origin with hub and builder, whose
+	# session cookie is Path=/ (hub/src/auth.js). HttpOnly stops phonexa-
+	# origin JS from reading it; it does not stop the browser sending it.
+	# Accepted deliberately when the operator chose a path over a subdomain.
+	redir /phonexa /phonexa/ 308
+	handle_path /phonexa/* {
+		basic_auth {
+			operator {$PHONEXA_AUTH_HASH:$2a$14$4O3NlHoGMD2./6FpyxpKAell6n5PkW1TaayAPbIKyg4GgwZfc8ESO}
+		}
+		# WebSockets (the live mic tracker's /stream) upgrade transparently
+		# through reverse_proxy, and Caddy does not time out an upgraded
+		# connection by default. No request-body limit is set either —
+		# Formant Lab uploads and trim/ingest posts can be several MB.
+		reverse_proxy {$PHONEXA_UPSTREAM:phonexa-backend:5050} {
+			header_up X-Forwarded-Prefix /phonexa
+			# Strip the browser's permessage-deflate offer so phonexa's
+			# flask-sock never negotiates WebSocket compression on /stream.
+			# Found live 2026-11-13: the mic tracker failed in the browser
+			# with "Invalid frame header" while every proxy-level check
+			# passed. Uncompressed, the server sets RSV1=0 and the frames
+			# are plain — nothing between the browser and phonexa can
+			# disagree about whether an extension was negotiated. Same
+			# spirit as D49: compression is the transport's business, and a
+			# frozen consumer must never depend on it. Costs nothing here —
+			# the frames are small JSON and the link is local.
+			header_up -Sec-WebSocket-Extensions
+		}
+	}
+
+	# ---- /adminer : tun/compose.yaml's shared Adminer (D-T3) -------------
+	# Only reachable this way when deployed via tun's `include:` unification
+	# (D94/D101) — that's the only compose file defining a service literally
+	# named "adminer"; mjolnir's own compose.yaml does not, so this route
+	# simply 502s (same as /stabbur above when stabbur isn't up) under any
+	# other deployment mode. `handle_path` strips the prefix before
+	# forwarding, same reasoning as /stabbur above: Adminer generates its
+	# own links relative to wherever it's mounted and has no equivalent of
+	# stabbur's X-Forwarded-Prefix handling, so it must see itself as
+	# mounted at "/", not "/adminer".
+	#
+	# No auth here, same as today's direct `8082:8080` host port mapping in
+	# tun/compose.yaml (D-H6's OPERATOR_AUTH_TOKEN gates hub/builder, not
+	# this) — this route is a path convenience, not a new exposure. Add a
+	# Caddy `basicauth` block here (or drop the 8082 port mapping) if the
+	# bare port is meant to go away too.
+	redir /adminer /adminer/ 308
+	handle_path /adminer/* {
+		reverse_proxy adminer:8080
+	}
+
+	handle {
+		respond "mjolnir" 404
+	}
+}

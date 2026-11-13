@@ -1,0 +1,1440 @@
+<!--
+  device-insights-page — the approved mockup, and the specification for this
+  change (see design.md D-IN1: build this exactly, prose included).
+
+  Live, with the real dataset embedded:
+  https://claude.ai/code/artifact/2231f4d7-b116-4f53-b772-3676048f5215
+
+  Three placeholders are substituted at build time; this file is the page
+  without them, so it is readable as a source document:
+
+    __UPLOTCSS__  uPlot.min.css          (vendored — design.md D-IN2)
+    __UPLOTJS__   uPlot.iife.min.js      (vendored — design.md D-IN2)
+    __DATA__      the account payload     (built by mockup-dataset.js, which is
+                                           the reference definition of every
+                                           aggregate on this page)
+
+  Built against the real snapshot: account 3wEnqPaPO2cSg2WOqNt6FXuZZvC3 in
+  tun/tun-backup/mjolnir.sql, 2026-11-07, 4,510 occurrences. Its expected
+  figures are tabulated in tasks.md §6.2.
+
+  `window.__probe` at the end of the script is a build-time test hook (it
+  exposes the series builder so all three chart modes can be validated without
+  a browser); keep or drop it in the hub implementation as you prefer.
+-->
+<title>mjølnir · hub — Insights</title>
+<style>__UPLOTCSS__</style>
+<style>
+:root {
+  --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
+  --border: #2a3039; --border-soft: #232832;
+  --text: #e8e6e1; --text-dim: #8b94a3; --text-faint: #566073;
+  --accent: #c6703f; --accent-soft: #c6703f26; --accent-text: #f2b688;
+  --ok: #5bab7e; --ok-soft: #5bab7e1f;
+  --warn: #d4a73d; --warn-soft: #d4a73d1f;
+  --err: #d1453f; --err-soft: #d1453f1f;
+  --radius: 6px;
+  --sans: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+  --c-n: #c7683c; --c-e: #1896ad; --c-a: #9b61ea;
+  --s1: #3a2a22; --s2: #613e2f; --s3: #854d34; --s4: #ab5c38; --s5: #d26b3a; --s6: #e7885e;
+  --grid: #2a3039; --future: #c6703f0f;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f3ef; --bg-elevated: #ffffff; --bg-sunken: #ebe7e0;
+    --border: #e2ddd3; --border-soft: #ece8e0;
+    --text: #221f1a; --text-dim: #6b6660; --text-faint: #9a948a;
+    --accent: #b35a2d; --accent-soft: #b35a2d14; --accent-text: #8a431c;
+    --ok: #2f8a5c; --ok-soft: #2f8a5c14; --warn: #a87c1f; --warn-soft: #a87c1f14;
+    --err: #b23a34; --err-soft: #b23a3414;
+    --c-n: #b05527; --c-e: #00709c; --c-a: #8040c9;
+    --s1: #f6e6dd; --s2: #f0cdba; --s3: #e0a98e; --s4: #cd8259; --s5: #b9602f; --s6: #8f4720;
+    --grid: #e2ddd3; --future: #b35a2d0a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
+  --border: #2a3039; --border-soft: #232832;
+  --text: #e8e6e1; --text-dim: #8b94a3; --text-faint: #566073;
+  --accent: #c6703f; --accent-soft: #c6703f26; --accent-text: #f2b688;
+  --ok: #5bab7e; --ok-soft: #5bab7e1f; --warn: #d4a73d; --warn-soft: #d4a73d1f;
+  --err: #d1453f; --err-soft: #d1453f1f;
+  --c-n: #c7683c; --c-e: #1896ad; --c-a: #9b61ea;
+  --s1: #3a2a22; --s2: #613e2f; --s3: #854d34; --s4: #ab5c38; --s5: #d26b3a; --s6: #e7885e;
+  --grid: #2a3039; --future: #c6703f0f;
+}
+:root[data-theme="light"] {
+  --bg: #f5f3ef; --bg-elevated: #ffffff; --bg-sunken: #ebe7e0;
+  --border: #e2ddd3; --border-soft: #ece8e0;
+  --text: #221f1a; --text-dim: #6b6660; --text-faint: #9a948a;
+  --accent: #b35a2d; --accent-soft: #b35a2d14; --accent-text: #8a431c;
+  --ok: #2f8a5c; --ok-soft: #2f8a5c14; --warn: #a87c1f; --warn-soft: #a87c1f14;
+  --err: #b23a34; --err-soft: #b23a3414;
+  --c-n: #b05527; --c-e: #00709c; --c-a: #8040c9;
+  --s1: #f6e6dd; --s2: #f0cdba; --s3: #e0a98e; --s4: #cd8259; --s5: #b9602f; --s6: #8f4720;
+  --grid: #e2ddd3; --future: #b35a2d0a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+h1, h2, h3, h4 { text-wrap: balance; font-weight: 650; margin: 0; }
+code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+a { color: var(--accent-text); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.top-bar { display: flex; align-items: center; gap: 14px; padding: 10px 20px; background: var(--bg-sunken); border-bottom: 1px solid var(--border); font-size: 13px; }
+.top-bar strong { font-weight: 700; }
+.top-bar nav { margin-left: auto; display: flex; gap: 14px; }
+.top-bar nav a { color: var(--text-dim); text-decoration: none; }
+.shell { display: flex; min-height: calc(100vh - 41px); }
+.rail { width: 192px; flex: none; border-right: 1px solid var(--border); padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; }
+.rail-group-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint); padding: 12px 10px 6px; }
+.rail-group-label:first-child { padding-top: 2px; }
+.rail a { padding: 7px 10px; border-radius: var(--radius); font-size: 13px; color: var(--text-dim); text-decoration: none; display: block; }
+.rail a:hover { background: var(--bg-elevated); color: var(--text); }
+.rail a.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.rail a .new { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); margin-left: 5px; }
+.content { flex: 1; min-width: 0; padding: 24px 28px 64px; max-width: 1560px; }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.page-head h2 { font-size: 18px; }
+.page-sub { color: var(--text-dim); font-size: 13px; margin-top: 3px; }
+
+button, .btn { font: inherit; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+button:hover { border-color: var(--text-faint); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--text-dim); padding: 6px 9px; }
+.btn-ghost:hover { background: var(--bg-elevated); color: var(--text); }
+select, input[type="search"], input[type="text"] { font: inherit; font-size: 13px; background: var(--bg-sunken); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; }
+
+.seg { display: inline-flex; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.seg button { all: unset; cursor: pointer; font-size: 11.5px; font-weight: 650; padding: 5px 10px; color: var(--text-dim); font-family: var(--sans); }
+.seg button:hover { color: var(--text); background: var(--bg-elevated); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+
+.panel { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; }
+.panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 14px 18px; border-bottom: 1px solid var(--border-soft); flex-wrap: wrap; }
+.panel-head h3 { font-size: 13.5px; }
+.panel-head .page-sub { font-size: 12px; }
+.panel-pad { padding: 16px 18px; }
+.inline-note { font-size: 12.5px; color: var(--text-faint); line-height: 1.6; }
+.inline-note strong, .inline-note b { color: var(--text-dim); }
+.lead { font-size: 13px; color: var(--text); line-height: 1.6; padding: 11px 13px; background: var(--bg-sunken); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; margin-bottom: 14px; }
+.lead b { font-weight: 700; }
+.lead .q { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 650; margin-bottom: 4px; }
+
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.cols-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.cols-2u { display: grid; grid-template-columns: 1.45fr 1fr; gap: 16px; }
+.cols-3 { display: grid; grid-template-columns: 1.05fr 1fr 1fr; gap: 16px; }
+@media (max-width: 1150px) { .cols-2, .cols-2u, .cols-3 { grid-template-columns: 1fr; } }
+
+.strip { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--warn); background: var(--warn-soft); font-size: 13px; line-height: 1.55; }
+.strip .ico { font-weight: 700; color: var(--warn); flex: none; }
+.strip b { color: var(--text); }
+.strip .spacer { flex: 1; }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.kpi { background: var(--bg-elevated); padding: 13px 16px 14px; }
+.kpi .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 650; }
+.kpi .value { font-size: 25px; font-weight: 700; font-family: var(--mono); font-variant-numeric: tabular-nums; margin-top: 5px; line-height: 1.1; }
+.kpi .value .unit { font-size: 12.5px; font-weight: 600; color: var(--text-dim); font-family: var(--sans); margin-left: 3px; }
+.kpi .sub { font-size: 11.5px; color: var(--text-faint); margin-top: 4px; line-height: 1.45; }
+.kpi .sub .good { color: var(--ok); font-weight: 650; }
+.kpi .sub .warnc { color: var(--warn); font-weight: 650; }
+.kpi .meter { height: 4px; border-radius: 2px; background: var(--bg-sunken); margin-top: 8px; overflow: hidden; }
+.kpi .meter i { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
+
+.filterbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 11px 14px; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 10px; font-size: 12.5px; position: sticky; top: 0; z-index: 20; }
+.filterbar .lbl { color: var(--text-faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 650; }
+.chip-f { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; padding: 4px 8px 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--accent); }
+.chip-f button { all: unset; cursor: pointer; font-weight: 700; line-height: 1; padding: 0 2px; color: var(--accent-text); }
+.filterbar .count { margin-left: auto; color: var(--text-dim); font-family: var(--mono); }
+.filterbar .count b { color: var(--text); }
+
+/* glossary */
+.gloss-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.gl { background: var(--bg-elevated); padding: 13px 15px; }
+.gl h4 { font-size: 12.5px; display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.gl .body { font-size: 12.5px; color: var(--text-dim); line-height: 1.6; }
+.gl .body code { font-size: 11.5px; background: var(--bg-sunken); padding: 1px 4px; border-radius: 3px; }
+.gl .n { font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--text); background: var(--border-soft); padding: 1px 6px; border-radius: 4px; margin-left: auto; }
+.rule { display: grid; grid-template-columns: 1fr; gap: 9px; }
+.rule-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; padding: 10px 12px; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 8px; }
+.rule-row .step { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.rule-row .arrow { color: var(--text-faint); font-weight: 700; }
+.rule-row .proof { margin-left: auto; font-size: 11.5px; color: var(--ok); font-weight: 650; white-space: nowrap; }
+.rule-row code { font-size: 11.5px; background: var(--bg-elevated); padding: 1px 5px; border-radius: 3px; }
+
+/* calendar, github-flavoured */
+.cal-outer { display: flex; gap: 7px; }
+.cal-wd { display: grid; grid-template-rows: repeat(7, 12px); gap: 3px; font-size: 9.5px; color: var(--text-faint); padding-top: 17px; }
+.cal-wd span { line-height: 12px; }
+.cal-scroll { overflow-x: auto; padding-bottom: 6px; }
+.cal { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 12px); gap: 3px; }
+.cal i { width: 12px; height: 12px; border-radius: 2.5px; background: var(--bg-sunken); display: block; }
+.cal i[data-l="0"] { background: var(--bg-sunken); box-shadow: inset 0 0 0 1px var(--border-soft); }
+.cal i[data-l="1"] { background: var(--s2); }
+.cal i[data-l="2"] { background: var(--s3); }
+.cal i[data-l="3"] { background: var(--s4); }
+.cal i[data-l="4"] { background: var(--s5); }
+.cal i[data-l="5"] { background: var(--s6); }
+.cal i:hover { outline: 1.5px solid var(--text-dim); outline-offset: 1px; }
+.cal-months { display: grid; grid-auto-flow: column; gap: 3px; font-size: 10px; color: var(--text-faint); height: 14px; }
+.cal-months span { width: 12px; white-space: nowrap; overflow: visible; }
+.cal-stats { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--border-soft); }
+.cal-stats div .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 650; }
+.cal-stats div .v { font-family: var(--mono); font-size: 17px; font-weight: 700; margin-top: 2px; }
+.cal-stats div .v small { font-family: var(--sans); font-size: 11px; font-weight: 500; color: var(--text-faint); }
+
+.chart { width: 100%; display: block; overflow: visible; }
+.ax text { font-size: 10px; fill: var(--text-faint); font-family: var(--sans); }
+.ax line { stroke: var(--grid); opacity: .35; }
+.bar { cursor: pointer; }
+.bar:hover { filter: brightness(1.25); }
+.lgd { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-dim); align-items: center; }
+.lgd .sw { display: inline-flex; align-items: center; gap: 6px; }
+.lgd .sw i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.lgd .sw.dash i { height: 0; width: 14px; border-top: 2px dashed currentColor; border-radius: 0; }
+
+/* uPlot theming */
+.uplot { font-family: var(--sans); }
+.u-axis { color: var(--text-faint); }
+.u-legend { font-size: 11.5px; color: var(--text-dim); }
+.u-legend .u-marker { border-radius: 2px; }
+.u-select { background: var(--accent-soft); }
+.u-cursor-x, .u-cursor-y { border-color: var(--text-faint) !important; }
+#tsWrap { position: relative; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 12px; white-space: nowrap; }
+thead th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); font-weight: 650; border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
+thead th.sortable { cursor: pointer; user-select: none; }
+thead th.sortable:hover { color: var(--text); }
+thead th .arr { color: var(--accent); margin-left: 3px; }
+tbody tr { border-bottom: 1px solid var(--border-soft); }
+tbody tr:last-child { border-bottom: none; }
+tbody tr.clickable { cursor: pointer; }
+tbody tr.clickable:hover { background: var(--bg-sunken); }
+tbody tr.managed { background: var(--accent-soft); }
+td.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+td.wrap { white-space: normal; min-width: 230px; max-width: 420px; }
+td.dim { color: var(--text-dim); }
+.norsk { font-weight: 600; }
+.engl { color: var(--text-dim); font-weight: 400; }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 650; padding: 2px 8px 3px; border-radius: 99px; white-space: nowrap; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.pill-ok { background: var(--ok-soft); color: var(--ok); }
+.pill-warn { background: var(--warn-soft); color: var(--warn); }
+.pill-err { background: var(--err-soft); color: var(--err); }
+.pill-neutral { background: var(--border-soft); color: var(--text-dim); }
+.pill-accent { background: var(--accent-soft); color: var(--accent-text); }
+.chip { display: inline-flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700; font-family: var(--mono); padding: 1px 5px; border-radius: 3px; background: var(--border-soft); color: var(--text-dim); min-width: 18px; }
+.chip.n { background: color-mix(in srgb, var(--c-n) 18%, transparent); color: var(--c-n); }
+.chip.e { background: color-mix(in srgb, var(--c-e) 18%, transparent); color: var(--c-e); }
+.chip.a { background: color-mix(in srgb, var(--c-a) 18%, transparent); color: var(--c-a); }
+
+.mbar { display: flex; gap: 2px; width: 126px; height: 14px; }
+.mbar i { display: block; border-radius: 2px; min-width: 1px; }
+.mrun { width: 104px; height: 7px; border-radius: 4px; background: var(--bg-sunken); overflow: hidden; }
+.mrun i { display: block; height: 100%; border-radius: 4px; }
+.capbar { position: relative; width: 96px; height: 14px; }
+.capbar .track { position: absolute; inset: 5px 0; background: var(--bg-sunken); border-radius: 2px; }
+.capbar .fill { position: absolute; top: 5px; bottom: 5px; left: 0; background: var(--accent); border-radius: 2px; }
+.capbar .cap { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--err); right: 0; }
+
+/* heatmap */
+.hm { display: grid; gap: 2px; }
+.hm .hc { height: 15px; border-radius: 2px; cursor: pointer; }
+.hm .hl { font-size: 10.5px; font-family: var(--mono); color: var(--text-dim); line-height: 15px; padding-right: 6px; text-align: right; }
+.hm .ht { font-size: 9.5px; color: var(--text-faint); text-align: center; }
+
+/* deck timeline */
+.tl2 { display: grid; gap: 3px; }
+.tl2 .lbl { font-size: 10.5px; font-family: var(--mono); color: var(--text-dim); line-height: 13px; }
+.tl2 .track { position: relative; height: 13px; background: var(--bg-sunken); border-radius: 3px; }
+.tl2 .span { position: absolute; top: 3px; height: 7px; border-radius: 4px; background: var(--s3); }
+.tl2 .dot { position: absolute; top: 2.5px; width: 8px; height: 8px; border-radius: 50%; background: var(--s6); }
+
+/* mosaic */
+#mosaic { display: block; width: 100%; cursor: crosshair; image-rendering: pixelated; }
+
+.pager { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--border-soft); font-size: 12.5px; color: var(--text-dim); flex-wrap: wrap; }
+.pager .pg { all: unset; cursor: pointer; padding: 4px 9px; border-radius: var(--radius); font-size: 12.5px; font-weight: 600; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.pager .pg:hover { background: var(--bg-sunken); color: var(--text); }
+.pager .pg[aria-current="true"] { background: var(--accent-soft); color: var(--accent-text); }
+.pager .pg[disabled] { opacity: .35; cursor: default; }
+.pager .gap { color: var(--text-faint); padding: 0 2px; }
+.pager .spacer { flex: 1; }
+
+#tip { position: fixed; pointer-events: none; z-index: 80; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; font-size: 12px; line-height: 1.55; color: var(--text); box-shadow: 0 8px 24px #0006; opacity: 0; transition: opacity .09s; max-width: 320px; }
+#tip .t { font-weight: 700; margin-bottom: 3px; }
+#tip .r { display: flex; justify-content: space-between; gap: 14px; color: var(--text-dim); }
+#tip .r b { color: var(--text); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+#tip .hint { color: var(--text-faint); font-size: 11px; margin-top: 4px; }
+
+.prov { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 24px; }
+@media (max-width: 1150px) { .prov { grid-template-columns: 1fr; } }
+.prov-item { font-size: 12.5px; line-height: 1.6; color: var(--text-dim); }
+.prov-item h4 { font-size: 12px; color: var(--text); margin-bottom: 3px; display: flex; align-items: baseline; gap: 7px; }
+.prov-item code { font-size: 11.5px; background: var(--bg-sunken); padding: 1px 4px; border-radius: 3px; }
+.tagk { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 1px 5px; border-radius: 3px; background: var(--err-soft); color: var(--err); flex: none; }
+.tagk.tag-new { background: var(--ok-soft); color: var(--ok); }
+.tagk.tag-gap { background: var(--warn-soft); color: var(--warn); }
+
+.sec-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 12px 0 -4px; flex-wrap: wrap; }
+.sec-head h3 { font-size: 15px; }
+details.disc summary { cursor: pointer; font-size: 12px; color: var(--text-dim); list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+details.disc summary::-webkit-details-marker { display: none; }
+details.disc summary::before { content: "▸"; color: var(--text-faint); transition: transform .15s; display: inline-block; }
+details.disc[open] summary::before { transform: rotate(90deg); }
+details.disc .body { margin-top: 8px; }
+
+.clock-wrap { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.clock-facts { font-size: 12px; color: var(--text-dim); line-height: 1.7; }
+.clock-facts b { color: var(--text); font-family: var(--mono); }
+
+.asym-grid { display: grid; grid-template-columns: auto 1fr 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; font-size: 12px; }
+.asym-grid > div { background: var(--bg-elevated); padding: 9px 11px; }
+.asym-grid .hd { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); font-weight: 650; }
+.asym-grid .cell { font-family: var(--mono); font-size: 16px; font-weight: 700; }
+.asym-grid .cell small { display: block; font-family: var(--sans); font-size: 10.5px; font-weight: 500; color: var(--text-faint); margin-top: 2px; }
+.asym-grid .hot { background: var(--accent-soft); }
+.asym-grid .hot .cell { color: var(--accent-text); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="top-bar">
+  <strong>mjølnir · hub</strong>
+  <nav><a href="#">stabbur: notes &amp; grammar →</a></nav>
+</div>
+<div class="shell">
+  <div class="rail">
+    <div class="rail-group-label">Content</div><a href="#">Cards</a>
+    <div class="rail-group-label">OTA</div><a href="#">Logic bundles</a><a href="#">Publish history</a>
+    <div class="rail-group-label">Builder</div><a href="#">Forecast &amp; publish</a><a href="#">Schedule</a><a href="#">Run log</a><a href="#">Decks</a>
+    <div class="rail-group-label">Device</div><a href="#">Sync</a><a href="#" class="active">Insights<span class="new">new</span></a>
+    <div class="rail-group-label">Tools</div><a href="#">Catalogue</a><a href="#">Bundle workbench</a>
+  </div>
+
+  <div class="content stack" id="page">
+    <div class="page-head">
+      <div>
+        <h2>Insights</h2>
+        <div class="page-sub">Everything derivable from one <code>userdata</code> snapshot — 4,510 occurrences, read-only. <b id="asof"></b></div>
+      </div>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <select id="acct" aria-label="Account">
+          <option>3wEnqPaPO2cSg2WOqNt6FXuZZvC3 — 4,510 occurrences</option>
+          <option>q1Px3MgvOZVBdkpM9DKmFBnDnMi1 — 37</option>
+          <option>cpcWhQ0f39Ze42HdVgn621lELPf2 — 0</option>
+        </select>
+        <button class="btn-ghost" id="themeBtn" title="Toggle light / dark">◐</button>
+      </div>
+    </div>
+
+    <div class="strip" id="strip"></div>
+    <div class="kpis" id="kpis"></div>
+
+    <!-- GLOSSARY: what the app's own words mean -->
+    <div class="panel">
+      <div class="panel-head">
+        <div><h3>How this app actually treats a card</h3>
+        <div class="page-sub">Every term on this page is the app's own field name or a label for a rule proven on this snapshot. Nothing here is invented vocabulary without a note saying so.</div></div>
+      </div>
+      <div class="panel-pad">
+        <div class="rule" id="rules"></div>
+        <div class="gloss-grid" id="glossary" style="margin-top:14px;"></div>
+      </div>
+    </div>
+
+    <div class="filterbar" id="filterbar"></div>
+
+    <!-- HERO: grafana-style timeseries -->
+    <div class="panel">
+      <div class="panel-head">
+        <div><h3>Reviews per day — seven months back, one month forward</h3>
+          <div class="page-sub">Drag across the plot to zoom · double-click to reset · shift-drag to pan. Left of <b>now</b> is reconstructed from <code>Time − CF</code>; right of it is the stored schedule.</div></div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <div class="seg" id="tsMode"><button data-m="fam" aria-pressed="true">by level</button><button data-m="tier">by state</button><button data-m="total">total + trend</button></div>
+          <div class="seg" id="tsRange"><button data-r="all" aria-pressed="true">all</button><button data-r="90">90d</button><button data-r="30">30d</button><button data-r="fut">ahead</button></div>
+        </div>
+      </div>
+      <div class="panel-pad"><div id="tsWrap"></div></div>
+      <div class="panel-pad" style="padding-top:0;"><div class="inline-note" id="tsNote"></div></div>
+    </div>
+
+    <!-- forecast comb -->
+    <div class="panel">
+      <div class="panel-head">
+        <div><h3>The next 45 days, day by day</h3>
+          <div class="page-sub">Same data as above, unsmoothed — this is the shape the timeseries hides.</div></div>
+        <div class="lgd" id="fcLgd"></div>
+      </div>
+      <div class="panel-pad"><svg class="chart" id="fc" height="236" role="img" aria-label="Scheduled reviews per day for the next 45 days"></svg></div>
+      <div class="panel-pad" style="padding-top:0;"><div class="inline-note" id="fcNote"></div></div>
+    </div>
+
+    <div class="cols-2u">
+      <div class="panel">
+        <div class="panel-head">
+          <div><h3>Interval ladder</h3><div class="page-sub">Click a column to filter the page to that interval.</div></div>
+          <div class="lgd" id="ldLgd"></div>
+        </div>
+        <div class="panel-pad">
+          <div class="lead"><span class="q">What this panel answers</span>
+            <b>“Which of my active cards are about to be taken away from me, and why is my daily load what it is?”</b>
+            Each column is one interval length. A card at a 7-day interval costs you a review every 7 days; a card at 30 costs one a month.
+            The red columns are cards sitting exactly on their deck's ceiling — they can never space out further, so they keep costing the
+            same forever, and they are the only cards eligible for automatic retirement.</div>
+          <svg class="chart" id="ld" height="214" role="img" aria-label="Active occurrences by current interval in days"></svg>
+        </div>
+        <div class="panel-pad" style="padding-top:0;"><div class="inline-note" id="ldNote"></div></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div><h3>Where your 4,510 occurrences sit</h3><div class="page-sub">Four states, by population.</div></div></div>
+        <div class="panel-pad">
+          <div class="lead"><span class="q">What this panel answers</span>
+            <b>“Only 913 of my 4,510 cards are live — where did the other 3,597 go?”</b>
+            They were retired, and almost all of it was automatic.</div>
+          <div id="arch"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- study history -->
+    <div class="panel">
+      <div class="panel-head">
+        <div><h3>Study history</h3>
+          <div class="page-sub">Reconstructed: <code>last review = Time − CF days</code>. Each cell counts occurrences whose <em>most recent</em> review landed that day.</div></div>
+        <div class="lgd" id="calLgd"></div>
+      </div>
+      <div class="panel-pad">
+        <div class="cal-outer">
+          <div class="cal-wd"><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span><span>Sun</span></div>
+          <div class="cal-scroll"><div><div class="cal-months" id="calMonths"></div><div class="cal" id="cal"></div></div></div>
+        </div>
+        <div class="cal-stats" id="calStats"></div>
+      </div>
+      <div class="panel-pad" style="padding-top:0;"><div class="inline-note" id="calNote"></div></div>
+    </div>
+
+    <div class="cols-3">
+      <div class="panel">
+        <div class="panel-head"><div><h3>When you study</h3><div class="page-sub">Hour of day — whole-day intervals preserve it exactly.</div></div></div>
+        <div class="panel-pad"><div class="clock-wrap">
+          <svg id="clock" width="176" height="176" role="img" aria-label="Reviews by hour of day"></svg>
+          <div class="clock-facts" id="clockFacts"></div>
+        </div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div><h3>Which days you show up</h3><div class="page-sub">Weekday profile, and your reminder schedule.</div></div></div>
+        <div class="panel-pad"><svg class="chart" id="wd" height="168" role="img" aria-label="Reviews by weekday"></svg>
+          <div class="inline-note" id="wdNote" style="margin-top:8px;"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div><h3>How hard each card fought</h3><div class="page-sub">Reschedule count across all occurrences.</div></div></div>
+        <div class="panel-pad"><svg class="chart" id="rs" height="168" role="img" aria-label="Distribution of reschedule counts"></svg>
+          <div class="inline-note" id="rsNote" style="margin-top:8px;"></div></div>
+      </div>
+    </div>
+
+    <!-- mosaic -->
+    <div class="panel">
+      <div class="panel-head">
+        <div><h3>The whole library, one cell per occurrence</h3>
+          <div class="page-sub">Ordered by deck, then by state. Hover any cell; click to filter to its deck.</div></div>
+        <div class="lgd" id="mosLgd"></div>
+      </div>
+      <div class="panel-pad"><canvas id="mosaic" height="260"></canvas>
+        <div class="inline-note" id="mosNote" style="margin-top:10px;"></div></div>
+    </div>
+
+    <div class="cols-3">
+      <div class="panel">
+        <div class="panel-head"><div><h3>Three memories per card</h3><div class="page-sub">Each side is scheduled independently.</div></div></div>
+        <div class="panel-pad" id="sides"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div><h3>Recognition vs production</h3><div class="page-sub">Of the 1,342 cards holding both an N and an E side.</div></div></div>
+        <div class="panel-pad" id="asym"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div><h3>Audio coverage</h3><div class="page-sub">The <code>A</code> field — which side carries the recording.</div></div></div>
+        <div class="panel-pad" id="audio"></div>
+      </div>
+    </div>
+
+    <div class="sec-head">
+      <div><h3>Decks</h3><div class="page-sub" id="deckSub"></div></div>
+      <div class="lgd" id="dkLgd"></div>
+    </div>
+    <div class="panel"><div class="table-wrap"><table id="dkTable"><thead></thead><tbody></tbody></table></div></div>
+
+    <div class="cols-2">
+      <div class="panel">
+        <div class="panel-head"><div><h3>Where each deck's live cards sit</h3><div class="page-sub">Active occurrences by interval band. Only decks with live cards appear.</div></div></div>
+        <div class="panel-pad"><div id="hm"></div>
+          <div class="inline-note" id="hmNote" style="margin-top:11px;"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div><h3>When each deck was last touched</h3><div class="page-sub">First to last reconstructed review per deck.</div></div></div>
+        <div class="panel-pad"><div id="tl2"></div>
+          <div class="inline-note" id="tl2Note" style="margin-top:11px;"></div></div>
+      </div>
+    </div>
+
+    <div class="cols-2">
+      <div class="panel">
+        <div class="panel-head"><div><h3>Content runway</h3><div class="page-sub">What the corpus still has left to give.</div></div></div>
+        <div class="panel-pad" id="runway"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div><h3>Leeches</h3><div class="page-sub">Most-rescheduled occurrences — the cards that fight back.</div></div></div>
+        <div class="table-wrap"><table id="leech"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="sec-head">
+      <div><h3>Per-card progress</h3><div class="page-sub">The Sync tab's table, paged · sortable · filterable · joined to real card text.</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head" style="gap:8px; align-items:center;">
+        <input type="search" id="q" placeholder="search Norwegian, gloss or card id…" style="min-width:250px;">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <select id="fDeck"></select>
+          <select id="fSide"><option value="">all sides</option><option value="N">N — recognition</option><option value="E">E — production</option><option value="A">A — audio</option></select>
+          <select id="fTier"><option value="">all states</option><option value="3">in rotation</option><option value="200">retired at ceiling</option><option value="150">parked early, interval kept</option><option value="100">parked early, no interval</option></select>
+          <select id="fFlag"><option value="">any</option><option value="leech">leeches (≥12 reschedules)</option><option value="tag">flagged difficult</option><option value="panic">panic history</option><option value="cap">on the ceiling</option><option value="due">due within 7d</option></select>
+          <button class="btn-ghost" id="clearF">clear</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table id="pcTable"><thead></thead><tbody></tbody></table></div>
+      <div class="pager" id="pcPager"></div>
+      <div class="panel-pad" style="padding-top:0;"><div class="inline-note" id="pcNote"></div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><h3>Provenance &amp; caveats</h3><div class="page-sub">What this page knows, how it knows it, and what it cannot know yet.</div></div></div>
+      <div class="panel-pad"><div class="prov" id="prov"></div></div>
+    </div>
+  </div>
+</div>
+<div id="tip" role="tooltip"></div>
+
+<script id="uplotlib">__UPLOTJS__</script>
+<script type="application/json" id="data">__DATA__</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("data").textContent);
+const M = D.meta;
+const fmt = (n) => n.toLocaleString("en-US");
+const pct = (x) => (x * 100).toFixed(1) + "%";
+const cssv = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const SVGNS = "http://www.w3.org/2000/svg";
+const el = (t, a = {}, p) => { const e = document.createElementNS(SVGNS, t); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; };
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const NOWMS = Date.parse(M.now);
+
+const tip = document.getElementById("tip");
+function showTip(ev, html) {
+  tip.innerHTML = html; tip.style.opacity = "1";
+  const r = tip.getBoundingClientRect();
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - 14;
+  if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - 14;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+const hideTip = () => { tip.style.opacity = "0"; };
+function hoverable(node, htmlFn) {
+  node.addEventListener("mousemove", (ev) => showTip(ev, htmlFn(ev)));
+  node.addEventListener("mouseleave", hideTip);
+}
+const tr = (label, val) => `<div class="r"><span>${label}</span><b>${val}</b></div>`;
+
+document.getElementById("themeBtn").addEventListener("click", () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+  ts = null; renderAll();
+});
+
+/* ---------- filter ---------- */
+const F = { deck: null, side: null, tier: null, flag: null, cf: null, q: "" };
+const STATE = { 3: "in rotation", 200: "retired at ceiling", 150: "parked early, interval kept", 100: "parked early, no interval" };
+function matches(r) {
+  if (F.deck && r.dk !== F.deck) return false;
+  if (F.side && r.s !== F.side) return false;
+  if (F.tier && r.st !== +F.tier) return false;
+  if (F.cf && (r.st !== 3 || r.cf < F.cf[0] || r.cf > F.cf[1])) return false;
+  if (F.flag === "leech" && r.r < 12) return false;
+  if (F.flag === "tag" && !r.tag) return false;
+  if (F.flag === "panic" && !r.pan) return false;
+  if (F.flag === "cap" && !(r.st === 3 && r.cf === r.mi)) return false;
+  if (F.flag === "due" && !(r.st === 3 && r.due < 7)) return false;
+  if (F.q) { const q = F.q.toLowerCase(); if (!(r.id.toLowerCase().includes(q) || (r.n || "").toLowerCase().includes(q) || (r.e || "").toLowerCase().includes(q))) return false; }
+  return true;
+}
+let VIEW = D.rows;
+const recompute = () => { VIEW = D.rows.filter(matches); };
+
+document.getElementById("asof").textContent = "Snapshot " + M.now.slice(0, 16).replace("T", " ") + " UTC.";
+
+document.getElementById("strip").innerHTML = `
+  <span class="ico">▲</span>
+  <span><b>${M.decksExhausted} of the ${M.decksPulled} decks you have pulled from are fully drawn.</b>
+  ${fmt(M.stockTotal - M.drawn)} stock occurrences remain, across ${M.decksPulled - M.decksExhausted} decks — ${pct(M.drawn / M.stockTotal)} of the stock corpus is already in your library.
+  Beyond that there is only what this hub mints: <b>C30 Lexic</b> (${M.hubTotal - 5} shipped, 11 waiting) and <b>C20 Practice</b> (5 shipped, 1 staged), neither pulled yet.</span>
+  <span class="spacer"></span><a href="#" style="font-weight:600; white-space:nowrap;" id="runwayLink">runway ↓</a>`;
+
+document.getElementById("kpis").innerHTML = [
+  { label: "In rotation", value: fmt(M.activeN), sub: `of ${fmt(M.occurrences)} · <span class="good">${pct(M.activeN / M.occurrences)}</span> the app will still show you`, meter: M.activeN / M.occurrences },
+  { label: "Retired", value: fmt(M.archived), sub: `${fmt(M.t200)} at the ceiling · ${fmt(M.t150 + M.t100)} parked early`, meter: M.archived / M.occurrences },
+  { label: "Stock corpus drawn", value: pct(M.drawn / M.stockTotal), sub: `${fmt(M.drawn)} / ${fmt(M.stockTotal)} · <span class="warnc">${fmt(M.stockTotal - M.drawn)} left</span>`, meter: M.drawn / M.stockTotal },
+  { label: "Steady-state load", value: M.steady.toFixed(0), unit: "/day", sub: `one review per card per interval, summed` },
+  { label: "Due today", value: fmt(M.dueToday), sub: `and exactly <span class="good">${M.overdue}</span> occurrence overdue — you are current` },
+  { label: "On the ceiling", value: fmt(M.atCap), sub: `<span class="warnc">${pct(M.atCap / M.activeN)}</span> of live cards, one clean review from retirement` },
+].map((k) => `<div class="kpi"><div class="label">${k.label}</div>
+  <div class="value">${k.value}${k.unit ? `<span class="unit">${k.unit}</span>` : ""}</div>
+  <div class="sub">${k.sub}</div>${k.meter != null ? `<div class="meter"><i style="width:${(k.meter * 100).toFixed(1)}%"></i></div>` : ""}</div>`).join("");
+
+/* ---------- rules + glossary ---------- */
+document.getElementById("rules").innerHTML = [
+  [`<span class="step">a review lands on the deck's <code>MaxInterval</code></span><span class="arrow">→</span>
+    <span class="step"><code>AutoParkHit</code> +1</span><span class="arrow">→</span>
+    <span class="step">at <code>AutoHammerCount</code> = 2, <b>retired</b></span>`,
+   `all 492 live cards on their ceiling have AutoParkHit 1 · all 3,015 retired have 2`],
+  [`<span class="step">a review goes badly</span><span class="arrow">→</span>
+    <span class="step"><code>AutoTagHit</code> +1</span><span class="arrow">→</span>
+    <span class="step">at 2, the app sets <code>Tag: true</code> — <b>flagged difficult</b></span>`,
+   `AutoTagHit ≥ 2 and Tag = true are the same 40 occurrences`],
+  [`<span class="step">you press <b>Panic</b> (the 1-minute grade)</span><span class="arrow">→</span>
+    <span class="step">a <code>Panic</code> counter appears on the record</span><span class="arrow">→</span>
+    <span class="step">cleared on recovery, but the field stays</span>`,
+   `all 128 records carrying Panic also carry AutoTagHit ≥ 1`],
+].map(([h, p]) => `<div class="rule-row">${h}<span class="proof">✓ ${p}</span></div>`).join("");
+
+document.getElementById("glossary").innerHTML = [
+  ["In rotation", M.activeN, `<code>Stage 3</code>, <code>Park: false</code>. The app will put this occurrence in front of you again. These ${fmt(M.activeN)} are your entire real workload — everything else on this page is history.`],
+  ["Interval", "0–30 d", `The record's <code>CF</code> field: how many days until this occurrence comes back. Grows as you keep getting it right, and is hard-capped by its deck's <code>MaxInterval</code>. <b>findings.md calls <code>CF</code> an ease-factor percentage; on real data it is the interval in days.</b>`],
+  ["Ceiling", M.atCap + " on it", `A deck's <code>MaxInterval</code> — 5, 10, 15, 20, 25 or 30 days depending on the deck. No occurrence in that deck ever spaces out beyond it. Hitting it twice retires the card.`],
+  ["Retired at ceiling", M.t200, `<code>Stage 200</code>. The app took these away automatically after two clean reviews at the ceiling. This is <b>four fifths of your library</b> and none of it was your decision.`],
+  ["Parked early", M.t150 + M.t100, `<code>Stage 150</code> (interval kept, ${fmt(M.t150)}) and <code>Stage 100</code> (<code>CF</code> = 0, fully asleep, ${fmt(M.t100)}). These never reached a ceiling — <code>AutoParkHit</code> is 0 on every one — so something else archived them: you, or the app's <code>FreshPark</code> option. <b>The snapshot cannot tell which</b>, so this page does not claim one.`],
+  ["Flagged difficult", M.tagged, `<code>Tag: true</code>. Set by the app, not by you, once <code>AutoTagHit</code> reaches 2. Median reschedule count among these is 14 against 6 across the library — the flag is earned. Undocumented in findings.md.`],
+  ["Panic history", M.panic, `These records carry a <code>Panic</code> field, always reading 0. <b>Panic</b> is the app's hardest grade (a 1-minute interval, from mod 2133's tables). Every one of the 128 also has <code>AutoTagHit</code> ≥ 1, so the field marks cards you have panicked on and since recovered. Undocumented.`],
+  ["Reschedules", M.leeches + " ≥ 12", `<code>numberOfReschedulings</code>. Counts every time an occurrence was pushed back rather than progressing. The library median is 6; anything past 12 is a card actively resisting you.`],
+].map(([t, n, b]) => `<div class="gl"><h4>${t}<span class="n">${typeof n === "number" ? fmt(n) : n}</span></h4><div class="body">${b}</div></div>`).join("");
+
+/* ---------- filter bar ---------- */
+function renderFilterBar() {
+  const fb = document.getElementById("filterbar");
+  const chips = [];
+  if (F.deck) chips.push(["deck " + F.deck, () => { F.deck = null; }]);
+  if (F.side) chips.push(["side " + F.side, () => { F.side = null; }]);
+  if (F.tier) chips.push([STATE[F.tier], () => { F.tier = null; }]);
+  if (F.cf) chips.push([`interval ${F.cf[0]}–${F.cf[1]}d`, () => { F.cf = null; }]);
+  if (F.flag) chips.push([document.getElementById("fFlag").selectedOptions[0].textContent, () => { F.flag = null; }]);
+  if (F.q) chips.push([`“${F.q}”`, () => { F.q = ""; document.getElementById("q").value = ""; }]);
+  fb.innerHTML = `<span class="lbl">Filter</span>` +
+    (chips.length ? "" : `<span style="color:var(--text-faint)">none — click a deck row, an interval column, a heatmap cell or a mosaic cell; every panel re-reads the selection</span>`) +
+    chips.map((c, i) => `<span class="chip-f">${esc(c[0])}<button data-ci="${i}" aria-label="remove filter">×</button></span>`).join("") +
+    `<span class="count"><b>${fmt(VIEW.length)}</b> / ${fmt(D.rows.length)} occurrences</span>`;
+  fb.querySelectorAll("button[data-ci]").forEach((b) => b.addEventListener("click", () => { chips[+b.dataset.ci][1](); syncControls(); renderAll(); }));
+}
+function syncControls() {
+  document.getElementById("fDeck").value = F.deck || "";
+  document.getElementById("fSide").value = F.side || "";
+  document.getElementById("fTier").value = F.tier || "";
+  document.getElementById("fFlag").value = F.flag || "";
+}
+
+/* ---------- uPlot timeseries ---------- */
+const FAM = [["Z", "Z · foundation"], ["A", "A · beginner"], ["B", "B · intermediate"], ["C", "C · advanced"]];
+const FAMC = ["--s3", "--s4", "--s5", "--s6"];
+let ts = null, tsM = "fam", tsR = "all";
+function seriesFor(mode) {
+  // rebuild from VIEW so the chart honours the page filter
+  const { t, pastTot } = D.series;
+  const n = t.length, k0 = M.minK;
+  const mk = () => new Array(n).fill(0);
+  const past = {}, fut = {};
+  for (const r of VIEW) {
+    const pk = Math.floor((r.lrT - 4 * 36e5) / 864e5) - k0, fk = Math.floor((r.dueT - 4 * 36e5) / 864e5) - k0;
+    const key = mode === "fam" ? r.dk[0] : (r.st === 3 ? "live" : "ret");
+    if (pk >= 0 && pk < n) { (past[key] = past[key] || mk())[pk]++; }
+    if (fk >= 0 && fk < n && r.st === 3) { (fut[key] = fut[key] || mk())[fk]++; }
+  }
+  const todayI = M.todayK - k0;
+  const keys = mode === "fam" ? FAM.map((f) => f[0]) : ["live", "ret"];
+  const labels = mode === "fam" ? FAM.map((f) => f[1]) : ["in rotation", "retired (last seen)"];
+  const cols = mode === "fam" ? FAMC.map(cssv) : [cssv("--s6"), cssv("--s3")];
+  // combined: observed left of now, scheduled right of now
+  const combined = keys.map((key) => {
+    const a = mk();
+    for (let i = 0; i < n; i++) a[i] = i <= todayI ? ((past[key] || [])[i] || 0) : ((fut[key] || [])[i] || 0);
+    return a;
+  });
+  if (mode === "total") {
+    const tot = mk();
+    for (const c of combined) for (let i = 0; i < n; i++) tot[i] += c[i];
+    const mean = mk();
+    for (let i = 0; i < n; i++) { let s = 0, c = 0; for (let j = Math.max(0, i - 6); j <= i; j++) { s += tot[j]; c++; } mean[i] = +(s / c).toFixed(2); }
+    return { data: [t, tot, mean], series: [{}, { label: "occurrences/day", stroke: cssv("--s4"), fill: cssv("--s4") + "55", width: 1, paths: uPlot.paths.bars({ size: [1, 6] }) }, { label: "7-day mean", stroke: cssv("--accent"), width: 2 }], stacked: false };
+  }
+  // stack cumulatively for area bands
+  const stacked = [];
+  let acc = mk();
+  for (const c of combined) { acc = acc.map((v, i) => v + c[i]); stacked.push(acc.slice()); }
+  // Drawn as cumulative filled areas (largest first) so they band correctly,
+  // but the legend must read the band's OWN value, not the running total —
+  // hence `value` looks the raw per-level number back up by data index.
+  return {
+    data: [t, ...stacked.slice().reverse()],
+    series: [{}, ...keys.map((_, i) => {
+      const j = keys.length - 1 - i;
+      return {
+        label: labels[j], stroke: cols[j], fill: cols[j], width: 0.6, points: { show: false },
+        value: (u, v, sidx, didx) => (didx == null ? "--" : combined[j][didx]),
+      };
+    })],
+    stacked: true,
+  };
+}
+function renderTS() {
+  const wrap = document.getElementById("tsWrap");
+  const spec = seriesFor(tsM);
+  const W = wrap.clientWidth || 1100;
+  const todayS = (M.todayK * 864e5 + 4 * 36e5) / 1000;
+  const nowLine = {
+    hooks: {
+      draw: [(u) => {
+        const cx = u.valToPos(todayS, "x", true);
+        const ctx = u.ctx;
+        ctx.save();
+        ctx.fillStyle = cssv("--future");
+        ctx.fillRect(cx, u.bbox.top, u.bbox.left + u.bbox.width - cx, u.bbox.height);
+        ctx.strokeStyle = cssv("--accent"); ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(cx, u.bbox.top); ctx.lineTo(cx, u.bbox.top + u.bbox.height); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = cssv("--accent-text"); ctx.font = "600 10.5px " + cssv("--sans");
+        ctx.textAlign = "left"; ctx.fillText(" now", cx + 2, u.bbox.top + 11);
+        ctx.textAlign = "right"; ctx.fillText("observed ", cx - 2, u.bbox.top + 11);
+        ctx.restore();
+      }],
+    },
+  };
+  const opts = {
+    width: W, height: 300,
+    cursor: { drag: { x: true, y: false }, points: { size: 6 } },
+    scales: { x: { time: true } },
+    axes: [
+      { stroke: cssv("--text-faint"), grid: { stroke: cssv("--grid"), width: 1, dash: [2, 3] }, ticks: { stroke: cssv("--grid") }, font: "10px " + cssv("--sans") },
+      { stroke: cssv("--text-faint"), grid: { stroke: cssv("--grid"), width: 1, dash: [2, 3] }, ticks: { stroke: cssv("--grid") }, font: "10px " + cssv("--sans"), size: 44 },
+    ],
+    series: spec.series,
+    legend: { live: true },
+    plugins: [nowLine],
+  };
+  wrap.innerHTML = "";
+  ts = new uPlot(opts, spec.data, wrap);
+  applyRange();
+
+  const live = VIEW.filter((r) => r.st === 3);
+  const busiest = D.series.pastTot.reduce((a, v, i) => (v > a[0] ? [v, i] : a), [0, 0]);
+  document.getElementById("tsNote").innerHTML =
+    `This is the panel that needed a real charting library — it is <b>uPlot</b> (51 KB, no network, inlined), so drag-zoom, pan and a live
+     crosshair legend come for free and 239 days × ${tsM === "fam" ? 4 : 2} series stays instant.
+     The left half is <b>not</b> a review log: it is where each occurrence's <em>last</em> review fell, so it thins toward the past as cards
+     get reviewed again. The right half is exact — it is the schedule the device is carrying right now.
+     Peak observed day is <b>${new Date((D.series.t[busiest[1]]) * 1000).toISOString().slice(0, 10)}</b> at ${fmt(busiest[0])} occurrences;
+     the forward half never exceeds ${fmt(Math.max(...D.series.futTot.filter((v) => v != null)))} because every live card is capped at 30 days out.`;
+}
+function applyRange() {
+  if (!ts) return;
+  const t = D.series.t, last = t[t.length - 1], todayS = (M.todayK * 864e5 + 4 * 36e5) / 1000;
+  if (tsR === "all") ts.setScale("x", { min: t[0], max: last });
+  else if (tsR === "fut") ts.setScale("x", { min: todayS - 3 * 86400, max: last });
+  else ts.setScale("x", { min: todayS - (+tsR) * 86400, max: Math.min(last, todayS + 7 * 86400) });
+}
+document.getElementById("tsMode").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  tsM = b.dataset.m;
+  document.querySelectorAll("#tsMode button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+  renderTS();
+});
+document.getElementById("tsRange").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  tsR = b.dataset.r;
+  document.querySelectorAll("#tsRange button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+  applyRange();
+});
+
+/* ---------- forecast comb ---------- */
+function renderForecast() {
+  const svg = document.getElementById("fc"); svg.innerHTML = "";
+  const W = svg.clientWidth || 1100, H = 236, mL = 34, mR = 10, mT = 12, mB = 30;
+  const iw = W - mL - mR, ih = H - mT - mB, N = 45;
+  const act = [], late = [];
+  for (let k = 0; k < N; k++) { act.push({}); late[k] = 0; }
+  let overdue = 0;
+  for (const r of VIEW) {
+    if (r.st !== 3) continue;                      // retired cards are never shown — they are not forecast
+    if (r.due < 0) { overdue++; act[0][r.dk[0]] = (act[0][r.dk[0]] || 0) + 1; continue; }
+    const k = Math.floor(r.due);
+    if (k < N) act[k][r.dk[0]] = (act[k][r.dk[0]] || 0) + 1;
+  }
+  const tot = act.map((a) => Object.values(a).reduce((x, y) => x + y, 0));
+  const max = Math.max(1, ...tot);
+  const bw = iw / N, y = (v) => mT + ih - (v / max) * ih;
+  const g = el("g", { class: "ax" }, svg);
+  for (let i = 0; i <= 4; i++) { const v = Math.round((max / 4) * i), yy = y(v); el("line", { x1: mL, x2: W - mR, y1: yy, y2: yy }, g); const t = el("text", { x: mL - 6, y: yy + 3.5, "text-anchor": "end" }, g); t.textContent = v; }
+  for (let k = 0; k < N; k += 7) { const t = el("text", { x: mL + bw * k + bw / 2, y: H - 10, "text-anchor": "middle" }, g); t.textContent = k === 0 ? "today" : "+" + k + "d"; }
+  const cy = y(M.steady);
+  el("line", { x1: mL, x2: W - mR, y1: cy, y2: cy, stroke: cssv("--accent"), "stroke-width": 2, "stroke-dasharray": "5 4", opacity: .85 }, svg);
+  const ct = el("text", { x: W - mR - 4, y: cy - 6, "text-anchor": "end", "font-size": 10.5, fill: cssv("--accent-text") }, svg);
+  ct.textContent = "steady-state " + M.steady.toFixed(0) + "/day";
+  for (let k = 0; k < N; k++) {
+    let acc = 0; const grp = el("g", { class: "bar" }, svg);
+    FAM.forEach(([f], fi) => {
+      const v = act[k][f] || 0; if (!v) return;
+      const h = (v / max) * ih;
+      el("rect", { x: mL + bw * k + 1.2, y: mT + ih - acc - h, width: Math.max(1, bw - 2.4), height: Math.max(0.8, h - (acc > 0 ? 2 : 0)), fill: cssv(FAMC[fi]), rx: 2 }, grp);
+      acc += h;
+    });
+    if (!tot[k]) el("rect", { x: mL + bw * k + 1.2, y: mT + ih - 1.5, width: Math.max(1, bw - 2.4), height: 1.5, fill: cssv("--border-soft") }, grp);
+    el("rect", { x: mL + bw * k, y: mT, width: bw, height: ih, fill: "transparent" }, grp);
+    const date = new Date(NOWMS + k * 864e5);
+    hoverable(grp, () => `<div class="t">${k === 0 ? "Today" : "+" + k + " days"} · ${date.toISOString().slice(0, 10)}</div>`
+      + FAM.map(([f, lbl]) => act[k][f] ? tr(lbl, act[k][f]) : "").join("")
+      + tr("<b>total due</b>", tot[k])
+      + (k === 0 && overdue ? `<div class="hint">includes ${overdue} already past due</div>` : "")
+      + (tot[k] > M.steady * 1.5 ? `<div class="hint">a convoy day — ${(tot[k] / M.steady).toFixed(1)}× your steady-state load</div>` : ""));
+  }
+  document.getElementById("fcLgd").innerHTML = FAM.map(([f, lbl], i) => `<span class="sw"><i style="background:${cssv(FAMC[i])}"></i>${lbl}</span>`).join("") +
+    `<span class="sw dash" style="color:${cssv("--accent")}"><i></i>steady-state</span>`;
+  const peak = tot.indexOf(Math.max(...tot));
+  const convoys = tot.filter((t2) => t2 > M.steady * 1.5).length;
+  document.getElementById("fcNote").innerHTML =
+    `<b>Only cards in rotation appear here.</b> Retired occurrences also carry a <code>Time</code>, and ${fmt(M.parkedFuture)} of them are even
+     future-dated, but the app will never show them — an earlier draft of this chart folded them in and claimed thousands of reviews due today,
+     which was wrong. Every live occurrence is due inside <b>30 days</b>, the hard ceiling its deck imposes.
+     The comb is real structure: cards drawn in the same 5-occurrence pull block get graded together and so come due together.
+     <b>${convoys} of the next 45 days</b> carry more than 1.5× the steady-state load; the worst is <b>+${peak}d at ${fmt(tot[peak])}</b>
+     against a ${M.steady.toFixed(0)}/day baseline.`;
+}
+
+/* ---------- interval ladder ---------- */
+function renderLadder() {
+  const svg = document.getElementById("ld"); svg.innerHTML = "";
+  const W = svg.clientWidth || 600, H = 214, mL = 32, mR = 8, mT = 10, mB = 34;
+  const iw = W - mL - mR, ih = H - mT - mB;
+  const bins = []; for (let cf = 0; cf <= 30; cf++) bins.push({ cf, n: 0, capped: 0 });
+  for (const r of VIEW) if (r.st === 3) { const b = bins[Math.min(30, r.cf)]; b.n++; if (r.cf === r.mi) b.capped++; }
+  const max = Math.max(1, ...bins.map((b) => b.n));
+  const bw = iw / 31, y = (v) => mT + ih - (v / max) * ih;
+  const g = el("g", { class: "ax" }, svg);
+  for (let i = 0; i <= 3; i++) { const v = Math.round((max / 3) * i), yy = y(v); el("line", { x1: mL, x2: W - mR, y1: yy, y2: yy }, g); const t = el("text", { x: mL - 6, y: yy + 3.5, "text-anchor": "end" }, g); t.textContent = v; }
+  for (const cf of [0, 5, 10, 15, 20, 25, 30]) { const t = el("text", { x: mL + bw * cf + bw / 2, y: H - 16, "text-anchor": "middle" }, g); t.textContent = cf + "d"; }
+  const xl = el("text", { x: mL + iw / 2, y: H - 3, "text-anchor": "middle", "font-size": 10, fill: cssv("--text-faint") }, svg);
+  xl.textContent = "days until this card comes back";
+  for (const b of bins) {
+    const grp = el("g", { class: "bar" }, svg);
+    const free = b.n - b.capped; let acc = 0;
+    if (free) { const h = (free / max) * ih; el("rect", { x: mL + bw * b.cf + 1, y: y(free), width: Math.max(1, bw - 2), height: Math.max(0.8, h), fill: cssv("--s4"), rx: 2 }, grp); acc = h; }
+    if (b.capped) { const h = (b.capped / max) * ih; el("rect", { x: mL + bw * b.cf + 1, y: mT + ih - acc - h - (acc ? 2 : 0), width: Math.max(1, bw - 2), height: Math.max(0.8, h), fill: cssv("--err"), rx: 2 }, grp); }
+    el("rect", { x: mL + bw * b.cf, y: mT, width: bw, height: ih, fill: "transparent" }, grp);
+    hoverable(grp, () => `<div class="t">comes back in ${b.cf} day${b.cf === 1 ? "" : "s"}</div>${tr("cards in rotation", b.n)}
+      ${b.capped ? tr("on their deck's ceiling", b.capped) : ""}${b.n ? tr("reviews/day this costs you", (b.n / Math.max(1, b.cf)).toFixed(1)) : ""}
+      <div class="hint">click to filter the page to this interval</div>`);
+    grp.addEventListener("click", () => { F.cf = [b.cf, b.cf]; renderAll(); });
+  }
+  document.getElementById("ldLgd").innerHTML = `<span class="sw"><i style="background:${cssv("--s4")}"></i>still spacing out</span><span class="sw"><i style="background:${cssv("--err")}"></i>stuck on the ceiling</span>`;
+  const capped = bins.reduce((a, b) => a + b.capped, 0);
+  const costliest = bins.map((b) => [b.n / Math.max(1, b.cf), b]).sort((a, b) => b[0] - a[0])[0];
+  document.getElementById("ldNote").innerHTML =
+    `The red columns stand at 10, 15, 20 and 30 days — the six distinct <code>MaxInterval</code> values across your decks.
+     <b>${fmt(capped)}</b> live occurrences are stuck there. The spike at <b>29d</b> is the last step below a 30-day ceiling, and the
+     tall red column at <b>30d</b> is where it lands next.
+     ${costliest ? `Your most expensive bucket is <b>${costliest[1].cf}d</b>, costing <b>${costliest[0].toFixed(1)} reviews/day</b> on its own.` : ""}`;
+}
+
+/* ---------- archive ---------- */
+function renderArchive() {
+  const bar = (label, n, col, note) => `<div style="margin-bottom:11px;">
+    <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:12.5px; margin-bottom:4px;">
+      <span style="font-weight:650;">${label}</span>
+      <span class="mono" style="color:var(--text-dim);">${fmt(n)} <span style="color:var(--text-faint)">· ${(n / M.occurrences * 100).toFixed(1)}%</span></span></div>
+    <div style="height:11px; background:var(--bg-sunken); border-radius:3px; overflow:hidden;"><i style="display:block; height:100%; width:${(n / M.occurrences * 100).toFixed(2)}%; background:${col}; border-radius:3px;"></i></div>
+    <div class="inline-note" style="margin-top:4px;">${note}</div></div>`;
+  document.getElementById("arch").innerHTML =
+    bar("In rotation", M.activeN, cssv("--s6"), `The app will show you these again. <b>${fmt(M.atCap)}</b> are one clean review from joining the band below.`) +
+    bar("Retired at the ceiling", M.t200, cssv("--s3"), `Two reviews survived at <code>MaxInterval</code> → gone. Automatic, not your choice.`) +
+    bar("Parked early, interval kept", M.t150, cssv("--s2"), `Never reached a ceiling. Still carries an interval of 0–29 days.`) +
+    bar("Parked early, no interval", M.t100, cssv("--s1"), `<code>CF = 0</code> on all ${fmt(M.t100)}. Fully asleep.`) +
+    `<div class="inline-note" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border-soft);">
+      <b>So the 80% is the design working, not neglect.</b> And the two knobs that set the pace are
+      <code>decks.max_interval</code> and <code>decks.auto_hammer_count</code> — two columns this hub already owns and ships in every bundle.
+      Lifting every ceiling-bound deck by half would take steady-state load from <b>${M.steady.toFixed(0)}</b> to <b>${M.steadyLifted.toFixed(0)}</b>
+      reviews/day and push ${fmt(M.atCap)} retirements further out. Raising <code>auto_hammer_count</code> from 2 to 3 would instead keep
+      cards in rotation for one more full ceiling-length cycle each.</div>`;
+}
+
+/* ---------- calendar ---------- */
+function renderCalendar() {
+  const counts = {};
+  for (const r of VIEW) { const k = new Date(Math.floor((r.lrT - 4 * 36e5) / 864e5) * 864e5 + 4 * 36e5).toISOString().slice(0, 10); counts[k] = (counts[k] || 0) + 1; }
+  const start = new Date(M.firstStudy + "T00:00:00Z"), end = new Date(M.lastStudy + "T00:00:00Z");
+  const s = new Date(start); s.setUTCDate(s.getUTCDate() - ((s.getUTCDay() + 6) % 7));
+  const cal = document.getElementById("cal"); cal.innerHTML = "";
+  const months = document.getElementById("calMonths"); months.innerHTML = "";
+  const vals = Object.values(counts).filter((v) => v > 0).sort((a, b) => a - b);
+  const q = (p) => vals.length ? vals[Math.floor(vals.length * p)] : 1;
+  const steps = [q(0.25), q(0.5), q(0.72), q(0.9)];
+  const lvl = (v) => v === 0 ? 0 : v <= steps[0] ? 1 : v <= steps[1] ? 2 : v <= steps[2] ? 3 : v <= steps[3] ? 4 : 5;
+  let weeks = 0;
+  for (let d = new Date(s); d <= end; d.setUTCDate(d.getUTCDate() + 7)) weeks++;
+  let lastMonth = -1; const monthCells = [];
+  for (let w = 0, d = new Date(s); w < weeks; w++) {
+    const colStart = new Date(d);
+    for (let k = 0; k < 7; k++) {
+      const key = d.toISOString().slice(0, 10), v = counts[key] || 0;
+      const i = document.createElement("i");
+      if (d >= start && d <= end) {
+        i.dataset.l = lvl(v);
+        const dd = new Date(d);
+        hoverable(i, () => `<div class="t">${dd.toISOString().slice(0, 10)} · ${dd.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" })}</div>
+          ${tr("occurrences last seen here", v)}${v === 0 ? `<div class="hint">a rest day — or every card you touched that day has since been reviewed again</div>` : ""}`);
+      } else { i.dataset.l = "0"; i.style.visibility = "hidden"; }
+      cal.appendChild(i);
+      d.setUTCDate(d.getUTCDate() + 1);
+    }
+    const m = colStart.getUTCMonth();
+    monthCells.push(m !== lastMonth ? (lastMonth = m, colStart.toLocaleString("en-US", { month: "short", timeZone: "UTC" })) : "");
+  }
+  months.innerHTML = monthCells.map((t) => `<span>${t}</span>`).join("");
+  document.getElementById("calLgd").innerHTML = `<span style="color:var(--text-faint)">fewer</span>` +
+    [0, 1, 2, 3, 4, 5].map((l) => `<i style="width:12px;height:12px;border-radius:2.5px;display:inline-block;background:${l === 0 ? cssv("--bg-sunken") : cssv("--s" + (l + 1))};${l === 0 ? "box-shadow:inset 0 0 0 1px " + cssv("--border-soft") : ""}"></i>`).join("") +
+    `<span style="color:var(--text-faint)">more</span>`;
+
+  const days = Object.keys(counts).filter((k) => counts[k] > 0).length;
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  document.getElementById("calStats").innerHTML = [
+    ["Active days", fmt(days), `of ${M.spanDays} in span`],
+    ["Longest streak", M.bestStreak, "consecutive days"],
+    ["Busiest day", top ? fmt(top[1]) : 0, top ? top[0] : ""],
+    ["Mean per active day", days ? (total / days).toFixed(0) : 0, "occurrences"],
+    ["Coverage", days ? pct(days / M.spanDays) : "—", "of the whole span"],
+  ].map(([k, v, s2]) => `<div><div class="k">${k}</div><div class="v">${v} <small>${s2}</small></div></div>`).join("");
+
+  document.getElementById("calNote").innerHTML =
+    `<b>${M.studyDays} active days</b> between ${M.firstStudy} and ${M.lastStudy} — seven months of work recovered from a document that stores
+     no history whatsoever. <b>Read it honestly:</b> a snapshot keeps only each occurrence's <em>most recent</em> review, so the deep past is
+     systematically thinned and a blank cell is not proof of a rest day. The early months survive at all only because retired cards stopped being
+     reviewed, freezing their last-review date. A true day-by-day log needs <code>userdata_history</code>, and this account has
+     <b>${M.historyRows} row</b> in it.`;
+}
+
+/* ---------- clock ---------- */
+function renderClock() {
+  const svg = document.getElementById("clock"); svg.innerHTML = "";
+  const cx = 88, cy = 88, r0 = 28, r1 = 78;
+  const hours = new Array(24).fill(0);
+  for (const r of VIEW) hours[r.hr]++;
+  const max = Math.max(1, ...hours);
+  el("circle", { cx, cy, r: r0 - 4, fill: "none", stroke: cssv("--border") }, svg);
+  for (let h = 0; h < 24; h++) {
+    const a0 = (h / 24) * 2 * Math.PI - Math.PI / 2 + 0.013, a1 = ((h + 1) / 24) * 2 * Math.PI - Math.PI / 2 - 0.013;
+    const rr = r0 + (hours[h] / max) * (r1 - r0);
+    const p = `M ${cx + r0 * Math.cos(a0)} ${cy + r0 * Math.sin(a0)} L ${cx + rr * Math.cos(a0)} ${cy + rr * Math.sin(a0)} A ${rr} ${rr} 0 0 1 ${cx + rr * Math.cos(a1)} ${cy + rr * Math.sin(a1)} L ${cx + r0 * Math.cos(a1)} ${cy + r0 * Math.sin(a1)} A ${r0} ${r0} 0 0 0 ${cx + r0 * Math.cos(a0)} ${cy + r0 * Math.sin(a0)} Z`;
+    const seg = el("path", { d: p, fill: hours[h] ? cssv("--s5") : cssv("--border-soft"), class: "bar" }, svg);
+    hoverable(seg, () => `<div class="t">${String(h).padStart(2, "0")}:00–${String(h + 1).padStart(2, "0")}:00 UTC</div>${tr("occurrences", hours[h])}`);
+  }
+  for (const [h, lbl] of [[0, "00"], [6, "06"], [12, "12"], [18, "18"]]) {
+    const a = (h / 24) * 2 * Math.PI - Math.PI / 2;
+    const t = el("text", { x: cx + (r1 + 9) * Math.cos(a), y: cy + (r1 + 9) * Math.sin(a) + 3.5, "text-anchor": "middle", "font-size": 9.5, fill: cssv("--text-faint") }, svg);
+    t.textContent = lbl;
+  }
+  const dead = hours.map((v, i) => [v, i]).filter(([v]) => v === 0).map(([, i]) => i);
+  document.getElementById("clockFacts").innerHTML =
+    `Peak <b>${String(hours.indexOf(max)).padStart(2, "0")}:00</b><br>
+     Morning <b>07–09</b> · ${fmt(hours[7] + hours[8] + hours[9])}<br>
+     Afternoon <b>12–17</b> · ${fmt(hours.slice(12, 18).reduce((a, b) => a + b, 0))}<br>
+     Silent <b>${dead.length ? dead.map((h) => String(h).padStart(2, "0")).join(" ") : "none"}</b>
+     <div class="inline-note" style="margin-top:8px;">Your reminders fire at 08:00 and 16:30 — both land inside a genuine peak.</div>`;
+}
+
+/* ---------- weekday ---------- */
+const WD = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function renderWeekday() {
+  const svg = document.getElementById("wd"); svg.innerHTML = "";
+  const W = svg.clientWidth || 360, H = 168, mL = 8, mR = 8, mT = 10, mB = 26;
+  const iw = W - mL - mR, ih = H - mT - mB;
+  const c = new Array(7).fill(0);
+  for (const r of VIEW) c[(new Date(r.lrT - 4 * 36e5).getUTCDay() + 6) % 7]++;
+  const max = Math.max(1, ...c), bw = iw / 7;
+  const remDays = new Set(D.reminders.flatMap((x) => x.days));
+  for (let i = 0; i < 7; i++) {
+    const h = (c[i] / max) * ih;
+    const grp = el("g", { class: "bar" }, svg);
+    el("rect", { x: mL + bw * i + 4, y: mT + ih - h, width: bw - 8, height: Math.max(1, h), fill: i >= 5 ? cssv("--s3") : cssv("--s5"), rx: 3 }, grp);
+    const t = el("text", { x: mL + bw * i + bw / 2, y: H - 12, "text-anchor": "middle", "font-size": 10, fill: cssv("--text-faint") }, svg);
+    t.textContent = WD[i];
+    const t2 = el("text", { x: mL + bw * i + bw / 2, y: H - 2, "text-anchor": "middle", "font-size": 8.5, fill: remDays.has(["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"][i]) ? cssv("--accent-text") : cssv("--border") }, svg);
+    t2.textContent = "●";
+    const v = el("text", { x: mL + bw * i + bw / 2, y: mT + ih - h - 5, "text-anchor": "middle", "font-size": 10, fill: cssv("--text-dim"), "font-weight": 650 }, svg);
+    v.textContent = c[i];
+    el("rect", { x: mL + bw * i, y: mT, width: bw, height: ih, fill: "transparent" }, grp);
+    hoverable(grp, () => `<div class="t">${WD[i]}</div>${tr("occurrences last seen", c[i])}${tr("share", pct(c[i] / Math.max(1, c.reduce((a, b) => a + b, 0))))}`);
+  }
+  const wk = c.slice(0, 5).reduce((a, b) => a + b, 0), we = c[5] + c[6];
+  document.getElementById("wdNote").innerHTML =
+    `Weekdays <b>${fmt(wk)}</b> · weekends <b>${fmt(we)}</b>. Tuesday is your weakest day at ${fmt(c[1])} and Sunday your strongest at ${fmt(c[6])} —
+     yet your 08:00 reminder is set Mon–Fri only (dots). The 16:30 reminder covers all seven.`;
+}
+
+/* ---------- reschedule histogram ---------- */
+function renderResched() {
+  const svg = document.getElementById("rs"); svg.innerHTML = "";
+  const W = svg.clientWidth || 360, H = 168, mL = 8, mR = 8, mT = 10, mB = 26;
+  const iw = W - mL - mR, ih = H - mT - mB, N = 25;
+  const c = new Array(N).fill(0);
+  for (const r of VIEW) c[Math.min(N - 1, r.r)]++;
+  const max = Math.max(1, ...c), bw = iw / N;
+  for (let i = 0; i < N; i++) {
+    const h = (c[i] / max) * ih;
+    const grp = el("g", { class: "bar" }, svg);
+    el("rect", { x: mL + bw * i + 0.8, y: mT + ih - h, width: Math.max(1, bw - 1.6), height: Math.max(0.8, h), fill: i >= 12 ? cssv("--warn") : cssv("--s4"), rx: 2 }, grp);
+    el("rect", { x: mL + bw * i, y: mT, width: bw, height: ih, fill: "transparent" }, grp);
+    hoverable(grp, () => `<div class="t">rescheduled ${i}${i === N - 1 ? "+" : ""}×</div>${tr("occurrences", c[i])}`);
+  }
+  for (const i of [0, 6, 12, 18, 24]) { const t = el("text", { x: mL + bw * i + bw / 2, y: H - 12, "text-anchor": "middle", "font-size": 10, fill: cssv("--text-faint") }, svg); t.textContent = i; }
+  const t3 = el("text", { x: mL + iw / 2, y: H - 2, "text-anchor": "middle", "font-size": 9.5, fill: cssv("--text-faint") }, svg);
+  t3.textContent = "times rescheduled";
+  document.getElementById("rsNote").innerHTML =
+    `Sharply bimodal: a spike at <b>0–1</b> (never fought) and a huge mass at <b>6–7</b>, which is ${fmt(c[6] + c[7])} occurrences — more than
+     half the library sharing almost the same history. The orange tail past <b>12</b> is ${fmt(c.slice(12).reduce((a, b) => a + b, 0))} genuine leeches.`;
+}
+
+/* ---------- mosaic ---------- */
+let mosLayout = null;
+function renderMosaic() {
+  const cv = document.getElementById("mosaic");
+  const W = cv.clientWidth || 1100;
+  const CELL = 6, GAP = 1, PITCH = CELL + GAP;
+  const order = D.deckSum.slice().filter((d) => d.held).sort((a, b) => a.code.localeCompare(b.code));
+  const cols = Math.floor(W / PITCH);
+  const sel = new Set(VIEW.map((r) => r.i));
+  // lay out deck by deck, each deck starting on a fresh row
+  const cells = []; let row = 0;
+  for (const d of order) {
+    const mine = D.rows.filter((r) => r.dk === d.code).sort((a, b) => (a.st === 3 ? 0 : 1) - (b.st === 3 ? 0 : 1) || b.cf - a.cf);
+    mine.forEach((r, i) => cells.push({ r, c: i % cols, y: row + Math.floor(i / cols), deck: d.code }));
+    row += Math.ceil(mine.length / cols);
+  }
+  const H = row * PITCH + 2;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + "px";
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const COL = { 3: cssv("--s6"), 200: cssv("--s3"), 150: cssv("--s2"), 100: cssv("--s1") };
+  const dim = cssv("--border-soft");
+  for (const c of cells) {
+    const on = sel.has(c.r.i);
+    ctx.fillStyle = on ? COL[c.r.st] : dim;
+    ctx.globalAlpha = on ? 1 : 0.35;
+    ctx.fillRect(c.c * PITCH, c.y * PITCH + 1, CELL, CELL);
+  }
+  ctx.globalAlpha = 1;
+  mosLayout = { cells, cols, PITCH, CELL };
+  document.getElementById("mosLgd").innerHTML =
+    `<span class="sw"><i style="background:${cssv("--s6")}"></i>in rotation</span>
+     <span class="sw"><i style="background:${cssv("--s3")}"></i>retired at ceiling</span>
+     <span class="sw"><i style="background:${cssv("--s2")}"></i>parked, interval kept</span>
+     <span class="sw"><i style="background:${cssv("--s1")}"></i>parked, no interval</span>`;
+  document.getElementById("mosNote").innerHTML =
+    `One cell per occurrence, ${fmt(D.rows.length)} of them, grouped into deck blocks and sorted live-first inside each block.
+     The bright band at the top of a block is that deck's working set. <b>B04 is the one block that is mostly bright</b> — 327 live cards,
+     a third of everything you still study. Most other blocks are a thin bright line over a wide dark field: drawn, learned, taken away.`;
+}
+document.getElementById("mosaic").addEventListener("mousemove", (ev) => {
+  if (!mosLayout) return;
+  const b = ev.currentTarget.getBoundingClientRect();
+  const cx = Math.floor((ev.clientX - b.left) / mosLayout.PITCH), cy = Math.floor((ev.clientY - b.top) / mosLayout.PITCH);
+  const hit = mosLayout.cells.find((c) => c.c === cx && c.y === cy);
+  if (!hit) { hideTip(); return; }
+  const r = hit.r;
+  showTip(ev, `<div class="t">${r.id}${r.s} · ${r.dk}</div>${tr("state", STATE[r.st])}${tr("interval", r.cf + "d of " + r.mi + "d")}
+    ${r.st === 3 ? tr("next due", r.due < 0 ? "overdue" : "in " + r.due.toFixed(0) + "d") : tr("last seen", r.lr.toFixed(0) + "d ago")}
+    <div class="hint">${esc((r.n || "").slice(0, 80))}</div><div class="hint">click to filter to ${r.dk}</div>`);
+});
+document.getElementById("mosaic").addEventListener("mouseleave", hideTip);
+document.getElementById("mosaic").addEventListener("click", (ev) => {
+  if (!mosLayout) return;
+  const b = ev.currentTarget.getBoundingClientRect();
+  const cx = Math.floor((ev.clientX - b.left) / mosLayout.PITCH), cy = Math.floor((ev.clientY - b.top) / mosLayout.PITCH);
+  const hit = mosLayout.cells.find((c) => c.c === cx && c.y === cy);
+  if (hit) { F.deck = F.deck === hit.deck ? null : hit.deck; syncControls(); renderAll(); }
+});
+
+/* ---------- sides / asym / audio ---------- */
+function renderSides() {
+  const names = { N: ["recognition — you see the Norwegian, recall the meaning", "--c-n"], E: ["production — you see the meaning, produce the Norwegian", "--c-e"], A: ["audio — you hear it", "--c-a"] };
+  const c = { N: 0, E: 0, A: 0 };
+  for (const r of VIEW) c[r.s] = (c[r.s] || 0) + 1;
+  const tot = c.N + c.E + c.A || 1;
+  document.getElementById("sides").innerHTML =
+    `<div class="mbar" style="width:100%; height:20px; margin-bottom:12px;">` + ["N", "E", "A"].map((s) => `<i style="flex:${c[s] || 0.001}; background:${cssv(names[s][1])}"></i>`).join("") + `</div>` +
+    ["N", "E", "A"].map((s) => `<div style="display:flex; align-items:flex-start; gap:9px; padding:5px 0;">
+      <span class="chip ${s.toLowerCase()}">${s}</span>
+      <span style="font-size:12px; color:var(--text-dim); flex:1; line-height:1.45;">${names[s][0]}</span>
+      <span class="mono" style="font-weight:650;">${fmt(c[s] || 0)}</span>
+      <span class="mono" style="color:var(--text-faint); font-size:11.5px; width:44px; text-align:right;">${((c[s] || 0) / tot * 100).toFixed(1)}%</span></div>`).join("") +
+    `<div class="inline-note" style="margin-top:10px;">${fmt(M.distinctCards)} distinct cards carry these ${fmt(D.rows.length)} occurrences, each its own independently
+      scheduled memory. <b>${M.dupOccurrences} of them live in two decks at once</b> — B14's listening drills reuse cards from B02/B04/B05/B07/B09 — so
+      the same card and side can hold two separate schedules. Legal: the scheduler keys on the triple <code>{ID, side, DECK_ID}</code>.</div>`;
+}
+function renderAsym() {
+  const a = D.asym;
+  document.getElementById("asym").innerHTML = `
+    <div class="asym-grid">
+      <div class="hd"></div><div class="hd">E in rotation</div><div class="hd">E retired</div>
+      <div class="hd" style="display:flex; align-items:center;">N in rotation</div>
+      <div><div class="cell">${fmt(a.bothActive)}<small>both live</small></div></div>
+      <div class="hot"><div class="cell">${fmt(a.nActive_eParked)}<small>production went first</small></div></div>
+      <div class="hd" style="display:flex; align-items:center;">N retired</div>
+      <div class="hot"><div class="cell">${fmt(a.eActive_nParked)}<small>still drilling production</small></div></div>
+      <div><div class="cell">${fmt(a.bothParked)}<small>both gone</small></div></div>
+    </div>
+    <div class="inline-note" style="margin-top:11px;">The asymmetry runs <b>${(a.eActive_nParked / Math.max(1, a.nActive_eParked)).toFixed(0)}:1</b> in
+      the expected direction: <b>${a.eActive_nParked} cards</b> you recognise well enough that the app retired that side, while you are still
+      drilling the ability to produce them — against only <b>${a.nActive_eParked}</b> the other way. Invisible in the app, invisible on the Sync
+      tab; it exists only because each side is scheduled separately.</div>
+    <details class="disc" style="margin-top:10px;"><summary>the widest ${Math.min(12, a.list.length)} gaps</summary>
+      <div class="body table-wrap"><table><thead><tr><th>Card</th><th>Still live</th><th>Norwegian</th></tr></thead><tbody>
+      ${a.list.slice(0, 12).map((x) => `<tr><td class="mono">${esc(x.id)}</td><td><span class="chip ${x.dir.toLowerCase()}">${x.dir}</span></td>
+        <td class="wrap"><span class="norsk">${esc((x.n || "").slice(0, 46))}</span></td></tr>`).join("")}
+      </tbody></table></div></details>`;
+}
+function renderAudio() {
+  const c = { N: 0, E: 0, X: 0 };
+  for (const r of VIEW) c[r.a] = (c[r.a] || 0) + 1;
+  const tot = c.N + c.E + c.X || 1;
+  document.getElementById("audio").innerHTML =
+    `<div class="mbar" style="width:100%; height:20px; margin-bottom:12px;">
+      <i style="flex:${c.N || 0.001}; background:${cssv("--s5")}"></i><i style="flex:${c.E || 0.001}; background:${cssv("--s3")}"></i><i style="flex:${c.X || 0.001}; background:${cssv("--s1")}"></i></div>` +
+    [["N", "the Norwegian side is recorded", "--s5"], ["E", "the answer side is recorded", "--s3"], ["X", "the extra/pronunciation note", "--s1"]]
+      .map(([k, l, col]) => `<div style="display:flex; align-items:flex-start; gap:9px; padding:5px 0;">
+        <span class="chip" style="background:${cssv(col)}; color:var(--bg-elevated);">${k}</span>
+        <span style="font-size:12px; color:var(--text-dim); flex:1; line-height:1.45;">${l}</span>
+        <span class="mono" style="font-weight:650;">${fmt(c[k] || 0)}</span>
+        <span class="mono" style="color:var(--text-faint); font-size:11.5px; width:44px; text-align:right;">${((c[k] || 0) / tot * 100).toFixed(1)}%</span></div>`).join("") +
+    `<div class="inline-note" style="margin-top:10px;"><code>A</code> is a <b>separate field from <code>language</code></b> and is not in findings.md.
+      It names which side of the card the audio belongs to, independent of which side this occurrence tests. That matters for the audio-cache
+      prefetch: the ${fmt(c.X || 0)} <code>X</code> occurrences point at a third asset entirely.</div>`;
+}
+
+/* ---------- deck table ---------- */
+let dkSort = { k: "held", d: -1 };
+const DK_COLS = [["code", "Deck", 1], ["title", "Title", 1], ["held", "Held", 1], ["active", "Live", 1], ["arch", "State mix", 0],
+  ["runway", "Drawn", 0], ["mi", "Ceiling", 1], ["atCap", "On it", 1], ["load", "Load/day", 1], ["tag", "Flagged", 1], ["leech", "Leeches", 1]];
+function renderDecks() {
+  const t = document.getElementById("dkTable");
+  const rows = D.deckSum.slice().sort((a, b) => {
+    const k = dkSort.k;
+    const va = k === "runway" ? (a.avail ? a.drawn / a.avail : 0) : a[k], vb = k === "runway" ? (b.avail ? b.drawn / b.avail : 0) : b[k];
+    return (typeof va === "string" ? va.localeCompare(vb) : va - vb) * dkSort.d;
+  });
+  t.querySelector("thead").innerHTML = `<tr>${DK_COLS.map(([k, l, s]) => `<th class="${s ? "sortable" : ""}" ${s ? `data-k="${k}"` : ""}>${l}${dkSort.k === k ? `<span class="arr">${dkSort.d < 0 ? "▾" : "▴"}</span>` : ""}</th>`).join("")}</tr>`;
+  t.querySelector("tbody").innerHTML = rows.map((d) => {
+    const mix = [[d.active, cssv("--s6")], [d.t200, cssv("--s3")], [d.t150, cssv("--s2")], [d.t100, cssv("--s1")]];
+    const p = d.avail ? d.drawn / d.avail : 0;
+    return `<tr class="clickable ${d.managed ? "managed" : ""}" data-dk="${d.code}">
+      <td><span class="mono" style="font-weight:700;">${d.code}</span>${d.managed ? ` <span class="pill pill-accent" style="font-size:9.5px;">hub</span>` : ""}</td>
+      <td class="dim" style="max-width:215px; overflow:hidden; text-overflow:ellipsis;">${esc(d.title)}</td>
+      <td class="num">${d.held ? fmt(d.held) : "—"}</td>
+      <td class="num" style="color:${d.active ? "var(--text)" : "var(--text-faint)"}">${d.active ? fmt(d.active) : "—"}</td>
+      <td>${d.held ? `<div class="mbar">${mix.map(([n, c]) => n ? `<i style="flex:${n}; background:${c}"></i>` : "").join("")}</div>` : `<span class="inline-note">not pulled</span>`}</td>
+      <td><div style="display:flex; align-items:center; gap:7px;"><div class="mrun"><i style="width:${(p * 100).toFixed(1)}%; background:${p >= 1 ? cssv("--err") : cssv("--accent")}"></i></div>
+        <span class="mono" style="font-size:11px; color:var(--text-faint); width:62px;">${d.drawn}/${d.avail}${d.pending ? `<span style="color:var(--ok)">+${d.pending}</span>` : ""}</span></div></td>
+      <td><div class="capbar" ${d.active ? "" : 'style="opacity:.3"'}><div class="track"></div><div class="fill" style="width:${d.active ? Math.min(100, d.meanCf / d.mi * 100).toFixed(0) : 0}%"></div><div class="cap"></div></div></td>
+      <td class="num" style="color:${d.atCap ? "var(--err)" : "var(--text-faint)"}">${d.atCap || "—"}</td>
+      <td class="num">${d.load ? d.load.toFixed(1) : "—"}</td>
+      <td class="num" style="color:${d.tag ? "var(--warn)" : "var(--text-faint)"}">${d.tag || "—"}</td>
+      <td class="num" style="color:${d.leech >= 6 ? "var(--warn)" : "var(--text-faint)"}">${d.leech || "—"}</td></tr>`;
+  }).join("");
+  t.querySelectorAll("th.sortable").forEach((th) => th.addEventListener("click", () => {
+    const k = th.dataset.k;
+    dkSort = { k, d: dkSort.k === k ? -dkSort.d : (k === "code" || k === "title" ? 1 : -1) };
+    renderDecks();
+  }));
+  t.querySelectorAll("tr[data-dk]").forEach((tr2) => {
+    const d = D.deckSum.find((x) => x.code === tr2.dataset.dk);
+    tr2.addEventListener("click", () => { F.deck = F.deck === d.code ? null : d.code; syncControls(); renderAll(); });
+    hoverable(tr2, () => `<div class="t">${d.code} · ${esc(d.title)}</div>
+      ${tr("held", fmt(d.held))}${tr("live", fmt(d.active))}${d.active ? tr("mean interval", d.meanCf + "d of " + d.mi + "d ceiling") : ""}
+      ${tr("retired at ceiling", fmt(d.t200))}${tr("parked early", fmt(d.t150 + d.t100))}
+      ${tr("pull counter", d.pull + " blocks × 5")}${tr("reviews/day", d.load.toFixed(2))}${tr("auto-hammer count", d.ahc)}
+      <div class="hint">click to filter the page to this deck</div>`);
+  });
+  document.getElementById("dkLgd").innerHTML =
+    `<span class="sw"><i style="background:${cssv("--s6")}"></i>live</span><span class="sw"><i style="background:${cssv("--s3")}"></i>retired</span>
+     <span class="sw"><i style="background:${cssv("--s2")}"></i>parked, interval kept</span><span class="sw"><i style="background:${cssv("--s1")}"></i>parked, no interval</span>`;
+  document.getElementById("deckSub").innerHTML =
+    `${M.deckCount} decks: ${M.deckCount - 2} stock, read from the published bundle's own catalogue, plus the two
+     <b>hub-managed</b> decks read from <code>decks</code> — <b>C30 Lexic</b> and <b>C20 Practice</b>, highlighted below.
+     Click a row to filter the whole page. <b>B04 alone holds 327 of your ${fmt(M.activeN)} live occurrences</b> — a third of the entire workload,
+     averaging 27.7 days against a 30-day ceiling, 160 already on it.`;
+}
+
+/* ---------- deck × interval heatmap ---------- */
+const BANDS = ["0", "1–4", "5–9", "10–14", "15–19", "20–24", "25–29", "30"];
+function renderHeatmap() {
+  const decks = D.deckSum.filter((d) => d.active > 0).sort((a, b) => b.active - a.active);
+  const bandOf = (cf) => cf === 0 ? 0 : cf < 5 ? 1 : cf < 10 ? 2 : cf < 15 ? 3 : cf < 20 ? 4 : cf < 25 ? 5 : cf < 30 ? 6 : 7;
+  const grid = decks.map((d) => { const a = new Array(8).fill(0); for (const r of VIEW) if (r.dk === d.code && r.st === 3) a[bandOf(r.cf)]++; return a; });
+  const max = Math.max(1, ...grid.flat());
+  const ramp = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"].map(cssv);
+  const colFor = (v) => v === 0 ? cssv("--bg-sunken") : ramp[Math.min(5, Math.floor(Math.sqrt(v / max) * 6))];
+  const hm = document.getElementById("hm");
+  hm.style.gridTemplateColumns = `46px repeat(8, 1fr)`;
+  hm.className = "hm";
+  hm.innerHTML = `<div></div>` + BANDS.map((b) => `<div class="ht">${b}</div>`).join("") +
+    decks.map((d, i) => `<div class="hl">${d.code}</div>` + grid[i].map((v, j) =>
+      `<div class="hc" data-d="${d.code}" data-v="${v}" data-b="${j}" style="background:${colFor(v)}"></div>`).join("")).join("");
+  hm.querySelectorAll(".hc").forEach((c) => {
+    const d = c.dataset.d, v = +c.dataset.v, j = +c.dataset.b;
+    hoverable(c, () => `<div class="t">${d} · ${BANDS[j]} day interval</div>${tr("live occurrences", v)}
+      ${j === 7 ? `<div class="hint">this column is the ceiling — these cards cannot space out further</div>` : ""}
+      <div class="hint">click to filter to ${d}</div>`);
+    c.addEventListener("click", () => { F.deck = F.deck === d ? null : d; syncControls(); renderAll(); });
+  });
+  document.getElementById("hmNote").innerHTML =
+    `Rows are decks with live cards, ordered by workload; columns are interval bands in days. <b>Mass piling up in the right-hand column
+     is retirement pressure</b> — those cards are on the ceiling and will be taken away. A deck whose mass sits left is still genuinely
+     learning. Only <b>${decks.length} of ${M.deckCount} decks</b> have any live cards at all; the rest are entirely archive.`;
+}
+
+/* ---------- deck activity timeline ---------- */
+function renderDeckTimeline() {
+  const decks = D.deckSum.filter((d) => d.lastSeen).sort((a, b) => b.lastSeen - a.lastSeen);
+  const lo = Math.min(...decks.map((d) => d.firstSeen)), hi = NOWMS;
+  const x = (t2) => ((t2 - lo) / (hi - lo)) * 100;
+  const tl = document.getElementById("tl2");
+  tl.className = "tl2";
+  tl.style.gridTemplateColumns = "40px 1fr 64px";
+  tl.innerHTML = decks.map((d) => {
+    const x0 = x(d.firstSeen), x1 = x(d.lastSeen);
+    const ago = Math.round((NOWMS - d.lastSeen) / 864e5);
+    return `<div class="lbl">${d.code}</div>
+      <div class="track" data-d="${d.code}">
+        <div class="span" style="left:${x0}%; width:${Math.max(0.6, x1 - x0)}%; background:${d.active ? cssv("--s5") : cssv("--s2")}"></div>
+        <div class="dot" style="left:calc(${x1}% - 4px); background:${d.active ? cssv("--s6") : cssv("--s3")}"></div></div>
+      <div class="lbl" style="text-align:right; color:${ago < 7 ? "var(--ok)" : ago > 90 ? "var(--text-faint)" : "var(--text-dim)"}">${ago === 0 ? "today" : ago + "d"}</div>`;
+  }).join("");
+  tl.querySelectorAll(".track").forEach((t2) => {
+    const d = D.deckSum.find((x2) => x2.code === t2.dataset.d);
+    hoverable(t2, () => `<div class="t">${d.code} · ${esc(d.title)}</div>
+      ${tr("first review seen", new Date(d.firstSeen).toISOString().slice(0, 10))}${tr("last review seen", new Date(d.lastSeen).toISOString().slice(0, 10))}
+      ${tr("live cards", fmt(d.active))}<div class="hint">click to filter to ${d.code}</div>`);
+    t2.addEventListener("click", () => { F.deck = F.deck === d.code ? null : d.code; syncControls(); renderAll(); });
+  });
+  const cold = decks.filter((d) => NOWMS - d.lastSeen > 90 * 864e5);
+  document.getElementById("tl2Note").innerHTML =
+    `Each bar spans a deck's first to last reconstructed review; the dot is the last one. <b>${cold.length} decks have not been touched in
+     90 days</b> — ${cold.slice(0, 6).map((d) => d.code).join(", ")}${cold.length > 6 ? "…" : ""} — because every card in them has been retired.
+     Same caveat as the calendar: "first seen" is the oldest <em>surviving</em> last-review, not the real start date.`;
+}
+
+/* ---------- runway ---------- */
+function renderRunway() {
+  const left = D.deckSum.filter((d) => d.drawn > 0 && d.drawn < d.avail).sort((a, b) => (a.avail - a.drawn) - (b.avail - b.drawn));
+  const hub = D.deckSum.filter((d) => d.managed);
+  const row = (d, drawn, avail, pending) => {
+    const p = avail ? drawn / avail : 0;
+    return `<div style="display:grid; grid-template-columns:44px 1fr 112px 78px; gap:10px; align-items:center; padding:5px 0; font-size:12.5px;">
+      <span class="mono" style="font-weight:700;">${d.code}</span>
+      <span style="color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(d.title)}</span>
+      <div class="mrun" style="width:112px;"><i style="width:${(p * 100).toFixed(1)}%; background:${p >= 1 ? cssv("--err") : cssv("--accent")}"></i></div>
+      <span class="mono" style="font-size:11.5px; text-align:right; color:${avail - drawn ? "var(--ok)" : "var(--text-faint)"}">${avail - drawn ? "+" + (avail - drawn) : "empty"}${pending ? ` <span style="color:var(--text-faint)">(+${pending})</span>` : ""}</span></div>`;
+  };
+  const totalLeft = left.reduce((a, d) => a + d.avail - d.drawn, 0);
+  document.getElementById("runway").innerHTML =
+    `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px;">
+      Of the ${M.decksPulled} decks you have pulled from, only <b style="color:var(--text)">${left.length}</b> have anything left —
+      <b style="color:var(--text)">${fmt(totalLeft)} occurrences</b> between them. <code>PullCounter × 5</code> summed over every deck equals
+      <b style="color:var(--ok)">${fmt(M.drawn)}</b>, exactly your occurrence count: the pull accounting is airtight.</div>` +
+    left.map((d) => row(d, d.drawn, d.avail, 0)).join("") +
+    `<div style="margin:16px 0 8px; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); font-weight:650;">Hub-managed — never pulled</div>` +
+    hub.map((d) => row(d, 0, d.avail, d.pending)).join("") +
+    `<div class="inline-note" style="margin-top:12px; padding-top:11px; border-top:1px solid var(--border-soft);">
+      After deck-consolidation there are exactly two hub decks left: <b>C30 Lexic</b> (word types plus expressions) and
+      <b>C20 Practice</b> (grammar, listening, pronunciation). Between them <b>${fmt(M.hubTotal)} occurrences are already published</b> and
+      ${M.hubPending} more are staged or pending — and <code>decksStatus</code> carries no entry for either, so the device has never drawn a
+      single one. That is the actual runway: ${fmt(M.stockTotal - M.drawn)} stock occurrences left, then nothing but what
+      <a href="#">builder → forecast &amp; publish</a> mints.</div>`;
+}
+
+/* ---------- leeches ---------- */
+function renderLeech() {
+  const t = document.getElementById("leech");
+  const rows = VIEW.filter((r) => r.r >= 10).sort((a, b) => b.r - a.r || b.atg - a.atg).slice(0, 14);
+  t.querySelector("thead").innerHTML = `<tr><th>Card</th><th>Resched</th><th>Flags</th><th>State</th><th>Norwegian</th></tr>`;
+  t.querySelector("tbody").innerHTML = rows.length ? rows.map((r) => `
+    <tr><td class="mono">${esc(r.id)}<span class="chip ${r.s.toLowerCase()}" style="margin-left:5px;">${r.s}</span></td>
+      <td class="num" style="color:var(--warn); font-weight:700;">${r.r}</td>
+      <td>${r.tag ? `<span class="pill pill-warn">difficult</span> ` : ""}${r.pan ? `<span class="pill pill-err">panic</span>` : ""}${!r.tag && !r.pan ? `<span class="inline-note">—</span>` : ""}</td>
+      <td>${r.st === 3 ? `<span class="pill pill-accent">live</span>` : `<span class="pill pill-neutral">retired</span>`}</td>
+      <td class="wrap"><span class="norsk">${esc((r.n || "").slice(0, 58))}</span>${r.e ? `<br><span class="engl">${esc(r.e.slice(0, 52))}</span>` : ""}</td></tr>`).join("")
+    : `<tr><td colspan="5" class="dim" style="padding:16px;">nothing in the current filter has been rescheduled 10+ times</td></tr>`;
+  t.querySelectorAll("tbody tr").forEach((tr2, i) => rows[i] && hoverable(tr2, () => {
+    const r = rows[i];
+    return `<div class="t">${r.id}${r.s} · ${r.dk}</div>${tr("rescheduled", r.r + "×")}${tr("auto-tag hits", r.atg)}${tr("interval", r.cf + "d of " + r.mi + "d")}${tr("state", STATE[r.st])}
+      <div class="hint">${esc((r.n || "").slice(0, 90))}</div>`;
+  }));
+}
+
+/* ---------- per-card ---------- */
+let pcSort = { k: "lr", d: 1 }, pcPage = 0, pcSize = 25;
+const PC_COLS = [["id", "Card", 1], ["s", "Side", 1], ["n", "Norwegian", 0], ["dk", "Deck", 1],
+  ["cf", "Interval", 1], ["due", "Next due", 1], ["lr", "Last seen", 1], ["st", "State", 1], ["r", "Resched", 1], ["flags", "", 0]];
+const dueLabel = (v) => v < 0 ? `<span style="color:var(--err)">${Math.abs(v).toFixed(0)}d late</span>` : v < 1 ? `<span style="color:var(--accent-text); font-weight:650;">today</span>` : `in ${v.toFixed(0)}d`;
+const agoLabel = (v) => v < 1 ? "today" : v < 30 ? v.toFixed(0) + "d ago" : (v / 30.4).toFixed(0) + "mo ago";
+function renderPerCard() {
+  const t = document.getElementById("pcTable");
+  const rows = VIEW.slice().sort((a, b) => { const k = pcSort.k, va = a[k], vb = b[k]; return (typeof va === "string" ? String(va).localeCompare(String(vb)) : (va || 0) - (vb || 0)) * pcSort.d; });
+  const pages = Math.max(1, Math.ceil(rows.length / pcSize));
+  if (pcPage >= pages) pcPage = pages - 1;
+  const slice = rows.slice(pcPage * pcSize, pcPage * pcSize + pcSize);
+  t.querySelector("thead").innerHTML = `<tr>${PC_COLS.map(([k, l, s]) => `<th class="${s ? "sortable" : ""}" ${s ? `data-k="${k}"` : ""}>${l}${pcSort.k === k ? `<span class="arr">${pcSort.d < 0 ? "▾" : "▴"}</span>` : ""}</th>`).join("")}</tr>`;
+  t.querySelector("tbody").innerHTML = slice.length ? slice.map((r) => `
+    <tr><td class="mono">${esc(r.id)}</td>
+      <td><span class="chip ${r.s.toLowerCase()}">${r.s}</span></td>
+      <td class="wrap"><span class="norsk">${esc(r.n)}</span>${r.e ? `<br><span class="engl">${esc(r.e)}</span>` : ""}</td>
+      <td class="mono dim">${esc(r.dk)}</td>
+      <td class="num">${r.cf}d${r.st === 3 && r.cf === r.mi ? ` <span style="color:var(--err)" title="on this deck's ceiling">▲</span>` : ""}</td>
+      <td class="num dim">${r.st === 3 ? dueLabel(r.due) : "—"}</td>
+      <td class="num dim">${agoLabel(r.lr)}</td>
+      <td>${r.st === 3 ? `<span class="pill pill-accent">live</span>` : r.st === 200 ? `<span class="pill pill-neutral">retired</span>` : `<span class="pill pill-neutral">parked</span>`}</td>
+      <td class="num ${r.r >= 12 ? "" : "dim"}" style="${r.r >= 12 ? "color:var(--warn); font-weight:650;" : ""}">${r.r}</td>
+      <td>${r.tag ? `<span class="pill pill-warn">difficult</span> ` : ""}${r.pan ? `<span class="pill pill-err">panic</span>` : ""}</td></tr>`).join("")
+    : `<tr><td colspan="10" style="padding:22px; color:var(--text-dim);">Nothing matches this filter.</td></tr>`;
+  t.querySelectorAll("th.sortable").forEach((th) => th.addEventListener("click", () => {
+    const k = th.dataset.k;
+    pcSort = { k, d: pcSort.k === k ? -pcSort.d : (k === "id" || k === "dk" || k === "s" ? 1 : -1) };
+    renderPerCard();
+  }));
+  const pg = document.getElementById("pcPager");
+  const btn = (p, label, cur) => `<button class="pg" data-p="${p}" ${cur ? 'aria-current="true"' : ""}>${label}</button>`;
+  const list = []; const push = (p) => list.push(btn(p, p + 1, p === pcPage));
+  push(0);
+  const lo = Math.max(1, pcPage - 2), hi = Math.min(pages - 2, pcPage + 2);
+  if (lo > 1) list.push(`<span class="gap">…</span>`);
+  for (let p = lo; p <= hi; p++) push(p);
+  if (hi < pages - 2) list.push(`<span class="gap">…</span>`);
+  if (pages > 1) push(pages - 1);
+  pg.innerHTML = `<button class="pg" data-p="${pcPage - 1}" ${pcPage === 0 ? "disabled" : ""}>‹ prev</button>${list.join("")}
+    <button class="pg" data-p="${pcPage + 1}" ${pcPage >= pages - 1 ? "disabled" : ""}>next ›</button>
+    <span class="spacer"></span><span>rows</span>
+    <select id="pcSize" style="padding:3px 7px;">${[25, 50, 100, 250].map((n) => `<option ${n === pcSize ? "selected" : ""}>${n}</option>`).join("")}</select>
+    <span class="mono">${rows.length ? fmt(pcPage * pcSize + 1) + "–" + fmt(Math.min(rows.length, (pcPage + 1) * pcSize)) : 0} of ${fmt(rows.length)}</span>`;
+  pg.querySelectorAll("button.pg").forEach((b) => b.addEventListener("click", () => { if (!b.disabled) { pcPage = +b.dataset.p; renderPerCard(); } }));
+  pg.querySelector("#pcSize").addEventListener("change", (e) => { pcSize = +e.target.value; pcPage = 0; renderPerCard(); });
+  document.getElementById("pcNote").innerHTML =
+    `<b>This is the Sync tab's table, fixed.</b> It pages — ${fmt(D.rows.length)} rows in one HTML response is what makes the current page
+     unusable, though the bigger culprit there is the 21 inlined copies of the full ${fmt(D.rows.length)}-card document. It sorts and filters in a
+     shape that maps to one <code>jsonb_array_elements</code> lateral join, which also produces every aggregate on this page.
+     And the <b>Norwegian text is populated</b>: today's join against <code>card_slots</code>/<code>card_content</code> returns nothing for these
+     rows — those tables hold ${44} hub-minted cards across C30 and C20, and not one of this account's ${fmt(M.distinctCards)} card ids is among
+     them. The text above comes from the published bundle's own card index (module 2113), the only place stock card content exists.`;
+}
+
+/* ---------- provenance ---------- */
+document.getElementById("prov").innerHTML = [
+  ["", "Correction", "<code>Time</code> is the next-due date, not last-touched",
+    `findings.md §6 records <em>“Time: epoch-ms, last-touched — next due is derived from this, not stored”</em>. It is the reverse.
+     1,397 occurrences carry future timestamps, no live occurrence is ever dated beyond its deck's ceiling, and the app's own dueness test
+     <code>Bt(Time−4h, now−4h) ≤ 0</code> only makes sense this way. <b>The forecast is stored, not modeled.</b>`],
+  ["", "Correction", "<code>CF</code> is the interval in days, not an ease factor in percent",
+    `C2 reads <code>CF</code> as a percentage ease factor from mod 2133's <code>CF4</code> table (25–500%). The stored field is 0–30 and
+     <b>never once exceeds its deck's <code>MaxInterval</code></b> across all 913 live occurrences — 492 sit exactly on it.
+     <code>CF4</code>'s percentages are the multipliers applied to it; <code>CF</code> is the resulting interval.`],
+  ["", "Correction", "<code>Stage</code> is a retirement tier, not a climbing ladder",
+    `§6 describes it as <em>“0 = brand new, climbs with successful reviews (200+ = graduated)”</em>. It holds exactly four values:
+     <b>3</b> (live, 913) and <b>100 / 150 / 200</b> (archived, 3,597). <code>Park</code> is true for precisely Stage ≠ 3, and
+     <code>Graduated</code> is <code>true</code> on all 4,510 rows — it carries no information.`],
+  ["tag-new", "New", "Both automatic rules, pinned down",
+    `§6 left this open: <em>“exactly how Stage maps to day-gaps wasn't fully traced”</em>. <code>AutoParkHit</code> counts reviews survived at the
+     ceiling; at <code>AutoHammerCount</code> = 2 the card retires to Stage 200. <code>AutoTagHit</code> counts bad reviews; at 2 the app sets
+     <code>Tag: true</code>. Both verified as set identities, not correlations — 492 = 492 and 40 = 40, with zero exceptions either way.`],
+  ["tag-new", "New", "Undocumented fields: <code>A</code>, <code>Tag</code>, <code>Panic</code>",
+    `<code>A</code> names which side carries audio (N 80.5% · E 18.3% · X 1.2%), distinct from <code>language</code>.
+     <code>Tag: true</code> on 40 occurrences, <code>Panic</code> present on 128 (always 0, and every one also has
+     <code>AutoTagHit</code> ≥ 1). None of the three appears in findings.md.`],
+  ["tag-gap", "Unresolved", "What parked the 582 “parked early” occurrences",
+    `They have <code>AutoParkHit</code> = 0, so neither automatic rule touched them. Either you archived them by hand or mod 2133's
+     <code>FreshPark</code> option did. <b>The snapshot cannot distinguish the two</b> and this page does not guess — it is the one state
+     label here that is descriptive rather than mechanistic.`],
+  ["tag-gap", "Blocked", "No history, so no retention curve",
+    `<code>userdata_history</code> holds <b>one</b> row for this account, written by the 2026-11-07 manual push (the other 39 rows belong to the
+     test account). Everything needing two snapshots is impossible today: a true forgetting curve, grade inference from interval ratios, a real
+     day-by-day log, and any check of the scheduler against your actual recall. Worth fixing before the data accrues — derive a
+     <code>review_events</code> table from each new history row as it lands, keyed on <code>userdata_history.id</code>, rather than re-diffing
+     full 4,510-card snapshots per page load.`],
+  ["tag-gap", "Caveat", "The deck catalogue has two sources, and one was stale",
+    `Stock deck metadata — titles, <code>MaxInterval</code>, <code>Cards[]</code> lengths — comes from the published bundle's module 2111.
+     The copy exploded on disk predates <b>deck-consolidation</b>, so it still lists C21/C22/C26–C29 and an old substantiv C20; an earlier
+     version of this page reported those as real. Hub-managed decks must come from the <code>decks</code> table instead, which correctly
+     holds only <b>C30 Lexic</b> and <b>C20 Practice</b>.`],
+  ["tag-gap", "Caveat", "The calendar thins toward the past",
+    `A snapshot keeps only each occurrence's most recent review. Early months are undercounted and a blank cell is not evidence of a rest day.
+     Treat the shape as a floor on activity, never a count of it.`],
+  ["tag-gap", "Caveat", "Two doc-level dates are worthless here",
+    `<code>accountCreationDate</code> and <code>lastCompletedSession</code> both read 2026-11-07T18:20 — the moment of the restore.
+     <code>consistencyRate</code> is absent. <code>completedSessions</code> reads 65 against ${M.studyDays} reconstructed study days, so it was
+     reset too. The genuine span is recovered from the occurrence records, not from these fields.`],
+].map(([cls, kind, h, body]) => `<div class="prov-item"><h4><span class="tagk ${cls}">${kind}</span> <span>${h}</span></h4>${body}</div>`).join("");
+
+/* ---------- wiring ---------- */
+const fDeck = document.getElementById("fDeck");
+fDeck.innerHTML = `<option value="">all decks</option>` + D.deckSum.slice().sort((a, b) => a.code.localeCompare(b.code))
+  .map((d) => `<option value="${d.code}">${d.code} — ${esc(d.title)}${d.managed ? " (hub)" : ""}</option>`).join("");
+fDeck.addEventListener("change", (e) => { F.deck = e.target.value || null; renderAll(); });
+document.getElementById("fSide").addEventListener("change", (e) => { F.side = e.target.value || null; renderAll(); });
+document.getElementById("fTier").addEventListener("change", (e) => { F.tier = e.target.value || null; renderAll(); });
+document.getElementById("fFlag").addEventListener("change", (e) => { F.flag = e.target.value || null; renderAll(); });
+document.getElementById("clearF").addEventListener("click", () => { F.deck = F.side = F.tier = F.flag = F.cf = null; F.q = ""; document.getElementById("q").value = ""; syncControls(); renderAll(); });
+let qt;
+document.getElementById("q").addEventListener("input", (e) => { clearTimeout(qt); qt = setTimeout(() => { F.q = e.target.value.trim(); pcPage = 0; renderAll(); }, 160); });
+document.getElementById("runwayLink").addEventListener("click", (e) => { e.preventDefault(); document.getElementById("runway").scrollIntoView({ block: "center" }); });
+
+function renderAll() {
+  recompute();
+  renderFilterBar();
+  renderTS();
+  renderForecast();
+  renderLadder();
+  renderArchive();
+  renderCalendar();
+  renderClock();
+  renderWeekday();
+  renderResched();
+  renderMosaic();
+  renderSides();
+  renderAsym();
+  renderAudio();
+  renderDecks();
+  renderHeatmap();
+  renderDeckTimeline();
+  renderRunway();
+  renderLeech();
+  renderPerCard();
+}
+renderAll();
+window.__probe = { seriesFor, matches, F };     // used by the build-time smoke test
+let rt;
+addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { renderTS(); renderForecast(); renderLadder(); renderWeekday(); renderResched(); renderMosaic(); }, 140); });
+</script>
