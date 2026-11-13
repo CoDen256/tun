@@ -1,3 +1,116 @@
+# tun — the whole ecosystem, one Compose project (D150).
+#
+# `include:` pulls in each project's OWN compose file, unchanged and still
+# usable standalone (`cd stabbur && docker compose up`). What the monorepo
+# removed is the `tun-shared` external network: one repository is one Compose
+# project is one default network, so every service resolves every other by
+# name with no configuration and no setup step. D94/D98/D101/D104's
+# sibling-checkout apparatus — and the `docker network create tun-shared`
+# that D94 claimed was unnecessary, D98 required and D104 corrected — are all
+# gone with it.
+#
+# There are no prerequisites. Clone, create `.env`, `docker compose up`.
+#
+#   docker compose up                    # everything
+#   docker compose up stabbur-backend    # one service + its database
+#   cd stabbur && docker compose up      # the same, plus loopback ports for a
+#                                        # native venv (compose.override.yaml)
+#
+# Host ports: only this file's gateway publishes in the unified stack. Each
+# project's own `compose.override.yaml` publishes loopback ports, and Compose
+# auto-loads an override file ONLY for the primary compose file of the
+# directory it runs in — verified — so the unified stack never publishes them.
 include:
-  - b/compose.yaml
-  - c/compose.yaml
+  - ./mjolnir/compose.yaml
+  - ./stabbur/compose.yaml
+  - ./smia/compose.yaml
+  # phonexa prefixes every service and volume name `phonexa-` precisely so it
+  # can be merged here: `include:` flattens everything into one namespace and
+  # silently keeps only the FIRST definition of a colliding name (D94/D118).
+  # Its own development Adminer is behind a `dev` profile, so it does not
+  # start here; use the shared one below.
+  - ./phonexa/compose.yaml
+
+services:
+  # One database-exploration tool for every project's Postgres (D-T3), not one
+  # per database. Point its login screen at `mjolnir-postgres`,
+  # `stabbur-postgres`, `smia-postgres` or `phonexa-postgres` by name — all
+  # four resolve on the default network.
+  #
+  # (The comment here used to say this key deep-merges over an `adminer`
+  # service of stabbur's own. That stopped being true when stabbur renamed its
+  # services to `stabbur-*` under D94: stabbur defines no `adminer`, so this
+  # is simply the only one.)
+  #
+  # postgres-consolidation replaces the four instances with one cluster of
+  # four databases, at which point ADMINER_DEFAULT_SERVER becomes the only
+  # server there is.
+  adminer:
+    image: adminer
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: mjolnir-postgres
+    ports:
+      - "127.0.0.1:8082:8080"
+
+  # compose-backup-service (D-C1..D-C5): a real service, not a host script
+  # plus crontab. Connects to each Postgres over the network with a real
+  # password (D-C1) — no Docker socket is mounted at all.
+  #
+  # Run one cycle by hand:
+  #   docker compose run --rm -e RUN_ONCE=1 backup
+  #
+  # `stabbur-blobs` and `phonexa-audio-data` are referenced directly even
+  # though they are declared in those projects' own compose files — `include:`
+  # makes that work with no extra declaration here (D-C2).
+  #
+  # Covers mjolnir, stabbur and phonexa. smia is NOT backed up yet; that and
+  # the move to one cluster are postgres-consolidation's.
+  backup:
+    build: ./backup
+    restart: unless-stopped
+    # A Postgres container goes through its own init-then-restart startup:
+    # reachable on the network but refusing connections for a few seconds.
+    # Without waiting for health, the first run can race it and dump nothing.
+    # entrypoint.sh's atomic dump-then-rename already stops a failed dump from
+    # corrupting the backup repo; this avoids the failure in the first place.
+    depends_on:
+      mjolnir-postgres:
+        condition: service_healthy
+      stabbur-postgres:
+        condition: service_healthy
+      phonexa-postgres:
+        condition: service_healthy
+    environment:
+      BACKUP_REPO_URL: ${BACKUP_REPO_URL:?set BACKUP_REPO_URL in the root .env}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      # One password per database, all four defined in the root `.env` and
+      # nowhere else (D151). They are NOT yet collapsed into one value, and
+      # must not be: Postgres applies POSTGRES_PASSWORD only when it
+      # initialises a fresh data directory, so the three existing volumes
+      # still carry the literals `stabbur`, `smia` and `phonexa` they were
+      # created with. A single shared value here would authenticate against
+      # none of them, and the only symptom would be an auth failure.
+      # postgres-consolidation collapses them to one when it dump/restores
+      # into a fresh cluster — that is the right place for it.
+      MJOLNIR_POSTGRES_PASSWORD: ${MJOLNIR_POSTGRES_PASSWORD:?set MJOLNIR_POSTGRES_PASSWORD in the root .env}
+      STABBUR_POSTGRES_PASSWORD: ${STABBUR_POSTGRES_PASSWORD:-stabbur}
+      PHONEXA_POSTGRES_PASSWORD: ${PHONEXA_POSTGRES_PASSWORD:-phonexa}
+    volumes:
+      # The repo clone persists across restarts (D-C4) — cloned by the
+      # container on first boot, never a host bind mount.
+      - backup-repo-clone:/data
+      - stabbur-blobs:/stabbur-blobs:ro
+      # phonexa's audio is a NESTED tree (lang/<lang>/ingested/<name>.wav)
+      # whose files can be rewritten in place by Formant Lab's sample trim,
+      # which is why entrypoint.sh's copy loop is recursive and why its
+      # copy-if-absent rule has a documented staleness consequence (D147).
+      - phonexa-audio-data:/phonexa-audio:ro
+      # Exactly one mounted private key file (D-C3) — not the operator's whole
+      # ~/.ssh. known_hosts is managed inside the named volume
+      # (StrictHostKeyChecking=accept-new on first connect).
+      - ${BACKUP_SSH_KEY_PATH:?set BACKUP_SSH_KEY_PATH in the root .env}:/root/.ssh/id_backup:ro
+
+volumes:
+  backup-repo-clone:
+    name: tun_backup-repo-clone

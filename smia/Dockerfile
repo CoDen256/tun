@@ -15,18 +15,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY smia/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-COPY app.py auth.py cache.py registry.py audio_cache.py health.py norwegian.py .
-COPY db/ ./db/
-COPY adapters/ ./adapters/
-COPY routes/ ./routes/
-COPY ui/ ./ui/
-COPY scripts/ ./scripts/
-COPY alembic.ini .
-COPY alembic/ ./alembic/
+COPY smia/app.py smia/auth.py smia/cache.py smia/registry.py \
+     smia/audio_cache.py smia/health.py smia/norwegian.py ./
+COPY smia/db/ ./db/
+COPY smia/adapters/ ./adapters/
+COPY smia/routes/ ./routes/
+COPY smia/ui/ ./ui/
+COPY smia/scripts/ ./scripts/
+COPY smia/alembic.ini .
+COPY smia/alembic/ ./alembic/
 
 EXPOSE 5055
 

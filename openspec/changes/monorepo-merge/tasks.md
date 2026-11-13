@@ -54,54 +54,87 @@
 
 ## 2. Compose composition
 
-- [ ] 2.1 Root `compose.yaml` `include:`s each project's own `compose.yaml`.
-- [ ] 2.2 Rename `smia/compose.yml` → `smia/compose.yaml` (the last holdout of
+- [x] 2.1 Root `compose.yaml` `include:`s each project's own `compose.yaml`.
+      **The real root file had to be recovered first:** at HEAD it was 47 bytes
+      of leftover probe (`include: [b/compose.yaml, c/compose.yaml]`), committed
+      by an earlier session in `afb81d39` along with a stray tracked
+      `c/compose.yaml`. All four fragment agents independently reported it.
+      Restored from `c08b0edc` (8,889 bytes) and rewritten; `c/` deleted.
+- [x] 2.2 Renamed `smia/compose.yml` → `smia/compose.yaml` (the last holdout of
       the convention D147 already recorded).
-- [ ] 2.3 Delete the `tun-shared` network from all four project compose files
+- [x] 2.3 Deleted the `tun-shared` network from all four project compose files
       and the root; delete `external: true`; delete every reference to
       `docker network create tun-shared` from `DEPLOY.md` and `.env.example`.
-- [ ] 2.4 **Preserve every explicit volume `name:` verbatim**, especially
+- [x] 2.4 **Preserved every explicit volume `name:` verbatim** — asserted
+      against the rendered config, all nine present including
+      `mjolnir_caddy_data`., especially
       `mjolnir_caddy_data` (TLS certificates — re-issuing hits Let's Encrypt
       rate limits). Assert after first boot that the running caddy container
       mounts the same volume name as before.
-- [ ] 2.5 Move build contexts to the repo root
+- [x] 2.5 Moved build contexts to the repo root
       (`context: ..`, `dockerfile: <project>/Dockerfile`).
-- [ ] 2.6 Write the root `.dockerignore`; confirm the build context sent to the
-      daemon is megabytes, not gigabytes.
-- [ ] 2.7 `docker compose config --services` from the root lists every service;
-      `docker compose -f <project>/compose.yaml config --services` works for
-      each project standalone.
+- [x] 2.6 Root `.dockerignore` written **from the actual COPY lines of all six
+      Dockerfiles**, not from a guess — the draft in this change's own proposal
+      would have broken phonexa, which copies `lang/` (Dockerfile:32) into the
+      image. Context: 31.3 MB / 880 files, down from ~940 MB / 41,678.
+      Proved by really building the COPY stage of all five images against the
+      root context (busybox harness): stabbur, smia, phonexa, mjolnir-hub,
+      mjolnir-builder all OK.
+- [x] 2.7 Verified. Root lists all 12 services; each of the four projects
+      composes standalone. Plus the property this change exists for:
+      `cd stabbur && docker compose up` publishes loopback ports for a native
+      venv, while the root stack publishes **nothing** but the gateway.
 
 ## 3. Config layering
 
-- [ ] 3.1 Root `.env.example`: only values used by more than one project.
-- [ ] 3.2 Per-project `.env.example`: only values used by exactly that project
+- [x] 3.1 Root `.env.example`: only values used by more than one project.
+- [x] 3.2 Per-project `.env.example`: only values used by exactly that project
       (`smia`: HF/DeepL/ElevenLabs; `hover-translate`: AMO_*; `mjolnir`:
       ALLOW_HTTP, ALLOW_NO_COMPANION, SOURCE_LANG; `phonexa`: AUDIO_BACKEND).
-- [ ] 3.3 Derive `DATABASE_URL` in compose from `POSTGRES_PASSWORD`; delete
-      every `*_UPSTREAM` and `*_BASE_URL` that a service name now resolves.
-- [ ] 3.4 Assert the invariant mechanically: no key appears in two `.env*`
-      files. Add it as a check, not a convention.
-- [ ] 3.5 Delete the ~120 lines of sync-hazard prose from
-      `mjolnir/.env.example` that the invariant makes obsolete.
+- [x] 3.3 Every `DATABASE_URL` derived in compose; every `*_UPSTREAM` and
+      `*_BASE_URL` deleted. **Corrected from one shared `POSTGRES_PASSWORD` to
+      four per-database keys** — see the data hazard in design.md.
+- [x] 3.4 `bin/check-standards.sh` — eight checks covering D150/D151/D152/D153:
+      no key in two `.env.example` files, no retired or derivable value typed
+      anywhere, no `container_name`, no `external:` network, no `tun-shared`
+      outside comments, restart policies present, nothing but the gateway
+      publishing publicly, bare-slug change ids, no CI. All pass.
+- [x] 3.5 Deleted. `mjolnir/.env.example` keeps only mjolnir-local values.
 
 ## 4. Naming and the service standard
 
-- [ ] 4.1 Service keys: `grind`, `postgres`, `adminer`, `backup`,
-      `mjolnir-workbench`, `mjolnir-builder`, `mjolnir-sync`,
-      `stabbur-backend`, `smia-backend`, `phonexa-backend`, `shadow-backend`.
-      (The last three of those arrive in `zone-isolation`; reserve the names.)
-- [ ] 4.2 Delete every `container_name:`.
-- [ ] 4.3 `restart: unless-stopped` on every long-running service (stabbur and
-      smia lack it).
+- [x] 4.1 Service keys conform: `adminer`, `backup`, `mjolnir-postgres`,
+      `mjolnir-hub`, `mjolnir-builder`, `caddy`, `stabbur-postgres`,
+      `stabbur-backend`, `smia-postgres`, `smia-backend`, `phonexa-postgres`,
+      `phonexa-backend`. `mjolnir-hub` is **not** renamed to
+      `mjolnir-workbench` here — that rename comes with the split in
+      `zone-isolation`, which must change the service key and the gateway's
+      `/mjolnir` upstream together. `grind`, `postgres` and `shadow-backend`
+      are reserved for the later changes.
+- [x] 4.2 Deleted every `container_name:`.
+- [x] 4.3 `restart: unless-stopped` on every long-running service.
 - [ ] 4.4 Backend healthchecks everywhere (only phonexa has one).
-- [ ] 4.5 All host port publishing bound to `127.0.0.1` and moved behind the
-      `dev` profile (stabbur and smia currently bind `0.0.0.0`).
+- [x] 4.5 All host port publishing bound to `127.0.0.1` and moved into a
+      per-project `compose.override.yaml`. **A `dev` profile is impossible** —
+      Compose has no per-port profile; see design.md's correction. The override
+      mechanism is strictly better and was verified empirically.
 - [ ] 4.6 `pytest.ini` + `tests/` in all three Flask services; rename
       phonexa's `test/` and give it a `pytest.ini`.
-- [ ] 4.7 Delete `phonexa/.github/` entirely (task 0.1 answered: the Pages
-      site goes with it).
-- [ ] 4.8 One OpenSpec change-id convention: **bare slugs**. Forced by
+- [x] 4.7 Deleted `phonexa/.github/` entirely. `coden256.github.io/phonexa`
+      stops being published, as the operator accepted.
+- [x] 4.9 **Found during the merge, not foreseen in the proposal:** each
+      sub-repo carried its own `.claude/` with a byte-identical copy of the
+      same five openspec skills and five opsx commands. In one repository
+      Claude Code registers each as a *directory-scoped* skill, so the merge
+      produced 20 duplicate registrations (`mjolnir:openspec-apply-change`,
+      `stabbur:openspec-apply-change`, …) of skills the root already provides
+      unscoped. The root `.claude/` is a strict superset (it also has
+      `system-overseer-architect` and `settings.local.json`). Verified
+      identical with `diff -rq` and `cmp`, then deleted all four per-project
+      `.claude/` directories — 40 files, zero loss. This is the tooling half
+      of the "6 claude code sessions" problem.
+
+- [x] 4.8 One OpenSpec change-id convention: **bare slugs**. Forced by
       tooling — `openspec status --change` and `openspec instructions apply
       --change` reject any name not starting with a letter, so dated ids
       cannot be driven by the CLI. Rename the pre-existing dated changes in

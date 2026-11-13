@@ -8,7 +8,7 @@ different word for a different entity Mjølnir derives — never use them
 interchangeably in this repo.
 
 **Cross-repo design, decisions, pitfalls and the roadmap live in
-`/home/coden/dev/tun/docs/` — start at `README.md`, then `07-decisions.md`.**
+`docs/` (at the repo root) — start at `README.md`, then `07-decisions.md`.**
 Do not re-derive settled decisions.
 
 ### Hard boundaries (D43, D44, D45, D74)
@@ -40,5 +40,5 @@ Notes, grammar rules, settings, and blob storage are implemented. `captures`
 exists as its own table (`captures-provenance-and-promote`): `POST
 /api/captures` ingests a capture and atomically promotes it to a draft note,
 making `origin=capture` a reachable, referentially-backed state for the first
-time. Relevant docs: `tun/docs/03-data-model.md`, `02-services.md`,
+time. Relevant docs: `docs/03-data-model.md`, `02-services.md`,
 `06-smia.md`, and **D74** for why `item` became `note`.

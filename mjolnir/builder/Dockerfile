@@ -5,13 +5,18 @@
 # same as it always has) and bind-mounted at runtime, not copied in, so
 # `git pull` + a container restart picks up source changes without a
 # rebuild — only `npm ci` happens at build time.
+#
+# The build context is the MONOREPO ROOT (compose: `context: ..`), not
+# mjolnir, so a later change can COPY from shared `libs/`. Every COPY source
+# below is therefore `mjolnir/`-prefixed while the image layout under /app is
+# unchanged (/app == the mjolnir directory).
 FROM node:22-alpine
 RUN apk add --no-cache bash curl ffmpeg
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY mjolnir/package.json mjolnir/package-lock.json ./
 RUN npm ci --omit=dev
-COPY builder/package.json builder/package-lock.json ./builder/
+COPY mjolnir/builder/package.json mjolnir/builder/package-lock.json ./builder/
 RUN npm ci --omit=dev --prefix builder
 
 WORKDIR /app/builder

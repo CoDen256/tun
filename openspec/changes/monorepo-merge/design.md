@@ -143,3 +143,108 @@ which. Resolved during the merge rather than after.
   gone.
 - **`services/` and `ops/` subdirectories**: rejected by the operator; with
   eight projects a flat top level reads better.
+
+## Correction found during implementation — per-port profiles do not exist
+
+Tasks 4.5 and the service standard said host ports should sit "behind a `dev`
+profile". That is not implementable. Compose's `profiles:` gates an entire
+service, not an individual port mapping, and every workaround fails on
+Compose v5.4.0 (each verified, 2026-11-13):
+
+| attempt | result |
+|---|---|
+| `ports: ["${P-}"]` (empty when unset) | rejected: `no port specified: <empty>` |
+| `dev`-profiled sidecar, `network_mode: "service:x"` + `ports:` | daemon refuses: `conflicting options: port publishing and the container type network mode` |
+| `dev` profile on the database service itself | project invalid: `service smia-backend depends on undefined service` |
+
+The mechanism that works is a per-project `compose.override.yaml` holding only
+the loopback port mappings. Compose auto-loads an override file **only** for
+the primary compose file of the directory it is invoked in. Verified:
+
+```
+cd svc && docker compose config          -> ports published
+docker compose config        (root, via include:)  -> NO ports
+docker compose -f svc/compose.yaml config          -> NO ports
+```
+
+This is better than what the task asked for. `cd smia && docker compose up`
+publishes loopback ports so a native venv can connect, while the unified stack
+publishes nothing at all — production is safe by construction rather than by
+remembering to omit a profile flag. It also directly satisfies the operator's
+requirement that developing and testing one service alone be trivial.
+
+## Data hazard found during implementation — one Postgres password cannot be shared yet
+
+D151 says configuration must not be duplicated, and the obvious reading is one
+`POSTGRES_PASSWORD` for all four databases. Two agents independently found that
+this silently breaks every existing database.
+
+Postgres applies `POSTGRES_PASSWORD` **only when it initialises a fresh data
+directory**. The three existing volumes were created with the literals their
+compose files hardcoded:
+
+| volume | password baked in at init |
+|---|---|
+| `stabbur_stabbur-pg-data-17` | `stabbur` |
+| `smia_smia-pg-data` | `smia` |
+| `phonexa_postgres_data` | `${PHONEXA_POSTGRES_PASSWORD:-phonexa}` |
+| `mjolnir_postgres_data` | the operator's real value in `mjolnir/.env` |
+
+A single shared value would authenticate against none of them, and the only
+symptom would be an authentication failure from each backend — no startup
+error, nothing in the database logs pointing at the cause.
+
+So this change keeps **four keys, one per database**
+(`MJOLNIR_POSTGRES_PASSWORD`, `STABBUR_POSTGRES_PASSWORD`,
+`SMIA_POSTGRES_PASSWORD`, `PHONEXA_POSTGRES_PASSWORD`), each defaulting to the
+literal its volume was created with, and all four defined in the root `.env`
+and nowhere else. D151 is satisfied — the invariant is "no value in two files",
+not "one value for everything".
+
+`postgres-consolidation` collapses them into one `POSTGRES_PASSWORD`, because
+that change dump/restores into a **fresh** cluster, which is the only point at
+which a new password can take effect. Attempting the collapse here would have
+been a silent outage.
+
+## The root `compose.yaml` was already destroyed before this change began
+
+At HEAD the file was 47 bytes:
+
+```
+include:
+  - b/compose.yaml
+  - c/compose.yaml
+```
+
+`b/` does not exist. A tracked `c/compose.yaml` sat in the repo root containing
+a matching stub. Both were committed in `afb81d39` ("Archive
+phonexa-path-routing; sync unified-deployment spec") — an earlier session ran a
+nested-`include:` probe from the repository root, clobbered the real file,
+created `c/`, and committed both inside an unrelated commit. The real file was
+8,889 bytes through `c08b0edc` and is recovered from there.
+
+**This is a live production hazard independent of this change.** Any host that
+pulled `afb81d39` cannot bring the stack up at all — `docker compose up` fails
+immediately on the missing `b/compose.yaml`. The deployed stack is still
+serving (verified: `/stabbur/ui` returns 200) because its containers predate
+the pull, but the next `git pull && docker compose up` would have failed with
+an error pointing at a path nobody would recognise.
+
+All four fragment agents reported it independently, which is the strongest
+argument for the adversarial-verification pattern in this workflow: no single
+reviewer had to be the one to notice.
+
+## The `.dockerignore` in the proposal would have broken phonexa
+
+The proposal's draft list of exclusions named `phonexa/lang`.
+`phonexa/Dockerfile:32` is `COPY phonexa/lang/ ./lang/` — 14 MB of language
+data that the image genuinely needs. Excluding it would have produced an image
+that builds and then fails at runtime with missing language assets.
+
+The file is therefore derived from the actual `COPY` lines of all six
+Dockerfiles, with a comment at the top saying so and naming the trap. Verified
+two ways: a static check that every `COPY` source exists and survives the
+ignore rules, and a real `docker build` of each image's COPY stage against the
+root context. Result: 31.3 MB and 880 files sent to the daemon, down from
+~940 MB and 41,678 files.
+

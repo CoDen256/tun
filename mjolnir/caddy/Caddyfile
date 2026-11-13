@@ -1,5 +1,7 @@
-# mjolnir — the only thing the phone talks to (D84: single deployable
-# stack, owned entirely by this repo — `tun` ships no deployable artifacts).
+# mjolnir — the only thing the phone talks to. This file is the single
+# ingress for the whole ecosystem (D84's "owned entirely by this repo"
+# framing superseded by D94 and then by the monorepo: the stack is one
+# Compose project, and every upstream below is a sibling service name).
 #
 # P1 serves everything device-facing straight off disk (D55). Python/Node is
 # never in the path of the 6 MB bundle or the audio blobs.
@@ -125,30 +127,12 @@
 	# stabbur's /ui page what prefix the browser is actually using, so it
 	# can template its own asset/API URLs to match (app.py's ui_index()).
 	#
-	# The upstream is configurable, not hardcoded, because this repo's own
-	# compose.yaml is deployable more than one way (D94), and a bare Docker
-	# service name only resolves when both stacks share a network. Set
-	# STABBUR_UPSTREAM in .env to whichever applies — in order of preference:
-	#   - "backend:5056"  — RECOMMENDED, verified working. Two fully
-	#     independent `docker compose up` stacks, joined by one shared
-	#     external network (`tun-shared` in compose.yaml, both this
-	#     service and stabbur's `backend` service attached to it — one
-	#     `docker network create tun-shared` the first time, nothing else
-	#     changes about either stack). This is what "run two docker
-	#     compose, configure .env of both" actually resolves to.
-	#   - "backend:5056"  — same value when deployed via tun's `include:`
-	#     instead (D94), but NOT "no extra setup": `include:` cannot clear
-	#     an included file's `external: true` network declaration back off
-	#     (confirmed, D104), so the one-time `docker network create
-	#     tun-shared` is still required under this mode too.
-	#   - "host.docker.internal:5056" — stabbur's own stack, no shared
-	#     network, reached via its host-published port instead (needs the
-	#     caddy service's extra_hosts entry below). Depends on the host's
-	#     NAT/hairpin routing actually reaching a published port from a
-	#     bridge network, which is not reliable in every environment —
-	#     confirmed to fail inside at least one nested-Docker sandbox.
-	#     Fall back to this only if joining a shared network isn't an option.
-	#   - a real hostname/IP — stabbur deployed elsewhere entirely.
+	# The upstream is the service name, hardcoded. It used to be
+	# {$STABBUR_UPSTREAM} with four documented options, because a bare Docker
+	# service name only resolved when two separate stacks shared the
+	# `tun-shared` external network (D98/D104). One repository is one Compose
+	# project with one default network, so `stabbur-backend` always resolves
+	# and there is nothing left to configure.
 	# `handle_path` needs a single literal prefix to strip, so it can't take
 	# the two-pattern form `handle`/`@matcher` above use for the bare-path
 	# case — there's nothing meaningful to strip from a bare `/stabbur`
@@ -156,7 +140,7 @@
 	# `handle_path /stabbur/*` already matches correctly.
 	redir /stabbur /stabbur/ 308
 	handle_path /stabbur/* {
-		reverse_proxy {$STABBUR_UPSTREAM} {
+		reverse_proxy stabbur-backend:5056 {
 			header_up X-Forwarded-Prefix /stabbur
 		}
 	}
@@ -165,24 +149,15 @@
 	# as /stabbur above, including the X-Forwarded-Prefix hint for its own
 	# ui_index() (app.py, mirrors stabbur's exactly, D46/D118).
 	#
-	# SMIA_UPSTREAM mirrors STABBUR_UPSTREAM's own choices exactly — set it
-	# in .env to whichever applies:
-	#   - "smia-backend:5055" — RECOMMENDED. Either two independent
-	#     `docker compose up` stacks sharing the `tun-shared` external
-	#     network, or this repo + smia's own compose brought up together via
-	#     tun's `include:` (D94) — same value either way. smia's own
-	#     compose.yaml/docker-compose.yml aliases its backend service as
-	#     "smia-backend" on tun-shared specifically so this name resolves
-	#     under both modes without colliding with this repo's own "backend"
-	#     service (same collision D94 already renamed stabbur-postgres to
-	#     avoid).
-	#   - "host.docker.internal:5055" — smia's own stack, no shared network,
-	#     reached via its host-published port instead. Same caveats as
-	#     STABBUR_UPSTREAM's equivalent fallback above.
-	#   - a real hostname/IP — smia deployed elsewhere entirely.
+	# Hardcoded for the same reason as stabbur-backend above: one Compose
+	# project, one default network, the service name always resolves. Note
+	# the name is `smia-backend`, not `backend` — the distinct per-project
+	# names are what keep the three Flask services from colliding now that
+	# they all share one network (the collision D94 renamed
+	# stabbur-postgres to avoid).
 	redir /smia /smia/ 308
 	handle_path /smia/* {
-		reverse_proxy {$SMIA_UPSTREAM} {
+		reverse_proxy smia-backend:5055 {
 			header_up X-Forwarded-Prefix /smia
 		}
 	}
@@ -221,10 +196,10 @@
 	#     docker run --rm caddy:2-alpine caddy hash-password \
 	#         --plaintext "$OPERATOR_AUTH_TOKEN"
 	#
-	# and puts it in .env as PHONEXA_AUTH_HASH, SINGLE-QUOTED (a bcrypt hash
-	# contains `$`, which compose would otherwise interpolate away). Nothing
-	# links the two automatically: ROTATING OPERATOR_AUTH_TOKEN MEANS
-	# REGENERATING THIS HASH.
+	# and puts it in mjolnir/.env as PHONEXA_AUTH_HASH, SINGLE-QUOTED (a
+	# bcrypt hash contains `$`, which compose would otherwise interpolate
+	# away). Nothing links the two automatically: ROTATING
+	# OPERATOR_AUTH_TOKEN MEANS REGENERATING THIS HASH.
 	#
 	# FAIL-CLOSED DEFAULT. The hash defaults to a real bcrypt hash of a
 	# random string that was generated, used once and discarded — nobody
@@ -232,7 +207,10 @@
 	# here instead of serving phonexa open. (Verified to survive the
 	# Caddyfile parser with its `$`s intact; and Caddy falls back to a
 	# `{$VAR:default}` default only when the variable is ABSENT, never when
-	# it is set-but-empty — hence the valueless key form in compose.yaml.)
+	# it is set-but-empty — so compose.yaml must never pass this key through
+	# with an empty value. It uses `${PHONEXA_AUTH_HASH:-<same default>}`,
+	# which is correct in both deployment modes; the valueless pass-through
+	# form it used before was not.)
 	# With phonexa simply not deployed, an authenticated request 502s, the
 	# same as /stabbur and /smia when their service is down.
 	#
@@ -249,7 +227,7 @@
 		# through reverse_proxy, and Caddy does not time out an upgraded
 		# connection by default. No request-body limit is set either —
 		# Formant Lab uploads and trim/ingest posts can be several MB.
-		reverse_proxy {$PHONEXA_UPSTREAM:phonexa-backend:5050} {
+		reverse_proxy phonexa-backend:5050 {
 			header_up X-Forwarded-Prefix /phonexa
 			# Strip the browser's permessage-deflate offer so phonexa's
 			# flask-sock never negotiates WebSocket compression on /stream.

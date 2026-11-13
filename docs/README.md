@@ -2,19 +2,22 @@
 
 *Tun: the farmyard — the shared centre every building faces.*
 
-**Start here.** This directory is the single source of truth for the cross-repo
-ecosystem: **tun** (this repo) + **mjolnir** + **stabbur** + **smia** +
-**phonexa** + **hover-translate**.
+**Start here.** This directory is the single source of truth for the whole
+ecosystem, which since D150 is **one repository** with each former repo as a
+top-level directory: **mjolnir** + **stabbur** + **smia** + **phonexa** +
+**shadow** + **hover-translate** + **grind** + **backup**.
 It is written to survive between sessions: if you remember nothing else,
 read this file and `07-decisions.md`.
 
 ## Starting a session
 
-Open Claude Code in **`/home/coden/dev/tun`** for design/architecture work, or
-in **`/home/coden/dev/mjolnir`** when working on the bundle, patches or the hub.
-Add the other repos as additional working directories as needed.
+Open Claude Code **once, at the repository root** (`/home/coden/dev/tun`) — for
+every kind of work. There is nothing to add as an extra working directory any
+more, and no second session for a second repo: one root `CLAUDE.md` carries the
+ecosystem rules and each project's own `CLAUDE.md` is loaded automatically when
+you touch files in it (D150).
 
-Opening line that works: *"Read tun/docs/README.md and 07-decisions.md, then
+Opening line that works: *"Read docs/README.md and 07-decisions.md, then
 <task>."*
 
 Then: **`10-roadmap.md` → "Right now"** always holds the current next step.
@@ -46,20 +49,32 @@ and editable by you.
 Mjølnir app internals (reverse-engineering findings) live in the **mjolnir**
 repo as `docs/findings.md` — that is the authority on how the stock app behaves.
 
-## Related repos
+## Projects
 
-| Repo | Role |
+Each is a top-level directory of this one repository (D150). Each owns its own
+`compose.yaml`, which the root `compose.yaml` `include:`s — so every project
+still runs standalone (`docker compose up <project>`) and all of them come up
+together from one `docker compose up` at the root.
+
+| Directory | Role |
 |---|---|
-| `tun` | deployment (compose, Caddy, backups), **these docs**, shared UI shell |
-| `mjolnir` | `docs/findings.md`, tool, JS + native patches, apk pipeline, builder, hub |
-| `stabbur` | captures, notes, enrichment, triage UI, audio blobs |
-| `smia` | linguistics providers (inflect / ipa / tts / stt / translate) |
-| `phonexa` | phonetics lab (existing) |
-| `hover-translate` | capture client (existing fork) |
+| `docs/` | **these docs** — the ecosystem design layer |
+| `grind/` | the gateway: TLS, routing, the operator gate, the status page |
+| `mjolnir/` | `docs/findings.md`, tool, JS + native patches, apk pipeline, builder, workbench, device sync |
+| `stabbur/` | captures, notes, enrichment, triage UI, audio blobs |
+| `smia/` | linguistics providers (inflect / ipa / tts / stt / translate) |
+| `phonexa/` | phonetics lab: vowels, consonants, formants, live speech |
+| `shadow/` | shadowing: media, segments, transcription |
+| `hover-translate/` | capture client (a browser extension — never deployed) |
+| `postgres/` | the shared database cluster |
+| `backup/` | the git-backup service |
+| `libs/` | code shared across projects (auth, prefix handling, layout, bootstrap) |
 
-All six working copies live under `/home/coden/dev/`: `tun`, `mjolnir`,
-`stabbur`, `smia`, `phonexa`, `hover-translate`. The APK build workspace at
-`/home/coden/rev/mjolnir/` is disposable scratch, not a source repo.
+One clone, no sibling checkouts. The APK build workspace at
+`/home/coden/rev/mjolnir/` is still disposable scratch, not part of this repo.
+
+`grind/`, `shadow/`, `postgres/` and `libs/` arrive with the `zone-isolation`,
+`postgres-consolidation` and `unified-auth` changes; the rest exist now.
 
 ## Status
 

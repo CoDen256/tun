@@ -6,8 +6,8 @@ The **linguistics** service: `/inflect`, `/ipa`, `/tts`, `/stt`, `/translate`,
 plus a `/ui` for provider health and manual try-it.
 
 **Cross-repo design, decisions, pitfalls and the roadmap live in
-`/home/coden/dev/tun/docs/` — start at `README.md`, then `07-decisions.md`.**
-Full service design: `tun/docs/06-smia.md`.
+`docs/` (at the repo root) — start at `README.md`, then `07-decisions.md`.**
+Full service design: `docs/06-smia.md`.
 
 ### Hard boundaries (D16, D45)
 

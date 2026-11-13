@@ -1,0 +1,29 @@
+# Dev-only host port publishing for stabbur.
+#
+# Why a file and not `profiles: ["dev"]` on the ports: Compose has no per-port
+# profile. `profiles:` gates a whole service, and both services here must run
+# in production. Verified on Compose v5.4.0 (2026-11-13): an empty port string
+# is rejected (`no port specified: <empty>`), a `dev`-profiled sidecar with
+# `network_mode: "service:…"` plus `ports:` is refused by the daemon
+# (`conflicting options: port publishing and the container type network mode`),
+# and `dev`-profiling the database makes the project invalid (`depends on
+# undefined service`).
+#
+# Compose auto-loads compose.override.yaml ONLY for the primary compose file of
+# the directory it runs in — verified. So:
+#   cd stabbur && docker compose up      # ports published, for a native venv
+#   docker compose up            (root)  # no ports, nothing to leak
+#   docker compose -f stabbur/compose.yaml …   # no ports
+#
+# In the unified stack stabbur is reached through the gateway at /stabbur/*,
+# which adds the operator gate, never through a published port.
+#
+# Loopback only, always: never a public interface. (Both mappings bound
+# 0.0.0.0 before the merge — that was the drift D152 exists to stop.)
+services:
+  stabbur-postgres:
+    ports:
+      - "127.0.0.1:5434:5432"
+  stabbur-backend:
+    ports:
+      - "127.0.0.1:5056:5056"

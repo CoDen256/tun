@@ -21,17 +21,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV DENO_INSTALL=/usr/local
 RUN curl -fsSL https://deno.land/install.sh | sh
 
-COPY requirements.txt .
+# monorepo-merge: the build context is the repository root (so a later
+# change can COPY from the shared libs/), therefore every source path here
+# is prefixed with stabbur/. The destinations are unchanged — the image
+# layout is identical to before the merge.
+COPY stabbur/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-COPY app.py auth.py blob_storage.py smia_client.py settings_store.py similarity.py .
-COPY db/ ./db/
-COPY routes/ ./routes/
-COPY ui/ ./ui/
-COPY alembic.ini .
-COPY alembic/ ./alembic/
-COPY scripts/ ./scripts/
+COPY stabbur/app.py stabbur/auth.py stabbur/blob_storage.py stabbur/smia_client.py stabbur/settings_store.py stabbur/similarity.py ./
+COPY stabbur/db/ ./db/
+COPY stabbur/routes/ ./routes/
+COPY stabbur/ui/ ./ui/
+COPY stabbur/alembic.ini .
+COPY stabbur/alembic/ ./alembic/
+COPY stabbur/scripts/ ./scripts/
 
 EXPOSE 5056
 

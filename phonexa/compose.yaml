@@ -1,28 +1,30 @@
 # phonexa's own stack — usable standalone (`docker compose up -d` here) and as
-# one of the files tun/compose.yaml `include:`s (deployable-in-tun).
+# one of the files the root compose.yaml `include:`s.
 #
 # Service and volume names are prefixed `phonexa-` on purpose: `include:`
 # merges every included file into one namespace and silently keeps only the
 # FIRST definition of a colliding name (D94/D118). The old generic names
 # (`postgres`, `backend`, `adminer`) collided with mjolnir's and stabbur's, so
-# phonexa would simply never have started under tun.
+# phonexa would simply never have started under the unified stack.
+#
+# One repository is one Compose project is one default network, so there is no
+# shared external network any more and nothing to create by hand: every
+# service reaches every other by its service key.
+#
+# Host port publishing lives in compose.override.yaml, which Compose loads
+# only when you run from inside this directory. See the comment there.
 services:
   phonexa-postgres:
     image: postgres:17-alpine
-    container_name: phonexa-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: phonexa
       POSTGRES_USER: phonexa
-      # Same value tun's backup service uses (PHONEXA_POSTGRES_PASSWORD in
-      # tun/.env) — nothing keeps the two in sync automatically.
+      # Shared with the other projects' databases and with the backup service,
+      # so it lives in the repository-root .env and is typed nowhere else.
       POSTGRES_PASSWORD: ${PHONEXA_POSTGRES_PASSWORD:-phonexa}
     volumes:
       - phonexa-postgres-data:/var/lib/postgresql/data
-    ports:
-      # Loopback only: for the native nix-shell app connecting in during local
-      # dev. Never on a public interface, so a tun deploy doesn't expose it.
-      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U phonexa"]
       interval: 2s
@@ -30,11 +32,11 @@ services:
       retries: 20
 
   # Development-only database browser. Gated behind the `dev` profile so it
-  # never starts under tun (whose shared Adminer reaches `phonexa-postgres`):
+  # never starts in the unified stack (whose shared Adminer reaches
+  # `phonexa-postgres` directly):
   #   docker compose --profile dev up -d
   phonexa-adminer:
     image: adminer
-    container_name: phonexa-adminer
     profiles: ["dev"]
     depends_on:
       phonexa-postgres:
@@ -43,32 +45,38 @@ services:
       - "127.0.0.1:8081:8080"
 
   phonexa-backend:
-    build: .
-    container_name: phonexa-backend
+    build:
+      # Context is the repository root so a service can COPY from shared
+      # libraries; every COPY in the Dockerfile is therefore phonexa/-prefixed.
+      # Paths in an included file resolve relative to this file.
+      context: ..
+      dockerfile: phonexa/Dockerfile
     restart: unless-stopped
     depends_on:
       phonexa-postgres:
         condition: service_healthy
+    # phonexa-only values (AUDIO_BACKEND). Read here rather than relied on for
+    # interpolation, so it is picked up both standalone and from the root.
+    env_file:
+      - path: ./.env
+        required: false
     environment:
       DATABASE_URL: postgresql+psycopg2://phonexa:${PHONEXA_POSTGRES_PASSWORD:-phonexa}@phonexa-postgres:5432/phonexa
       AUDIO_STORAGE_ROOT: /data/audio
-      AUDIO_BACKEND: local
       # Speech-to-text for Shadowing is proxied to smia (stt-via-smia). The
-      # default resolves over tun-shared / under tun's include:. The token is
-      # server-side only — never sent to the browser. Empty token = the 📝
-      # action reports "not configured" and everything else keeps working.
-      SMIA_BASE_URL: ${SMIA_BASE_URL:-http://smia-backend:5055}
+      # address is derived from smia's service key, never configured. The token
+      # is shared with smia, so it comes from the root .env; it is server-side
+      # only and never sent to the browser. Empty token = the 📝 action reports
+      # "not configured" and everything else keeps working.
+      SMIA_BASE_URL: http://smia-backend:5055
       SMIA_AUTH_TOKEN: ${SMIA_AUTH_TOKEN:-}
     volumes:
       - phonexa-audio-data:/data/audio
       # Bind mount (not a named volume): the admin export/import endpoints
-      # must read/write the host's git-tracked db-export/ directory, not an
-      # ephemeral copy baked into the image by Dockerfile's COPY.
+      # must read/write the git-tracked phonexa/db-export/ directory, not an
+      # ephemeral copy baked into the image by Dockerfile's COPY. Resolves
+      # relative to this file.
       - ./db-export:/app/db-export
-    ports:
-      # Loopback only: under tun the app is reached through Caddy (which adds
-      # the operator-token gate) over tun-shared, never via a published port.
-      - "127.0.0.1:5050:5050"
     healthcheck:
       # python:3.12-slim has no curl.
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5050/ping', timeout=3)"]
@@ -76,26 +84,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    networks:
-      # default: this project's own network, unchanged.
-      # tun-shared: lets mjolnir's Caddy reach this container by name. One-time
-      # setup before the first `up`, standalone or under tun's `include:`
-      # (include: cannot clear `external: true` back off — see tun/DEPLOY.md):
-      #   docker network create tun-shared
-      - default
-      - tun-shared
-
-networks:
-  default: {}
-  tun-shared:
-    external: true
 
 volumes:
   # Unique keys: include: merges top-level volume keys across files just like
-  # service names, and tun's backup service references phonexa-audio-data
+  # service names, and the backup service references phonexa-audio-data
   # directly. Explicit `name:` so it is the SAME Docker volume whether started
-  # from this directory or through tun (otherwise Compose prefixes the project
-  # name and the two entry points get separate volumes).
+  # from this directory or from the root (otherwise Compose prefixes the
+  # project name and the two entry points get separate volumes).
   phonexa-postgres-data:
     # New name on purpose: the old local volume (phonexa_pgdata) holds PG 16
     # data, which a postgres:17 image cannot start on. It is left untouched.

@@ -10,7 +10,7 @@ Sibling repos: `tun` (deployment + ecosystem docs), `stabbur` (learning content)
 `smia` (linguistics), `phonexa` (phonetics lab), `hover-translate` (capture client).
 
 **Cross-repo design, decisions, pitfalls and the roadmap live in
-`/home/coden/dev/tun/docs/` — start at `README.md`, then `07-decisions.md`.**
+`docs/` (at the repo root) — start at `README.md`, then `07-decisions.md`.**
 Do not re-derive settled decisions.
 
 **Mjølnir app internals (reverse-engineering record): `docs/findings.md`.**
