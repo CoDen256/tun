@@ -285,4 +285,23 @@
 	handle {
 		respond "mjolnir" 404
 	}
+
+	handle_errors {
+		@device path /ota/* /blob/* /audio-manifest/* /mjolnir/userdata/*
+		handle @device {
+			respond "" {err.status_code}
+		}
+		handle {
+			map {path} {zone} {
+				~^/stabbur stabbur
+				default    unknown
+			}
+			rewrite * /index.html
+			root * /etc/caddy/status
+			templates
+			file_server {
+				status {err.status_code}
+			}
+		}
+	}
 }

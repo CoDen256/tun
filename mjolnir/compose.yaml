@@ -69,6 +69,7 @@ services:
       # directory (verified 2026-11-13), so these stay `./…` under both the
       # root `include:` and standalone `cd mjolnir`.
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/status:/etc/caddy/status:ro
       - ./data:/srv:ro                   # served read-only; publishing writes from the host
       - caddy_data:/data                 # TLS certs — LOSING THIS MEANS RE-ISSUING CERTS
       - caddy_config:/config

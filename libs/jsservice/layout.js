@@ -298,19 +298,21 @@ function escapeHtml(s) {
 // yet lands on the status page, which says exactly that, which is better
 // chrome than a zone that silently is not mentioned anywhere.
 export const ZONES = [
-  { href: "/mjolnir", label: "workbench", project: "mjolnir" },
-  { href: "/builder", label: "builder", project: "mjolnir" },
-  { href: "/stabbur/", label: "stabbur", project: "stabbur" },
-  { href: "/smia/", label: "smia", project: "smia" },
-  { href: "/phonexa/", label: "phonexa", project: "phonexa" },
-  { href: "/shadow/", label: "shadow", project: "shadow" },
-  { href: "/adminer", label: "adminer", project: "tun" },
+  { href: "/mjolnir", label: "workbench" },
+  { href: "/builder", label: "builder" },
+  { href: "/stabbur/", label: "stabbur" },
+  { href: "/smia/", label: "smia" },
+  { href: "/phonexa/", label: "phonexa" },
+  { href: "/shadow/", label: "shadow" },
+  { href: "/adminer", label: "adminer" },
 ];
 
-export function renderZoneNav(activeProject) {
+// `activeZone` is a ZONES href, not the current page's path: a zone is one
+// entry in this list however many pages it serves.
+export function renderZoneNav(activeZone) {
   return ZONES.map(
     (z) =>
-      `<a href="${z.href}"${z.project === activeProject ? ' class="zone-current"' : ""}>${escapeHtml(z.label)}</a>`
+      `<a href="${z.href}"${z.href === activeZone ? ' class="zone-current"' : ""}>${escapeHtml(z.label)}</a>`
   ).join("\n    ");
 }
 
@@ -318,7 +320,7 @@ export function renderZoneNav(activeProject) {
 // the zone switcher above it is the same in every process. Shape kept
 // identical to the renderShell each service already called, so this is a
 // drop-in for both: { title, activeHref, body }, plus the two new fields.
-export function renderShell({ title, activeHref, body, brand, rail, activeProject = "mjolnir" }) {
+export function renderShell({ title, activeHref, body, brand, rail, activeZone }) {
   return `<!doctype html>
 <html>
 <head>
@@ -330,7 +332,7 @@ export function renderShell({ title, activeHref, body, brand, rail, activeProjec
 <div class="top-bar">
   <strong>${escapeHtml(brand)}</strong>
   <nav>
-    ${renderZoneNav(activeProject)}
+    ${renderZoneNav(activeZone)}
   </nav>
 </div>
 <div class="shell">

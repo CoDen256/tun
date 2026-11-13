@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings — IPA Vowel Chart</title>
+  <link rel="stylesheet" href="css/index.css">
+  <link rel="stylesheet" href="css/shadow.css">
+  <link rel="stylesheet" href="css/settings.css">
+</head>
+<body>
+
+<header>
+  <h1>Settings</h1>
+  <p>Per-profile configuration and Shadowing progress</p>
+  <a href="index.html"  class="editor-link">← Vowel Chart</a>
+  <a href="shadow.html" class="editor-link">🗣 Shadowing</a>
+  <span id="userPicker" class="user-picker"></span>
+</header>
+
+<div class="shadow-wrap">
+
+  <div class="settings-section">
+    <div class="settings-section-title">Transcription backend</div>
+    <div class="settings-form">
+      <label class="settings-row">
+        Provider
+        <select id="providerSelect"></select>
+      </label>
+      <div id="providerNote" class="settings-note" style="font-size:.7rem;color:var(--muted)"></div>
+      <div class="settings-actions">
+        <button class="sent-btn primary" id="saveTranscribeBtn" type="button">Save</button>
+        <span id="transcribeSaveStatus" class="settings-save-status"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">Shadowing progress</div>
+    <div class="cache-list" id="shadowingProgressList"></div>
+  </div>
+
+</div>
+
+<!-- Prefix injected by formanter.py (X-Forwarded-Prefix) — empty when mounted
+     at the root. Must precede every js/ tag: API_BASE is read at load time. -->
+<script>window.PHONEXA_PREFIX = "__PHONEXA_PREFIX__"; var API_BASE = window.PHONEXA_PREFIX || '';</script>
+<script src="js/user.js"></script>
+<script src="js/settings.js"></script>
+</body>
+</html>

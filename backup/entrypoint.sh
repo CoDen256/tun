@@ -112,7 +112,7 @@ run_backup() {
 
   exclusions_for() {
     case "$1" in
-      mjolnir) echo "--exclude-table=job_logs --exclude-table=build_jobs" ;;
+      mjolnir) echo "--exclude-table-data=job_logs --exclude-table-data=build_jobs" ;;
       smia)    for t in $SMIA_DERIVED; do printf -- "--exclude-table-data=%s " "$t"; done ;;
       *)       echo "" ;;
     esac

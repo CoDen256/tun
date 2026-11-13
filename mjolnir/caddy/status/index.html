@@ -1,0 +1,134 @@
+<!doctype html>
+<!--
+  THE STATUS PAGE (zone-isolation 4.3).
+
+  Served by the gateway's handle_errors block on any error it handles for an
+  operator-plane URL — in practice a 502, i.e. the zone's container is down,
+  crashed, still starting, or not deployed at all.
+
+  WHY IT IS A FILE AND NOT A SERVICE. The one thing this page must do is work
+  when things are broken. It is static HTML inside the Caddy container, read
+  off disk by the same process that already answered the request: no upstream,
+  no database, no JavaScript, no external font or stylesheet. If Caddy is up
+  enough to tell you a zone is down, it is up enough to render this. If Caddy
+  itself is down, there is nothing left to render anything, which is the one
+  failure this cannot and should not try to cover.
+
+  Go-template syntax is evaluated by Caddy's `templates` directive (Caddyfile
+  handle_errors block). Placeholders verified live rather than assumed —
+  `http.request.orig_uri.path` is the path the BROWSER asked for, still intact
+  after handle_path stripped /stabbur and after handle_errors rewrote the
+  request to /index.html; plain `{{placeholder "http.request.uri.path"}}`
+  would read "/index.html" and name the wrong zone.
+
+  THE ZONE LIST IS A SECOND COPY of libs/jsservice/layout.js's ZONES. Not an
+  oversight: the gateway cannot import JavaScript, and making it able to would
+  put a build step in front of the one artifact whose whole value is having no
+  moving parts. Adding a zone means editing both — they are a few lines apart
+  in the same change, and the cost of them drifting is a stale link on an
+  error page, not a broken zone.
+-->
+{{- $path := placeholder "http.request.orig_uri.path" -}}
+{{- $code := placeholder "http.error.status_code" -}}
+{{- $zones := list
+      (dict "href" "/mjolnir"   "label" "workbench" "desc" "cards, decks, OTA publish history, bundle workbench")
+      (dict "href" "/builder"   "label" "builder"   "desc" "build forecast, schedule, run log")
+      (dict "href" "/stabbur/"  "label" "stabbur"   "desc" "captures, notes, enrichment, triage")
+      (dict "href" "/smia/"     "label" "smia"      "desc" "inflect, ipa, tts, stt, translate")
+      (dict "href" "/phonexa/"  "label" "phonexa"   "desc" "vowels, consonants, formants, live speech")
+      (dict "href" "/shadow/"   "label" "shadow"    "desc" "shadowing: media, segments, transcription")
+      (dict "href" "/adminer"   "label" "adminer"   "desc" "the shared Postgres cluster")
+-}}
+{{- $hit := dict "label" "" "href" "" "desc" "" -}}
+{{- range $z := $zones -}}
+  {{- if hasPrefix $z.href $path -}}{{- $_ := set $hit "label" $z.label -}}{{- $_ := set $hit "href" $z.href -}}{{- $_ := set $hit "desc" $z.desc -}}{{- end -}}
+{{- end -}}
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{if $hit.label}}{{$hit.label}} is not responding{{else}}zone unavailable{{end}} · tun</title>
+<style>
+/* A hand-copied subset of libs/jsservice/layout.js's palette and type scale.
+   It has to be copied: inlining is the point — a <link> to a stylesheet is a
+   second request that can fail exactly when this page is needed. Only the
+   variables and a dozen rules, so there is very little here to drift. */
+:root {
+  --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
+  --border: #2a3039; --border-soft: #232832;
+  --text: #e8e6e1; --text-dim: #8b94a3; --text-faint: #566073;
+  --accent: #c6703f; --accent-text: #f2b688;
+  --err: #d1453f; --err-soft: #d1453f1f;
+  --radius: 6px;
+  --sans: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f3ef; --bg-elevated: #ffffff; --bg-sunken: #ebe7e0;
+    --border: #e2ddd3; --border-soft: #ece8e0;
+    --text: #221f1a; --text-dim: #6b6660; --text-faint: #9a948a;
+    --accent: #b35a2d; --accent-text: #8a431c;
+    --err: #b23a34; --err-soft: #b23a3414;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+.top-bar { display: flex; align-items: center; gap: 14px; padding: 10px 20px; background: var(--bg-sunken); border-bottom: 1px solid var(--border); font-size: 13px; }
+.wrap { max-width: 720px; margin: 0 auto; padding: 48px 20px 64px; }
+h1 { font-size: 20px; font-weight: 650; margin: 0 0 6px; }
+.lede { color: var(--text-dim); margin: 0 0 24px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 650; padding: 3px 10px 4px; border-radius: 99px; background: var(--err-soft); color: var(--err); margin-bottom: 14px; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.detail { font-family: var(--mono); font-size: 12px; color: var(--text-faint); background: var(--bg-sunken); border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 28px; word-break: break-word; }
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint); font-weight: 650; margin: 0 0 10px; }
+ul.zones { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg-elevated); }
+ul.zones li { border-bottom: 1px solid var(--border-soft); }
+ul.zones li:last-child { border-bottom: none; }
+ul.zones a, ul.zones span.down { display: flex; gap: 12px; align-items: baseline; padding: 11px 16px; text-decoration: none; color: var(--accent-text); }
+ul.zones a:hover { background: var(--bg-sunken); }
+ul.zones span.down { color: var(--text-faint); }
+ul.zones .label { font-weight: 650; min-width: 92px; }
+ul.zones .desc { color: var(--text-dim); font-size: 12.5px; }
+ul.zones span.down .desc { color: var(--text-faint); }
+.note { color: var(--text-faint); font-size: 12.5px; margin-top: 22px; line-height: 1.7; }
+a { color: var(--accent-text); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="top-bar"><strong>tun · gateway</strong></div>
+<div class="wrap">
+  <div class="pill">{{$code}}</div>
+  {{if $hit.label}}
+  <h1>{{$hit.label}} is not responding</h1>
+  <p class="lede">The gateway is up and reached this zone's route, but nothing answered behind it. The other zones below are separate processes and are unaffected.</p>
+  {{else}}
+  <h1>That zone is not responding</h1>
+  <p class="lede">The gateway is up, but the service behind <code>{{$path}}</code> did not answer. Every zone below is a separate process and is unaffected.</p>
+  {{end}}
+  <div class="detail">{{$path}} &rarr; {{$code}} {{placeholder "http.error.status_text"}}<br>{{placeholder "http.error.message"}}</div>
+
+  <h2>Zones</h2>
+  <ul class="zones">
+    {{range $z := $zones}}
+    <li>
+      {{if eq $z.href $hit.href}}
+      <span class="down"><span class="label">{{$z.label}}</span><span class="desc">{{$z.desc}} — not responding</span></span>
+      {{else}}
+      <a href="{{$z.href}}"><span class="label">{{$z.label}}</span><span class="desc">{{$z.desc}}</span></a>
+      {{end}}
+    </li>
+    {{end}}
+  </ul>
+
+  <p class="note">
+    Device traffic is not affected by this page and never sees it: <code>/ota/*</code>,
+    <code>/blob/*</code>, <code>/audio-manifest/*</code> and <code>/mjolnir/userdata/*</code>
+    are excluded in the gateway's error handler, because an APK in the field parses status
+    codes, not HTML.
+  </p>
+</div>
+</body>
+</html>
