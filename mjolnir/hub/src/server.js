@@ -80,6 +80,42 @@ function defaultAudioBaseUrl(publicBase) {
   return publicBase.replace(/\/+$/, "");
 }
 
+// ---- readiness helpers (zone-isolation 1.5) -------------------------------
+// Which routes genuinely need the database. Deliberately an explicit list and
+// not a heuristic: guessing by prefix would catch /mjolnir/workbench and
+// /mjolnir/ota, which are FILE-backed and must keep working during an outage.
+const DB_BACKED = [
+  "/mjolnir",
+  "/mjolnir/",
+  "/mjolnir/ui",
+  "/mjolnir/api/publications",
+  "/mjolnir/builder/forecast",
+  "/mjolnir/builder/schedule",
+  "/mjolnir/builder/logs",
+  "/mjolnir/decks",
+  "/mjolnir/decks/api/description",
+  "/mjolnir/catalogue",
+  "/mjolnir/catalogue.json",
+  "/mjolnir/cards",
+  "/mjolnir/device",
+  "/mjolnir/device/doc",
+  "/mjolnir/device/insights",
+  "/mjolnir/device/insights.json",
+];
+
+function isDatabaseBacked(pathname) {
+  if (DB_BACKED.includes(pathname)) return true;
+  // /mjolnir/cards/<id>/audio reads card_content.
+  if (pathname.startsWith("/mjolnir/cards/")) return true;
+  return false;
+}
+
+function wantsJson(pathname) {
+  // Same signal hub's auth uses, for the same reason: `Accept` is often absent
+  // on a plain fetch(), while the path shape is reliable.
+  return pathname.includes("/api/") || pathname.endsWith(".json");
+}
+
 function sendJson(res, status, body) {
   const data = JSON.stringify(body);
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(data) });
@@ -1069,6 +1105,40 @@ export function createServer(pool, config, boot) {
           return handleLoginPost(req, res, config.operatorAuthToken, { loginPath: LOGIN_PATH });
         }
         if (!requireAuth(req, res, config.operatorAuthToken, { loginPath: LOGIN_PATH })) return;
+      }
+
+      // ---- READINESS GATE (zone-isolation 1.5) ---------------------------
+      // The console now SERVES before it migrates, which means `boot.dbReady()`
+      // is a real state rather than an invariant. Every database-backed route
+      // is listed here and answered with a degraded response instead of being
+      // allowed to throw a driver error at the user.
+      //
+      // One gate rather than a check inside each of the twelve handlers: the
+      // list is then visible in one place and cannot silently fall out of step
+      // with itself, and a new database-backed page that forgets to degrade is
+      // a one-line fix here.
+      //
+      // Everything NOT listed keeps working with no database at all — the
+      // workbench and its bundle editing, the Assemble tab, the OTA verify
+      // tool, and the login page. That is the whole point: a database outage
+      // costs you the catalogue, not the console.
+      if (boot && !boot.dbReady() && isDatabaseBacked(url.pathname)) {
+        const why = boot.lastError()?.message || "the database is not reachable";
+        if (wantsJson(url.pathname)) {
+          return sendJson(res, 503, { error: "database unavailable", detail: why });
+        }
+        res.writeHead(503, { "Content-Type": "text/html; charset=utf-8" });
+        return res.end(renderShell({
+          title: "mjolnir — database unavailable",
+          activeHref: url.pathname,
+          body: `<div class="page-head"><div><h2>Database unavailable</h2>
+            <div class="page-sub">This view needs the database, which is not
+            reachable right now. The console itself, the workbench and the OTA
+            tools keep working — and devices are unaffected, because updates
+            are served off disk.</div></div></div>
+            <div class="inline-note">Retrying automatically. Reason:
+            <code>${escapeHtml(why)}</code></div>`,
+        }));
       }
 
       if (req.method === "GET" && url.pathname === "/mjolnir/api/publications") {

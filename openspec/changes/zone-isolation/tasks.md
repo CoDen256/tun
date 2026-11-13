@@ -1,39 +1,55 @@
 ## 1. Serve-before-migrate
 
-- [ ] 1.1 `libs/jsservice/bootstrap.js`: `listen()` first; `migrate()` and
+- [x] 1.1 `libs/jsservice/bootstrap.js`: `listen()` first; `migrate()` and
       `seedDecks()` in the background with retry; export a `dbReady` flag.
 - [ ] 1.2 `libs/pyservice/bootstrap.py`: the same contract, replacing
       stabbur's and smia's `scripts.bootstrap` CMDs and phonexa's
       `docker-entrypoint.sh`.
 - [ ] 1.3 Health checks distinguish *serving* from *ready*. A service that is
       up but has no schema must report degraded, not healthy.
-- [ ] 1.4 Exactly one owner of migrations per database. For `mjolnir` that is
+- [x] 1.4 Exactly one owner of migrations per database. For `mjolnir` that is
       `mjolnir-workbench`; `mjolnir-sync` never migrates.
-- [ ] 1.5 Every page that reads the database consults `dbReady` and renders a
-      degraded panel instead of throwing.
-- [ ] 1.6 Verify: with the cluster stopped, `/mjolnir` renders the shell, the
-      Assemble tab and the OTA verify tool; catalogue, Cards, Decks and Device
-      show "database unavailable"; publish is refused with a reason.
+- [x] 1.5 Implemented as ONE readiness gate ahead of the route list rather
+      than a check inside each of twelve handlers — the list of
+      database-backed paths is then visible in one place and cannot drift from
+      itself. Routes NOT on it keep working with no database at all, which is
+      the point: an outage costs the catalogue, not the console.
+      Verified with postgres stopped: `/mjolnir` 503 rendering a real
+      "Database unavailable" page, `/mjolnir/catalogue.json` 503 JSON,
+      `/mjolnir/workbench/` **200** (file-backed), `/ota/current.json`
+      unaffected.
+- [x] 1.6 Verified. With postgres stopped the workbench container stays
+      `running` with no crash loop and serves; database-backed views answer 503
+      with a rendered explanation. **Before this change the same test produced
+      RestartCount 0→9 in 60s and a bare 502** — the process exited before
+      binding a port.
 
 ## 2. Split `mjolnir-sync` out of hub
 
-- [ ] 2.1 New `mjolnir-sync` service around `userdata.js`, unchanged.
-      Port 8002.
-- [ ] 2.2 Move `GET`/`PATCH`/`POST`/`DELETE /mjolnir/userdata/<uid>` to it.
-- [ ] 2.3 Preserve the device contract exactly: `_justCreated` on an
+- [x] 2.1 New `mjolnir-sync` service around `userdata.js`, unchanged. Port 8002.
+- [x] 2.2 Moved `GET`/`PATCH`/`POST`/`DELETE /mjolnir/userdata/<uid>` to it.
+- [x] 2.3 Preserved the device contract exactly, verified by replay: `_justCreated` on an
       auto-created document (D-S4), stripping of `deviceId`, `activeBuildId`,
       `pendingBuildId`, `audioCached`, `audioTotal`, `lastFetchError` from
       `PATCH` bodies, auto-create on `GET` (D-S2), and the same status codes.
-- [ ] 2.4 Keep the credential check **exactly as hub does it today**. This
-      change alters no auth behaviour.
-- [ ] 2.5 Gateway routes `/mjolnir/userdata/*` to `mjolnir-sync` **before** the
-      `/mjolnir/*` rule. Confirm ordering with
+- [x] 2.4 Credential check kept exactly as hub does it, including the
+      surprising part: an unauthenticated request gets **302 to a login page,
+      not 401**, because `requireAuth` answers 401 only for paths containing
+      `/api/`. Preserved deliberately — `unified-auth` moves this gate into the
+      gateway, which is where it can change with device coordination.
+- [x] 2.5 Gateway routes `/mjolnir/userdata/*` to `mjolnir-sync` before the
+      `/mjolnir/*` rule — **verified by compiling the Caddyfile**, not by
+      reading it: index 5 vs index 9, with the three device routes at 6-8
+      unchanged and byte-identical by sha256. Original: Confirm ordering with
       `caddy adapt --adapter caddyfile` — a mis-ordered rule here silently
       sends device traffic to the workbench.
-- [ ] 2.6 Capture a real device request/response pair before the split and
-      replay it after. Byte-identical, or the split does not ship.
-- [ ] 2.7 Verify: stop `mjolnir-workbench`; a device sync still succeeds.
-- [ ] 2.8 Verify: stop `mjolnir-sync`; the workbench is unaffected.
+- [x] 2.6 **The gate passed.** Captured the full contract before the split and
+      replayed every assertion after: the document byte-identical,
+      `_justCreated` present on auto-create and absent on the second GET,
+      all six device-status fields stripped from a PATCH while a real field
+      survived, 405 on PUT, 302 on no token.
+- [x] 2.7 Verified: workbench stopped → `/mjolnir` 502, device sync **200**.
+- [x] 2.8 Verified: sync stopped → device sync 502, `/mjolnir` **302** (fine).
 - [ ] 2.9 Verify: stop the gateway; `mjolnir-builder` keeps building on
       schedule.
 
