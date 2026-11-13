@@ -93,7 +93,10 @@ database import/export endpoints.
 That routing lives in `mjolnir`, which owns the only Caddy in the stack
 (D84/D149). **Follow "Optional: phonexa at `/phonexa`" in
 `mjolnir/DEPLOY.md`** for the one-time `caddy hash-password` step and the
-single-quoting rule for the resulting hash. Until you do, nothing breaks:
+single-quoting rule for the resulting hash. **Put the result in `tun/.env`,
+not `mjolnir/.env`** — under `include:` the valueless key form resolves from
+the project you run `docker compose` in, so a hash set only in `mjolnir/.env`
+arrives absent and Caddy 401s everything (P35). Until you do, nothing breaks:
 the `/phonexa` route fails closed (401 to everything) and phonexa is simply
 unreachable from outside.
 
