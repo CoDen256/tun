@@ -12,7 +12,7 @@ anything — do not re-derive settled decisions.**
 |---|---|
 | `docs/` | the ecosystem design layer + the ADR log. The spec layer above every project. |
 | `grind/` | the gateway: TLS, routing, the operator gate, the status page |
-| `mjolnir/` | bundle tool, JS + native patches, APK pipeline, builder, workbench, device sync, `docs/findings.md` |
+| `mjolnir/` | bundle tool, JS + native patches, APK pipeline. Three services: `mjolnir-workbench` (console), `mjolnir-builder`, `mjolnir-sync` (**device plane**, D158). `docs/findings.md` |
 | `stabbur/` | learning content: captures, notes, enrichment, triage UI, audio blobs |
 | `smia/` | linguistics: inflect / ipa / tts / stt / translate |
 | `phonexa/` | phonetics lab: vowels, consonants, formants, live speech |
@@ -33,8 +33,9 @@ Mjølnir app internals live in `mjolnir/docs/findings.md`, not in `docs/`.
 
 ## The three zones — never blur them
 
-1. **Device plane** — `/ota/*`, `/blob/*`, `/audio-manifest/*` and
-   `/mjolnir/userdata/*`. A contract frozen in `docs/11-ota-contract.md`, with
+1. **Device plane** — `/ota/*`, `/blob/*`, `/audio-manifest/*` (served off
+   disk by the gateway, no process and no database in the path) and
+   `/mjolnir/userdata/*` (served by `mjolnir-sync`, its own process, D158). A contract frozen in `docs/11-ota-contract.md`, with
    an APK in the field that cannot be rolled back. **Do not change anything
    here.** Not the token, not a header, not a cache directive. If a task seems
    to require it, the task is wrong. OTA is served off disk by the gateway and

@@ -39,13 +39,38 @@ layout, bootstrap) are **planned, not present**: they arrive with the
 ## Dependency graph
 
 ```
-hover-translate ──capture──► stabbur ──enrich──► smia        (smia depends on nothing)
-                                 ▲
-                                 │ pull: GET /api/notes?source_lang=no&status=ready&since=…
-                                 │       + blobs by sha256
-                            mjolnir/hub ──OTA + sync──► device
-                            mjolnir/builder
+  hover-translate ──capture──► stabbur ──enrich──► smia   (smia depends on nothing)
+  (external, own repo)             ▲                  ▲
+                                   │                  │ transcribe
+   pull: GET /api/notes?…          │                  │
+         + blobs by sha256         │               shadow ──store audio──► phonexa
+                        mjolnir-workbench
+                        mjolnir-builder
+                        mjolnir-sync ──────progress sync──────► device
+                        (the gateway serves /ota/*, /blob/* and
+                         /audio-manifest/* off disk — no process,
+                         no database, D55)
 ```
+
+**Eight zones, and what may NOT propagate between them** (D157/D158). The
+device plane is two separate things: update delivery, which depends on nothing
+but the gateway and a filesystem, and progress sync, which has its own process
+and its own database but no dependency on the console.
+
+| zone | hard dependencies | degrades to |
+|---|---|---|
+| `ota` (gateway, off disk) | gateway, filesystem | — |
+| `mjolnir-sync` | gateway, database | — |
+| `mjolnir-workbench` | gateway | db → 503 on data views, console and workbench keep serving; stabbur → no note links |
+| `mjolnir-builder` | database, stabbur | gateway → **only its UI**; builds keep running |
+| `stabbur` | gateway, database | smia → no suggestions |
+| `smia` | gateway, database | `providers/` → empty candidates |
+| `phonexa` | gateway, database | — |
+| `shadow` | gateway, database | smia → no transcription; phonexa → no ingest, no profile names |
+| `hover-translate` (external) | gateway | smia → no translation; stabbur → no capture |
+
+Two shared dependencies remain — the gateway and the database cluster — and
+`ota` depends on neither.
 
 **The "stabbur ──enrich──► smia" arrow is live**, not just a diagram: stabbur's
 note editor proxies `ipa`/`translations`/`inflections`/`tts` lookups to smia
