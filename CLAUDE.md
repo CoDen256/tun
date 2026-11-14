@@ -15,7 +15,7 @@ state, the operator decisions already taken, and the ordered next step.
 | directory | owns |
 |---|---|
 | `docs/` | the ecosystem design layer + the ADR log. The spec layer above every project. |
-| `grind/` | **not yet** — the gateway is still `mjolnir/caddy/` plus the `caddy` service; `unified-auth` moves it here |
+| `grind/` | the gateway (the gate into the tun): TLS, routing, the status page, and the `caddy` service. Moved here from `mjolnir/caddy/` by `unified-auth`, superseding D84. Derives the operator hash at boot — no hash is ever stored in a file |
 | `mjolnir/` | bundle tool, JS + native patches, APK pipeline. Three services — the console (compose key `mjolnir-hub`; the *rename* to `mjolnir-workbench` is deferred, it must change the key and the gateway upstream together), `mjolnir-builder`, and `mjolnir-sync` (**device plane**, D158). `docs/findings.md` |
 | `stabbur/` | learning content: captures, notes, enrichment, triage UI, audio blobs |
 | `smia/` | linguistics: inflect / ipa / tts / stt / translate |
@@ -32,8 +32,9 @@ Every reference to it inside `smia`, `stabbur` and `mjolnir` is still correct.
 
 Mjølnir app internals live in `mjolnir/docs/findings.md`, not in `docs/`.
 
-`grind/`, `shadow/` and `libs/` are created by the `zone-isolation` and
-`unified-auth` changes; `postgres/` exists now (D155).
+`grind/`, `shadow/`, `postgres/` and `libs/` all exist now. The operator-plane
+half of `unified-auth` (one credential, `basic_auth` in the gateway, one auth
+check per service) is still open — see `docs/14-restructure-handoff.md` §5.
 
 ## The three zones — never blur them
 

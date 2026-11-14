@@ -27,7 +27,7 @@ deployable, in `openspec/changes/`:
 | `monorepo-merge` | **40/45** | six repos → one. No behaviour change; the bar was "nothing changed" |
 | `postgres-consolidation` | **35/38** | five Postgres clusters → one, five databases |
 | `zone-isolation` | **35/37** | the two service splits, serve-before-migrate, the status page |
-| `unified-auth` | **6/37** | the gateway moves to `grind/`; operator auth collapses to one credential |
+| `unified-auth` | **6/37** | gateway **moved** to `grind/` (done); operator auth collapsing to one credential (open) |
 
 Every remaining open task is annotated in its own `tasks.md` with *why* it is
 open. They fall into exactly two buckets: **needs the VPS** or **needs the
