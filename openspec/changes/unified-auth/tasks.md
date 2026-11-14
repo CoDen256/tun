@@ -451,10 +451,40 @@ complete and verify in order. The hard constraint is: **the device never breaks.
 
 ## 6. Clients
 
-- [ ] 6.1 hover-translate holds one `operatorToken`, sent to one origin,
-      replacing `smiaToken` and `stabburToken`.
-- [ ] 6.2 Verify translation and capture both work from the extension, and
-      that each degrades independently when its service is stopped.
+**Scope note (D154).** `hover-translate` is NOT in this repository — it is a
+fork, standalone, never deployed. The work for both tasks therefore lives in
+`/home/coden/dev/hover-translate`, on branch `extension-operator-credential`,
+commit `4d870d4`, **committed and deliberately unpushed** (operator
+direction, 2026-11-14). Ticked here because the tasks are done, not because
+the code is in this tree.
+
+- [x] 6.1 **Done** (`4d870d4`, 5 files, +197/-36). One `operatorToken`
+      replaces `smiaToken`+`stabburToken`, sent as
+      `Authorization: Basic base64("operator:<token>")` — Basic, not Bearer,
+      because the gateway's operator gate is Caddy `basic_auth` with the
+      username hardcoded `operator` (3.1). One origin: `<host>/smia/…` and
+      `<host>/stabbur/…`. A legacy two-token record migrates lazily on read
+      (smia's value wins, stabbur's is the fallback) rather than being
+      dropped; the rewrite is idempotent. Settings UI collapsed to one field.
+      `npm run build` exits 0 for both workspaces; `tsc --noEmit` clean;
+      `grep -o Bearer extension/dist/*.js` finds nothing.
+- [x] 6.2 **Independent degradation CONFIRMED — it was already true, and was
+      not observable.** No module imports both clients; translation is
+      content-script → `SmiaClient` → `/smia`, capture is
+      `chrome.runtime.sendMessage` → `OutboxService` → `StabburClient` →
+      `/stabbur`. Proven by stubbing a 502 on one prefix at a time against
+      the real clients: smia down → `SmiaTransportError` → Google fallback,
+      capture unaffected (`pending=0 failed=0`); stabbur down → capture
+      stays in the outbox `failed=1` for retry, translation `OK`.
+      **What was fixed:** "Test connection" probed smia only, so a
+      stabbur-only outage was invisible — added `StabburClient.testConnection()`
+      and the form now shows two independent results.
+      **NOT verified, stated plainly:** no browser was driven. The extension
+      was never loaded unpacked, no real hover-translate or capture was
+      performed, and no real 401/CORS preflight from a content script was
+      observed. **This commit targets the POST-§3 gateway and will 401
+      against a pre-§3 one** — so it must not be loaded until the cutover
+      lands.
 
 ## 7. Optional, later, device-coordinated
 
