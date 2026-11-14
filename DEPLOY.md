@@ -117,8 +117,9 @@ into three files with nothing keeping them in step.
 `DATABASE_URL`, `STABBUR_BASE_URL`, `STABBUR_UI_BASE` and `SMIA_BASE_URL` are
 **derived in compose** and must not appear in any `.env`. The old
 `STABBUR_UPSTREAM` / `SMIA_UPSTREAM` / `PHONEXA_UPSTREAM` keys are gone
-entirely: `mjolnir/caddy/Caddyfile` names `stabbur-backend`, `smia-backend`
-and `phonexa-backend` directly, because one Compose project means a service
+entirely: `grind/caddy/Caddyfile` (the gateway moved out of `mjolnir/` —
+`unified-auth` section 1, superseding D84) names `stabbur-backend`,
+`smia-backend` and `phonexa-backend` directly, because one Compose project means a service
 name always resolves.
 
 ## 3. The four Postgres passwords — read this before editing `.env`
@@ -172,8 +173,8 @@ The other root `.env` values, briefly:
 | `TUN_SITE_ADDRESS` | bare hostname ⇒ automatic HTTPS; `:8080` for local plain HTTP |
 | `TUN_PUBLIC_BASE` | `https://<host>` — used to build browser-facing links |
 | `OTA_TOKEN` | **device plane.** Baked into the APK. Changing it cuts every installed device off from updates until a new `config.json` is pushed (D39). See `docs/11-ota-contract.md` |
-| `OPERATOR_AUTH_TOKEN` | **operator plane.** Gates `/mjolnir`, `/builder`, and (as a bcrypt hash) `/phonexa`. Until the planned `unified-auth` change lands, the device's progress-sync shim validates against this value too, so rotating it also breaks device sync |
-| `STABBUR_AUTH_TOKEN`, `SMIA_AUTH_TOKEN` | internal service-to-service calls; never pass through the gateway. `unified-auth` (planned) collapses them into one |
+| `OPERATOR_AUTH_TOKEN` | **operator plane — THE one human credential.** Username is always `operator`; this is the password for all seven operator zones, hashed at gateway start (§4). **The device also carries this value, baked into its bundle — read §4's rotation hazard before changing it.** |
+| `INTERNAL_TOKEN` | internal service-to-service calls only; never passes through the gateway and a human never sends it. Replaces `STABBUR_AUTH_TOKEN` and `SMIA_AUTH_TOKEN`, which are **retired names** `bin/check-standards.sh` now fails on |
 | `BACKUP_REPO_URL`, `BACKUP_SSH_KEY_PATH`, `BACKUP_INTERVAL_SECONDS` | §7 |
 
 `BACKUP_REPO_URL` and `BACKUP_SSH_KEY_PATH` are `:?`-required by the `backup`
@@ -212,10 +213,44 @@ What that bought:
   `caddy run` with no environment rejects every operator request rather than
   serving eight zones open.
 
-**One thing the device still shares with this credential.** The phone's
-`SYNC_TOKEN` *is* `OPERATOR_AUTH_TOKEN`'s value, so rotating it requires a
-`config.json` push (D39) until `unified-auth` 7.1 gives the device its own
-value. §8's pre-cutover checklist carries this; do not rotate without it.
+### Rotating `OPERATOR_AUTH_TOKEN` — read this before you touch the value
+
+Rotation is one step **for the operator plane** and a device operation
+**for the phone**. Both are consequences of the same value.
+
+| changing `OPERATOR_AUTH_TOKEN` | effect |
+|---|---|
+| all seven operator zones | new password takes effect on the next gateway restart. Nothing else to edit — no hash, no per-service `.env` |
+| your browser | re-prompts. There is no logout button by design |
+| **the phone's progress sync** | **BREAKS, silently, until a new bundle is published.** |
+
+**The hazard, stated plainly.** The device's `SYNC_TOKEN` is not merely
+*equal to* `OPERATOR_AUTH_TOKEN` — it is **baked into the JS bundle** at
+assemble time (`patches/js/2080-progress-sync-shim.edited.js`, substituted by
+`mjolnir/src/commands/assemble.js`). It is **NOT read from `config.json`**:
+`docs/11-ota-contract.md` §5's escape hatch covers the **OTA channel's** URL
+and token only, and no JS-side reader for `config.json` exists. So:
+
+> **Rotating `OPERATOR_AUTH_TOKEN` requires assembling and publishing a NEW
+> OTA BUNDLE carrying the new token, and confirming the handset took it.
+> A `config.json` push does NOT fix it.** (P48; `unified-auth` 7.1 would give
+> the device its own value and end this coupling — it is optional, device-
+> coordinated, and not done.)
+
+There is no error message for getting this wrong. The gateway answers the
+device's sync with a `302` and the phone's progress silently stops being
+backed up. Sequence it this way:
+
+```sh
+# 1. read what the handset actually carries, out of its live bundle
+#    (the field bundle b000052 carries SYNC_TOKEN='changeme', 2026-11-14)
+# 2. publish a bundle whose SYNC_TOKEN is the NEW value, and confirm the
+#    device is running it
+# 3. only then change OPERATOR_AUTH_TOKEN on the host and restart the gateway
+```
+
+If you are only cutting over to this stack and not rotating anything, the
+check is the equality, not the sequence — see §8.0a.
 
 The browser prompts once per session and there is no logout button — accepted
 deliberately (`unified-auth/design.md`).
@@ -307,17 +342,20 @@ publishing publicly, bare-slug change ids, no CI.
 
 Every one of these is gated in the gateway by Caddy `basic_auth` (§4) —
 username `operator`, password `OPERATOR_AUTH_TOKEN` — before the request
-reaches the service. The "then" column is what the service still does on top,
-which `unified-auth` section 4 replaces with one shared check.
+reaches the service. The "then" column is what the service still does on top.
+`unified-auth` section 4 replaced three different in-app implementations with
+**one** shared check (`libs/pyservice/auth.py`, `libs/jsservice/auth.js`): the
+gateway marker `X-Tun-Operator`, or `Bearer INTERNAL_TOKEN`, else 401. There
+are no login pages left anywhere (D159).
 
 | route | service | gateway | then |
 |---|---|---|---|
-| `/mjolnir`, `/mjolnir/*` | `mjolnir-hub:8000` | `basic_auth` | `OPERATOR_AUTH_TOKEN` in-app → 302 to `/mjolnir/login` |
-| `/builder`, `/builder/*` | `mjolnir-builder:8001` | `basic_auth` | same → 302 to `/builder/login` |
-| `/stabbur/*` | `stabbur-backend:5056` | `basic_auth` | the app's own bearer/session check |
-| `/smia/*` | `smia-backend:5055` | `basic_auth` | the app's own bearer/session check |
-| `/phonexa/*` | `phonexa-backend:5050` | `basic_auth` | none of its own |
-| `/shadow/*` | `shadow-backend:5051` | `basic_auth` | none of its own |
+| `/mjolnir`, `/mjolnir/*` | `mjolnir-hub:8000` | `basic_auth` | the shared check |
+| `/builder`, `/builder/*` | `mjolnir-builder:8001` | `basic_auth` | the shared check |
+| `/stabbur/*` | `stabbur-backend:5056` | `basic_auth` | the shared check |
+| `/smia/*` | `smia-backend:5055` | `basic_auth` | the shared check |
+| `/phonexa/*` | `phonexa-backend:5050` | `basic_auth` | the shared check (new — phonexa had none) |
+| `/shadow/*` | `shadow-backend:5051` | `basic_auth` | the shared check (new — shadow had none) |
 | `/adminer/*` | `adminer:8080` | `basic_auth` | Adminer's own cluster login |
 
 A cross-origin **preflight** (`OPTIONS` with `Origin` and

@@ -8,10 +8,19 @@
 > project with one default network.
 >
 > This file keeps what is mjolnir's own and nowhere else: publishing a
-> bundle, logic bundles, rollback, the `/phonexa` gate Caddy implements, the
-> OTA data layout, and what must be backed up. Where it used to describe the
-> whole stack, it now points at the root file rather than repeating — and
-> contradicting — it.
+> bundle, logic bundles, rollback, the OTA data layout, and what must be
+> backed up. Where it used to describe the whole stack, it now points at the
+> root file rather than repeating — and contradicting — it.
+>
+> **The gateway is NOT here any more.** `unified-auth` section 1 moved
+> `caddy/` out of `mjolnir/` and into **`grind/`** (superseding D84's
+> "mjolnir owns the only deployable Caddy"), and section 3 replaced the
+> hand-made `PHONEXA_AUTH_HASH` with a hash the gateway derives from
+> `OPERATOR_AUTH_TOKEN` at boot. **Everything about auth, the operator
+> credential and its rotation is now the root [`../DEPLOY.md`](../DEPLOY.md)
+> §4 — that file is authoritative and this one must not be used to configure
+> a gate.** Paths spelled `caddy/Caddyfile` below are historical; the file
+> lives at `grind/caddy/Caddyfile`.
 
 > **Status: re-verified 2026-10-25, 16 passed / 0 failed**, on this
 > `compose.yaml`/`caddy/Caddyfile` layout (D84 — which moved the deployable
@@ -63,8 +72,8 @@ What mjolnir needs from the configuration, all of it in the **root** `.env`
 | `TUN_PUBLIC_BASE` | the browser-facing base hub builds links from |
 | `OTA_TOKEN` | the device plane's bearer token on `/ota/*` |
 | `MJOLNIR_POSTGRES_PASSWORD` | **renamed** from this file's old `POSTGRES_PASSWORD` — one key per database (see the data hazard in root §3), required, no default |
-| `OPERATOR_AUTH_TOKEN` | hub's and builder's own login (D-H6). Required, not optional, once `/mjolnir/*` and `/builder/*` are live — without it both operator UIs are reachable by anyone who finds the hostname |
-| `STABBUR_AUTH_TOKEN` | builder's outbound calls into stabbur's API |
+| `OPERATOR_AUTH_TOKEN` | ~~hub's and builder's own login (D-H6)~~ — **superseded by D159/D160.** hub and builder have no login of their own any more; this is the single operator-plane credential, enforced by `basic_auth` in the gateway (`grind/`) for all seven operator zones. hub and builder only check the gateway's `X-Tun-Operator` marker. Still required: see root `DEPLOY.md` §4, including the rotation hazard |
+| `INTERNAL_TOKEN` | builder's and hub's outbound calls into stabbur's API. ~~`STABBUR_AUTH_TOKEN`~~ is a **retired name** (D159) |
 
 **`STABBUR_UPSTREAM`, `STABBUR_BASE_URL` and `STABBUR_UI_BASE` are gone from
 every `.env` and must not be re-added** (D151). They are derived in
@@ -81,113 +90,72 @@ every `.env` and must not be re-added** (D151). They are derived in
   `hub/src/config.js` now derives `$TUN_PUBLIC_BASE/stabbur/` itself.
 - `INTERNAL_TOKEN` replaces `STABBUR_AUTH_TOKEN` on builder → stabbur and hub
   → stabbur. One value for every service-to-service leg in the stack.
-- `caddy/Caddyfile` names `stabbur-backend`, `smia-backend` and
+- `grind/caddy/Caddyfile` names `stabbur-backend`, `smia-backend` and
   `phonexa-backend` directly. The four documented `STABBUR_UPSTREAM` options
   existed only because a bare service name resolved across two stacks solely
   via the `tun-shared` external network (D98/D104). One Compose project means
   the name always resolves.
 
 mjolnir's own `.env` (`mjolnir/.env`, optional) holds only what nothing else
-uses: `PHONEXA_AUTH_HASH` (below), `SOURCE_LANG`, and the local-only
-`ALLOW_HTTP` / `ALLOW_NO_COMPANION`. Never set either of the last two on the
-VPS.
+uses: `SOURCE_LANG` and the local-only `ALLOW_HTTP` / `ALLOW_NO_COMPANION`.
+Never set either of the last two on the VPS. (`PHONEXA_AUTH_HASH` used to be
+listed here; `unified-auth` 3.2/3.3 **deleted the value outright** — nothing
+types, quotes or carries a bcrypt hash any more.)
 
 **Point DNS at the box before starting Caddy** — an A record (and AAAA if you
 have v6) for that hostname. Caddy obtains the certificate on first start by
 answering a challenge on port 80, so DNS must already resolve and ports 80 and
 443 must be open in the Contabo firewall.
 
-### The `/phonexa` gate
+### ~~The `/phonexa` gate~~ — SUPERSEDED, do not follow the steps below
 
-phonexa is a directory in this repository and part of the stack, so this is no
-longer optional-and-elsewhere; it is simply the auth for one of Caddy's
-routes. With `PHONEXA_AUTH_HASH` unset, the `/phonexa` route **fails closed**:
-it answers 401 to everything and never proxies to phonexa unauthenticated.
-
-phonexa is mounted at `/phonexa`, exactly like `/stabbur` and `/smia`. Caddy
-strips the prefix and tells phonexa what it was via `X-Forwarded-Prefix`;
-phonexa builds its own URLs from that. **No DNS record and no second
-certificate are needed** — phonexa used to require its own hostname because
-its frontend hardcoded absolute paths and a `location.host + '/stream'`
-WebSocket, which is no longer true.
-
-**1. Generate the password hash.** Access is gated at Caddy by HTTP basic
-auth: username `operator`, password = the `OPERATOR_AUTH_TOKEN` you already
-set above. phonexa has no login of its own — its profiles are name-only with
-no password and it exposes destructive database import/export endpoints — so
-the gate lives in the proxy and covers every phonexa route, static assets and
-`/ping` included. `basic_auth` only accepts a hash, so make one:
-
-```sh
-docker run --rm caddy:2-alpine caddy hash-password \
-    --plaintext "<your OPERATOR_AUTH_TOKEN>"
-```
-
-**2. Put it in `mjolnir/.env` — SINGLE-quoted.** A bcrypt hash contains `$`,
-which compose interpolates.
-
-```sh
-PHONEXA_AUTH_HASH='<the hash from step 1>'
-```
-
-This is mjolnir's own value — only this Caddy consumes it — so it belongs in
-`mjolnir/.env` and in no other file (D151). Verified on Compose v5.4.0: an
-included file is interpolated with **its own directory's** `.env`, and the
-root `.env` wins only if it defines the same key. So a hash in `mjolnir/.env`
-reaches Caddy both standalone and through the root `include:`. Do not also put
-it in the root `.env`.
-
-> **Corrected, and the old failure is worth remembering.** Until 2026-11-13
-> these were compose *valueless* keys (`PHONEXA_AUTH_HASH:` with nothing after
-> the colon), which resolve an included file's `.env` only in standalone mode.
-> Deploying from the root, a hash set in `mjolnir/.env` was dropped from the
-> container entirely, Caddy fell back to its locked fail-closed default, and
-> **every login 401'd with a perfectly valid hash sitting in `.env`** —
-> indistinguishable from a wrong password. `compose.yaml` now uses
-> `${PHONEXA_AUTH_HASH:-<locked default>}`. (This was P35, and D151 retires
-> it: the hash is no longer hand-carried between two repositories' `.env`
-> files, because there is only one repository.)
+> **This whole section described a procedure that no longer exists, and
+> following it now produces a value nothing reads.** `unified-auth` sections
+> 1 and 3 moved the gateway to `grind/` and deleted `PHONEXA_AUTH_HASH`
+> entirely. There is **no hash to generate, nothing to single-quote, and no
+> `mjolnir/.env` key** — `grind/entrypoint.sh` derives a cost-10 bcrypt hash
+> from `OPERATOR_TOKEN` at container start and refuses to boot if the
+> derivation did not land. phonexa is also no longer special: the same
+> `(operator_gate)` snippet gates all **seven** operator zones
+> (`/mjolnir/*`, `/builder/*`, `/stabbur/*`, `/smia/*`, `/phonexa/*`,
+> `/shadow/*`, `/adminer/*`), and phonexa gained an application-level check
+> of its own as well (D159).
 >
-> `PHONEXA_UPSTREAM` is also gone, with `STABBUR_UPSTREAM` and
-> `SMIA_UPSTREAM`: `caddy/Caddyfile` names `phonexa-backend:5050` directly.
-> Do not re-add it.
+> **Authority: root [`../DEPLOY.md`](../DEPLOY.md) §4**, which also carries
+> the rotation hazard this section got wrong — see below.
 
-Confirm what actually arrived rather than what you wrote:
+What is still true, and is the only reason to read this section at all:
 
-```sh
-docker compose exec caddy printenv PHONEXA_AUTH_HASH
-```
+- **phonexa is mounted at `/phonexa`**, prefix stripped, `X-Forwarded-Prefix`
+  telling it what the prefix was. No DNS record and no second certificate
+  (D149, superseding D148's subdomain).
+- **Mind the trailing slash.** `/phonexa` redirects to `/phonexa/` and you
+  should let it: phonexa's pages link their assets relatively, so a URL
+  without the slash resolves them against the site root and 404s against the
+  catch-all — a blank page whose errors point at the wrong service (P37).
+- **Shared origin was accepted deliberately** as the cost of dropping the
+  subdomain. The specific worry recorded here was hub's `Path=/` session
+  cookie; **that cookie is gone** with hub's login (D159). One `basic_auth`
+  credential now covers the whole origin, which is the design rather than an
+  accepted cost (D160).
+- **What you see in the browser** is the operating system's native basic-auth
+  prompt — `operator` plus the operator token — not a login page. That is
+  true of every operator zone now, not just phonexa.
 
-Single quotes are not cosmetic and double quotes do **not** work. Confirmed:
-both `PHONEXA_AUTH_HASH=$2a$14$abc.DEF/ghi` and the same value in double
-quotes reach the container as `$2a$14.DEF/ghi` — compose expanded `$abc` away
-— which still *looks* like a bcrypt hash, so the mistake shows up only as
-"every login fails".
+Two corrections worth keeping, because the failures were real:
 
-**What you'll see in the browser:** go to `https://<your-host>/phonexa/` and
-you get the operating system's native basic-auth prompt, not hub's login
-page. Enter `operator` and the operator token; the browser caches it for the
-origin.
-
-**Mind the trailing slash.** `/phonexa` redirects to `/phonexa/` and you
-should let it. phonexa's pages link their assets relatively, so a URL without
-the trailing slash resolves them against the site root, where they 404
-against mjolnir's catch-all — a blank page whose errors point at the wrong
-service.
-
-**Shared origin.** phonexa now sits on the same origin as hub and builder,
-whose session cookie is `Path=/`. `HttpOnly` stops phonexa-origin JavaScript
-from reading that cookie, but the browser still sends it on requests a
-phonexa page initiates. This was accepted deliberately as the cost of
-dropping the subdomain; `basic_auth` in front of phonexa is what bounds it.
-
-**Rotation.** `PHONEXA_AUTH_HASH` is **not** derived from
-`OPERATOR_AUTH_TOKEN` automatically. If you rotate that token, regenerate the
-hash in the same change, or the old password keeps opening phonexa while the
-new one opens hub and builder.
-
-**Rollback.** Remove `PHONEXA_AUTH_HASH` and `docker compose up -d`. The
-route returns to its fail-closed default; no existing route is touched.
+- ~~"`PHONEXA_AUTH_HASH` is **not** derived from `OPERATOR_AUTH_TOKEN`
+  automatically. If you rotate that token, regenerate the hash in the same
+  change."~~ **No longer true — rotation is one value.** The live hazard is
+  the opposite one and it is on the device, not the gateway: the phone's
+  `SYNC_TOKEN` is baked into its JS bundle, so rotating `OPERATOR_AUTH_TOKEN`
+  needs a **bundle publish**, not a `config.json` push (**P48**, root
+  `DEPLOY.md` §4).
+- The bcrypt-hash quoting traps (**P35**, **P36**) are retired *here* because
+  the hash is gone, not because compose changed. A `$`-containing value in a
+  `.env` is still mangled by compose, and a compose *valueless* key under
+  `include:` still resolves from the wrong `.env`. Both still apply to any
+  future value of that shape.
 
 ## Publish build #1 and prove the path
 
@@ -308,12 +276,12 @@ CLI is a thin wrapper over the same module (D76/D-P2).
 ```
 tun/                   the one clone (root compose.yaml, root .env, docs/)
   mjolnir/
-  .env                 mjolnir-only values — PHONEXA_AUTH_HASH, SOURCE_LANG.
+  .env                 mjolnir-only values — SOURCE_LANG (no auth hash; D159/D160).
                        The shared secrets are in the ROOT .env; back that up
   compose.yaml         include:d by the root compose.yaml
   hub/Dockerfile        hub's own HTTP server + the node runtime bin/ota-publish.sh runs in
   builder/Dockerfile    builder's own HTTP server (publish scheduling, forecast)
-  caddy/Caddyfile
+  (caddy/Caddyfile MOVED to grind/caddy/Caddyfile — unified-auth 1.1)
   bin/ota-publish.sh
   bin/ota-verify.sh
   tool/src/otaPublish.js
@@ -370,7 +338,7 @@ connects over the network with a real password instead).
 ## Operational notes
 
 - **Caddy does not hot-reload its Caddyfile on its own.** A `git pull` that
-  changes `caddy/Caddyfile` needs either `docker compose exec caddy caddy
+  changes `grind/caddy/Caddyfile` needs either `docker compose exec caddy caddy
   reload --config /etc/caddy/Caddyfile` or `docker compose restart caddy` —
   otherwise the old config keeps running (requests silently fall through to
   the catch-all 404 instead of reaching the new route).

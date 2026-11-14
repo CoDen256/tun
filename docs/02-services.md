@@ -15,9 +15,9 @@ exactly.
 |---|---|---|
 | `docs/` | **ecosystem docs (this directory)**: the ADR log and all cross-project design. *(D84's "no deployable artifacts in `tun`" is **superseded by D150**: the repository root now owns the composing `compose.yaml`, the root `.env`, `.dockerignore`, `bin/check-standards.sh` and `DEPLOY.md`)* | — |
 | `openspec/` | ecosystem-level OpenSpec changes; each project keeps its own `openspec/` for implementation-scoped ones | — |
-| `mjolnir/` | `docs/findings.md`, `tool/` (bundle-tool, Node — D76), `patches/js/`, `patches/native/`, `apk/`, `builder/` (Node, imports `tool/` as a library), `hub/`, and **the gateway**: `caddy/Caddyfile`, `bin/ota-publish.sh`/`ota-verify.sh` (D75/D84) | stabbur |
+| `mjolnir/` | `docs/findings.md`, `tool/` (bundle-tool, Node — D76), `patches/js/`, `patches/native/`, `apk/`, `builder/` (Node, imports `tool/` as a library), `hub/`, `sync/`, and `bin/ota-publish.sh`/`ota-verify.sh`. ***The gateway is no longer here***: `caddy/` moved to `grind/caddy/Caddyfile` with `unified-auth` section 1, superseding D84 | stabbur |
 | `stabbur/` | captures, notes, enrichment orchestration, triage UI, audio blobs | smia |
-| `smia/` | `/inflect` `/ipa` `/tts` `/stt` `/translate`, provider chains, `/ui` | nothing |
+| `smia/` | `/inflect` `/ipa` `/tts` `/stt` `/translate`, provider chains, and its UI at the prefix root `/smia/` (D46's `/ui` is superseded — D159) | nothing |
 | `phonexa/` | phonetics lab; deployed as part of the unified stack at the authenticated `/phonexa/` path (D147/D149) | smia (optional), stabbur (optional import) |
 | *(external)* `hover-translate` | capture client (fork, Chrome-only, private/unpublished — D144). **Its own repository, not a project here — D154.** Never deployed | stabbur, smia |
 | `backup/` | the git-backup service (D-C1..D-C5): a `pg_dump` per covered database plus the blob and audio mirrors | mjolnir / stabbur / phonexa databases (not smia yet) |
@@ -137,24 +137,42 @@ Routes through the gateway, as served today:
 | route | served by | note |
 |---|---|---|
 | `/ota/*` `/blob/*` `/audio-manifest/*` | caddy, off disk | **device-facing** — byte-identical to the frozen contract in `11-ota-contract.md` (D55) |
-| `/mjolnir` | mjolnir-hub | operator login |
-| `/builder` | mjolnir-builder | operator login |
+| `/mjolnir/userdata/*` | mjolnir-sync | **device-facing** — gated at the gateway on the device's `Bearer` token, its own `handle` block ahead of the operator plane (D158, `unified-auth` 2.1-2.3) |
+| `/mjolnir` | mjolnir-hub | `basic_auth` at the gateway |
+| `/builder` | mjolnir-builder | `basic_auth` at the gateway |
 | `/stabbur/*` | stabbur-backend | UI at `/stabbur/` (D46's `/ui` superseded) |
 | `/smia/*` | smia-backend | UI at `/smia/` (D46's `/ui` superseded) |
 | `/phonexa/*` | phonexa-backend | Caddy `basic_auth`; `/phonexa` must redirect to `/phonexa/` |
-| `/adminer/*` | adminer | **unauthenticated at the gateway** — the operator token gates hub/builder, not this route (see the Caddyfile comment); also on `127.0.0.1:8082` |
+| `/shadow/*` | shadow-backend | `basic_auth` at the gateway (D157's split-out service) |
+| `/adminer/*` | adminer | `basic_auth` at the gateway. ***Corrected***: this row said "**unauthenticated at the gateway**" until `unified-auth` 3.1 — a database-admin tool on the public origin behind nothing. It is gated now, like every other operator zone; the `127.0.0.1:8082` mapping is loopback-only and unchanged |
 
-stabbur and smia still serve their UI at the `/ui` sub-path rather than at the
-prefix root; moving it is `unified-auth`'s task, not done here.
+**One credential for the whole operator plane, checked in the gateway**
+(D160). Username `operator`, password `OPERATOR_AUTH_TOKEN`, Caddy
+`basic_auth` in front of all seven zones above; the hash is derived from the
+token at container start and is never stored in a file. Behind it, every
+service runs **one** shared check (`libs/pyservice/auth.py`,
+`libs/jsservice/auth.js`) — the gateway's `X-Tun-Operator` marker, or
+`Bearer INTERNAL_TOKEN` for service-to-service calls — replacing the three
+separate implementations D-S6, D-N1 and D-H6 had each added (D159). There are
+no login pages and no per-service tokens left.
+
+stabbur and smia serve their UI at the **prefix root** (`/stabbur/`,
+`/smia/`) with assets under `/static/`; the `/ui` sub-path is gone (404) and
+D46's `/ui` convention is superseded. This also fixed a live defect: with the
+UI at `/ui`, `https://coden256.dev/stabbur/` answered 401 even with a correct
+credential, because stabbur had no route at `/` at all.
 
 **phonexa is routed by path like the others** (D149, superseding D148's
 subdomain decision). It became prefix-aware the same way stabbur (D46) and
 smia (D119) did — `X-Forwarded-Prefix` → an injected global → one `API_BASE`
 constant — so the dedicated hostname it used to need is gone, along with its
 DNS record and certificate. It is still gated at Caddy by `basic_auth` on the
-operator token (phonexa has no auth of its own and exposes destructive admin
-endpoints), so it answers with a native credential prompt rather than hub's
-login page, and it is not in the shared nav. Two consequences worth knowing:
+operator token, so it answers with a native credential prompt. *(Updated: it
+is no longer gated **only** at Caddy — "phonexa has no auth of its own" was
+true when this was written and is not any more. D159 gave it the shared
+check, which is why its destructive `POST /api/v1/admin/export`, previously
+200 to an unauthenticated caller reaching the container directly, now answers
+401.)* Two consequences worth knowing:
 `/phonexa` must redirect to `/phonexa/` or its relative assets escape the
 prefix, and it now shares an origin with hub and builder.
 

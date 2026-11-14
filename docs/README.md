@@ -60,7 +60,7 @@ together from one `docker compose up` at the root.
 | Directory | Role |
 |---|---|
 | `docs/` | **these docs** — the ecosystem design layer |
-| `grind/` | the gateway: TLS, routing, the operator gate, the status page |
+| `grind/` | the gateway: TLS, routing, **the one operator gate** (`basic_auth`, hash derived at boot — D160), the status page |
 | `mjolnir/` | `docs/findings.md`, tool, JS + native patches, apk pipeline, builder, workbench, device sync |
 | `stabbur/` | captures, notes, enrichment, triage UI, audio blobs |
 | `smia/` | linguistics providers (inflect / ipa / tts / stt / translate) |
@@ -78,8 +78,8 @@ never deployed, so it stays its own repository and talks to `smia` and
 One clone, no sibling checkouts. The APK build workspace at
 `/home/coden/rev/mjolnir/` is still disposable scratch, not part of this repo.
 
-`grind/`, `shadow/`, `postgres/` and `libs/` arrive with the `zone-isolation`,
-`postgres-consolidation` and `unified-auth` changes; the rest exist now.
+`grind/`, `shadow/`, `postgres/` and `libs/` **all exist now** — they arrived
+with `postgres-consolidation`, `zone-isolation` and `unified-auth`.
 
 ## Status
 

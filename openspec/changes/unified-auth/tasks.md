@@ -458,19 +458,68 @@ complete and verify in order. The hard constraint is: **the device never breaks.
 
 ## 7. Optional, later, device-coordinated
 
-- [ ] 7.1 Give `SYNC_TOKEN` a value distinct from `OPERATOR_TOKEN`; push via
-      `config.json` (D39) using `patches/js/config-rotate.js`; switch the
+- [ ] 7.1 Give `SYNC_TOKEN` a value distinct from `OPERATOR_TOKEN`; ~~push via
+      `config.json` (D39) using `patches/js/config-rotate.js`~~; switch the
       gateway's expected value only once devices have taken it.
-- [ ] 7.2 Until 7.1 is done, record in `DEPLOY.md` that rotating
-      `OPERATOR_TOKEN` requires the same `config.json` push, because the device
-      still carries that value.
+
+      **CORRECTION (8.3, verified 2026-11-14): `config.json` CANNOT carry
+      `SYNC_TOKEN`.** The value is baked into the JS bundle at assemble time
+      (`patches/js/2080-progress-sync-shim.edited.js:57`, substituted by
+      `substituteBakedPlaceholders` in `mjolnir/src/commands/assemble.js`;
+      defaulted from `process.env.OPERATOR_AUTH_TOKEN` at
+      `mjolnir/src/commands/ui.js:983`). D39 / contract §5's escape hatch
+      covers the **OTA channel's** URL and token only, and no JS-side reader
+      for `config.json` exists — the patch's own comment says so. 7.1 is
+      therefore an **assemble + publish + confirm-the-handset** operation,
+      not a config push. Recorded as **P48**.
+- [x] 7.2 Done by 8.4 — but recording the **corrected** mechanism, not the
+      one this line asked for. Root `DEPLOY.md` §4 now carries a dedicated
+      "Rotating `OPERATOR_AUTH_TOKEN`" subsection with a per-consequence
+      table and the hazard stated as a block quote: rotation requires a **new
+      OTA bundle publish**, not a `config.json` push. `mjolnir/DEPLOY.md`'s
+      old contradicting claim ("regenerate the hash in the same change") is
+      struck through and corrected in place.
 
 ## 8. Documentation
 
-- [ ] 8.1 Collapse D-H6, D-N1 and D-S6 into one ADR; supersede D148's auth
-      half; supersede D46's `/ui` convention.
-- [ ] 8.2 New ADR: three zones, three credentials, auth inside the gateway, and
-      why `forward_auth` was rejected on isolation grounds.
-- [ ] 8.3 Record the `SYNC_TOKEN` = `OPERATOR_TOKEN` finding and its resolution
-      in `docs/08-pitfalls.md` — it was invisible for as long as it existed.
-- [ ] 8.4 `DEPLOY.md`: one login, one credential, what rotating it affects.
+- [x] 8.1 **D159** in `docs/07-decisions.md` collapses D-S6, D-N1 and D-H6
+      into one ADR: the four implementations are deleted, `libs/pyservice/
+      auth.py` + `libs/jsservice/auth.js` are the only ones left, one rule
+      (gateway marker or `Bearer INTERNAL_TOKEN`), every carve-out deleted,
+      phonexa/shadow/adminer gated for the first time. Superseded rows
+      **marked, not deleted**: D95 (D-H6's cookie + login pages) and D96
+      (`/login` path namespacing) are marked SUPERSEDED by D159; D85's
+      `STABBUR_AUTH_TOKEN` is marked a retired name; D113 is AMENDED with
+      the P48 finding; **D148's auth half** is marked superseded by D160
+      with its no-longer-true rotation clause called out. D46's `/ui`
+      convention was already annotated by 5.1/5.5 — verified, not
+      duplicated.
+- [x] 8.2 **D160** in `docs/07-decisions.md`: the three zones and their three
+      credentials, `basic_auth` inside the gateway with the hash derived at
+      boot at cost 10, and `vakt`/`forward_auth` withdrawn **because Caddy
+      has no `forward_auth` response cache** — one container down would 401
+      all eight zones at once, the exact shared failure point
+      `zone-isolation` exists to remove. Also records the two ordering rules
+      (preflight answered before the auth check; `handle_errors 401 403` with
+      an empty body) and that compiled route order != file order.
+- [x] 8.3 **P48** (the baked `SYNC_TOKEN`, with the rotation correction),
+      **P49** (`handle_errors` serving the full status page to
+      unauthenticated clients) and **P50** (hub's duplicated auth check
+      leaving the embedded workbench open) added to `docs/08-pitfalls.md`
+      under "Will bite you". All three are the house's "failure reports
+      success" class.
+- [x] 8.4 Root `DEPLOY.md`: the `.env` key table now names `INTERNAL_TOKEN`
+      and marks `STABBUR_AUTH_TOKEN`/`SMIA_AUTH_TOKEN` retired; §4 gained the
+      "Rotating `OPERATOR_AUTH_TOKEN`" subsection (see 7.2); §6's route table
+      shows one shared check behind the gate instead of three per-service
+      ones. `mjolnir/DEPLOY.md` no longer documents the hand-made hash: its
+      `/phonexa` gate section is struck through and replaced with a pointer
+      to the root file plus the facts that survived, and the gateway's move
+      to `grind/` is flagged in its header banner.
+
+      Also corrected while verifying: `docs/02-services.md` (adminer no
+      longer "unauthenticated at the gateway", the `/ui` claim, the gateway's
+      location, `/mjolnir/userdata/*` and `/shadow/*` added to the route
+      table), `docs/06-smia.md` (`GET /ui` -> `GET /`), `docs/README.md`
+      (grind/shadow/postgres/libs exist now) and
+      `docs/14-restructure-handoff.md` (§1 counts, §5, §8).

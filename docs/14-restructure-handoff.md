@@ -4,8 +4,12 @@
 branch**. `master` still has the pre-merge layout. Nothing has been pushed to
 any remote.
 
-Read this with `07-decisions.md` (D150–D158) and `08-pitfalls.md` (P41–P47).
+Read this with `07-decisions.md` (D150–D160) and `08-pitfalls.md` (P41–P50).
 Those are authoritative; this file is the map.
+
+**Updated 2026-11-14**, when `unified-auth` sections 1–5 and 8 landed. The
+state below is current; where a paragraph describes how things stood before
+that, it says so.
 
 ---
 
@@ -27,7 +31,7 @@ deployable, in `openspec/changes/`:
 | `monorepo-merge` | **40/45** | six repos → one. No behaviour change; the bar was "nothing changed" |
 | `postgres-consolidation` | **35/38** | five Postgres clusters → one, five databases |
 | `zone-isolation` | **35/37** | the two service splits, serve-before-migrate, the status page |
-| `unified-auth` | **9/37** | gateway **moved** to `grind/` and the device-sync carve-out gated (done); operator auth collapsing to one credential (open) |
+| `unified-auth` | **34/37** | sections 1–5 and 8 **done**: the gateway moved to `grind/`, the device-sync carve-out is gated and proven on a real handset, the operator plane is one `basic_auth` credential across seven zones, three auth implementations collapsed into `libs/`, and the service UIs moved to their prefix roots. Open: 6.1/6.2 (hover-translate, needs the extension) and 7.1 (optional, device-coordinated) |
 
 Every remaining open task is annotated in its own `tasks.md` with *why* it is
 open. They fall into exactly two buckets: **needs the VPS** or **needs the
@@ -98,19 +102,40 @@ stopped, `/ota/*` still serves.
 
 ## 5. Where `unified-auth` stands, and the one hard constraint
 
-Section 1 is **done**: the gateway moved to `grind/`, and every device
+Sections 1–5 are **done**. The gateway moved to `grind/` and every device
 response was byte-compared before and after — bodies and
 HTTP/Cache-Control/Content-Type/Content-Length headers identical, 401 and 405
 unchanged, `ota-verify` the same 15/0/1. `grind/entrypoint.sh` derives the
-bcrypt hash from `OPERATOR_TOKEN` at boot, which retires P35 and P36.
+bcrypt hash from `OPERATOR_TOKEN` at boot at cost 10, which retires P35 and
+P36. `/mjolnir/userdata/*` is gated at the gateway in its own `handle` block
+(compiled route index 6, ahead of the operator plane — and note that compiled
+order is **not** file order: Caddy re-sorts `handle` blocks by matcher
+specificity, which moves `/ota/*` from first in the file to index 9), proven
+with a real GET+PATCH round trip from the handset. All seven operator zones
+sit behind one `basic_auth`; `PHONEXA_AUTH_HASH` is deleted; the three
+per-service auth modules are one shared check in `libs/` (D159, D160).
+
+Three things were found by running it, all of the house's usual shape — the
+failure reported success. **P48**: the device's `SYNC_TOKEN` is baked into the
+JS bundle and is NOT read from `config.json`, so rotation needs a bundle
+publish. **P49**: `handle_errors` was serving the full 7 KB status page, every
+zone enumerated, to clients with no credential at all. **P50**: hub checked
+auth twice, and deleting the module left the copy inside the
+`/mjolnir/workbench` branch as the only gate — which returns first, so the
+embedded workbench was open while the rest of the console correctly 401'd.
+Section 5 also fixed a live defect: `https://coden256.dev/stabbur/` answered
+401 even with a correct credential, because stabbur had no route at `/`.
 
 **The constraint that dictates everything left.** The device's `SYNC_TOKEN` is
 validated against `OPERATOR_AUTH_TOKEN` — the phone holds an operator
 credential. So:
 
-- rotating `OPERATOR_AUTH_TOKEN` **breaks device sync today**;
+- rotating `OPERATOR_AUTH_TOKEN` **breaks device sync today**, and fixing it
+  needs a **new OTA bundle publish** — the token is baked into the JS bundle
+  and `config.json` cannot carry it (**P48**, verified 2026-11-14; this file
+  previously said a `config.json` push, which was wrong);
 - switching the operator plane to `basic_auth` breaks the phone **unless
-  `/mjolnir/userdata/*` is gated separately first**.
+  `/mjolnir/userdata/*` is gated separately first** — done, section 2.
 
 Hence the ordering in `unified-auth/tasks.md`, which is a gate and not a
 preference:
@@ -118,8 +143,9 @@ preference:
 ```
 section 2   gate /mjolnir/userdata/* at the gateway on the CURRENT token value
             → the device sees no change at all
-section 3   only then, operator plane → basic_auth
-section 7   optional, later: give SYNC_TOKEN its own value via config.json (D39)
+section 3   only then, operator plane → basic_auth           [done]
+section 7   optional, later: give SYNC_TOKEN its own value — which needs an
+            ASSEMBLE + PUBLISH, not a config.json push (P48)
 ```
 
 Section 2's "before" capture is already taken (`scratchpad/ua-baseline/`):
@@ -131,7 +157,7 @@ fields stripped, PUT 405, no-token **302 (not 401)**. That 302 is deliberate —
 
 ## 6. What was found by running things, not reading them
 
-Seven new pitfalls, each a case where **the failure reported success**. This is
+Ten new pitfalls, each a case where **the failure reported success**. This is
 the recurring defect class here; expect the next one to look the same.
 
 | | what |
@@ -143,6 +169,9 @@ the recurring defect class here; expect the next one to look the same.
 | **P45** | Readiness as a high-water mark: a service that lost its database kept reporting ready and leaked a 500. The same outage answered 503 or 500 by boot order alone. |
 | **P46** | A JSON error body on the device path is **parsed as a document**. The shim calls `res.json()` with no status check — a 503 with a body resolved and handed mod 2080 `{error:…}` as userdata. Empty body now. |
 | **P47** | Readiness detected only **reactively** is readiness nobody sees. A low-traffic service reported healthy straight through an outage. Now polls every 15s, and probes key on the status code. |
+| **P48** | The device's `SYNC_TOKEN` is **baked into the JS bundle**, not read from `config.json` — D39's escape hatch is the OTA channel's. Two facts each written down in a different file and nowhere together, so the conclusion was invisible for as long as it existed. Rotation needs a publish. |
+| **P49** | A site-wide `handle_errors` caught `basic_auth`'s 401 and served the **full status page** to unauthenticated clients — and rendered a wrong password as "this zone is not responding". Scope by status code, empty body; `WWW-Authenticate` survives. |
+| **P50** | An auth check written **twice** can be half-removed, and the half that stays is the one that returns first. hub's workbench branch was left open by deleting the other copy. One check above every branch. |
 
 Also fixed: both OTA scripts sourced a `.env` the restructure deleted, so the
 documented device-acceptance command aborted before its first check;
@@ -182,19 +211,23 @@ to "check the work".
 
 ## 8. Next steps, in order
 
-1. **`unified-auth` section 2** — 2.1/2.2/2.3 are **done**: `/mjolnir/userdata/*`
-   is gated at the gateway on `Bearer {$OPERATOR_TOKEN}` in its own block,
-   compiled route index 6 (ahead of `/mjolnir/*` at 10 and the catch-all at 17),
-   and the replay matches the baseline — codes, bodies and headers — except on
-   the *rejected* path, where the gateway now answers instead of proxying
-   (`Server: Caddy` + `Content-Length: 0` for `Via` + chunked; status, empty
-   body and `Location` unchanged). **2.4 still needs the phone, so the 2.5 gate
-   is NOT cleared: section 3 must not start yet.**
-2. Sections 3–5 — `basic_auth`, one auth check per service from `libs/`, and
-   move the service UIs from `/ui` to the prefix root (which also fixes a live
-   401 on `https://coden256.dev/stabbur/`).
-3. Section 7 is optional and device-coordinated. Leave it.
-4. **Then the VPS runbook**, `DEPLOY.md` §8: record live volumes from running
+*(Rewritten 2026-11-14. Sections 1–5 and 8 of `unified-auth` are done and the
+2.5 device gate is cleared — 2.4 ran on the real handset.)*
+
+1. **`unified-auth` 6.1/6.2 — hover-translate.** It still holds `smiaToken`
+   and `stabburToken`; it needs one `operatorToken` sent to one origin.
+   Blocked on the extension, which is **not in this repository** (D154), so it
+   is a separate checkout and a browser. Until it is done the extension's
+   capture and translation calls are the one client that cannot authenticate.
+2. **The VPS runbook**, `DEPLOY.md` §8: record live volumes from running
    containers, verify a backup, stand down the old per-repo stacks, cut over.
-5. Rotating `OPERATOR_AUTH_TOKEN` requires a `config.json` push until §7 is
-   done. This is written into `DEPLOY.md`; do not forget it.
+   Read **§8.0a first** — the device's baked `SYNC_TOKEN` must equal the
+   host's `OPERATOR_AUTH_TOKEN` at cutover, and the check is one `grep`.
+3. **Do not rotate `OPERATOR_AUTH_TOKEN` casually.** It is the operator
+   password *and* the phone's sync credential, and the phone's copy can only
+   be changed by assembling and publishing a new bundle (**P48**). Root
+   `DEPLOY.md` §4 carries the sequence.
+4. Section 7 is optional and device-coordinated. Leave it.
+5. The three remaining open tasks in `monorepo-merge`,
+   `postgres-consolidation` and `zone-isolation` are all "needs the VPS" or
+   "needs the phone"; each is annotated in its own `tasks.md`.
