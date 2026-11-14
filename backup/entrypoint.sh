@@ -325,6 +325,21 @@ run_backup() {
   log "  phonexa-audio/: $before -> $after ($copied new)"
 
   cd "$BACKUP_REPO" || { log "entrypoint: FATAL cd $BACKUP_REPO failed" >&2; return 1; }
+  # Prune a dump whose database has LEFT the backup set. Without this, the
+  # file sits in the repo forever, dated and plausible, reading as a current
+  # backup of a database nothing dumps any more - which is the whole
+  # failure-reports-success shape this file keeps running into. Found live:
+  # removing smia from DATABASES left a committed smia.sql behind.
+  for f in "$BACKUP_REPO"/*.sql; do
+    [ -e "$f" ] || continue
+    name=$(basename "$f" .sql)
+    case " $DATABASES " in
+      *" $name "*) ;;
+      *) log "entrypoint: $name is no longer in the backup set - pruning $name.sql"
+         rm -f "$f" ;;
+    esac
+  done
+
   if ! git add -A; then
     log "entrypoint: FATAL git add failed" >&2
     return 1

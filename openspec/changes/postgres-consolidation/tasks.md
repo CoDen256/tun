@@ -247,7 +247,34 @@ database until section 4, so a failure here costs nothing but a volume.
       removed. Proven locally against a throwaway bare remote (five `.sql`
       committed and pushed; `smia.sql` verified to restore), but a real run
       needs the deploy key, which is out of this repository's scope.
-- [ ] 6.7 **Operator step, deliberately left undone.** Retire the old volumes
+- [x] 6.7 **DONE 2026-11-14 on operator instruction** ("retire the old
+      volumes"). Gated on three things first, not taken on trust:
+      1. the consolidated cluster had been serving production for hours;
+      2. four dumps exist off-host, gzip-verified (15/5/16/11 tables);
+      3. the CURRENT daily backup was RESTORED into a scratch database and
+         compared per table - all 13 data tables exact, and
+         `build_jobs`/`job_logs` restored as tables that EXIST and are
+         empty. That last detail is the P44 fix demonstrated: before, they
+         were missing relations while `schema_migrations` claimed the
+         migration had run, so a service booted and then died.
+
+      Removed (4.2 GB reclaimed; sizes recorded in
+      `/root/pre-cutover/retired-volumes.txt`):
+      ```
+      mjolnir_postgres_data        59.4M     stabbur_stabbur-pg-data-17  64.5M
+      smia_smia-pg-data            4.0G     phonexa_postgres_data       47.8M
+      stabbur_stabbur-pg-data     46.2M     tun_caddy_data              76.0K
+      tun_caddy_config            12.0K     phonexa_audio_dat            4.0K
+      ```
+      The last four are the DECOYS from DEPLOY.md 8.0b - gone, so the
+      dump-the-wrong-volume hazard is gone with them.
+
+      The script refused to remove anything a container mounts, and the six
+      live volumes are untouched: `mjolnir_caddy_data` (the TLS
+      certificates), `mjolnir_caddy_config`, `phonexa_audio_data`,
+      `stabbur_stabbur-blobs`, `tun_backup-repo-clone`,
+      `tun_postgres_cluster`. All 11 services healthy afterwards.
+      ORIGINAL NOTE: **Operator step, deliberately left undone.** Retire the old volumes
       one at a time, recording each name. They are retained on purpose:
       `mjolnir_postgres_data`, `stabbur_stabbur-pg-data-17`,
       `smia_smia-pg-data` (and `stabbur_stabbur-pg-data`, the pre-17 one D-U2
