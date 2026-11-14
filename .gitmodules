@@ -1,0 +1,15 @@
+[submodule "tun-backup"]
+	path = tun-backup
+	url = git@github.com:CoDen256/tun-backup.git
+	branch = main
+	# The backup DATA repo, not source. The backup service pushes a commit to
+	# it every 24h, so the SHA pinned here is behind origin almost always -
+	# that is normal, not drift. `ignore = all` keeps `git status` in tun
+	# quiet about it; without this the tree reads as permanently modified and
+	# a real change elsewhere gets lost in the noise.
+	# To fetch the current backups:  git submodule update --remote tun-backup
+	ignore = all
+[submodule "hover-translate"]
+	path = hover-translate
+	url = git@github.com:CoDen256/hover-translate.git
+	branch = master

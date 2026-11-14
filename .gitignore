@@ -13,4 +13,7 @@
 # git-backup: a separate git repository (its own remote, its own commits),
 # nested here only because that's where the operator cloned it — never
 # part of tun's own history.
-tun-backup/
+# tun-backup/ is now a SUBMODULE, not ignored - see .gitmodules.
+# It is the backup DATA repo and the backup service commits to it daily, so
+# its pinned SHA is expected to sit behind origin; .gitmodules sets
+# `ignore = all` so that does not show up as a dirty working tree here.
