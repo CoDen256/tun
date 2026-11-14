@@ -180,6 +180,19 @@ note, D141/D142) and hover-translate's `smia-translation-and-stabbur-capture`
 
 ## Right now
 
+**The monorepo restructure is in flight on the unpushed `monorepo` branch.**
+Read `14-restructure-handoff.md` first — it holds the full state, every
+operator decision already made, and the ordered next steps. In short:
+`monorepo-merge` 40/45, `postgres-consolidation` 35/38, `zone-isolation`
+35/37, `unified-auth` 6/37. Next action is `unified-auth` section 2, which is
+a gate: the device's sync token is still the operator token, so
+`/mjolnir/userdata/*` must be gated at the gateway on the current value and
+replayed against the captured baseline BEFORE the operator plane changes.
+Everything still open elsewhere needs either the VPS or the phone.
+
+The pre-restructure state of this section follows.
+## Right now
+
 **P1–P3 are all done.** The server is live, the native OTA patch is live and
 its entire acceptance gate (happy path + all recovery paths) is proven on
 device, and the first real content payoff shipped as a file with no APK

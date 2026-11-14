@@ -8,6 +8,10 @@ directory here. One clone, one `docker compose up`, one Claude Code session.
 **Start at `docs/README.md`. Read `docs/07-decisions.md` before proposing
 anything — do not re-derive settled decisions.**
 
+**On the `monorepo` branch, read `docs/14-restructure-handoff.md` first.** The
+restructure is mid-flight across four OpenSpec changes; that file holds the
+state, the operator decisions already taken, and the ordered next step.
+
 | directory | owns |
 |---|---|
 | `docs/` | the ecosystem design layer + the ADR log. The spec layer above every project. |
