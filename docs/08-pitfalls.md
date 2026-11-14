@@ -121,3 +121,34 @@ it, and **verify artefacts file by file** — `ls` each expected output and
 check its table count — rather than reading a script's stdout. This is the
 same failure-reports-success shape as P41-P52; the lesson keeps being that
 the evidence must be the artefact, never the narration.
+
+### P68 — `git checkout` between branches silently breaks every live bind mount
+
+**Found switching the VPS from `monorepo` to `master`, 2026-11-14.** The two
+branches were byte-identical, so nothing should have changed — and four
+services went `unhealthy` anyway:
+
+```
+docker inspect ... .State.Health.Log
+  2 python: can't open file '/libs/pyservice/healthcheck.py': No such file or directory
+docker exec tun-stabbur-backend-1 ls /libs/pyservice/
+  ls: cannot access '/libs/pyservice/': No such file or directory
+ls -la /root/tun/libs/pyservice     # ON THE HOST: exists, fully populated
+```
+
+A bind mount pins the **inode**, not the path. `git checkout` + `git reset
+--hard` deleted and recreated `libs/`, so the running containers kept
+pointing at the old, now-unlinked directory. The host path was perfectly
+fine; only the containers' view was dead.
+
+**The dangerous part is the symptom.** All four services kept serving `200`
+through the gateway — only the healthcheck, which runs *inside* the
+container, could see the mount was gone. So `docker compose ps` said
+`unhealthy` while every page worked, which reads as a flaky healthcheck
+rather than a broken mount. Reverse of the usual trap: here the service was
+fine and the probe was right.
+
+**Handling:** after any branch switch or any operation that rewrites a
+bind-mounted directory, `docker compose up -d --force-recreate` the services
+that mount it. Recreating re-resolves the mount; a `restart` does not,
+because the mount is fixed at container creation.
