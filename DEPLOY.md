@@ -577,6 +577,70 @@ every device sync with a `302` and sync dies in the field. Fix it by setting
 `OPERATOR_AUTH_TOKEN` to the device's value, **not** by rotating the device
 (that needs a publish — task 7.1).
 
+### 8.0b Measured production facts (2026-11-14) — verify, do not rediscover
+
+Recorded live from `contabo` during the restructure. Re-check each before
+acting; if one has drifted, STOP and find out why.
+
+**The live volumes, read from the RUNNING containers — and their decoys.**
+§8.1 tells you to do this; this is the answer it gave. Dumping a decoy
+yields a complete, plausible, STALE database with no error anywhere.
+
+| data | LIVE volume | decoy also on the host |
+|---|---|---|
+| mjolnir db | `mjolnir_postgres_data` | — |
+| stabbur db | `stabbur_stabbur-pg-data-17` | **`stabbur_stabbur-pg-data`** |
+| smia db | `smia_smia-pg-data` | — |
+| phonexa db | `phonexa_postgres_data` | — |
+| TLS certs | `mjolnir_caddy_data` | **`tun_caddy_data`** |
+| caddy cfg | `mjolnir_caddy_config` | **`tun_caddy_config`** |
+| blobs | `stabbur_stabbur-blobs` | — |
+| audio | `phonexa_audio_data` | **`phonexa_audio_dat`** (one char short) |
+| OTA payload | bind `/root/mjolnir/data` → `/srv` | — |
+
+**Row counts at cutover time** — the acceptance criterion for the restore:
+
+```
+mjolnir  2,093 (15 tables)    stabbur  2,551 ( 5 tables)
+smia    14,802,377 (16 tbl)   phonexa  4,365 (11 tables)
+```
+
+smia is on **16.15** and is the only 16→17 upgrade. At 14.8M rows it is the
+long pole; budget disk and time for it. A gzipped full dump already exists
+at `/root/pre-cutover/smia-pre-cutover.sql.gz` (449 MB, `gzip -t` clean,
+16/16 tables, trailer present — but its RESTORE is unproven; prove it into a
+scratch 17 cluster before relying on it).
+
+**🔴 The existing production backup is NOT a full fallback for mjolnir.**
+Proven by restoring it, not by reading it: the committed `mjolnir.sql`
+restores with exit 0 and **`build_jobs` and `job_logs` do not exist** in the
+result, while `schema_migrations` still reports all 18 migrations applied —
+so a service booting on that restore connects fine and then dies on
+migration. Cause: `/root/tun/backup/entrypoint.sh:60-61` still uses
+`--exclude-table=`, dropping the DEFINITION. The fix (`--exclude-table-data`)
+is on this branch and has not been deployed there. That is P44 verbatim,
+live. **Take your own dumps with no `--exclude` at all, and prove the
+mjolnir one restores to all 15 tables before standing anything down.**
+It remains a valid fallback for stabbur, phonexa, and 13 of mjolnir's 15.
+
+**`OPERATOR_AUTH_TOKEN` is literally `changeme`**, and so is the device
+bundle's `SYNC_TOKEN` — verified on both ends, so §8.0a's check PASSES as
+things stand and the field device is safe. Do not "tidy" it during the
+cutover: changing either half alone breaks device sync. (It also means the
+public operator plane's password is `changeme` — rotating it is worth doing,
+but it needs a bundle publish first, i.e. task 7.1.)
+
+**The gateway needs a variable it does not have today.** `mjolnir-caddy`
+currently carries only `PHONEXA_AUTH_HASH` and `OTA_TOKEN`
+(`docker exec mjolnir-caddy printenv`). `grind/compose.yaml` requires
+`OPERATOR_TOKEN: ${OPERATOR_AUTH_TOKEN:?...}`, so the root `.env` must define
+`OPERATOR_AUTH_TOKEN` or the gateway refuses to start — loudly, which is
+correct, but know it before you cut over.
+
+**`/root/tun/tun-backup/` on the host is a STALE leftover clone** (Nov 3, no
+`phonexa.sql`). The backup service's real repo is `/data/tun-backup` INSIDE
+the container. Do not read the host copy and conclude backups are broken.
+
 ### 8.0 CRITICAL — a host that already pulled `afb81d39` cannot start at all
 
 Commit `afb81d39` ("Archive phonexa-path-routing; sync unified-deployment
