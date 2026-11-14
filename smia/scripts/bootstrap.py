@@ -33,7 +33,7 @@ import sys
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
-from pyservice.bootstrap import create_bootstrap, register_db_guard, register_health
+from pyservice.bootstrap import create_bootstrap, make_db_check, register_db_guard, register_health
 from pyservice.migrate import upgrade_head
 
 from app import app  # Flask app + its auth hook, registered before the guard below
@@ -157,28 +157,46 @@ def _import_providers() -> None:
             print(f"[bootstrap] import {label} FAILED, continuing: {exc}", file=sys.stderr)
 
 
+# A module constant rather than a literal in the call below, so
+# tests/test_db_guard.py can assert — without a running container — that
+# every entry still matches a route this app registers.
+GUARD_EXEMPT = ("/", "/static/")
+
+
 def main() -> None:
     # smia owns the `smia` database's migrations outright — nothing else
     # writes that schema.
     boot = create_bootstrap(
         name="smia-backend",
         prepare=upgrade_head,
+        # `SELECT 1` as the 15s poll. It was `alembic upgrade head` — and
+        # because the old loop re-entered `prepare` from the top of every
+        # pass, `on_ready` fired with it, so _import_providers re-ran its
+        # whole table-emptiness sweep four times a minute for the life of the
+        # container. It now fires once per transition into readiness.
+        check=make_db_check(get_engine),
         on_ready=_import_providers,
     )
     boot.start()
 
     register_health(app, boot)
 
-    # Guard everything except the UI shell. smia is a lookup service: every
-    # route other than /ui reads the cache tables or the provider tables, so
-    # the default is the guard and the exemption is the short list. /ui itself
-    # is read off disk (and is already auth-exempt for the same reason), so
-    # the console still renders and shows the degraded state rather than
-    # disappearing behind a 502.
+    # Guard everything except the UI shell and its assets. smia is a lookup
+    # service: every other route reads the cache tables or the provider
+    # tables, so the default is the guard and the exemption is the short
+    # list. The shell is read off disk, so the console still renders and
+    # shows the degraded state rather than disappearing.
+    #
+    # THIS SAID `/ui` UNTIL 2026-11-14 AND MATCHED NOTHING — unified-auth 5.1
+    # moved the shell to `/` (served here as `/` because the gateway strips
+    # `/smia`), so smia's own front page was guarded and answered a JSON 503
+    # with postgres stopped. See stabbur/scripts/bootstrap.py for the full
+    # note and libs/pyservice/bootstrap.py:_dead_prefixes for the check that
+    # now makes a dead exemption visible instead of silent.
     register_db_guard(
         app,
         boot,
-        exempt=("/ui",),
+        exempt=GUARD_EXEMPT,
         db_errors=(OperationalError,),
     )
 

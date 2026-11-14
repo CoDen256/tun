@@ -55,10 +55,19 @@ for name, svc in sorted(services.items()):
     if svc.get("network_mode") == "host" and name != "caddy":
         problems.append(f"host networking: {name} uses network_mode: host")
 
-# Every application backend needs a healthcheck of its own. The gateway, the
-# database browser and the backup service are named here as known-unmonitored
-# rather than silently skipped — see the service-standard spec.
-NO_HEALTHCHECK_BY_DESIGN = {"caddy", "adminer", "backup"}
+# Every application backend needs a healthcheck of its own. The gateway and
+# the database browser are named here as known-unmonitored rather than
+# silently skipped — see the service-standard spec.
+#
+# `backup` WAS IN THIS SET AND SHOULD NEVER HAVE BEEN. Its exemption was
+# argued from liveness — the process stays up, so a probe would only ever say
+# "up" — which is exactly backwards: this is the one service whose process
+# staying up tells you nothing at all about whether it is doing its job. It
+# had produced no backup whatsoever for seven hours (failed clone,
+# placeholder deploy key), logged the failure honestly, and still showed as
+# "Up 7 hours" with this checker reporting green. It now has a healthcheck
+# that reads a stamp written only after a completed run (backup/healthcheck.sh).
+NO_HEALTHCHECK_BY_DESIGN = {"caddy", "adminer"}
 for name, svc in sorted(services.items()):
     if name in NO_HEALTHCHECK_BY_DESIGN or is_one_shot(svc):
         continue

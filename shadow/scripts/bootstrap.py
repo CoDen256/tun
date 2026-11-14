@@ -38,14 +38,19 @@ import os
 
 from sqlalchemy.exc import OperationalError
 
-from pyservice.bootstrap import create_bootstrap, register_db_guard, register_health
+from pyservice.bootstrap import create_bootstrap, make_db_check, register_db_guard, register_health
 from pyservice.migrate import upgrade_head
 
 from app import app  # the Flask app, routes already registered
+from db.session import get_engine
 
 
 def main() -> None:
-    boot = create_bootstrap(name="shadow-backend", prepare=upgrade_head)
+    boot = create_bootstrap(
+        name="shadow-backend",
+        prepare=upgrade_head,
+        check=make_db_check(get_engine),  # `SELECT 1`, not a migration run
+    )
     boot.start()
 
     register_health(app, boot)

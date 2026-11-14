@@ -438,6 +438,15 @@ def serve_index():
 
 @app.route('/<path:path>')
 def serve_static(path):
+    # An unknown /api/ path must not be answered as a missing FILE. This
+    # route is the catch-all, so `/api/v1/shadowing/media/1/segments` — a
+    # plausible-looking URL that does not exist (the real route is
+    # `.../segment`, singular, and POST-only) — fell through to
+    # send_from_directory and came back as Flask's HTML 404 page with
+    # Content-Type: text/html to a caller that had asked for JSON. Every
+    # other error this service emits on /api/ is JSON; so is this one now.
+    if path.startswith('api/'):
+        return jsonify({'error': 'not found', 'path': '/' + path}), 404
     if path.endswith('.html'):
         # send_from_directory's safe_join rules still apply: resolve the
         # request against the app directory and refuse anything escaping it

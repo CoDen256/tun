@@ -124,7 +124,13 @@ fi
 # there is ONE internal token now (INTERNAL_TOKEN) and the two per-pair names
 # are retired. They are listed here so neither can be retyped into a
 # .env.example and quietly become a second credential nobody reads.
-dead='STABBUR_UPSTREAM|SMIA_UPSTREAM|PHONEXA_UPSTREAM|STABBUR_BASE_URL|STABBUR_UI_BASE|SMIA_BASE_URL|DATABASE_URL|PHONEXA_AUTH_HASH|STABBUR_AUTH_TOKEN|SMIA_AUTH_TOKEN'
+#
+# The four per-database passwords joined it 2026-11-14. postgres-consolidation
+# replaced them with the single POSTGRES_PASSWORD months ago and no compose
+# file has interpolated one since — but all four were still sitting in the
+# live root .env, reading as four live credentials in the file D151 made
+# authoritative. Listed here so they cannot be retyped.
+dead='STABBUR_UPSTREAM|SMIA_UPSTREAM|PHONEXA_UPSTREAM|STABBUR_BASE_URL|STABBUR_UI_BASE|SMIA_BASE_URL|DATABASE_URL|PHONEXA_AUTH_HASH|STABBUR_AUTH_TOKEN|SMIA_AUTH_TOKEN|MJOLNIR_POSTGRES_PASSWORD|STABBUR_POSTGRES_PASSWORD|SMIA_POSTGRES_PASSWORD|PHONEXA_POSTGRES_PASSWORD'
 hits=$(grep -nE "^[[:space:]]*#?[[:space:]]*($dead)=" $ENV_FILES </dev/null 2>/dev/null)
 if [ -n "$hits" ]; then bad "D151: derivable/retired values typed into a .env.example:"; note "$hits"
 else ok "D151: no retired or derivable value is typed into any .env.example"; fi
@@ -191,6 +197,30 @@ else ok "D153: every ACTIVE change id is a bare slug (archives keep dated names 
 hits=$(find . -path ./.git -prune -o -path '*/.github/workflows/*' -type f -print 2>/dev/null)
 if [ -n "$hits" ]; then bad "D152: a CI workflow exists:"; note "$hits"
 else ok "D152: no CI workflow"; fi
+
+# --- the backup's smia exclusions must rest on files that exist ------------
+# Not a D-number: a correction. backup/entrypoint.sh excluded fifteen smia
+# tables on the written grounds that every one is rebuilt from `providers/`,
+# "which is itself tracked in git". Two of those archives are not in the tree
+# at all, so three tables are excluded from the backup with nothing anywhere
+# to rebuild them from. Found by RUNNING the import, which printed
+# "[bootstrap] skipping scripts.import_nst: No such file ...". A claim about
+# files is checkable against files; this makes it so.
+run_helper "$BIN/_check_backup_sources.py" "backup source check"
+if [ "$HELPER_RC" -ne 0 ]; then
+  unverified "backup sources: the helper did not run (exit $HELPER_RC) — smia's exclusion list is NOT verified: ${HELPER_ERR:-no output}"
+else
+  sources=$(printf '%s\n' "$HELPER_OUT" | sed -n 's/^SOURCES=//p')
+  printf '%s\n' "$HELPER_OUT" | grep '^N:' | sed 's/^N:/     note: /'
+  if printf '%s\n' "$HELPER_OUT" | grep -q '^P:'; then
+    bad "backup: smia excludes a table from the backup whose source file is not in the tree:"
+    printf '%s\n' "$HELPER_OUT" | grep '^P:' | sed 's/^P:/     /'
+  elif [ -z "$sources" ] || [ "$sources" -eq 0 ]; then
+    unverified "backup sources: zero provider paths were examined — nothing is verified"
+  else
+    ok "backup: every provider path smia names is present, or acknowledged absent with the tables it leaves unbacked ($sources paths)"
+  fi
+fi
 
 # --- service-level checks, from the RENDERED config (authoritative) --------
 # These cannot be done by grepping text: a service's effective restart policy,

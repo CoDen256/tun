@@ -28,16 +28,25 @@ import os
 
 from sqlalchemy.exc import OperationalError
 
-from pyservice.bootstrap import create_bootstrap, register_db_guard, register_health
+from pyservice.bootstrap import create_bootstrap, make_db_check, register_db_guard, register_health
 from pyservice.migrate import upgrade_head
 
 from formanter import app  # the Flask app, routes already registered
+from db.session import get_engine
 
 
 def main() -> None:
     # phonexa owns the `phonexa` database's migrations. Once `shadow` is split
     # out it owns its own; neither migrates the other's.
-    boot = create_bootstrap(name="phonexa-backend", prepare=upgrade_head)
+    boot = create_bootstrap(
+        name="phonexa-backend",
+        prepare=upgrade_head,
+        # `SELECT 1`, not `alembic upgrade head`. This container logged
+        # "schema ready after 1264 attempt(s)" over six hours — one full
+        # migration run every 15 seconds, described in the shared module as
+        # "a liveness poll, not a workload".
+        check=make_db_check(get_engine),
+    )
     boot.start()
 
     register_health(app, boot)

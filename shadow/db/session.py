@@ -28,7 +28,15 @@ _SessionLocal = None
 def get_engine():
     global _engine
     if _engine is None:
-        _engine = create_engine(DATABASE_URL, future=True)
+        # pool_pre_ping: SQLAlchemy issues a cheap liveness ping on a
+        # connection checked out of the pool and transparently replaces it if
+        # it is dead. Without it a connection the server had already closed
+        # (idle timeout, a `pg_terminate_backend`, a network blip) surfaced as
+        # `OperationalError: server closed the connection unexpectedly` on a
+        # perfectly healthy cluster — which the db-guard read as "the database
+        # went away", dropped readiness and answered 503. Observed twice with
+        # postgres at RestartCount=0 throughout.
+        _engine = create_engine(DATABASE_URL, future=True, pool_pre_ping=True)
     return _engine
 
 
