@@ -11,7 +11,12 @@ import { loadConfig } from "../../hub/src/config.js";
 import { createServer } from "../src/server.js";
 import { createBootstrap } from "../../../libs/jsservice/bootstrap.js";
 
-const config = loadConfig();
+// DEVICE PLANE: INTERNAL_TOKEN is deliberately NOT required here (P55).
+// hub and builder refuse to start without it; this process must not, because
+// it serves a frozen contract to an APK that cannot be rolled back and the
+// token plays no part in that path — the gateway gates /mjolnir/userdata/*
+// and sets the marker. See the note in hub/src/config.js.
+const config = loadConfig({ requireInternal: false });
 const pool = getPool();
 const port = Number(process.env.PORT || 8002);
 

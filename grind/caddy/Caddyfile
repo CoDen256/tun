@@ -65,6 +65,37 @@
 # `credentials: 'include'` does), so an extension sending the operator
 # credential in the header is served correctly, while a cookie-bearing
 # cross-origin request is refused by the browser. That is the safer failure.
+#
+# ---- ACCEPTED TRADE-OFF: the preflight is an enumeration oracle ----
+# Recorded 2026-11-14 after an adversarial review measured it, and recorded
+# rather than fixed. Because the 204 is answered inside each zone's
+# `handle_path /<zone>/*`, ANY sub-path of a zone that exists answers 204 to
+# an unauthenticated preflight, while a path under no zone falls through to
+# the catch-all and answers 404:
+#
+#   OPTIONS /stabbur/zzz  (Origin + Access-Control-Request-Method) -> 204
+#   OPTIONS /nope/zzz     (same headers)                           -> 404
+#
+# So a cross-origin script can learn WHICH operator prefixes exist, without a
+# credential. That is a finer oracle than the bare-prefix redirects P56 closed
+# (those are gated now), and it is deliberately left open:
+#
+#   * it leaks the existence of a prefix and nothing else — no body, no
+#     header from the upstream, no indication whether the sub-path is real.
+#     The zone list is also printed on the status page, which is itself the
+#     operator plane's own page;
+#   * closing it means answering the preflight only AFTER the credential
+#     check, and 3.4 above is the requirement that it must be answered
+#     BEFORE. A preflight carries no credential by definition, so gating it
+#     breaks hover-translate's content script outright — not degraded, dead,
+#     with the browser reporting a CORS failure the page cannot act on;
+#   * the alternative, enumerating allowed preflight paths per zone, puts a
+#     copy of every service's route table in the gateway, where it would rot
+#     silently. A stale allow-list that starts refusing a real preflight is a
+#     worse failure than a prefix anyone can also read off the status page.
+#
+# If this is ever revisited, revisit it WITH the extension (unified-auth
+# 6.1/6.2), not without it.
 (operator_gate) {
 	route {
 		@preflight {
@@ -141,9 +172,22 @@
 	# trust (unified-auth section 4). The whole trust model rests on two
 	# requirements, and this is one of them: a client must never be able to
 	# mint the marker itself. So the gateway deletes any inbound copy before
-	# a single route is considered — if it did not, `curl -H
+	# any route that can reach a service — if it did not, `curl -H
 	# 'X-Tun-Operator: 1'` would be a complete bypass of every zone's auth
 	# the moment section 4 lands.
+	#
+	# THE PRECEDING SENTENCE USED TO READ "before a single route is
+	# considered", AND THAT WAS FALSE BY FIVE ROUTES (2026-11-14, P56). Five
+	# bare `redir /<zone> /<zone>/ 308` lines sat at the top level, outside
+	# every handle block, and compiled to route indices 0-4 — ahead of this
+	# strip at index 5. Nothing was bypassable (a `redir` terminates the
+	# request and reaches no service, so there was nothing for a forged marker
+	# to reach), but the claim was wrong, and a wrong claim about compiled
+	# order in THIS file is the exact mistake the /mjolnir comment warns
+	# about. Those redirects now live inside gated `handle` blocks, so this
+	# line really is the first route again — re-verify with
+	# `caddy adapt --adapter caddyfile`, never by reading the file top to
+	# bottom, before trusting any statement of order here.
 	#
 	# SITE-LEVEL, NOT PER-BLOCK, AND THAT IS THE POINT. Written here, this
 	# compiles to a route AHEAD of the whole `handle` group (verified on the
@@ -355,7 +399,31 @@
 	# case — there's nothing meaningful to strip from a bare `/stabbur`
 	# anyway. Redirect it to the trailing-slash form instead, which
 	# `handle_path /stabbur/*` already matches correctly.
-	redir /stabbur /stabbur/ 308
+	# GATED, and inside a `route` so it STAYS gated (2026-11-14, P56).
+	# This was a bare top-level `redir /stabbur /stabbur/ 308`, which compiled to
+	# one of five routes at indices 0-4 — ahead of the whole handle group and
+	# ahead of the site-level `request_header -X-Tun-Operator` strip. Two
+	# consequences, one cosmetic and one real:
+	#   * the strip's own comment claimed it ran "before a single route is
+	#     considered". It did not; it was route five. Corrected there.
+	#   * `/stabbur` answered 308 to a client with no credential while `/nope`
+	#     answered 404 — an unauthenticated oracle for which operator zones
+	#     exist. Not a content bypass (a `redir` reaches no service), but the
+	#     operator plane is supposed to enumerate to nobody.
+	# The inner `route` is NOT decoration: Caddy sorts the directives inside a
+	# `handle` by its own global order, in which `redir` comes BEFORE `route`
+	# — so writing the gate above the redirect without this wrapper hoists the
+	# redirect back above the gate and changes nothing at all.
+	handle /stabbur {
+		route {
+			import operator_gate
+			# `*` is the matcher. `redir /stabbur/ 308` without it parses as
+			# matcher=/stabbur/, to="308" and compiles to a 302 with
+			# `Location: 308` — caught by reading the adapted JSON, which is
+			# the only way this file's claims are ever worth anything.
+			redir * /stabbur/ 308
+		}
+	}
 	handle_path /stabbur/* {
 		import operator_gate
 		reverse_proxy stabbur-backend:5056 {
@@ -373,7 +441,31 @@
 	# names are what keep the three Flask services from colliding now that
 	# they all share one network (the collision D94 renamed
 	# stabbur-postgres to avoid).
-	redir /smia /smia/ 308
+	# GATED, and inside a `route` so it STAYS gated (2026-11-14, P56).
+	# This was a bare top-level `redir /smia /smia/ 308`, which compiled to
+	# one of five routes at indices 0-4 — ahead of the whole handle group and
+	# ahead of the site-level `request_header -X-Tun-Operator` strip. Two
+	# consequences, one cosmetic and one real:
+	#   * the strip's own comment claimed it ran "before a single route is
+	#     considered". It did not; it was route five. Corrected there.
+	#   * `/smia` answered 308 to a client with no credential while `/nope`
+	#     answered 404 — an unauthenticated oracle for which operator zones
+	#     exist. Not a content bypass (a `redir` reaches no service), but the
+	#     operator plane is supposed to enumerate to nobody.
+	# The inner `route` is NOT decoration: Caddy sorts the directives inside a
+	# `handle` by its own global order, in which `redir` comes BEFORE `route`
+	# — so writing the gate above the redirect without this wrapper hoists the
+	# redirect back above the gate and changes nothing at all.
+	handle /smia {
+		route {
+			import operator_gate
+			# `*` is the matcher. `redir /smia/ 308` without it parses as
+			# matcher=/smia/, to="308" and compiles to a 302 with
+			# `Location: 308` — caught by reading the adapted JSON, which is
+			# the only way this file's claims are ever worth anything.
+			redir * /smia/ 308
+		}
+	}
 	handle_path /smia/* {
 		import operator_gate
 		reverse_proxy smia-backend:5055 {
@@ -428,7 +520,31 @@
 	# session cookie is Path=/ (hub/src/auth.js). HttpOnly stops phonexa-
 	# origin JS from reading it; it does not stop the browser sending it.
 	# Accepted deliberately when the operator chose a path over a subdomain.
-	redir /phonexa /phonexa/ 308
+	# GATED, and inside a `route` so it STAYS gated (2026-11-14, P56).
+	# This was a bare top-level `redir /phonexa /phonexa/ 308`, which compiled to
+	# one of five routes at indices 0-4 — ahead of the whole handle group and
+	# ahead of the site-level `request_header -X-Tun-Operator` strip. Two
+	# consequences, one cosmetic and one real:
+	#   * the strip's own comment claimed it ran "before a single route is
+	#     considered". It did not; it was route five. Corrected there.
+	#   * `/phonexa` answered 308 to a client with no credential while `/nope`
+	#     answered 404 — an unauthenticated oracle for which operator zones
+	#     exist. Not a content bypass (a `redir` reaches no service), but the
+	#     operator plane is supposed to enumerate to nobody.
+	# The inner `route` is NOT decoration: Caddy sorts the directives inside a
+	# `handle` by its own global order, in which `redir` comes BEFORE `route`
+	# — so writing the gate above the redirect without this wrapper hoists the
+	# redirect back above the gate and changes nothing at all.
+	handle /phonexa {
+		route {
+			import operator_gate
+			# `*` is the matcher. `redir /phonexa/ 308` without it parses as
+			# matcher=/phonexa/, to="308" and compiles to a 302 with
+			# `Location: 308` — caught by reading the adapted JSON, which is
+			# the only way this file's claims are ever worth anything.
+			redir * /phonexa/ 308
+		}
+	}
 	handle_path /phonexa/* {
 		import operator_gate
 		# WebSockets (the live mic tracker's /stream) upgrade transparently
@@ -491,7 +607,31 @@
 	# phonexa's live mic tracker and stayed with the vowel domain. Shadow
 	# uploads can still be several MB (a recorded slice posted to
 	# /transcribe), and as with /phonexa no request-body limit is set.
-	redir /shadow /shadow/ 308
+	# GATED, and inside a `route` so it STAYS gated (2026-11-14, P56).
+	# This was a bare top-level `redir /shadow /shadow/ 308`, which compiled to
+	# one of five routes at indices 0-4 — ahead of the whole handle group and
+	# ahead of the site-level `request_header -X-Tun-Operator` strip. Two
+	# consequences, one cosmetic and one real:
+	#   * the strip's own comment claimed it ran "before a single route is
+	#     considered". It did not; it was route five. Corrected there.
+	#   * `/shadow` answered 308 to a client with no credential while `/nope`
+	#     answered 404 — an unauthenticated oracle for which operator zones
+	#     exist. Not a content bypass (a `redir` reaches no service), but the
+	#     operator plane is supposed to enumerate to nobody.
+	# The inner `route` is NOT decoration: Caddy sorts the directives inside a
+	# `handle` by its own global order, in which `redir` comes BEFORE `route`
+	# — so writing the gate above the redirect without this wrapper hoists the
+	# redirect back above the gate and changes nothing at all.
+	handle /shadow {
+		route {
+			import operator_gate
+			# `*` is the matcher. `redir /shadow/ 308` without it parses as
+			# matcher=/shadow/, to="308" and compiles to a 302 with
+			# `Location: 308` — caught by reading the adapted JSON, which is
+			# the only way this file's claims are ever worth anything.
+			redir * /shadow/ 308
+		}
+	}
 	handle_path /shadow/* {
 		import operator_gate
 		reverse_proxy shadow-backend:5051 {
@@ -521,7 +661,31 @@
 	# and is not an exposure: it is bound to the loopback interface, so it is
 	# reachable from the host only, not from the internet. The route is what
 	# the internet can reach, and the route is now gated.
-	redir /adminer /adminer/ 308
+	# GATED, and inside a `route` so it STAYS gated (2026-11-14, P56).
+	# This was a bare top-level `redir /adminer /adminer/ 308`, which compiled to
+	# one of five routes at indices 0-4 — ahead of the whole handle group and
+	# ahead of the site-level `request_header -X-Tun-Operator` strip. Two
+	# consequences, one cosmetic and one real:
+	#   * the strip's own comment claimed it ran "before a single route is
+	#     considered". It did not; it was route five. Corrected there.
+	#   * `/adminer` answered 308 to a client with no credential while `/nope`
+	#     answered 404 — an unauthenticated oracle for which operator zones
+	#     exist. Not a content bypass (a `redir` reaches no service), but the
+	#     operator plane is supposed to enumerate to nobody.
+	# The inner `route` is NOT decoration: Caddy sorts the directives inside a
+	# `handle` by its own global order, in which `redir` comes BEFORE `route`
+	# — so writing the gate above the redirect without this wrapper hoists the
+	# redirect back above the gate and changes nothing at all.
+	handle /adminer {
+		route {
+			import operator_gate
+			# `*` is the matcher. `redir /adminer/ 308` without it parses as
+			# matcher=/adminer/, to="308" and compiles to a 302 with
+			# `Location: 308` — caught by reading the adapted JSON, which is
+			# the only way this file's claims are ever worth anything.
+			redir * /adminer/ 308
+		}
+	}
 	handle_path /adminer/* {
 		import operator_gate
 		reverse_proxy adminer:8080

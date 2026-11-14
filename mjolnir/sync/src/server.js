@@ -46,6 +46,59 @@ function sendJson(res, status, body) {
   res.end(data);
 }
 
+// P46, generalised (2026-11-14). `sendJson` is for SUCCESS ONLY. Every
+// non-success answer on this service goes through `sendOpaque`: a status code
+// and an EMPTY body, nothing a `res.json()` with no status check can resolve.
+//
+// The original P46 fix patched the two branches that were known to fail (the
+// readiness gate and the connection-error branch) and left
+// `sendJson(res, 500, {error: err.message})` as the catch-all. That is not a
+// safe default, it is a safe special case — and an independent reviewer walked
+// straight through it: `decodeURIComponent('%ff')` throws `URIError` BEFORE
+// any database call, so neither patched branch ran and the device path emitted
+// `{"error":"URI malformed"}` with a 500. Mod 2080's shim
+// (patches/js/2080-progress-sync-shim.edited.js:96) is
+// `method === 'GET' ? res.json() : res.json().catch(...)` — the GET branch has
+// no status check AND no catch, so that object becomes THE USERDATA DOCUMENT.
+//
+// So the rule is enforced at the only place that cannot be walked around: the
+// default. Unknown exceptions included.
+function sendOpaque(res, status) {
+  if (res.headersSent) return res.end();
+  res.writeHead(status, { "Content-Length": 0 });
+  return res.end();
+}
+
+// The uid is the Firebase uid (D-S1), url-encoded by the shim with
+// `encodeURIComponent(id)`. Two separate defects made this worth validating
+// rather than passing straight through:
+//
+//   1. `decodeURIComponent` THROWS on an invalid percent-escape (`%ff`,
+//      `%c3%28`). Unhandled, that reached the catch-all above.
+//   2. `getOrCreate` WRITES ON GET (D-S2 auto-creation), with no shape check
+//      at all — so `GET /mjolnir/userdata/<5000 chars>` answered 200 and
+//      inserted a row. An unauthenticated attacker cannot reach this (the
+//      gateway gates the prefix), but "only authenticated clients can fill
+//      the table" is not a design, it is an accident.
+//
+// The charset is deliberately WIDER than Firebase's own 28-character
+// alphanumeric uid (the live device's is `q1Px3MgvOZVBdkpM9DKmFBnDnMi1`) and
+// the length cap is generous, because the field APK cannot be rolled back and
+// this must never be the thing that rejects a real device. It rejects only
+// what no uid is: empty, over-long, or containing a character outside
+// `[A-Za-z0-9._:@-]`.
+const UID_RE = /^[A-Za-z0-9._:@-]{1,128}$/;
+
+function decodeUid(encoded) {
+  let uid;
+  try {
+    uid = decodeURIComponent(encoded);
+  } catch {
+    return null; // invalid percent-escape — never a real device
+  }
+  return UID_RE.test(uid) ? uid : null;
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -64,20 +117,6 @@ export function createServer(config, boot) {
   return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://localhost");
-
-      // Liveness/readiness, for the container health check only — never part
-      // of the device contract, and deliberately outside the auth gate so a
-      // probe does not need a credential.
-      if (url.pathname === "/_health") {
-        // 503 when degraded, not a 200 whose BODY says degraded. The probe
-        // keys on the status code, and a body nobody parses is not a signal.
-        const ready = boot.dbReady();
-        return sendJson(res, ready ? 200 : 503, {
-          service: "mjolnir-sync",
-          status: boot.status(),
-          db: ready,
-        });
-      }
 
       // unified-auth 4.1. The shared check, like every other service: the
       // gateway-verified `X-Tun-Operator` marker, or INTERNAL_TOKEN.
@@ -98,12 +137,40 @@ export function createServer(config, boot) {
       //
       // UNCONDITIONAL, where the old gate was `if (config.operatorAuthToken)`
       // — an unset value used to leave the device plane wide open.
-      if (!requireAuth(req, res, config.internalToken, { rejectWith: "redirect", loginPath: "/mjolnir/login" })) return;
+      // `prefix: ""` — mjolnir-sync answers its probe at a bare `/_health`,
+      // which is also the Python services' path. The exemption is the shared
+      // one in libs/jsservice/auth.js (2026-11-14, P54); it is EXACT
+      // equality, never a suffix match, precisely so that no uid under
+      // `/mjolnir/userdata/<uid>` can be shaped to look like a probe and slip
+      // past this gate on a device path.
+      if (!requireAuth(req, res, config.internalToken, { rejectWith: "redirect", loginPath: "/mjolnir/login", prefix: "" })) return;
+
+      // Liveness/readiness, for the container health check only — never part
+      // of the device contract, and the one path the shared check above lets
+      // through unauthenticated.
+      if (url.pathname === "/_health") {
+        // 503 when degraded, not a 200 whose BODY says degraded. The probe
+        // keys on the status code, and a body nobody parses is not a signal.
+        const ready = boot.dbReady();
+        return sendJson(res, ready ? 200 : 503, {
+          service: "mjolnir-sync",
+          status: boot.status(),
+          db: ready,
+        });
+      }
 
       if (url.pathname.startsWith(USERDATA_PREFIX) && url.pathname.length > USERDATA_PREFIX.length) {
         // userdata-console (D-C1): this path segment is the real Firebase uid
         // (D-S1) — `userdata`/`userdata_history` stay keyed by it unchanged.
-        const uid = decodeURIComponent(url.pathname.slice(USERDATA_PREFIX.length));
+        const uid = decodeUid(url.pathname.slice(USERDATA_PREFIX.length));
+
+        // A malformed or implausible uid is answered BEFORE the method
+        // dispatch and before any database call: 404, empty body, no row
+        // created, on every method. The device never sends one — it sends a
+        // single-segment Firebase uid — so this changes nothing the frozen
+        // contract describes, and it is the only ordering under which a GET
+        // with a junk uid cannot write.
+        if (uid === null) return sendOpaque(res, 404);
 
         // METHOD DISPATCH FIRST, readiness second. Independent review caught
         // this the other way round: the readiness gate sat above the method
@@ -144,10 +211,7 @@ export function createServer(config, boot) {
         // operator reading gateway logs can.
         //
         // Never return a parseable body on this path.
-        if (!boot.dbReady()) {
-          res.writeHead(503, { "Content-Length": 0 });
-          return res.end();
-        }
+        if (!boot.dbReady()) return sendOpaque(res, 503);
 
         if (req.method === "GET") {
           const { doc, created } = await getOrCreate(uid);
@@ -195,11 +259,15 @@ export function createServer(config, boot) {
       if (boot.isConnectionError(err)) {
         // Empty body, same reasoning as the readiness gate above: a
         // parseable body here would be handed to mod 2080 as a document.
-        res.writeHead(503, { "Content-Length": 0 });
-        return res.end();
+        return sendOpaque(res, 503);
       }
       console.error(err);
-      sendJson(res, 500, { error: err.message });
+      // THE CATCH-ALL IS NOW FAIL-SAFE, not fail-descriptive. It used to be
+      // `sendJson(res, 500, { error: err.message })`, which is how `%ff`
+      // shipped `{"error":"URI malformed"}` to the device path. The operator
+      // still gets the full error — on stderr, above — which is where a stack
+      // trace belongs. The device gets a status code and nothing to parse.
+      sendOpaque(res, 500);
     }
   });
 }

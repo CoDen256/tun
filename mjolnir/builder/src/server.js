@@ -742,19 +742,7 @@ function renderLogsPage(jobs, selectedJob, logLines) {
 
 export function createServer(pool, config, boot) {
   return http.createServer(async (req, res) => {
-        // Liveness AND readiness for the container probe — outside the auth
-    // gate, since a probe has no credential. 503 when degraded, because a
-    // 200 whose body says "degraded" is not a signal anything reads (P45).
-    {
-      const hp = new URL(req.url, "http://localhost").pathname;
-      if (hp === "/builder/_health") {
-        const ready = boot ? boot.dbReady() : true;
-        const payload = JSON.stringify({ service: "mjolnir-builder", status: boot ? boot.status() : "ready", db: ready });
-        res.writeHead(ready ? 200 : 503, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(payload) });
-        return res.end(payload);
-      }
-    }
-try {
+    try {
       const url = new URL(req.url, "http://localhost");
 
       // unified-auth 4.1/4.2. /builder/login and its cookie are GONE — the
@@ -764,7 +752,23 @@ try {
       // OPERATOR_AUTH_TOKEN was unset, so a missing value meant an open
       // console. The marker needs no configured value, so nothing can be
       // forgotten into openness.
-      if (!requireAuth(req, res, config.internalToken)) return;
+      // `prefix` is what exempts this service's container probe, and the
+      // exemption itself lives in libs/jsservice/auth.js (2026-11-14, P54).
+      // The health branch used to sit ABOVE this call, outside the try, in
+      // its own bare block — one of three hand-written exemptions at three
+      // different paths across the three Node services.
+      if (!requireAuth(req, res, config.internalToken, { prefix: "/builder" })) return;
+
+      // Liveness AND readiness for the container probe — the one
+      // unauthenticated path, exempted by the shared check above. 503 when
+      // degraded, because a 200 whose body says "degraded" is not a signal
+      // anything reads (P45).
+      if (url.pathname === "/builder/_health") {
+        const ready = boot ? boot.dbReady() : true;
+        const payload = JSON.stringify({ service: "mjolnir-builder", status: boot ? boot.status() : "ready", db: ready });
+        res.writeHead(ready ? 200 : 503, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(payload) });
+        return res.end(payload);
+      }
 
       if (req.method === "GET" && url.pathname === "/builder/api/forecast") {
         return sendJson(res, 200, await runForecast(pool, config));

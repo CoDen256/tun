@@ -16,8 +16,21 @@ cd "$(dirname "$0")/.."
 # TUN_PUBLIC_BASE's `:?` guard before reaching a single check. Found by
 # independent review, not by running it, because every earlier run passed the
 # base url and token explicitly. Root first, project second.
+#
+# PRECEDENCE: argument > environment > .env. Independent review (2026-11-14)
+# found the environment being SILENTLY DISCARDED — `.env` was sourced with
+# `set -a` AFTER the caller's environment existed, so it always won, while the
+# usage line above advertises `$TUN_PUBLIC_BASE` as the default. The reviewer
+# stood up five mutated gateways, ran this suite against each with
+# TUN_PUBLIC_BASE pointing at the mutant, and got `15 passed, 0 failed` every
+# time: all five runs tested the untouched stack on 8080. A suite that cannot
+# be pointed at the host you want is a suite that cannot fail.
+ENV_BASE=${TUN_PUBLIC_BASE:-}
+ENV_OTA_TOKEN=${OTA_TOKEN:-}
 [ -f ../.env ] && set -a && . ../.env && set +a
 [ -f .env ] && set -a && . ./.env && set +a
+[ -n "$ENV_BASE" ] && TUN_PUBLIC_BASE=$ENV_BASE
+[ -n "$ENV_OTA_TOKEN" ] && OTA_TOKEN=$ENV_OTA_TOKEN
 BASE=${1:-${TUN_PUBLIC_BASE:?set TUN_PUBLIC_BASE in .env or pass a base url}}
 TOKEN=${OTA_TOKEN:?set OTA_TOKEN in .env}
 AUTH="Authorization: Bearer ${TOKEN}"
@@ -65,8 +78,23 @@ echo "token gate"
 	&& ok "wrong token -> 401" || bad "wrong token should be 401"
 [ "$(code -H "$AUTH" "$BASE/ota/current.json")" = 200 ] \
 	&& ok "correct token -> 200" || bad "correct token should be 200"
-[ "$(code -X POST -H "$AUTH" "$BASE/ota/current.json")" = 405 ] \
-	&& ok "POST -> 405 (P23: GET only)" || bad "POST should be 405"
+# P23: GET/HEAD only. ASSERT THE GUARD'S OWN RESPONSE, not just the status.
+# The status alone is VACUOUS and was proven so by mutation: delete
+# `@not_read not method GET HEAD` from the Caddyfile and this still passed,
+# because `file_server` answers 405 for a non-GET/HEAD request all by itself.
+# An assertion that cannot detect its own deletion is not an assertion.
+#
+# The guard is distinguishable: it `respond`s with the literal body
+# `method not allowed` and `close`. file_server's own 405 is a Caddy error,
+# which the site-wide `handle_errors` @device carve-out answers with an EMPTY
+# body — so body-identity is exactly the signal that separates the two.
+P23_CODE=$(code -X POST -H "$AUTH" "$BASE/ota/current.json")
+P23_BODY=$(curl -s -X POST -H "$AUTH" "$BASE/ota/current.json")
+if [ "$P23_CODE" = 405 ] && [ "$P23_BODY" = "method not allowed" ]; then
+	ok "POST -> 405 from the @not_read guard itself (P23: GET only)"
+else
+	bad "POST should be 405 with body 'method not allowed' from the @not_read guard; got $P23_CODE body '$P23_BODY' (an empty body means the guard is GONE and file_server is answering)"
+fi
 
 echo "current.json"
 curl -sS -H "$AUTH" "$BASE/ota/current.json" -o "$TMP/current.json"

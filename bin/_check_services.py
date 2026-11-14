@@ -45,6 +45,16 @@ for name, svc in sorted(services.items()):
         if name != "caddy" and host_ip not in ("127.0.0.1", "::1"):
             problems.append(f"public port: {name} on {host_ip}:{port.get('published')}")
 
+# `network_mode: host` publishes nothing and exposes everything: the container
+# shares the host's network namespace, so every port it listens on is reachable
+# from outside the loopback without a `ports:` key anywhere. Neither this
+# helper nor the text-level scan looked for it until the 2026-11-14 review
+# pointed out that a one-line edit defeated the whole marker-header
+# precondition (P53).
+for name, svc in sorted(services.items()):
+    if svc.get("network_mode") == "host" and name != "caddy":
+        problems.append(f"host networking: {name} uses network_mode: host")
+
 # Every application backend needs a healthcheck of its own. The gateway, the
 # database browser and the backup service are named here as known-unmonitored
 # rather than silently skipped — see the service-standard spec.

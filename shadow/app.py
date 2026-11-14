@@ -71,6 +71,32 @@ import phonexa_client
 from shadowing import shadowing_bp
 
 app = Flask(__name__)
+# flask-cors IS STILL LIVE HERE, AND THAT IS NOT WHAT THE SURROUNDING
+# DOCUMENTATION USED TO SAY (corrected 2026-11-14, P57). `libs/pyservice/auth.py`
+# claimed the service-side CORS answer had been removed in favour of the
+# gateway's, and grind/caddy/Caddyfile reasons at length about "the gateway's
+# `*` policy" as though it were the only one. Measured, with the stack up:
+#
+#   curl -H 'Origin: https://evil.example' .../smia/health
+#       -> Access-Control-Allow-Origin: https://evil.example
+#
+# So there are TWO policies, in two places, and they disagree: the gateway
+# answers the PREFLIGHT with `*`, and this line answers the ACTUAL request by
+# REFLECTING whatever Origin asked.
+#
+# Kept, deliberately, until the extension lands (unified-auth 6.1/6.2). The
+# gateway sets Access-Control-Allow-Origin on the preflight only — nothing in
+# the Caddyfile adds it to a real response — so deleting this line would let
+# a cross-origin preflight succeed and then have the browser discard the
+# answer to the request it authorised. hover-translate (D154) is exactly that
+# client and it is not in this repository, so the regression could not be
+# caught here.
+#
+# Not exploitable as it stands: `Access-Control-Allow-Credentials` is never
+# set, so a browser will not attach the operator cookie or basic credential to
+# a cross-origin request, and a response read this way carries no authority
+# the caller did not already have. It is a documentation defect, recorded
+# rather than silently left: two CORS policies with a comment claiming one.
 CORS(app)
 
 # unified-auth 4.1/4.3. shadow had NO auth of its own until now — the only

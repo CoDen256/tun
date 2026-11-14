@@ -1065,25 +1065,6 @@ export function createServer(pool, config, boot) {
     const url = new URL(req.url, "http://localhost");
     try {
 
-      // Liveness AND readiness, for the container health check only. Outside
-      // the auth gate on purpose: a probe must not need a credential.
-      //
-      // Added after independent review found every Node probe was
-      // liveness-only — `node -e "...then(() => process.exit(0))"` exits 0 for
-      // ANY HTTP status, so with the database down /_health said degraded
-      // while `docker inspect` said healthy. That is verbatim the P45 symptom
-      // ("its health check also still said healthy") reproduced in a new
-      // place. The status code here is what the probe keys on: 200 ready,
-      // 503 degraded.
-      if (url.pathname === "/mjolnir/_health") {
-        const ready = boot ? boot.dbReady() : true;
-        return sendJson(res, ready ? 200 : 503, {
-          service: "mjolnir-workbench",
-          status: boot ? boot.status() : "ready",
-          db: ready,
-        });
-      }
-
       // unified-auth 4.1/4.2. D-H6's cookie, its /mjolnir/login page and its
       // POST handler are GONE. The gateway is the gate: `basic_auth` on all
       // seven operator zones, and `X-Tun-Operator` set only on a request
@@ -1103,9 +1084,34 @@ export function createServer(pool, config, boot) {
       // first draft of this change deleted that copy and left the workbench
       // and its /api/patches open, which hub's own test caught. A single
       // check above every branch is the version that cannot be half-removed.
-      // /_health is the only thing above it — a container probe cannot
-      // present a credential.
-      if (!requireAuth(req, res, config.internalToken)) return;
+      //
+      // NOTHING IS ABOVE IT ANY MORE (2026-11-14, P54). `/mjolnir/_health`
+      // used to be — a hand-written branch returning before the gate, which
+      // is P50's shape again, three times over across the three Node services
+      // and at three different paths. The exemption belongs to
+      // libs/jsservice/auth.js now: `prefix` names this service's probe URL,
+      // `requireAuth` lets exactly that one path through, and the handler
+      // below runs unchanged.
+      if (!requireAuth(req, res, config.internalToken, { prefix: "/mjolnir" })) return;
+
+      // Liveness AND readiness, for the container health check only — the one
+      // unauthenticated path, exempted by the shared check above.
+      //
+      // Added after independent review found every Node probe was
+      // liveness-only — `node -e "...then(() => process.exit(0))"` exits 0 for
+      // ANY HTTP status, so with the database down /_health said degraded
+      // while `docker inspect` said healthy. That is verbatim the P45 symptom
+      // ("its health check also still said healthy") reproduced in a new
+      // place. The status code here is what the probe keys on: 200 ready,
+      // 503 degraded.
+      if (url.pathname === "/mjolnir/_health") {
+        const ready = boot ? boot.dbReady() : true;
+        return sendJson(res, ready ? 200 : 503, {
+          service: "mjolnir-workbench",
+          status: boot ? boot.status() : "ready",
+          db: ready,
+        });
+      }
 
       // The embedded workbench's routes and static assets live under one
       // prefix rather than in hub's per-page route list, so they are handled

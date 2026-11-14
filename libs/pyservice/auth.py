@@ -33,6 +33,17 @@ before the auth check (`(operator_gate)`'s `@preflight` route). Answering a
 preflight here as well would be dead code at best and a second place to get
 it wrong at worst.
 
+CORRECTION, 2026-11-14 (P57): the sentence above is about the blanket OPTIONS
+exemption in THIS module, and only about that. It was read — including by this
+file's own author — as saying that service-side CORS is gone. It is not:
+`flask_cors.CORS(app)` is still live in smia/app.py, stabbur/app.py,
+phonexa/formanter.py and shadow/app.py, and it REFLECTS the requesting Origin
+on the actual response, where the gateway's `*` covers the preflight only. Two
+policies, in two places, documented as one. The four call sites now carry the
+measurement and the reason they are kept; see also the Caddyfile's CORS notes.
+Nothing here is exploitable — `Access-Control-Allow-Credentials` is never set
+— but a claim like this one must not be readable without its correction.
+
 The ONE exemption that remains is `/_health`: it is the container probe
 (libs/pyservice/bootstrap.py), it carries no data, it is never routed through
 the gateway, and a Docker health check cannot present a credential.
@@ -55,6 +66,51 @@ STABBUR_AUTH_TOKEN and SMIA_AUTH_TOKEN, which are retired names — see the
 `dead` list in bin/check-standards.sh."""
 
 UNAUTHENTICATED_PATHS = ("/_health",)
+"""The ONE exemption, and the Node half now agrees: `libs/jsservice/auth.js`
+owns the same predicate for mjolnir-hub / mjolnir-builder / mjolnir-sync,
+which each pass their URL prefix (`/mjolnir`, `/builder`, ``) instead of
+open-coding a health branch above their own gate. Before 2026-11-14 the
+sentence above this line was true of Python only, and three hand-written
+exemptions sat above three `requireAuth` calls — P50's shape, three times
+(P54)."""
+
+
+def require_internal_token() -> str:
+    """Read INTERNAL_TOKEN or refuse to start.
+
+    ONE CONTRACT, BOTH LANGUAGES (2026-11-14, P55). The three implementations
+    disagreed: `mjolnir/builder/src/config.js` threw at boot, hub read the
+    variable and carried on, and Python never looked at it until a request
+    arrived. All three fail CLOSED, so none of them was a hole — but "fail
+    closed" is not the same as "same contract", and the difference is exactly
+    the kind that is invisible until the day one of them is relaxed.
+
+    REQUIRED EVERYWHERE is the behaviour chosen, for three reasons:
+
+      * it is one ecosystem-wide credential living in one file (the root
+        `.env`, D151), and every compose fragment already passes it to every
+        service — so a service that starts without it is misconfigured, full
+        stop, not configured differently;
+      * the alternative — tolerate it and close the internal door — turns a
+        boot-time misconfiguration into a 401 on a cross-service call hours
+        later, at a caller that has no way to name the cause. That is the
+        house's defining defect class, where the failure surfaces somewhere
+        other than where it happened;
+      * refusing to start is loud, immediate and cannot be mistaken for
+        health: the container never reports healthy, instead of reporting
+        healthy while one of its two ways in is silently dead.
+
+    The marker header deliberately needs NO configured value, so this can
+    never be what leaves a service open — only what keeps it from starting.
+    """
+    token = os.environ.get(INTERNAL_TOKEN_ENV)
+    if not token:
+        raise RuntimeError(
+            f"{INTERNAL_TOKEN_ENV} is required (the one service-to-service "
+            "token; it lives in the repository root .env and every compose "
+            "fragment passes it through)"
+        )
+    return token
 
 
 def is_authorized() -> bool:
@@ -76,6 +132,9 @@ def is_authorized() -> bool:
 
 
 def register_auth(app):
+    # Asserted at registration — i.e. at boot — not on the first request.
+    require_internal_token()
+
     @app.before_request
     def _require_operator_or_internal():
         if request.path in UNAUTHENTICATED_PATHS:

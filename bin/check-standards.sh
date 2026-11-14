@@ -7,7 +7,8 @@
 # EXIT CODES MATTER — DEPLOY.md treats this as a gate:
 #   0  every check ran and passed
 #   1  a real violation
-#   2  a check could not be run (no docker, no .env). NOT a pass.
+#   2  a check could not be run (no docker, no .env, no python3, no inputs).
+#      NOT a pass.
 #
 # Rewritten 2026-11-13 after independent review found the previous version
 # fail-OPEN on its most security-relevant check: the port-leak test piped
@@ -16,29 +17,97 @@
 # gated on `[ -f .env ]` and skipped in silence on a fresh clone, while the
 # summary still read "all standards checks passed". A gate that cannot fail is
 # worse than no gate.
+#
+# HARDENED AGAIN 2026-11-14, after a second review found THE SAME SHAPE still
+# here, twice (P51, P52), plus a port check that matched one of six publish
+# syntaxes (P53):
+#
+#   * the rendered-config block captured python3's stderr into the result and
+#     decided on `grep -q '^P:'` alone, so a missing python3, a deleted helper
+#     or a syntax error in it printed ` ok ... ( services)` — note the empty
+#     count — and exited 0, silently disabling all three rendered-config
+#     rules. Proven with `PATH=/tmp/nopy:$PATH bash bin/check-standards.sh`.
+#   * COMPOSE_FILES / ENV_FILES come from `find`. Empty lists leave `grep -nE
+#     pat $FILES` with no file operand, so grep READS STDIN and every check
+#     reports green over zero inputs. Proven in a tree containing only bin/.
+#
+# THE RULE THIS FILE NOW FOLLOWS, everywhere: a check that did not run is
+# reported as UNVERIFIED (exit 2). Only a check that ran over a non-empty
+# input may print ` ok `. An empty input is itself a failure signal.
 set -uo pipefail
 cd "$(dirname "$0")/.."
+BIN="$(dirname "$0")"
 fail=0; skipped=0
 note() { printf '     %s\n' "$*"; }
 bad()  { printf '\033[31mFAIL\033[0m %s\n' "$*"; fail=1; }
 ok()   { printf '\033[32m ok \033[0m %s\n' "$*"; }
 skip() { printf '\033[33mSKIP\033[0m %s\n' "$*"; skipped=1; }
+# Louder than SKIP on purpose: SKIP reads as "not applicable here", this reads
+# as "the gate did not run". Both exit 2; only this one is a defect.
+unverified() { printf '\033[33mUNVERIFIED\033[0m %s\n' "$*"; skipped=1; }
 
 # Every compose file, including the root compose.dev.yaml the old version's
-# --include globs silently excluded.
+# --include globs silently excluded, and every per-project
+# compose.override.yaml (the `compose*.yaml` glob matches them — which the
+# 2026-11-14 review doubted and which is asserted below rather than assumed).
 COMPOSE_FILES=$(find . -path ./.git -prune -o -name 'compose*.yaml' -type f -print 2>/dev/null | grep -v '/base/')
 # .env.example at ANY depth — the old depth-1 glob missed
 # mjolnir/hub/.env.example, which types a DATABASE_URL that D151 forbids.
 ENV_FILES=$(find . -path ./.git -prune -o -name '.env.example' -type f -print 2>/dev/null)
 
+# --- the inputs themselves, asserted before anything consumes them ---------
+# `grep -nE pat $EMPTY` reads STDIN. Seven green lines over zero files is
+# exactly the "failure reports success" shape this file exists to stop, so the
+# lists are checked once, here, and every block below runs only over a
+# non-empty list.
+have_compose=1; have_env=1
+if [ -z "$COMPOSE_FILES" ]; then
+  unverified "no compose file found under $PWD — the D150/D152 file-level rules and the 4.7 port scan did NOT run (is this the repository root?)"
+  have_compose=0
+fi
+if [ -z "$ENV_FILES" ]; then
+  unverified "no .env.example found under $PWD — the two D151 rules did NOT run (is this the repository root?)"
+  have_env=0
+fi
+# Every per-project override must be in the list: that is where a dev port is
+# added, and the 4.7 scan is the only layer that sees them (the rendered
+# config below is the root project, which does not load them).
+overrides_on_disk=$(find . -path ./.git -prune -o -name 'compose.override.yaml' -type f -print 2>/dev/null | wc -l)
+overrides_scanned=$(printf '%s\n' "$COMPOSE_FILES" | grep -c 'compose\.override\.yaml$')
+if [ "$overrides_on_disk" -ne "$overrides_scanned" ]; then
+  unverified "the compose file list covers $overrides_scanned of $overrides_on_disk compose.override.yaml files on disk — the 4.7 port scan has blind spots"
+  have_compose=0
+fi
+
+# Runs a python helper and refuses to interpret anything it did not actually
+# produce. $1 = helper path, $2 = human name for the message, rest = argv.
+# stdin is whatever the caller pipes in. Sets HELPER_OUT / HELPER_RC.
+run_helper() {
+  local helper="$1" label="$2"; shift 2
+  local errfile; errfile=$(mktemp)
+  if ! command -v python3 >/dev/null 2>&1; then
+    HELPER_RC=127; HELPER_OUT=""; HELPER_ERR="python3 is not on PATH"
+    rm -f "$errfile"; return 127
+  fi
+  if [ ! -f "$helper" ]; then
+    HELPER_RC=126; HELPER_OUT=""; HELPER_ERR="$helper is missing"
+    rm -f "$errfile"; return 126
+  fi
+  HELPER_OUT=$(python3 "$helper" "$@" 2>"$errfile"); HELPER_RC=$?
+  HELPER_ERR=$(head -5 "$errfile")
+  rm -f "$errfile"
+  return "$HELPER_RC"
+}
+
 # --- D151: no configuration key in two .env.example files -------------------
+if [ "$have_env" -eq 1 ]; then
 dupes=$(for f in $ENV_FILES; do
           grep -hoE '^[[:space:]]*#?[[:space:]]*[A-Z_][A-Z0-9_]*=' "$f" 2>/dev/null \
             | tr -d '#=' | tr -d '[:blank:]'
         done | sort | uniq -d)
 if [ -n "$dupes" ]; then
   bad "D151: keys defined in more than one .env.example:"
-  for k in $dupes; do note "$k -> $(grep -lE "^[[:space:]]*#?[[:space:]]*$k=" $ENV_FILES | tr '\n' ' ')"; done
+  for k in $dupes; do note "$k -> $(grep -lE "^[[:space:]]*#?[[:space:]]*$k=" $ENV_FILES </dev/null | tr '\n' ' ')"; done
 else
   ok "D151: no configuration key is defined in two .env.example files ($(echo $ENV_FILES | wc -w) files, commented keys included)"
 fi
@@ -56,12 +125,14 @@ fi
 # are retired. They are listed here so neither can be retyped into a
 # .env.example and quietly become a second credential nobody reads.
 dead='STABBUR_UPSTREAM|SMIA_UPSTREAM|PHONEXA_UPSTREAM|STABBUR_BASE_URL|STABBUR_UI_BASE|SMIA_BASE_URL|DATABASE_URL|PHONEXA_AUTH_HASH|STABBUR_AUTH_TOKEN|SMIA_AUTH_TOKEN'
-hits=$(grep -nE "^[[:space:]]*#?[[:space:]]*($dead)=" $ENV_FILES 2>/dev/null)
+hits=$(grep -nE "^[[:space:]]*#?[[:space:]]*($dead)=" $ENV_FILES </dev/null 2>/dev/null)
 if [ -n "$hits" ]; then bad "D151: derivable/retired values typed into a .env.example:"; note "$hits"
 else ok "D151: no retired or derivable value is typed into any .env.example"; fi
+fi
 
 # --- D152/D150: file-level prohibitions across EVERY compose file ----------
-hits=$(grep -nE '^[[:space:]]*(container_name:|external:[[:space:]]*true)' $COMPOSE_FILES 2>/dev/null)
+if [ "$have_compose" -eq 1 ]; then
+hits=$(grep -nE '^[[:space:]]*(container_name:|external:[[:space:]]*true)' $COMPOSE_FILES </dev/null 2>/dev/null)
 if [ -n "$hits" ]; then bad "D152: container_name / external network:"; note "$hits"
 else ok "D152: no container_name and no external network (all $(echo $COMPOSE_FILES | wc -w) compose files)"; fi
 
@@ -71,35 +142,39 @@ else ok "D152: no container_name and no external network (all $(echo $COMPOSE_FI
 # gateway authenticated the caller (libs/pyservice/auth.py,
 # libs/jsservice/auth.js). The gateway strips any inbound copy, so the only
 # way to forge one is to reach a service WITHOUT going through the gateway.
+# The marker is checked for PRESENCE, not value, so one reachable port is a
+# total bypass of every zone.
 #
 # Text-level and over EVERY compose file, deliberately: the rendered-config
 # check below sees only the root project, so a per-project
 # `compose.override.yaml` — which is exactly where a dev port is added —
 # is invisible to it. grind/compose.yaml is the one file allowed a public
 # mapping, because publishing 80/443 is what a gateway is.
-portleaks=$(for f in $COMPOSE_FILES; do
-              case "$f" in ./grind/compose.yaml) continue;; esac
-              awk -v F="$f" '
-                /^[[:space:]]*ports:/ { inports=1; next }
-                inports && /^[[:space:]]*-[[:space:]]*["'"'"']?[0-9:.]+/ {
-                  line=$0; sub(/^[^"'"'"']*["'"'"']?/, "", line);
-                  if (line !~ /^127\.0\.0\.1:/ && line !~ /^::1:/) print F ":" NR ": " $0;
-                  next
-                }
-                inports && /^[[:space:]]*-[[:space:]]*#/ { next }
-                inports && !/^[[:space:]]*-/ { inports=0 }
-              ' "$f"
-            done)
-if [ -n "$portleaks" ]; then
+#
+# The matching lives in bin/_check_ports.py, which understands all six
+# publish syntaxes. The awk one-liner that used to be here understood one
+# (P53).
+scan_files=$(for f in $COMPOSE_FILES; do
+               case "$f" in ./grind/compose.yaml) continue;; esac
+               printf '%s\n' "$f"
+             done)
+if [ -z "$scan_files" ]; then
+  unverified "unified-auth 4.7: no non-gateway compose file to scan — the port check did NOT run"
+elif ! run_helper "$BIN/_check_ports.py" "port scan" $scan_files; then
+  unverified "unified-auth 4.7: the port check could not run (exit $HELPER_RC) — port exposure is NOT verified: ${HELPER_ERR:-no output}"
+elif printf '%s\n' "$HELPER_OUT" | grep -q '^P:'; then
   bad "unified-auth 4.7: a non-gateway service publishes outside the loopback interface:"
-  note "$portleaks"
+  printf '%s\n' "$HELPER_OUT" | grep '^P:' | sed 's/^P:/     /'
+elif ! printf '%s\n' "$HELPER_OUT" | grep -q '^FILES=[1-9]'; then
+  unverified "unified-auth 4.7: the port check reported no scanned files — NOT verified"
 else
-  ok "unified-auth 4.7: only grind/compose.yaml publishes publicly; every other mapping is 127.0.0.1 (marker-header trust holds)"
+  ok "unified-auth 4.7: only grind/compose.yaml publishes publicly; every other mapping is loopback, and no service uses host networking ($(printf '%s\n' "$HELPER_OUT" | sed -n 's/^FILES=//p') files, all publish syntaxes)"
 fi
 
-hits=$(grep -nE 'tun-shared' $COMPOSE_FILES 2>/dev/null | grep -vE ':[0-9]+:[[:space:]]*#')
+hits=$(grep -nE 'tun-shared' $COMPOSE_FILES </dev/null 2>/dev/null | grep -vE ':[0-9]+:[[:space:]]*#')
 if [ -n "$hits" ]; then bad "D150: tun-shared referenced outside a comment:"; note "$hits"
 else ok "D150: no tun-shared reference outside comments"; fi
+fi
 
 # --- D153: active change ids are bare slugs --------------------------------
 # Archives keep their dated names on purpose (D153) — they are historical
@@ -130,12 +205,23 @@ else
     bad "D152 service-level checks: 'docker compose config' produced NOTHING — the project does not render. This is a violation, not a skip:"
     note "$(docker compose config 2>&1 | head -4)"
   else
-    result=$(printf '%s' "$rendered" | python3 "$(dirname "$0")/_check_services.py" 2>&1)
-    if printf '%s' "$result" | grep -q '^P:'; then
+    # stderr is NOT folded into the result and the exit status IS consulted:
+    # the previous version did the opposite of both and printed ` ok ` with an
+    # empty service count when python3 was unavailable (P51).
+    printf '%s' "$rendered" > /tmp/.tun-rendered.$$
+    run_helper "$BIN/_check_services.py" "service checks" </tmp/.tun-rendered.$$
+    rm -f /tmp/.tun-rendered.$$
+    count=$(printf '%s\n' "$HELPER_OUT" | sed -n 's/^SERVICES=//p')
+    if [ "$HELPER_RC" -ne 0 ]; then
+      unverified "D152 service-level checks: the helper did not run (exit $HELPER_RC) — restart policies, port exposure and healthchecks are NOT verified: ${HELPER_ERR:-no output}"
+    elif printf '%s\n' "$HELPER_OUT" | grep -q '^P:'; then
       bad "D152: service-level violations in the rendered config:"
-      printf '%s' "$result" | grep '^P:' | sed 's/^P:/     /'
+      printf '%s\n' "$HELPER_OUT" | grep '^P:' | sed 's/^P:/     /'
+    elif [ -z "$count" ] || [ "$count" -eq 0 ]; then
+      # Zero services is not "all good", it is "nothing was examined".
+      unverified "D152 service-level checks: the rendered config yielded ${count:-no} services — nothing was examined, so NOTHING is verified"
     else
-      ok "D152: every service restarts, only the gateway publishes publicly, every backend has a healthcheck ($(printf '%s' "$result" | grep SERVICES= | cut -d= -f2) services)"
+      ok "D152: every service restarts, only the gateway publishes publicly, every backend has a healthcheck and none uses host networking ($count services)"
     fi
   fi
 fi

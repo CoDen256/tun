@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { requireInternalToken } from "../../../libs/jsservice/auth.js";
 
 // Anchored to this module's own location, never `process.cwd()` — a
 // long-lived service's working directory is a deployment detail (docker
@@ -8,7 +9,13 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 // Centralized env reading, mirroring builder/src/config.js's pattern.
-export function loadConfig() {
+//
+// `requireInternal` is the ONE knob, and it is a ZONE distinction rather than
+// a per-service preference (2026-11-14, P55). See the long note at the
+// INTERNAL_TOKEN line below: hub and builder are operator-plane and refuse to
+// start without the shared token; mjolnir-sync is DEVICE plane, imports this
+// same loader (mjolnir/sync/bin/server.js), and passes `false`.
+export function loadConfig({ requireInternal = true } = {}) {
   const dataDir = process.env.DATA_DIR || "../data";
   const publicBase = process.env.TUN_PUBLIC_BASE;
   // D-L1: operator-submitted base+patch bundles are stored here, immutable
@@ -52,7 +59,32 @@ export function loadConfig() {
   // service accepts from a caller that is not the gateway
   // (libs/jsservice/auth.js) — the gateway's verified `X-Tun-Operator`
   // marker is the other way in, and needs no value at all.
-  const internalToken = process.env.INTERNAL_TOKEN;
+  //
+  // ONE CONTRACT ACROSS BOTH LANGUAGES (2026-11-14, P55). builder's
+  // config.js threw at boot on a missing INTERNAL_TOKEN, this line just read
+  // it, and the Python services never looked until a request arrived. All
+  // three fail CLOSED — none was a hole — but three behaviours is not one
+  // contract, and the difference only becomes visible on the day one of them
+  // is relaxed. The rule now, stated in the vocabulary this repo actually
+  // uses (the three zones):
+  //
+  //   OPERATOR PLANE  — required at boot, refuse to start without it. A
+  //     service that starts without the one shared credential is
+  //     misconfigured, not configured differently, and tolerating it turns a
+  //     boot-time mistake into a 401 on a cross-service call hours later at
+  //     a caller with no way to name the cause.
+  //   DEVICE PLANE    — never required. mjolnir-sync serves a frozen contract
+  //     with an APK in the field and must NOT refuse to boot over an
+  //     operator-plane credential it is never called with: the gateway gates
+  //     /mjolnir/userdata/* and sets the marker, so INTERNAL_TOKEN plays no
+  //     part in that path. Making it fatal there would let one edit to the
+  //     root .env take device sync down for a reason the device cannot see.
+  //
+  // The marker header needs no configured value at all, so neither half of
+  // this can leave a service OPEN — only keep it from starting.
+  const internalToken = requireInternal
+    ? requireInternalToken()
+    : process.env.INTERNAL_TOKEN;
   // NOT the gate any more (unified-auth 4.2 deleted hub's own login). This
   // is the DEVICE token: the bundle tool bakes it into an APK as SYNC_TOKEN
   // at assemble time (`assembleDefaults`), and until section 7.1 gives

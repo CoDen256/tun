@@ -1,3 +1,4 @@
+import { requireInternalToken } from "../../../libs/jsservice/auth.js";
 // Centralized env reading so server.js/clock.js/bin scripts don't each
 // re-derive it slightly differently.
 export function loadConfig() {
@@ -6,15 +7,14 @@ export function loadConfig() {
   // STABBUR_AUTH_TOKEN here and SMIA_AUTH_TOKEN elsewhere. builder -> stabbur
   // never passes through the gateway, so the marker is not an option on that
   // leg and the token is what stabbur checks.
-  const internalToken = process.env.INTERNAL_TOKEN;
+  // Operator plane: required at boot, via the SHARED assertion rather than a
+  // hand-written `if` — one contract, both languages (P55). The bespoke throw
+  // that used to be further down said the same thing in different words, and
+  // hub's copy of this line said nothing at all.
+  const internalToken = requireInternalToken();
   const dataDir = process.env.DATA_DIR || "../data";
   const publicBase = process.env.TUN_PUBLIC_BASE;
   if (!stabburBaseUrl) throw new Error("STABBUR_BASE_URL is required");
-  // D85: stabbur's /api/notes and /api/grammar_rules require a credential on
-  // every path (unified-auth 4.5 deleted the /ui and /blob carve-outs) — this
-  // was missing entirely until found cross-checking a real pull against
-  // stabbur's actual auth module.
-  if (!internalToken) throw new Error("INTERNAL_TOKEN is required (the one service-to-service token)");
   if (!publicBase) throw new Error("TUN_PUBLIC_BASE is required (passed through to the publish module)");
   return {
     stabburBaseUrl,
