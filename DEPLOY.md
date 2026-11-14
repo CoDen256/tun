@@ -122,20 +122,44 @@ entirely: `grind/caddy/Caddyfile` (the gateway moved out of `mjolnir/` —
 `smia-backend` and `phonexa-backend` directly, because one Compose project means a service
 name always resolves.
 
-## 3. The four Postgres passwords — read this before editing `.env`
+## 3. Postgres passwords — read this before editing `.env`
 
-There are **four separate Postgres instances**, one per project, and
-**four separate password keys**:
+> **This section had two readers and was written for only one of them.**
+> `postgres-consolidation` replaced the four per-project instances with ONE
+> cluster holding one database per service, so the steady state below is no
+> longer four keys. But the four-password hazard is still live **while
+> reading the OLD volumes during the cutover**, which is the only time it
+> bites. Both are documented; do not apply the wrong one.
+
+### 3a. Steady state after the cutover — ONE key
+
+One `postgres:17-alpine` cluster (`postgres/compose.yaml`), five databases —
+`mjolnir`, `stabbur`, `smia`, `phonexa`, `shadow` — one role per database
+with its own password **derived in compose** from a single key:
 
 ```sh
-MJOLNIR_POSTGRES_PASSWORD=<required — no default, the stack refuses to start without it>
-STABBUR_POSTGRES_PASSWORD=stabbur     # default
-SMIA_POSTGRES_PASSWORD=smia           # default
-PHONEXA_POSTGRES_PASSWORD=phonexa     # default
+POSTGRES_PASSWORD=<required — no default, the stack refuses to start without it>
 ```
 
-**Do not collapse them into one value. This is the single most dangerous
-mistake available in this file.** Postgres applies `POSTGRES_PASSWORD`
+Per-service `DATABASE_URL`s are derived, never typed (D151: no value in two
+files). A service's role reaches only its own database.
+
+Verify what is actually running before trusting either half of this section:
+
+```sh
+docker compose exec postgres psql -U tunadmin -d postgres -c '\l'
+```
+
+### 3b. The old per-instance passwords — ONLY for reading pre-cutover volumes
+
+Before consolidation there were four instances and four keys
+(`MJOLNIR_POSTGRES_PASSWORD` required; `STABBUR_`/`SMIA_`/`PHONEXA_` each
+defaulting to the project name). Those volumes are **retained deliberately**
+as the rollback that does not involve the dumps, and each still has its
+original password baked in.
+
+**Do not collapse those four into one value when connecting to them. This is
+the single most dangerous mistake available in this file.** Postgres applies `POSTGRES_PASSWORD`
 **only when it initialises a fresh data directory**. The existing volumes were
 each created with the literal their old compose file hardcoded:
 
@@ -150,9 +174,10 @@ Setting one shared value authenticates against **none** of them. Nothing
 errors at startup, nothing appears in the Postgres logs explaining it: each
 backend simply fails authentication, and the backup service aborts every run.
 
-On an **existing** host, `MJOLNIR_POSTGRES_PASSWORD` must be exactly the value
-that was in `mjolnir/.env` as `POSTGRES_PASSWORD` before the merge, and the
-other three must be left at their defaults unless you know the volume was
+When reading a **retained pre-cutover volume**, `MJOLNIR_POSTGRES_PASSWORD`
+must be exactly the value that was in `mjolnir/.env` as `POSTGRES_PASSWORD`
+before the merge, and the other three must be left at their defaults unless
+you know the volume was
 created with something else.
 
 On a **genuinely fresh** host (no volumes at all) any values work, because
