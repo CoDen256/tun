@@ -15,28 +15,33 @@ corrected there rather than twice.
 ## Requirements
 
 ### Requirement: The whole stack starts from one compose invocation in `tun`
-The system SHALL bring up every included service (at minimum `mjolnir`'s and
-`stabbur`'s own compose-defined services) from a single `docker compose up`
-run in the `tun` repository, with no other command required.
 
-#### Scenario: First boot on a fresh checkout
-- **WHEN** `tun`, `mjolnir`, and `stabbur` are freshly cloned as sibling
-  directories and `docker compose up` is run in `tun`
-- **THEN** every service defined in `mjolnir`'s and `stabbur`'s own compose
-  files starts, with no manual step in either of those repos
+The system SHALL bring up every service of every project from a single
+`docker compose up` run at the repository root, with no other command required
+and no checkout other than this repository.
+
+#### Scenario: First boot on a fresh clone
+- **WHEN** the repository is cloned, each project's environment file is created
+  from its example, and `docker compose up` is run at the root
+- **THEN** every service starts, with no manual network creation, no sibling
+  checkout, and no per-project command
+
+#### Scenario: No external network
+- **WHEN** the stack is brought up on a host that has never run it before
+- **THEN** no Docker network has to be created by hand, and no compose file
+  declares an external network
 
 ### Requirement: Each included repo's compose file stays independently usable
-The system SHALL NOT require any change to `mjolnir`'s or `stabbur`'s own
-compose file for either to keep working when run standalone in its own
-repository, given the one-time `docker network create tun-shared` D98
-already requires for the "two independent stacks" deployment mode — this
-change does not add any *further* precondition beyond that one.
 
-#### Scenario: Running `mjolnir` alone
-- **WHEN** `tun-shared` already exists (D98) and `docker compose up` is run
-  inside `mjolnir`'s own directory, independent of `tun`
-- **THEN** it starts exactly the services it already defines, unaffected by
-  whether `tun`'s unified compose file exists
+The system SHALL keep each project's compose file usable on its own, so that a
+single project and the shared dependencies it declares can be brought up without
+the rest of the stack.
+
+#### Scenario: Working on one service
+- **WHEN** the operator brings up a single service by name from the root, or
+  runs compose inside that project's directory
+- **THEN** that service and its declared dependencies start, and no unrelated
+  service starts
 
 ### Requirement: Services across included files can reach each other by name
 The system SHALL allow a container defined in one included compose file to
@@ -52,14 +57,13 @@ network configuration.
   network configuration and no external network to create
 
 ### Requirement: One database-exploration tool serves every included database
-The system SHALL provide a single database-exploration tool reachable at one
-URL, able to connect to every service's Postgres instance, rather than one
-instance of the tool per database.
 
-#### Scenario: Inspecting two different services' databases
+The system SHALL provide a single database-exploration tool, reachable at one
+URL, able to reach every service's database.
+
+#### Scenario: Inspecting two services' databases
 - **WHEN** the operator opens the database-exploration tool
-- **THEN** they can connect to either `mjolnir`'s or `stabbur`'s database
-  from the same running instance, without starting a second one
+- **THEN** every service's database is reachable from that one instance
 
 ### Requirement: phonexa is reached by path prefix, with no DNS prerequisite
 The deployment documentation SHALL describe phonexa as reachable at `/phonexa/`

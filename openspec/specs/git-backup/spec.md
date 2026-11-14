@@ -6,23 +6,41 @@ up to a private git repository on a recurring schedule, with no
 backup-specific code in `mjolnir` or `stabbur` themselves and no
 host-level setup beyond `docker compose up`.
 ## Requirements
-### Requirement: A single mechanism backs up every included database
-The system SHALL run one backup mechanism, delivered as a service in
-`tun`'s compose project (the one place that already reaches every included
-service's database), that dumps both `mjolnir`'s and `stabbur`'s Postgres
-databases on a recurring schedule, with no backup-specific code added to
-either service's own repository.
+### Requirement: One mechanism backs up every database that is backed up at all
+The system SHALL run one backup mechanism, delivered as a service in this
+repository's compose project, that dumps each backed-up service database to
+its own file on a recurring schedule, with no backup-specific code in any
+service's own tree.
+
+The set is explicit, not "every database that exists": the linguistics
+service is deliberately excluded, because every table it holds is a cache or
+an imported corpus that its own import scripts rebuild on boot, so its
+recovery path is a re-import rather than a restore.
 
 #### Scenario: A scheduled run
-- **WHEN** the backup mechanism's schedule fires
-- **THEN** both `mjolnir-postgres` and `stabbur-postgres` are dumped, with
-  no code change required in `mjolnir` or `stabbur` to make this happen
+- **WHEN** the schedule fires
+- **THEN** one dump file per backed-up service database is produced and
+  committed, with no code change in any service to make this happen
+
+#### Scenario: A database deliberately outside the set
+- **WHEN** a service's data is rebuildable from sources the repository
+  already holds
+- **THEN** it MAY be excluded from the backup set, and the exclusion is
+  recorded with the source that makes it rebuildable
+
+#### Scenario: One dump fails
+- **WHEN** any single dump fails
+- **THEN** no dump file is replaced and no commit is made, leaving the
+  previous complete backup intact
+
+#### Scenario: A failed dump leaves no partial file
+- **WHEN** a dump fails partway through
+- **THEN** no previously committed dump file is truncated or overwritten
 
 #### Scenario: Standing up the mechanism
-- **WHEN** the operator runs `docker compose up` in `tun`
+- **WHEN** the operator runs `docker compose up`
 - **THEN** the backup mechanism is running, with no host-level step
-  (no `crontab` entry, no manual clone) required beyond what `docker
-  compose up` itself does
+  (no `crontab` entry, no manual clone) beyond what compose itself does
 
 ### Requirement: Disposable run-history tables are excluded from the mjolnir dump
 The system SHALL exclude `job_logs` and `build_jobs` from `mjolnir`'s
