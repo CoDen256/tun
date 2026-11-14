@@ -1,0 +1,94 @@
+# The shared cluster (D155). This project does not run its own Postgres:
+# `include:` pulls in the one cluster, which holds one database and one role
+# per service. The same fragment included by several projects deduplicates, so
+# `docker compose up shadow-backend` still starts the cluster and this service
+# and nothing else.
+#
+# The `shadow` database and the `shadow` role already existed before this
+# service did — postgres-consolidation created all five up front, and this one
+# sat empty waiting for the split (D155).
+include:
+  - ../postgres/compose.yaml
+
+# shadow's own stack — usable standalone (`docker compose up -d` here) and as
+# one of the files the root compose.yaml `include:`s.
+#
+# Service name `shadow-backend`: <project>-<role>, so the compose key and the
+# network hostname are the same string, and `include:` merging it into the
+# unified stack cannot collide with anyone (D94/D118 — `include:` flattens
+# everything into one namespace and silently keeps only the FIRST definition
+# of a colliding name).
+#
+# Host port publishing lives in compose.override.yaml, which Compose loads
+# only when you run from inside this directory. See the comment there.
+services:
+  shadow-backend:
+    build:
+      # Context is the repository root so a service can COPY from shared
+      # libraries; every COPY in the Dockerfile is therefore shadow/-prefixed.
+      # Paths in an included file resolve relative to this file.
+      context: ..
+      dockerfile: shadow/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      # Waits for the BOOTSTRAP, not merely a healthy server: a failed
+      # bootstrap must stop this service starting against a cluster with no
+      # databases, rather than letting it fail later with an auth error.
+      postgres-init:
+        condition: service_completed_successfully
+    environment:
+      # Derived, never typed: the role password is "<POSTGRES_PASSWORD>_shadow",
+      # created by postgres/init/bootstrap.sh from the same one value.
+      DATABASE_URL: postgresql+psycopg2://shadow:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_shadow@postgres:5432/shadow
+      # Speech-to-text is proxied to smia (stt-via-smia). The address is
+      # derived from smia's service key, never configured. The token is
+      # shared with smia, so it comes from the root .env; it is server-side
+      # only and never sent to the browser. Empty token = the 📝 action
+      # reports "not configured" and everything else keeps working.
+      #
+      # These two moved here from phonexa with /transcribe: phonexa no longer
+      # calls smia at all.
+      SMIA_BASE_URL: http://smia-backend:5055
+      # unified-auth 4.6: ONE service-to-service token, replacing STABBUR_AUTH_TOKEN
+      # and SMIA_AUTH_TOKEN. NO `:-changeme` default — an unset value must fail
+      # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
+      # and a publicly-known fallback is the opposite of that.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      # Profiles, settings and Praat analysis still belong to phonexa; shadow
+      # proxies them server-side (see phonexa_client.py). Derived from
+      # phonexa's service key, never configured.
+      PHONEXA_BASE_URL: http://phonexa-backend:5050
+      # Where phonexa is in the BROWSER's URL space — a different thing from
+      # the internal address above, and the only phonexa value that reaches
+      # the page. Used for the "← Vowel Chart" / "✎ Edit languages" links and
+      # the Formant Lab handoff. It is the gateway's own mount point for
+      # phonexa, so it is derived from the Caddyfile, not configured.
+      PHONEXA_PUBLIC_PREFIX: /phonexa
+      # Python's answer to jsservice's /libs mount: shared code goes on the
+      # import path, since Python has no file-relative import. /libs (not
+      # /app/libs) keeps the one spelling `pyservice.bootstrap` working in the
+      # container and in a native venv (PYTHONPATH=../libs from here).
+      PYTHONPATH: /libs
+    volumes:
+      # The ONLY mount, and it is read-only shared code. No audio volume,
+      # deliberately (zone-isolation task 3.4): shadow stores no audio at
+      # all — the shadowing page decodes the file in the browser and sends
+      # only segment boundaries (see db/models.py). phonexa's audio tree
+      # holds vowel samples, which shadow neither reads nor writes. One
+      # owner of the audio tree, one backup path.
+      - ../libs:/libs:ro
+    healthcheck:
+      # Serving is not ready (zone-isolation). /ping still exists and still
+      # returns 200 unconditionally — which is why it is NOT the probe: it
+      # proves the process is alive, and with serve-before-migrate being
+      # alive no longer implies having a schema.
+      #
+      # /_health answers 200 ready / 503 degraded (libs/pyservice/bootstrap.py).
+      # shadow has no auth gate of its own, so nothing to exempt here.
+      # python:3.12-slim has no curl; the shared script uses urllib and
+      # prints the body, so .State.Health.Log carries the reason.
+      test: ["CMD", "python", "/libs/pyservice/healthcheck.py", "http://localhost:5051/_health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s

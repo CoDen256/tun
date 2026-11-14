@@ -1,22 +1,13 @@
 {
+	// One root. Since D150 every project is a top-level directory of this
+	// repository, so the sibling-checkout folders this file used to list
+	// (../mjolnir, ../phonexa, ../smia, ../stabbur) are gone — they were the
+	// pre-monorepo layout and pointing an editor at them now means editing
+	// abandoned copies. hover-translate is not listed either: it is its own
+	// repository (D154), so open it in its own window.
 	"folders": [
 		{
 			"path": "."
-		},
-		{
-			"path": "../mjolnir"
-		},
-		{
-			"path": "../hover-translate"
-		},
-		{
-			"path": "../phonexa"
-		},
-		{
-			"path": "../smia"
-		},
-		{
-			"path": "../stabbur"
 		}
 	],
 	"settings": {}

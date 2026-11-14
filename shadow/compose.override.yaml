@@ -1,0 +1,34 @@
+# Dev-only host port publishing for shadow.
+#
+# Why a file and not `profiles: ["dev"]` on the ports: Compose has no
+# per-port profile. `profiles:` gates a whole service, and this service must
+# run in production; publishing an empty port string (`ports: ["${P-}"]`) is
+# rejected ("no port specified: <empty>") and a `dev`-profiled sidecar with
+# `network_mode: "service:…"` plus `ports:` is refused by the daemon
+# ("conflicting options: port publishing and the container type network
+# mode"). Both verified on Compose v5.4.0, 2026-11-13 (D152's correction).
+#
+# Compose auto-loads compose.override.yaml ONLY for the primary compose file
+# of the project it is run in, so:
+#   docker compose up -d                 # here  → ports published
+#   docker compose up -d                 # root  → no ports, nothing to leak
+#   docker compose -f shadow/compose.yaml …      → no ports
+# In the unified stack shadow is reached through Caddy at /shadow/ (which
+# adds the operator-token gate), never through a published port.
+#
+# The shared cluster publishes its own loopback port from
+# postgres/compose.override.yaml (127.0.0.1:5439), so this file maps no
+# database port.
+#
+# CAVEAT for standalone use: on a published port there is no gateway, so
+# X-Forwarded-Prefix is absent and API_BASE is '' — which is correct — but
+# PHONEXA_PUBLIC_PREFIX still reads /phonexa, so the "← Vowel Chart" links
+# and the Formant Lab handoff point at a path that only exists behind the
+# gateway. Set PHONEXA_PUBLIC_PREFIX=http://localhost:5050 in shadow/.env for
+# a standalone session if you need those links to work.
+#
+# Loopback only, always: never a public interface.
+services:
+  shadow-backend:
+    ports:
+      - "127.0.0.1:5051:5051"

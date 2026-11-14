@@ -1,0 +1,322 @@
+# DEVICE-PLANE BASELINE
+# regenerate: bash bin/device-baseline.sh > docs/baselines/device-plane.txt
+# base: <BASE>   build: b000001   uid: <UID> (fresh every run)
+# Volatile headers are normalised; tokens are never written out.
+
+=== /ota/* (token-gated, GET/HEAD only — contract 11-ota-contract.md §7) ===
+
+--- GET /ota/current.json   no token            -> expect 401 'unauthorized'
+HTTP/1.1 401 Unauthorized
+Cache-Control: no-store
+Content-Type: text/plain; charset=utf-8
+Content-Length: 12
+body: unauthorized
+
+--- GET /ota/current.json   wrong token         -> expect 401
+HTTP/1.1 401 Unauthorized
+Cache-Control: no-store
+Content-Type: text/plain; charset=utf-8
+Content-Length: 12
+body: unauthorized
+
+--- GET /ota/current.json   correct token       -> expect 200, no-store (D26)
+HTTP/1.1 200 OK
+Accept-Ranges: bytes
+Cache-Control: no-store
+Content-Length: 236
+Content-Type: application/json
+body (JSON, keys sorted):
+{
+ "buildId": "b000001",
+ "label": "local regression payload",
+ "schema": 1,
+ "sha256": "b3ad6aee95afe6329f4dc83842802d68fa1772ce587b20eb4b9a84a579af5741",
+ "size": 6003611,
+ "url": "http://localhost:8080/ota/bundle/b000001.js"
+}
+
+--- POST /ota/current.json  correct token       -> expect 405 'method not allowed' FROM THE GUARD (P23)
+HTTP/1.1 405 Method Not Allowed
+Cache-Control: no-store
+Content-Type: text/plain; charset=utf-8
+Content-Length: 18
+body: method not allowed
+
+--- HEAD /ota/bundle/b000001.js correct token    -> expect 200, immutable
+HTTP/1.1 200 OK
+Accept-Ranges: bytes
+Cache-Control: public, max-age=31536000, immutable
+Content-Length: 6003611
+Content-Type: text/javascript; charset=utf-8
+body: HTTP/1.1 200 OK
+Accept-Ranges: bytes
+Cache-Control: public, max-age=31536000, immutable
+Content-Length: 6003611
+Content-Type: text/javascript; charset=utf-8
+Etag: <volatile>
+Last-Modified: <volatile>
+Server: <volatile>
+Vary: <volatile>
+Date: <volatile>
+
+
+
+=== /audio-manifest/* (UNauthenticated by design, D-P1) ===
+
+--- GET /audio-manifest/b000001.json  no token   -> 200 where audio is published; empty-bodied 404 where it is not
+HTTP/1.1 404 Not Found
+Cache-Control: public, max-age=31536000, immutable
+Content-Length: 0
+body: <empty>
+
+--- POST /audio-manifest/b000001.json            -> expect 405 'method not allowed' (the guard runs before file_server)
+HTTP/1.1 405 Method Not Allowed
+Cache-Control: public, max-age=31536000, immutable
+Content-Type: text/plain; charset=utf-8
+Content-Length: 18
+body: method not allowed
+
+=== /blob/<sha256> (content-addressed; the hash IS the capability) ===
+
+--- HEAD /blob/<sha from this build's manifest>
+NOT CAPTURED: this stack publishes no audio manifest, so there is no sha to ask for.
+This is expected on a local stack (mjolnir/data is .gitignored) and is NOT expected against production.
+
+=== /mjolnir/userdata/<uid> (device sync, gated at the gateway, unified-auth §2) ===
+
+--- GET  no token      -> expect 302 to /mjolnir/login, EMPTY body (deliberate, NOT 401)
+HTTP/1.1 302 Found
+Location: /mjolnir/login?next=%2Fmjolnir%2Fuserdata%2F<UID>
+Content-Length: 0
+body: <empty>
+
+--- GET  device token  -> expect 200 and _justCreated on the FIRST read
+HTTP/1.1 200 OK
+Content-Length: 634
+Content-Type: application/json; charset=utf-8
+body (JSON, keys sorted):
+{
+ "_justCreated": true,
+ "accountCreationDate": "<volatile-ts>",
+ "acquisitionSource": null,
+ "archivedCards": 0,
+ "completedSessions": 0,
+ "dailyCards": 15,
+ "decksStatus": [],
+ "firstSessionsCompleted": [],
+ "gameDecks": [],
+ "hasSeenMjolnirWay": {
+  "firstPage": false,
+  "lastPage": false
+ },
+ "hasSeenPaywall": false,
+ "inProgressCards": 0,
+ "lastCompletedSession": "<volatile-ts>",
+ "lastDeckPulled": -1,
+ "marketingSurveySeen": false,
+ "reminderSetting": [
+  {
+   "days": [
+    "Mo",
+    "Tu",
+    "We",
+    "Th",
+    "Fr"
+   ],
+   "hour": "08",
+   "minute": "00"
+  },
+  {
+   "days": [
+    "Mo",
+    "Tu",
+    "We",
+    "Th",
+    "Fr",
+    "Sa",
+    "Su"
+   ],
+   "hour": "16",
+   "minute": "30"
+  }
+ ],
+ "restDays": [],
+ "selectedApproach": [],
+ "surveyAnswers": [],
+ "totalCards": []
+}
+
+--- GET  device token  -> expect 200 and NO _justCreated on the re-read
+HTTP/1.1 200 OK
+Content-Length: 614
+Content-Type: application/json; charset=utf-8
+body (JSON, keys sorted):
+{
+ "accountCreationDate": "<volatile-ts>",
+ "acquisitionSource": null,
+ "archivedCards": 0,
+ "completedSessions": 0,
+ "dailyCards": 15,
+ "decksStatus": [],
+ "firstSessionsCompleted": [],
+ "gameDecks": [],
+ "hasSeenMjolnirWay": {
+  "firstPage": false,
+  "lastPage": false
+ },
+ "hasSeenPaywall": false,
+ "inProgressCards": 0,
+ "lastCompletedSession": "<volatile-ts>",
+ "lastDeckPulled": -1,
+ "marketingSurveySeen": false,
+ "reminderSetting": [
+  {
+   "days": [
+    "Mo",
+    "Tu",
+    "We",
+    "Th",
+    "Fr"
+   ],
+   "hour": "08",
+   "minute": "00"
+  },
+  {
+   "days": [
+    "Mo",
+    "Tu",
+    "We",
+    "Th",
+    "Fr",
+    "Sa",
+    "Su"
+   ],
+   "hour": "16",
+   "minute": "30"
+  }
+ ],
+ "restDays": [],
+ "selectedApproach": [],
+ "surveyAnswers": [],
+ "totalCards": []
+}
+
+--- PATCH device token -> expect 200; dailyCards merges, the six device-status fields are STRIPPED
+HTTP/1.1 200 OK
+Content-Length: 614
+Content-Type: application/json; charset=utf-8
+body (JSON, keys sorted):
+{
+ "accountCreationDate": "<volatile-ts>",
+ "acquisitionSource": null,
+ "archivedCards": 0,
+ "completedSessions": 0,
+ "dailyCards": 42,
+ "decksStatus": [],
+ "firstSessionsCompleted": [],
+ "gameDecks": [],
+ "hasSeenMjolnirWay": {
+  "firstPage": false,
+  "lastPage": false
+ },
+ "hasSeenPaywall": false,
+ "inProgressCards": 0,
+ "lastCompletedSession": "<volatile-ts>",
+ "lastDeckPulled": -1,
+ "marketingSurveySeen": false,
+ "reminderSetting": [
+  {
+   "days": [
+    "Mo",
+    "Tu",
+    "We",
+    "Th",
+    "Fr"
+   ],
+   "hour": "08",
+   "minute": "00"
+  },
+  {
+   "days": [
+    "Mo",
+    "Tu",
+    "We",
+    "Th",
+    "Fr",
+    "Sa",
+    "Su"
+   ],
+   "hour": "16",
+   "minute": "30"
+  }
+ ],
+ "restDays": [],
+ "selectedApproach": [],
+ "surveyAnswers": [],
+ "totalCards": []
+}
+
+--- GET  device token  -> the PATCH landed, the status fields did not
+HTTP/1.1 200 OK
+Content-Length: 614
+Content-Type: application/json; charset=utf-8
+body (JSON, keys sorted):
+{
+ "accountCreationDate": "<volatile-ts>",
+ "acquisitionSource": null,
+ "archivedCards": 0,
+ "completedSessions": 0,
+ "dailyCards": 42,
+ "decksStatus": [],
+ "firstSessionsCompleted": [],
+ "gameDecks": [],
+ "hasSeenMjolnirWay": {
+  "firstPage": false,
+  "lastPage": false
+ },
+ "hasSeenPaywall": false,
+ "inProgressCards": 0,
+ "lastCompletedSession": "<volatile-ts>",
+ "lastDeckPulled": -1,
+ "marketingSurveySeen": false,
+ "reminderSetting": [
+  {
+   "days": [
+    "Mo",
+    "Tu",
+    "We",
+    "Th",
+    "Fr"
+   ],
+   "hour": "08",
+   "minute": "00"
+  },
+  {
+   "days": [
+    "Mo",
+    "Tu",
+    "We",
+    "Th",
+    "Fr",
+    "Sa",
+    "Su"
+   ],
+   "hour": "16",
+   "minute": "30"
+  }
+ ],
+ "restDays": [],
+ "selectedApproach": [],
+ "surveyAnswers": [],
+ "totalCards": []
+}
+
+--- PUT  device token  -> expect 405 (method dispatch BEFORE readiness)
+HTTP/1.1 405 Method Not Allowed
+Content-Type: text/plain
+body: method not allowed
+
+--- GET  /mjolnir/userdata/%ff device token -> expect 404, EMPTY body (P46: never a JSON error body on the device path)
+HTTP/1.1 404 Not Found
+Content-Length: 0
+body: <empty>

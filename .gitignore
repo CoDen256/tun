@@ -1,6 +1,15 @@
 .env
 *.log
-data/
+# Generated payload directories. ANCHORED, deliberately — an unanchored
+# `data/` matches a directory called `data` at ANY depth, which inside
+# `mjolnir/base/` (35k decompiled APK files) hits 23 tracked smali files in
+# Java packages named `data`, e.g.
+# `com/google/android/gms/common/data/DataBuffer.smali`. They are tracked, so
+# nothing is lost today, but re-extracting the APK base — the input to the one
+# irreversible build (D04) — would silently drop them. Anchor every pattern
+# that could reach into `mjolnir/base/`.
+/mjolnir/data/
+/phonexa/data/
 # git-backup: a separate git repository (its own remote, its own commits),
 # nested here only because that's where the operator cloned it — never
 # part of tun's own history.

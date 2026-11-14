@@ -1,7 +1,0 @@
-include:
-  - ../a/compose.yaml
-services:
-  app2:
-    image: alpine
-    command: sleep 1
-    depends_on: [db]

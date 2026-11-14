@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>bundle-workbench</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <h1>bundle-workbench</h1>
+      <nav id="tabs" class="tabs">
+        <button type="button" class="tab active" data-view="explorer">Explorer</button>
+        <button type="button" class="tab" data-view="compare">Compare</button>
+        <button type="button" class="tab" data-view="editor">Editor</button>
+        <button type="button" class="tab" data-view="patches">Patches</button>
+        <button type="button" class="tab" data-view="assemble">Assemble</button>
+        <button type="button" class="tab" data-view="catalogue">Catalogue</button>
+        <button type="button" class="tab hidden" data-view="deckcard">Deck/Card</button>
+      </nav>
+    </header>
+
+    <div class="session-bar">
+      <input id="open-path-input" type="text" placeholder="Path to a bundle file..." />
+      <button id="open-path-btn" type="button">Open</button>
+      <div id="upload-dropzone" class="upload-dropzone">or drop a file / <label for="upload-file-input" class="upload-pick-label">choose one</label><input id="upload-file-input" type="file" class="hidden" /></div>
+      <div id="open-status" class="open-status hidden"></div>
+      <div id="open-path-error" class="error hidden"></div>
+      <div class="session-list" id="session-list"></div>
+      <label class="active-session-label">
+        Active session:
+        <select id="active-session-select"></select>
+      </label>
+    </div>
+
+    <main class="view-area">
+      <!-- Explorer -->
+      <section id="view-explorer" class="view">
+        <div class="explorer-layout">
+          <div class="explorer-list-pane">
+            <input id="explorer-search" type="search" placeholder="Search module source..." />
+            <select id="explorer-sort">
+              <option value="id">Sort: id</option>
+              <option value="size-desc">Sort: size (largest)</option>
+              <option value="classification">Sort: classification</option>
+              <option value="verboseName">Sort: verboseName</option>
+            </select>
+            <ul id="explorer-module-list" class="module-list"></ul>
+          </div>
+          <div class="explorer-detail-pane">
+            <div id="explorer-empty" class="empty-state">Select a module.</div>
+            <div id="explorer-detail" class="hidden">
+              <div class="panel-header">
+                <h2 id="explorer-module-title"></h2>
+                <div>
+                  <button id="explorer-toggle-deobfuscated" type="button">Show deobfuscated</button>
+                </div>
+              </div>
+              <div id="explorer-module-meta" class="deck-meta"></div>
+              <pre id="explorer-source" class="source-view"></pre>
+              <div class="deps-columns">
+                <div>
+                  <h3>Dependencies</h3>
+                  <ul id="explorer-deps" class="id-list"></ul>
+                </div>
+                <div>
+                  <h3>Dependents</h3>
+                  <ul id="explorer-dependents" class="id-list"></ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Compare -->
+      <section id="view-compare" class="view hidden">
+        <div class="compare-pickers">
+          <label>A: <select id="compare-a"></select></label>
+          <label>B: <select id="compare-b"></select></label>
+          <button id="compare-run-btn" type="button">Compare</button>
+        </div>
+        <div id="compare-results" class="compare-results"></div>
+        <div id="compare-diff" class="diff-view hidden"></div>
+      </section>
+
+      <!-- Editor -->
+      <section id="view-editor" class="view hidden">
+        <div class="editor-layout">
+          <div class="editor-list-pane">
+            <ul id="editor-module-list" class="module-list"></ul>
+          </div>
+          <div class="editor-detail-pane">
+            <div id="editor-empty" class="empty-state">Select a module to edit.</div>
+            <div id="editor-detail" class="hidden">
+              <div class="panel-header">
+                <h2 id="editor-module-title"></h2>
+                <div>
+                  <button id="editor-open-btn" type="button">Open in IDE</button>
+                </div>
+              </div>
+              <div id="editor-open-error" class="error hidden"></div>
+              <p id="editor-file-path" class="file-path"></p>
+              <div id="editor-diff" class="diff-view"></div>
+              <div class="save-patch-form">
+                <h3>Save as patch</h3>
+                <input id="editor-patch-name" placeholder="Patch name" />
+                <input id="editor-patch-description" placeholder="Description" />
+                <input id="editor-patch-locator" placeholder='Locator (a stable string, e.g. an action type)' />
+                <button id="editor-save-patch-btn" type="button">Save patch</button>
+                <div id="editor-save-patch-error" class="error hidden"></div>
+                <div id="editor-save-patch-success" class="success hidden"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Patches: both REPLACE-style kinds — the JSON store (saved via the
+           Editor tab's "Save as patch", located by a content string) and
+           raw patch-back pairs (<id>-name.baseline.js/.edited.js under
+           patches/js, located by the module id named in the filename).
+           Both modify an existing module's factory body in place, via the
+           same reconciliation algorithm. Companions (APPEND-style, new
+           top-level code) are a separate concept, picked in the Assemble
+           tab below (D110/D111). -->
+      <section id="view-patches" class="view hidden">
+        <div id="patches-dir-caption" class="dir-caption"></div>
+        <h3>Saved patches <span class="field-hint">JSON store — located by a content string, survives bundle-version changes</span></h3>
+        <div class="empty-state hidden" id="patches-empty-note">
+          No stored patches yet — saved via the Editor tab's "Save as patch."
+        </div>
+        <ul id="patches-list" class="patch-list"></ul>
+
+        <h3>Patch-back pairs <span class="field-hint">raw baseline/edited file pairs under patches/js — located by the module id named in the filename (D111)</span></h3>
+        <div id="patchback-pairs-dir-caption" class="dir-caption"></div>
+        <div class="empty-state hidden" id="patchback-pairs-empty-note">
+          No patch-back pairs found. These are raw &lt;module-id&gt;-name.baseline.js /
+          .edited.js file pairs (e.g. 2176-my-account-build-id) — not
+          registered anywhere, just discovered by filename convention.
+          APPEND-style scripts (new top-level code — boot-ok-companion,
+          config-rotate, etc.) are a different mechanism entirely, picked
+          separately in the Assemble tab.
+        </div>
+        <ul id="patchback-pairs-list" class="patch-list"></ul>
+
+        <h3>Companions <span class="field-hint">APPEND-style — new top-level code, touches no existing module; picked for assembly in the Assemble tab</span></h3>
+        <div id="patches-companions-dir-caption" class="dir-caption"></div>
+        <div class="empty-state hidden" id="patches-companions-empty-note">
+          No companion scripts found under patches/js.
+        </div>
+        <ul id="patches-companions-list" class="patch-list"></ul>
+
+        <div id="patches-preview" class="hidden">
+          <h3>Preview</h3>
+          <div id="patches-preview-diff" class="diff-view"></div>
+          <pre id="patches-preview-source" class="diff-view hidden"></pre>
+          <button id="patches-apply-btn" type="button">Apply to active session</button>
+          <div id="patches-apply-result" class="hidden"></div>
+        </div>
+      </section>
+
+      <!-- Assemble: multi-patch selection + "Assemble" action (D-L7) -->
+      <section id="view-assemble" class="view hidden">
+        <div class="assemble-layout">
+          <div class="assemble-form-pane">
+            <div id="assemble-mode-caption" class="dir-caption"></div>
+
+            <!-- D112: shown only when running embedded in hub (detected via
+                 GET /mjolnir/ota/assemble-defaults on load) — assembling
+                 always uses this repo's own one base folder, server-side,
+                 never a client-typed path, and the result is submitted
+                 straight to hub's logic_bundles store, not written to an
+                 operator-picked output path. -->
+            <div id="assemble-embedded-fields" class="hidden field-grid">
+              <label class="full-width">
+                Label <span class="field-hint">optional — auto-generated from base version + patch rev if left blank</span>
+                <input id="assemble-label" type="text" placeholder="e.g. november-vocab-patch" />
+              </label>
+            </div>
+
+            <!-- Standalone bundle-tool/bundle-workbench (no hub, no
+                 database, D108) keeps the original path-based flow. -->
+            <div id="assemble-standalone-fields" class="field-grid">
+              <label class="full-width">
+                Base folder <span class="field-hint">decoded APK folder, e.g. base/smali.mjolnir.merged</span>
+                <input id="assemble-base-folder" type="text" placeholder="base/smali.mjolnir.merged" />
+              </label>
+              <label class="full-width">
+                Output bundle path
+                <input id="assemble-output-path" type="text" placeholder="out/assembled.bundle" />
+              </label>
+            </div>
+
+            <div class="field-grid">
+              <label>
+                Patch rev (logic version) <span id="assemble-patch-rev-hint" class="field-hint"></span>
+                <input id="assemble-patch-rev" type="number" min="0" step="1" />
+              </label>
+            </div>
+
+            <!-- generic-placeholder-substitution: any KEY/value pair here
+                 substitutes __MJOLNIR_<KEY>__ wherever it appears in a
+                 selected patch/companion — replaces the old fixed set of
+                 named fields (Build id, Sync base URL, Sync token, Audio
+                 base URL). BASE_VERSION is never shown here — it's always
+                 read from the base folder's own apktool.yml (D-G2). -->
+            <h3>Placeholders <span class="field-hint">__MJOLNIR_&lt;KEY&gt;__ substituted wherever a selected patch/companion bakes it — add a row for any key you need, beyond the common ones already listed</span></h3>
+            <div id="assemble-placeholders-hint" class="field-hint" style="margin-bottom:8px;"></div>
+            <div id="assemble-placeholders-list"></div>
+            <button id="assemble-placeholder-add-btn" type="button">+ Add placeholder</button>
+
+            <div id="assemble-patches-dir-caption" class="dir-caption"></div>
+            <h3>Patches to apply, in order <span class="field-hint">REPLACE-style — modifies an existing module in place</span></h3>
+            <div class="assemble-picker">
+              <div class="assemble-picker-col">
+                <div class="assemble-picker-label">Available</div>
+                <ul id="assemble-available-list" class="patch-list assemble-pick-list"></ul>
+              </div>
+              <div class="assemble-picker-col">
+                <div class="assemble-picker-label">Selected (apply order)</div>
+                <ol id="assemble-selected-list" class="patch-list assemble-pick-list"></ol>
+              </div>
+            </div>
+
+            <div id="assemble-patchback-pairs-dir-caption" class="dir-caption"></div>
+            <h3>Patch-back pairs to apply, in order <span class="field-hint">REPLACE-style — module-id addressed (D111)</span></h3>
+            <div class="assemble-picker">
+              <div class="assemble-picker-col">
+                <div class="assemble-picker-label">Available</div>
+                <ul id="assemble-patchback-pairs-available-list" class="patch-list assemble-pick-list"></ul>
+              </div>
+              <div class="assemble-picker-col">
+                <div class="assemble-picker-label">Selected (apply order)</div>
+                <ol id="assemble-patchback-pairs-selected-list" class="patch-list assemble-pick-list"></ol>
+              </div>
+            </div>
+
+            <div id="assemble-companions-dir-caption" class="dir-caption"></div>
+            <h3>Companions to append, in order <span class="field-hint">APPEND-style — new top-level code, no existing module touched</span></h3>
+            <div class="assemble-picker">
+              <div class="assemble-picker-col">
+                <div class="assemble-picker-label">Available</div>
+                <ul id="assemble-companions-available-list" class="patch-list assemble-pick-list"></ul>
+              </div>
+              <div class="assemble-picker-col">
+                <div class="assemble-picker-label">Selected (apply order)</div>
+                <ol id="assemble-companions-selected-list" class="patch-list assemble-pick-list"></ol>
+              </div>
+            </div>
+
+            <button id="assemble-run-btn" type="button">Assemble</button>
+            <div id="assemble-error" class="error hidden"></div>
+            <div id="assemble-result" class="success hidden"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Catalogue: every OTA build + logic bundle, one click to open
+           (D109) — fetched from hub's /mjolnir/catalogue.json when running
+           embedded; degrades to a plain message when standalone. -->
+      <section id="view-catalogue" class="view hidden">
+        <div id="catalogue-unavailable" class="empty-state hidden">Catalogue unavailable — this workbench isn't running embedded in hub.</div>
+        <div id="catalogue-content" class="hidden">
+          <h3>OTA builds</h3>
+          <ul id="catalogue-builds" class="patch-list"></ul>
+          <h3>Logic bundles</h3>
+          <ul id="catalogue-logic-bundles" class="patch-list"></ul>
+        </div>
+      </section>
+
+      <!-- Deck/Card (relocated, unchanged markup/behavior) -->
+      <section id="view-deckcard" class="view hidden">
+        <div class="layout">
+          <aside class="sidebar">
+            <div class="sidebar-header">
+              <h1>Decks</h1>
+              <button id="new-deck-btn" type="button">+ New deck</button>
+            </div>
+            <div class="search-box">
+              <input id="search-input" type="search" placeholder="Search decks &amp; cards..." />
+              <div id="search-results" class="search-results hidden"></div>
+            </div>
+            <div id="categories"></div>
+          </aside>
+
+          <main class="main">
+            <section id="deck-view" class="panel hidden">
+              <div class="panel-header">
+                <h2 id="deck-title"></h2>
+                <div>
+                  <button id="edit-deck-btn" type="button">Edit deck</button>
+                  <button id="add-occurrence-toggle-btn" type="button">+ Add occurrence</button>
+                  <button id="new-card-btn" type="button">+ New card</button>
+                </div>
+              </div>
+              <div id="deck-meta" class="deck-meta"></div>
+
+              <div class="view-toggle">
+                <button id="view-by-card-btn" type="button" class="active">By card</button>
+                <button id="view-by-order-btn" type="button">By order</button>
+                <button id="shuffle-btn" type="button" class="hidden">Shuffle</button>
+                <select id="sort-select"></select>
+              </div>
+
+              <div id="add-occurrence" class="add-occurrence hidden">
+                <select id="add-occurrence-card"></select>
+                <select id="add-occurrence-letter">
+                  <option value="N">N (front)</option>
+                  <option value="E">E (back)</option>
+                  <option value="A">A (audio)</option>
+                </select>
+                <button id="add-occurrence-btn" type="button">Add</button>
+              </div>
+
+              <ul id="card-list"></ul>
+
+              <div id="order-view" class="hidden">
+                <ol id="occurrence-list"></ol>
+              </div>
+            </section>
+
+            <section id="card-editor" class="panel hidden">
+              <div class="panel-header">
+                <h2 id="card-editor-title"></h2>
+                <div>
+                  <button id="save-card-btn" type="button">Save</button>
+                  <button id="delete-card-btn" type="button" class="danger">Delete</button>
+                </div>
+              </div>
+              <div id="card-deck-meta" class="deck-meta"></div>
+              <div id="card-error" class="error hidden"></div>
+              <div class="field-grid">
+                <label>
+                  N (front)
+                  <textarea id="field-N"></textarea>
+                  <div class="preview" id="preview-N"></div>
+                </label>
+                <label>
+                  E (back)
+                  <textarea id="field-E"></textarea>
+                  <div class="preview" id="preview-E"></div>
+                </label>
+                <label>
+                  D (deck title, redundant)
+                  <textarea id="field-D"></textarea>
+                </label>
+                <label>
+                  X (extra/example)
+                  <textarea id="field-X"></textarea>
+                  <div class="preview" id="preview-X"></div>
+                </label>
+                <label>
+                  A (which side the audio is attached to)
+                  <select id="field-A">
+                    <option value="N">N (front)</option>
+                    <option value="E">E (back)</option>
+                    <option value="X">X (extra)</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section id="deck-form" class="panel hidden">
+              <div class="panel-header">
+                <h2 id="deck-form-title">New deck</h2>
+                <button id="deck-form-submit-btn" type="button">Create</button>
+              </div>
+              <div id="deck-form-error" class="error hidden"></div>
+              <div class="field-grid">
+                <label>Name <input id="df-Name" /></label>
+                <label>Title <input id="df-Title" /></label>
+                <label>ID <input id="df-ID" type="number" /></label>
+                <label>Code <input id="df-Code" /></label>
+                <label class="checkbox-label"><input id="df-Enabled" type="checkbox" /> Enabled</label>
+                <label>PullCounter <input id="df-PullCounter" type="number" /></label>
+                <label>MaxInterval <input id="df-MaxInterval" type="number" /></label>
+                <label>AutoTickStreak <input id="df-AutoTickStreak" type="number" /></label>
+                <label>AutoHammerCount <input id="df-AutoHammerCount" type="number" /></label>
+                <label>Counter1 <input id="df-Counter1" /></label>
+                <label>Counter2 <input id="df-Counter2" /></label>
+                <label class="full-width">
+                  Description
+                  <textarea id="df-Description"></textarea>
+                </label>
+              </div>
+            </section>
+
+            <p id="empty-state" class="empty-state">Select a deck from the left.</p>
+          </main>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

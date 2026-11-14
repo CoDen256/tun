@@ -1,0 +1,126 @@
+# The shared cluster (D155). This project no longer runs its own Postgres:
+# `include:` pulls in the one cluster, which holds one database and one role
+# per service. The same fragment included by several projects deduplicates, so
+# `docker compose up smia-backend` still starts the cluster and this service and
+# nothing else.
+include:
+  - ../postgres/compose.yaml
+
+# D118: service names made unique (smia-postgres/smia-backend, not
+# postgres/backend) so the root compose.yaml's `include:` can merge this file
+# alongside mjolnir's, stabbur's and phonexa's without a service-name
+# collision — Compose's `include:` silently keeps only the FIRST included
+# file's definition of a colliding service name, dropping every subsequent
+# one with no error (same class of bug D94 already fixed once for stabbur's
+# own postgres service) — this isn't cosmetic, it would mean smia simply
+# never starts under `include:`, with no visible error.
+#
+# One repository is one Compose project with one default network, so the old
+# `tun-shared` external network (D98/D104) and its one-time
+# `docker network create` step are gone: stabbur's backend, phonexa's backend
+# and mjolnir's Caddy all reach `smia-backend` by service name on the default
+# network, with no network configuration at all.
+#
+# Shared values (SMIA_POSTGRES_PASSWORD, INTERNAL_TOKEN) are interpolated from the
+# ROOT .env — the one Compose reads for the project you invoke it in. Running
+# this file standalone from smia/ therefore needs them passed in:
+#   docker compose --env-file ../.env up
+#
+# NOTE the absence of `-f compose.yaml`. Naming this file explicitly SUPPRESSES
+# compose.override.yaml, so it would publish no loopback ports at all — exactly
+# what the override exists to provide for a native venv. Verified: from smia/,
+# `-f compose.yaml` renders 0 published ports; without it, 2.
+# smia's own secrets (HF/DeepL/ElevenLabs) come from smia/.env via `env_file:`
+# below, which resolves relative to THIS file in both modes.
+#
+# No host ports are published here: dev-only loopback publishing lives in
+# compose.override.yaml, which Compose auto-loads for `cd smia && docker
+# compose up` and ignores under the root stack. See that file for why it is a
+# file and not `profiles:`.
+services:
+  smia-backend:
+    build:
+      # Context is the repository root so a later change can COPY from
+      # libs/; paths inside an included file resolve relative to the file,
+      # so `..` is the repo root in both standalone and unified mode. The
+      # root .dockerignore is what keeps that context small.
+      context: ..
+      dockerfile: smia/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      # Waits for the BOOTSTRAP, not merely a healthy server: a failed
+      # bootstrap must stop this service starting against a cluster with no
+      # databases, rather than letting it fail later with an auth error.
+      postgres-init:
+        condition: service_completed_successfully
+    env_file:
+      # smia-only provider credentials (D-T2): HF_TOKEN, DEEPL_TOKEN,
+      # ELEVENLABS_TOKEN. Passed through, never required — a provider whose
+      # token is empty just fails at adapter-call time with its existing
+      # "needs a *_TOKEN" error; compose never refuses to start over a
+      # missing provider key. See .env.example.
+      - path: .env
+        required: false
+    environment:
+      # Derived, never typed: the role password is "<POSTGRES_PASSWORD>_smia",
+      # created by postgres/init/bootstrap.sh from the same one value.
+      DATABASE_URL: postgresql+psycopg2://smia:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_smia@postgres:5432/smia
+      # unified-auth 4.6: ONE service-to-service token, replacing STABBUR_AUTH_TOKEN
+      # and SMIA_AUTH_TOKEN. NO `:-changeme` default — an unset value must fail
+      # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
+      # and a publicly-known fallback is the opposite of that.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      FLASK_DEBUG: "0"
+      # Python's answer to jsservice's /libs mount: shared code goes on the
+      # import path, since Python has no file-relative import. /libs (not
+      # /app/libs) keeps the one spelling `pyservice.bootstrap` working in the
+      # container and in a native venv (PYTHONPATH=../libs from here).
+      PYTHONPATH: /libs
+    volumes:
+      # Bind mount, not baked into the image: providers/ is raw lookup data
+      # (hundreds of MB) that would otherwise sit in every built image layer.
+      # It IS tracked in git (operator decision, 2026-11-13), so a fresh
+      # clone has it and bootstrap.py can import from here once, idempotently
+      # (skipped on restart once the named Postgres volume is populated),
+      # warning-but-not-failing for any file that is absent — the two Leipzig
+      # archives and the nbno zip are the only gitignored exceptions.
+      - ./providers:/app/providers:ro
+      # Read-only: a service may import the shared bootstrap, never edit it.
+      - ../libs:/libs:ro
+    healthcheck:
+      # Serving is not ready (zone-isolation). The old probe fetched /ui,
+      # which reads ui/index.html off disk and never touches Postgres: it
+      # proved the process was alive and said nothing about the schema. That
+      # was adequate while bootstrap.py refused to start the app without one;
+      # now the app always starts, so a /ui probe would call a smia with no
+      # schema healthy.
+      #
+      # /_health (libs/pyservice/bootstrap.py) answers 200 ready / 503
+      # degraded, and is exempt in auth.py — a probe carries no credential.
+      # NOT smia's own /health, which is a different thing entirely: it opens
+      # a session and queries every provider, and is behind the bearer check.
+      #
+      # Degraded maps to unhealthy because Docker has no third state. Nothing
+      # `depends_on` smia-backend (the backup service depends on postgres's
+      # health, not on any backend's), so this blocks nothing either way.
+      test: ["CMD", "python", "/libs/pyservice/healthcheck.py", "http://localhost:5055/_health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # Still the one non-uniform value, but for a much smaller reason than
+      # before. It used to cover the whole provider import (~9M rows) because
+      # nothing listened on 5055 until that finished. Now the port binds
+      # immediately and the import runs AFTER readiness, so this only has to
+      # cover `alembic upgrade head` on a cold cluster. Kept generous rather
+      # than cut to 15s: smia's migration set is the longest in the stack and
+      # a premature "unhealthy" on a cold start is noise.
+      start_period: 180s
+
+# No `volumes:` section any more. smia's only volume was its own Postgres data
+# directory, and that moved into the shared cluster (D155). Its providers/
+# directory is a bind mount, not a named volume.
+#
+# The key itself had to go, not just its contents: a `volumes:` key with
+# nothing but comments under it parses as null, and Compose v5.4.0 does not
+# reject that — it PANICS inside ApplyInclude ("interface conversion:
+# interface {} is nil"), with a Go stack trace and no mention of the file.

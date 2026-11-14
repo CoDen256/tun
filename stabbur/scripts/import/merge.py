@@ -1,0 +1,356 @@
+"""
+scripts/import/merge.py — section 5: `normalized` (grouped by lexeme
+signature) -> `candidate` (tasks 5.1-5.5, design D7/D8).
+
+One candidate per D3 lexeme signature (task 5.1) — the signature keeps its
+merge role under D13 even though D13 replaced its *skip* role (tasks.md's
+section 4b preamble). Field-level priority is fixed and operator-set
+(design D8):
+
+    NTNU > A1 31k > core6k > freq6k > CSV
+
+For every field, the highest-priority source with a non-empty value wins;
+no averaging, concatenation, or voting (task 5.2). Every other non-empty
+value supplied by a lower-priority source is retained on the candidate and
+the candidate is flagged conflicted if it disagrees with the winner
+(task 5.3) — a silent merge would hide exactly the information (two
+sources glossing a word differently) that makes review fast.
+
+Review ordering (task 5.5, design D7): freq6k's `Frequency index`, then a
+`CEFR::*` Anki tag, then the CSV's chapter/section — in that order, with
+candidates carrying no signal sorted last. **Measured note:** this bundle's
+`core6k` deck carries no `CEFR::*` tags at all (only thematic/continent
+tags on its `Country` model) — the CEFR tier of the ordering key is
+implemented per design D7 but never actually discriminates against this
+specific bundle's data; recorded here the same way this change records
+other measured-not-assumed findings.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+
+import normalize
+
+# Design D8 — fixed, operator-set. The CSV is last (not first): it's an
+# unreviewed third-party wordlist, not curated operator data, and gets no
+# exemption from the known-set filter or merge priority.
+SOURCE_PRIORITY = ("ntnu", "a1_31k", "core6k", "freq6k", "herpaberget")
+
+# Design D7/D10 — only these two sources ever supply human recordings;
+# `audio_ref` is selected from this subset only (task 1.6), so a candidate
+# whose only audio is core6k's `hypertts-*`/freq6k's `ordpar-*` records
+# none, rather than picking a synthesised file that `push`'s own filter
+# (task 7.1) would discard anyway.
+HUMAN_AUDIO_SOURCES = frozenset({"ntnu", "a1_31k"})
+
+MERGE_FIELDS = (
+    "note_type",
+    "text",
+    "pos",
+    "translations",
+    "context_text",
+    "transcription",
+    "inflections",
+)
+
+_CEFR_TAG_PREFIX = "CEFR::"
+
+
+def _priority_index(source: str) -> int:
+    try:
+        return SOURCE_PRIORITY.index(source)
+    except ValueError:
+        return len(SOURCE_PRIORITY)
+
+
+def _is_empty(value) -> bool:
+    return value is None or value == "" or value == [] or value == {}
+
+
+def _cefr_tag(tags: list[str]) -> str | None:
+    for tag in tags:
+        if tag.startswith(_CEFR_TAG_PREFIX):
+            return tag
+    return None
+
+
+# Design D2: ascending fallibility, signal 1 cannot be wrong, signal 4 is
+# weakest. `source_word_class` is the already-merged `pos` field above —
+# the cross-source priority winner among each row's own (mapped-canonical)
+# label — so this list is the single place signal 3 and the generic
+# cross-source merge meet.
+_POS_SIGNAL_NAMES = ("inflection_shape", "text_prefix", "source_word_class", "translation_prefix")
+
+
+def _pos_signal_values(fields: dict) -> tuple[tuple[str, str | None], ...]:
+    return (
+        ("inflection_shape", normalize.pos_from_inflection_shape(fields.get("inflections", {}))),
+        ("text_prefix", normalize.pos_from_text_prefix(fields.get("text"))),
+        ("source_word_class", fields.get("pos")),
+        ("translation_prefix", normalize.pos_from_translation_prefix(fields.get("translations", []))),
+    )
+
+
+# Task 2b.1: the raw freq6k source categories with no canonical equivalent.
+_UNMAPPABLE_SOURCE_CATEGORIES = normalize.UNMAPPABLE_SOURCE_CATEGORIES
+
+
+def _has_unmappable_source_category(rows: list[dict]) -> bool:
+    return any(row.get("notation", {}).get("source_pos_raw") in _UNMAPPABLE_SOURCE_CATEGORIES for row in rows)
+
+
+def _route_expression_if_no_canonical_pos(fields: dict, rows: list[dict]) -> None:
+    """Task 2b (design D6): a `word` candidate that no signal can resolve a
+    part of speech for, and whose shape is one of the no-deck categories —
+    an unmapped source category, a multiword headword, a phrase/greeting
+    ending in `!`/`?`, or a numeral — is retyped to `expression` instead of
+    being left as an undeckable `word`. Must run before `_resolve_pos_and_
+    lemma`'s note_type check (task 2b.4) so a retyped candidate is not also
+    given a part of speech."""
+    if any(value is not None for _, value in _pos_signal_values(fields)):
+        return
+    text = fields.get("text", "")
+    if (
+        _has_unmappable_source_category(rows)
+        or normalize.is_multiword(text)
+        or normalize.is_phrase_punctuation(text)
+        or normalize.is_numeral(text)
+    ):
+        fields["note_type"] = "expression"
+
+
+def _resolve_pos_and_lemma(fields: dict, sources: dict, conflicts: dict, rows: list[dict]) -> None:
+    """Tasks 2.1-2.7, 3.1-3.2, 4.1-4.3: only `word` notes get a part of
+    speech or a lemma (task 2.6/4.3) — `expression`/`listening` deck by
+    type, not by part of speech, and have no single lemma to derive.
+
+    Where two signals disagree, the higher-precedence one wins *and* the
+    disagreement is recorded as a conflict (design D4), reusing this same
+    `conflicts` dict shape the cross-source field merge above already uses
+    for `pos` — a losing signal is indistinguishable in shape from a
+    losing source, it's just tagged `signal:<name>` instead of a real
+    source name. The pre-existing cross-source entries for `pos` (raw
+    disagreement between two sources' own mapped labels, signal 3's own
+    input) are superseded here, not kept alongside: once the four signals
+    are compared against each other, that raw label disagreement is
+    exactly signal 3 vs. the others, already covered below."""
+    if fields.get("note_type") == "word":
+        _route_expression_if_no_canonical_pos(fields, rows)
+
+    if fields.get("note_type") != "word":
+        fields.pop("pos", None)
+        sources.pop("pos", None)
+        conflicts.pop("pos", None)
+        return
+
+    signal_values = _pos_signal_values(fields)
+    winning_signal, winning_pos = next(
+        ((name, value) for name, value in signal_values if value is not None), (None, None)
+    )
+
+    if winning_pos is None:
+        # Task 2.7: unresolved stays unresolved, never defaulted.
+        fields.pop("pos", None)
+        sources.pop("pos", None)
+        conflicts.pop("pos", None)
+    else:
+        fields["pos"] = winning_pos
+        if winning_signal != "source_word_class":
+            sources["pos"] = f"signal:{winning_signal}"
+        pos_conflicts = [
+            {"source": f"signal:{name}", "value": value}
+            for name, value in signal_values
+            if value is not None and name != winning_signal and value != winning_pos
+        ]
+        if pos_conflicts:
+            conflicts["pos"] = pos_conflicts
+        elif "pos" in conflicts:
+            del conflicts["pos"]
+
+    lemma = normalize.derive_lemma(fields.get("text", ""))
+    if lemma:
+        fields["lemma"] = lemma
+
+
+def merge_group(rows: list[dict]) -> tuple[dict, dict, dict, dict]:
+    """`rows` is every normalized row (plus its source, raw tags, and
+    order-signal data) sharing one lexeme signature. Returns
+    (fields, sources, conflicts, order_key).
+
+    `fields`: the merged field values (task 5.2).
+    `sources`: field -> the source whose value won.
+    `conflicts`: field -> list of {source, value} for every losing
+    non-empty value that disagreed with the winner (task 5.3).
+    `order_key`: the review ordering signal (task 5.5)."""
+    ordered_rows = sorted(rows, key=lambda r: _priority_index(r["source"]))
+
+    fields: dict = {}
+    sources: dict = {}
+    conflicts: dict = {}
+
+    for field in MERGE_FIELDS:
+        winner_value = None
+        winner_source = None
+        losers: list[dict] = []
+        for row in ordered_rows:
+            value = row[field]
+            if _is_empty(value):
+                continue
+            if winner_value is None:
+                winner_value = value
+                winner_source = row["source"]
+            elif value != winner_value:
+                losers.append({"source": row["source"], "value": value})
+        if winner_value is not None:
+            fields[field] = winner_value
+            sources[field] = winner_source
+            if losers:
+                conflicts[field] = losers
+
+    # `audio_ref` is selected only from human-recorded sources (design D7,
+    # task 1.6) — a non-human source's file is never a candidate winner,
+    # and never recorded as a conflict either, because it's audio no
+    # candidate will ever actually carry.
+    audio_winner_value = None
+    audio_winner_source = None
+    audio_losers: list[dict] = []
+    for row in ordered_rows:
+        if row["source"] not in HUMAN_AUDIO_SOURCES:
+            continue
+        value = row["audio_ref"]
+        if _is_empty(value):
+            continue
+        if audio_winner_value is None:
+            audio_winner_value = value
+            audio_winner_source = row["source"]
+        elif value != audio_winner_value:
+            audio_losers.append({"source": row["source"], "value": value})
+    if audio_winner_value is not None:
+        fields["audio_ref"] = audio_winner_value
+        sources["audio_ref"] = audio_winner_source
+        if audio_losers:
+            conflicts["audio_ref"] = audio_losers
+
+    _resolve_pos_and_lemma(fields, sources, conflicts, ordered_rows)
+
+    frequency_index = None
+    core6k_rank = None
+    cefr_tag = None
+    chapter = None
+    for row in ordered_rows:
+        order_signal = row["order_signal"]
+        if frequency_index is None and order_signal.get("frequency_index") is not None:
+            frequency_index = order_signal["frequency_index"]
+        if core6k_rank is None and order_signal.get("core6k_rank") is not None:
+            core6k_rank = order_signal["core6k_rank"]
+        if cefr_tag is None:
+            found = _cefr_tag(row["tags"])
+            if found is not None:
+                cefr_tag = found
+        if chapter is None and order_signal.get("kapittel"):
+            chapter = order_signal["kapittel"]
+
+    order_key = {
+        "frequency_index": frequency_index,
+        "core6k_rank": core6k_rank,
+        "cefr": cefr_tag,
+        "chapter": chapter,
+    }
+
+    return fields, sources, conflicts, order_key
+
+
+def order_sort_key(order_key: dict) -> tuple:
+    """A candidate with no ranking signal sorts after one that has any
+    (task 5.5's review-ordering requirement) — `None` always sorts last
+    within its own tier via the `(has_signal, value)` pairing below.
+
+    `core6k_rank` is its own tier, not merged into `frequency_index`
+    (design D6 — they rank different corpora and a combined number would
+    be fabricated): freq6k's ranking takes priority when both exist, but a
+    candidate with only a core6k rank still sorts ahead of one with
+    neither (task 1.3)."""
+    frequency_index = order_key.get("frequency_index")
+    core6k_rank = order_key.get("core6k_rank")
+    cefr = order_key.get("cefr")
+    chapter = order_key.get("chapter")
+    return (
+        (0, frequency_index) if frequency_index is not None else (1, 0),
+        (0, core6k_rank) if core6k_rank is not None else (1, 0),
+        (0, cefr) if cefr is not None else (1, ""),
+        (0, chapter) if chapter is not None else (1, ""),
+    )
+
+
+def run(conn: sqlite3.Connection, run_id: int) -> tuple[int, int, int]:
+    import store
+
+    rows = conn.execute(
+        """
+        SELECT n.id AS normalized_id, n.raw_note_id, n.source, n.note_type, n.text, n.pos,
+               n.translations_json, n.context_text, n.transcription, n.inflections_json,
+               n.audio_ref, n.order_signal_json, n.notation_json, s.signature_key
+        FROM normalized n
+        JOIN signature s ON s.normalized_id = n.id
+        """
+    ).fetchall()
+    count_in = len(rows)
+
+    raw_note_tags: dict[int, list[str]] = {}
+    for raw_row in conn.execute("SELECT id, tags_json FROM raw_note").fetchall():
+        raw_note_tags[raw_row["id"]] = json.loads(raw_row["tags_json"])
+
+    verdict_by_signature: dict[str, dict] = {}
+    for v_row in conn.execute("SELECT signature_key, verdict, rule, evidence_json FROM verdict").fetchall():
+        verdict_by_signature.setdefault(
+            v_row["signature_key"],
+            {"verdict": v_row["verdict"], "rule": v_row["rule"], "evidence": json.loads(v_row["evidence_json"])},
+        )
+
+    groups: dict[str, list[dict]] = {}
+    for row in rows:
+        groups.setdefault(row["signature_key"], []).append(
+            {
+                "source": row["source"],
+                "note_type": row["note_type"],
+                "text": row["text"],
+                "pos": row["pos"],
+                "translations": json.loads(row["translations_json"]),
+                "context_text": row["context_text"],
+                "transcription": row["transcription"],
+                "inflections": json.loads(row["inflections_json"]),
+                "audio_ref": row["audio_ref"],
+                "order_signal": json.loads(row["order_signal_json"]),
+                "notation": json.loads(row["notation_json"]),
+                "tags": raw_note_tags.get(row["raw_note_id"], []),
+            }
+        )
+
+    store.replace_stage_table(conn, "merge")
+    for signature_key, group_rows in groups.items():
+        fields, sources, conflicts, order_key = merge_group(group_rows)
+        verdict_info = verdict_by_signature.get(signature_key, {"verdict": "import", "rule": None, "evidence": {}})
+        conn.execute(
+            """
+            INSERT INTO candidate (
+                run_id, signature_key, fields_json, sources_json, conflicts_json,
+                verdict, verdict_evidence_json, order_key_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                signature_key,
+                json.dumps(fields, ensure_ascii=False),
+                json.dumps(sources, ensure_ascii=False),
+                json.dumps(conflicts, ensure_ascii=False),
+                verdict_info["verdict"],
+                json.dumps({"rule": verdict_info["rule"], **verdict_info["evidence"]}, ensure_ascii=False),
+                json.dumps(order_key, ensure_ascii=False),
+            ),
+        )
+    conn.commit()
+
+    count_out = len(groups)
+    return count_in, count_out, 0

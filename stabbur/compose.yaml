@@ -1,0 +1,126 @@
+# The shared cluster (D155). This project no longer runs its own Postgres:
+# `include:` pulls in the one cluster, which holds one database and one role
+# per service. The same fragment included by several projects deduplicates, so
+# `docker compose up stabbur-backend` still starts the cluster and this service and
+# nothing else.
+include:
+  - ../postgres/compose.yaml
+
+# D94: renamed from docker-compose.yml to compose.yaml, service names made
+# unique (stabbur-postgres, not postgres) so the root compose.yaml's
+# `include:` can merge this file alongside mjolnir's without a service-name
+# collision — Compose silently keeps only the first included file's
+# definition of a colliding service name, dropping the second with no error,
+# so this isn't cosmetic.
+#
+# monorepo-merge: one repository is one Compose project with one default
+# network, so the `tun-shared` external network (D98/D104) and its one-time
+# `docker network create` are gone. Service names resolve on the default
+# network with no configuration. Shared values (STABBUR_POSTGRES_PASSWORD,
+# INTERNAL_TOKEN) come from the root `.env`; nothing in
+# this file is also typed in another file.
+services:
+  stabbur-backend:
+    # Build context is the repository root so a later change can COPY from
+    # the shared `libs/`; paths in an included file resolve relative to this
+    # file, so `..` is the repo root in both standalone and unified modes.
+    build:
+      context: ..
+      dockerfile: stabbur/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      # Waits for the BOOTSTRAP, not merely a healthy server: a failed
+      # bootstrap must stop this service starting against a cluster with no
+      # databases, rather than letting it fail later with an auth error.
+      postgres-init:
+        condition: service_completed_successfully
+    environment:
+      # Derived, never typed: assembled from STABBUR_POSTGRES_PASSWORD (root .env).
+      # Derived, never typed: the role password is "<POSTGRES_PASSWORD>_stabbur",
+      # created by postgres/init/bootstrap.sh from the same one value.
+      DATABASE_URL: postgresql+psycopg2://stabbur:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_stabbur@postgres:5432/stabbur
+      # unified-auth 4.6: ONE service-to-service token, replacing STABBUR_AUTH_TOKEN
+      # and SMIA_AUTH_TOKEN. NO `:-changeme` default — an unset value must fail
+      # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
+      # and a publicly-known fallback is the opposite of that.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      FLASK_DEBUG: "0"
+      # smia-enrichment-panel: the note editor's "Suggest" panels proxy
+      # through this backend to smia. "smia-backend" is smia's own service
+      # name, deliberately not plain "backend" (which would collide with
+      # this very service's own name once both are merged under the root
+      # `include:`, same D94 problem the postgres services hit). The
+      # address is derived from that service name, so it is no longer an
+      # environment value anyone has to keep in sync.
+      SMIA_BASE_URL: http://smia-backend:5055
+      # manual-link-audio-capture: optional, only read if the file at this
+      # path actually exists inside the container (routes/enrich.py checks
+      # os.path.exists before adding --cookies) — fine to leave unset/absent
+      # until YouTube starts flagging this deployment's IP with "Sign in to
+      # confirm you're not a bot". To use it: export cookies.txt from an
+      # authenticated YouTube session in your browser (Netscape format —
+      # e.g. the "Get cookies.txt" extension) and save it as
+      # stabbur/cookies.txt next to this compose file (gitignored, never
+      # commit it — it's live session credentials). The bind mount below
+      # resolves relative to this file, i.e. stabbur/cookies.txt.
+      YTDLP_COOKIES_FILE: /app/cookies.txt
+      # Python's answer to jsservice's /libs mount. ESM resolves
+      # `../../../libs/...` relative to the importing FILE; Python has no
+      # equivalent, so the shared code goes on the import path instead. /libs
+      # (not /app/libs) keeps the ONE spelling `pyservice.bootstrap` working
+      # in the container and in a native venv (PYTHONPATH=../libs from this
+      # directory), and keeps libs/ out of the image so there is one copy.
+      PYTHONPATH: /libs
+    volumes:
+      # Named volume, not baked into the image: blob bytes should survive
+      # container rebuilds (D45 — stabbur owns the canonical learning audio).
+      - stabbur-blobs:/app/blobs
+      # Read-only: a service may import the shared bootstrap, never edit it.
+      - ../libs:/libs:ro
+      - ./cookies.txt:/app/cookies.txt:ro
+    healthcheck:
+      # Serving is not ready (zone-isolation). The old probe fetched /ui,
+      # which is read off disk and never touches Postgres — it proved the
+      # Flask process was alive and said nothing about the schema, which was
+      # fine while bootstrap.py refused to start the app without one. Now the
+      # app starts regardless, so a /ui probe would report a service with no
+      # schema at all as healthy: quietly wrong.
+      #
+      # /_health answers 200 ready / 503 degraded (libs/pyservice/bootstrap.py)
+      # and is exempt in auth.py — a probe cannot carry a credential. Docker
+      # has only healthy/unhealthy, so degraded maps to unhealthy; nothing
+      # `depends_on: service_healthy` this service, so that cascades nowhere
+      # and is purely a signal. The probe prints the body, so
+      # `docker inspect .State.Health.Log` shows WHY.
+      #
+      # The script is shared rather than inlined three times; it needs no curl
+      # (python:3.12-slim has none) for the same reason the old one-liner
+      # didn't.
+      test: ["CMD", "python", "/libs/pyservice/healthcheck.py", "http://localhost:5056/_health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # Covers binding the port, not the migration: the port binds
+      # immediately now, and `alembic upgrade head` runs behind the readiness
+      # flag afterwards. A longer window would only delay the first honest
+      # "degraded".
+      start_period: 15s
+
+volumes:
+  # Explicit `name:` so this is the SAME Docker volume whether brought up
+  # via `cd stabbur && docker compose up` or through the root
+  # compose.yaml's `include:` — without it, Compose prefixes the volume
+  # name with whatever project is running (`stabbur_...` vs `tun_...`),
+  # creating two entirely separate volumes. Confirmed live: every note
+  # silently "disappeared" switching between the two entry points, because
+  # they'd never been in the same volume at all. These names are preserved
+  # verbatim across the monorepo merge for exactly that reason.
+  # The two Postgres data volumes that used to be declared here
+  # (stabbur-pg-data, stabbur-pg-data-17) are gone: the data moved into the
+  # shared cluster (D155). The volumes THEMSELVES still exist on disk and are
+  # retained deliberately until the operator removes them by hand, which is
+  # what D-U2 was actually protecting. Declaring them here never protected
+  # anything — Compose prunes an unreferenced volume declaration from the
+  # rendered config entirely, so it neither creates nor preserves a volume.
+  stabbur-blobs:
+    name: stabbur_stabbur-blobs

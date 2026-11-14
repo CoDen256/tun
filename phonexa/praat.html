@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Formant Lab — IPA Vowel Chart</title>
+  <link rel="stylesheet" href="css/index.css">
+  <link rel="stylesheet" href="css/praat.css">
+</head>
+<body>
+
+<header>
+  <h1>Formant Lab</h1>
+  <p>Praat-faithful static analysis — spectrogram, formants, pitch</p>
+  <a href="index.html"  class="editor-link">← Vowel Chart</a>
+  <a href="editor.html" class="editor-link">✎ Edit languages</a>
+</header>
+
+<div class="praat-wrap">
+
+  <div class="dropzone" id="dropzone">
+    <div class="dropzone-icon">🔬</div>
+    <div>Click to choose an audio file, or drag one here</div>
+    <input type="file" id="audioFile" accept="audio/*" style="display:none">
+  </div>
+
+  <div id="existingSamplePicker" style="display:none;margin-top:10px">
+    <div style="text-align:center;font-size:.68rem;color:var(--muted);margin-bottom:6px">— or pick an existing sample —</div>
+    <input type="text" id="espFilter" placeholder="Filter by text…"
+      style="width:100%;box-sizing:border-box;background:#1a2e48;border:1px solid #2e4560;border-radius:6px;color:#d8e8f4;font-size:.78rem;padding:6px 9px;margin-bottom:6px">
+    <div id="espList" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:3px"></div>
+  </div>
+
+  <div id="micRecordPicker" style="display:none;margin-top:10px;text-align:center">
+    <div style="font-size:.68rem;color:var(--muted);margin-bottom:6px">— or record from the microphone —</div>
+    <button class="sent-btn" id="micRecordBtn" type="button">🎤 Record</button>
+    <span class="rec-dot" id="micRecordDot"></span>
+  </div>
+
+  <div class="token-context" id="tokenContext" style="display:none">
+    Editing sample <span id="tokenSampleText" class="token-symbol"></span>
+  </div>
+
+  <div class="file-toolbar" id="fileToolbar" style="display:none">
+    <button class="sent-btn" id="newFileBtn" type="button">⟲ Load a different file</button>
+  </div>
+
+  <div id="uploadStatus"></div>
+
+  <div class="praat-panels" id="praatPanels" style="display:none">
+    <div class="panel-label">
+      Spectrogram <span id="channelInfo"></span> <span class="muted">(+ formants in red, pitch in blue)</span>
+    </div>
+    <div class="spectrogram-wrap">
+      <canvas id="spectrogramCanvas"></canvas>
+      <canvas id="overlayCanvas"></canvas>
+      <div id="selectionMeans" class="section-mini-label"></div>
+    </div>
+    <div class="axis-legend">
+      <span><b style="color:#e8536b">●</b> formants (left axis, Hz)</span>
+      <span><b style="color:#4db8ff">—</b> pitch (right axis, Hz)</span>
+    </div>
+
+    <div class="selection-row">
+      <span id="selectionTime">Selection: —</span>
+      <button class="sent-btn" id="playSelectionBtn" type="button">▶ Play selection</button>
+      <button class="sent-btn" id="playAllBtn" type="button">▶ Play all</button>
+      <button class="sent-btn" id="trimBtn" type="button" style="display:none">✂ Trim audio to selection</button>
+    </div>
+    <div class="selection-row" id="trimConfirmRow" style="display:none">
+      <span id="trimConfirmText" class="muted"></span>
+      <button class="sent-btn primary" id="trimConfirmBtn" type="button">✓ Confirm trim</button>
+      <button class="sent-btn" id="trimCancelBtn" type="button">Cancel</button>
+    </div>
+  </div>
+
+  <div class="params-row" id="paramsRow" style="display:none">
+    <div class="param-group">
+      <div class="param-group-title">Formant (Burg) — Praat defaults shown</div>
+      <label>Max formants <input type="number" id="pMaxFormants" value="5" step="1" min="1" max="8"></label>
+      <label>Ceiling (Hz) <input type="number" id="pMaxFreq" value="5500" step="50" min="1000" max="9000"></label>
+      <label>Window (s) <input type="number" id="pWindowLen" value="0.025" step="0.005" min="0.005" max="0.1"></label>
+      <label>Pre-emphasis (Hz) <input type="number" id="pPreEmph" value="50" step="10" min="0" max="500"></label>
+    </div>
+    <div class="param-group">
+      <div class="param-group-title">Pitch (autocorrelation) — Praat defaults shown</div>
+      <label>Floor (Hz) <input type="number" id="pPitchFloor" value="75" step="5" min="25" max="300"></label>
+      <label>Ceiling (Hz) <input type="number" id="pPitchCeiling" value="600" step="25" min="100" max="1200"></label>
+    </div>
+    <button class="sent-btn primary" id="analyzeBtn" type="button">⚡ Analyze</button>
+  </div>
+  <div class="analyze-note">ⓘ Analyzing recomputes the formant/pitch track used for every section's readout below — nothing is saved or applied anywhere until you click Save/Apply on a specific section.</div>
+
+  <div class="analysis-history-row" id="analysisHistoryRow" style="display:none">
+    <span class="muted">Comparing analysis sessions:</span>
+    <select id="analysisHistorySelect"></select>
+    <button class="sent-btn primary" id="saveAnalysisBtn" type="button">💾 Save this analysis</button>
+  </div>
+
+  <div class="sections-panel" id="sectionsPanel" style="display:none">
+    <div class="panel-label">Sections <span class="muted" id="sectionsHint"></span></div>
+    <div class="ingest-toolbar" id="addSectionToolbar" style="display:none">
+      <button class="sent-btn" id="newSectionBtn" type="button">+ New section from selection</button>
+    </div>
+    <div id="sectionsList" class="sections-list"></div>
+  </div>
+
+</div>
+
+<!-- Prefix injected by formanter.py (X-Forwarded-Prefix) — empty when mounted
+     at the root. Must precede every js/ tag: API_BASE is read at load time. -->
+<script>window.PHONEXA_PREFIX = "__PHONEXA_PREFIX__"; var API_BASE = window.PHONEXA_PREFIX || '';</script>
+<script src="js/audio.js"></script>
+<script src="js/vad.js"></script>
+<script src="js/spectro.js"></script>
+<script src="js/ingest.js"></script>
+<script src="js/praat.js"></script>
+</body>
+</html>

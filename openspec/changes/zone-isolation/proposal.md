@@ -32,7 +32,7 @@ DEVICE PLANE                        OPERATOR PLANE
   ota            files, no process    mjolnir-workbench
   mjolnir-sync   new container        mjolnir-builder
                                       stabbur   smia
-                                      phonexa   shadow      (hover-translate: client)
+                                      phonexa   shadow      (hover-translate: external client, own repo)
 ```
 
 **`hub` splits into `mjolnir-sync` and `mjolnir-workbench`.** `userdata.js` is
@@ -67,9 +67,13 @@ smia proxy, no database) and `/api/v1/youtube-extract` (shells to yt-dlp,
 returns audio, no database) — which also moves the two processes most likely to
 hang out of the service holding the vowel chart.
 
-**shadow stores audio through phonexa**, per operator direction: shadow calls
-phonexa's audio-storage API rather than mounting the audio volume. One owner of
-the audio tree, one backup path.
+**shadow mounts no volume at all.** The operator's direction was that shadow
+should store audio by calling phonexa rather than mounting the audio volume —
+and checking that against the code found there is no audio to store.
+Shadowing recordings are never persisted server-side, and phonexa's audio tree
+holds vowel samples shadow never touches. The real coupling is `users` /
+`settings` and `/analyze-praat`, over HTTP in one file.
+*(Corrected 2026-11-13: the original claim had never been checked.)*
 
 **Every service serves before it migrates.** `listen()` first, schema work in
 the background behind a readiness flag, pages render degraded rather than

@@ -1,0 +1,16 @@
+{
+  "name": "mjolnir-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Device-facing + operator-facing service (D80): schema owner for card_slots/decks/publications/build_jobs/minted_notes.",
+  "scripts": {
+    "migrate": "node bin/migrate.js",
+    "seed": "node bin/seed.js",
+    "start": "node bin/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
+  }
+}

@@ -1,30 +1,87 @@
 # CLAUDE.md
 
-## tun — the Norwegian learning ecosystem root
+## tun — the Norwegian learning ecosystem, one repository
 
-This repo holds the shared UI shell and **all cross-repo design
-documentation**. It now also holds a `compose.yaml` of its own (D94,
-superseding D84's "no deployable artifacts here" for exactly this case):
-Compose's native `include:` merges `mjolnir`'s and `stabbur`'s own compose
-files into one project, so a deploy is one `git pull` (across sibling
-checkouts) + one `docker compose up` from here instead of two separate
-stacks. Caddy config and the OTA scripts still live in `mjolnir` only — this
-repo's `compose.yaml` composes them, it doesn't duplicate them.
+Since **D150** this is a monorepo. Every former sibling repo is a top-level
+directory here. One clone, one `docker compose up`, one Claude Code session.
 
 **Start at `docs/README.md`. Read `docs/07-decisions.md` before proposing
 anything — do not re-derive settled decisions.**
 
-Sibling repos (all under `/home/coden/dev/`):
+**On the `monorepo` branch, read `docs/14-restructure-handoff.md` first.** The
+restructure is mid-flight across four OpenSpec changes; that file holds the
+state, the operator decisions already taken, and the ordered next step.
 
-| repo | owns |
+| directory | owns |
 |---|---|
-| `mjolnir` | bundle tool, JS + native patches, APK pipeline, builder, device hub, `docs/findings.md` |
-| `stabbur` | learning content: captures, notes, enrichment, triage UI, audio blobs |
-| `smia` | linguistics: inflect / ipa / tts / stt / translate |
-| `phonexa` | phonetics lab |
-| `hover-translate` | capture client |
+| `docs/` | the ecosystem design layer + the ADR log. The spec layer above every project. |
+| `grind/` | the gateway (the gate into the tun): TLS, routing, the status page, and the `caddy` service. Moved here from `mjolnir/caddy/` by `unified-auth`, superseding D84. Derives the operator hash at boot — no hash is ever stored in a file |
+| `mjolnir/` | bundle tool, JS + native patches, APK pipeline. Three services — the console (compose key `mjolnir-hub`; the *rename* to `mjolnir-workbench` is deferred, it must change the key and the gateway upstream together), `mjolnir-builder`, and `mjolnir-sync` (**device plane**, D158). `docs/findings.md` |
+| `stabbur/` | learning content: captures, notes, enrichment, triage UI, audio blobs |
+| `smia/` | linguistics: inflect / ipa / tts / stt / translate |
+| `phonexa/` | phonetics lab: vowels, consonants, formants, live speech |
+| `shadow/` | shadowing: media, segments, transcription |
+| `postgres/` | the shared database cluster: one Postgres 17, five databases, five roles |
+| `backup/` | the git-backup service |
+| `libs/` | code shared across projects: auth, prefix handling, layout, bootstrap |
 
-Mjølnir app internals live in `mjolnir/docs/findings.md`, not here.
+`hover-translate` is **not** in this repository (D154). It is a fork, a
+standalone browser extension, and never deployed — it lives in its own repo
+and reaches `smia` and `stabbur` across origins like any external client.
+Every reference to it inside `smia`, `stabbur` and `mjolnir` is still correct.
+
+Mjølnir app internals live in `mjolnir/docs/findings.md`, not in `docs/`.
+
+`grind/`, `shadow/`, `postgres/` and `libs/` all exist now. The operator-plane
+half of `unified-auth` (one credential, `basic_auth` in the gateway, one auth
+check per service) is still open — see `docs/14-restructure-handoff.md` §5.
+
+## The three zones — never blur them
+
+1. **Device plane** — `/ota/*`, `/blob/*`, `/audio-manifest/*` (served off
+   disk by the gateway, no process and no database in the path) and
+   `/mjolnir/userdata/*` (served by `mjolnir-sync`, its own process, D158). A contract frozen in `docs/11-ota-contract.md`, with
+   an APK in the field that cannot be rolled back. **Do not change anything
+   here.** Not the token, not a header, not a cache directive. If a task seems
+   to require it, the task is wrong. OTA is served off disk by the gateway and
+   depends on no service and no database.
+2. **Operator plane** — everything a human opens in a browser. One credential,
+   enforced in the gateway.
+3. **Internal** — service-to-service calls, which never pass through the
+   gateway. Today they carry `STABBUR_AUTH_TOKEN` / `SMIA_AUTH_TOKEN` (two
+   values, both in the root `.env`); `unified-auth` collapses them into one
+   `INTERNAL_TOKEN` — planned, not yet done.
+
+## Standards (D151, D152) — these are enforced, not aspirational
+
+- **No configuration value exists in two files.** Used by more than one
+  project → the root `.env`. Used by exactly one → that project's `.env`.
+  Derivable → computed in compose, typed nowhere.
+- **Service names derive from their project:** `<project>-<role>`
+  (`stabbur-backend`), URL prefix `/<project>/`. The compose key and the
+  network hostname are always the same string. The prefix and the database name
+  are NOT required to equal it — `/stabbur/` is served by `stabbur-backend`,
+  and mjolnir's database is named `postgres` for historical reasons. No
+  `container_name:` anywhere.
+- `restart: unless-stopped`; a health check for the service itself; host ports
+  on `127.0.0.1`, published only by a per-project `compose.override.yaml` —
+  only the gateway publishes in the unified stack. **Not** a `dev` profile:
+  Compose has no per-port profile and all three workarounds fail (D152's
+  correction), and the override file is loaded only for the primary compose
+  file of the directory it runs in, which is what makes
+  `cd smia && docker compose up` publish ports while the root stack publishes
+  none.
+- One test layout per language (`pytest.ini` + `tests/`). One Postgres major
+  version *as the target*: smia is still deliberately on `postgres:16` and the
+  four databases are still four separate instances — `postgres-consolidation`
+  collapses them, which is also the only point a shared password can take
+  effect. Serving before migrating (shared `libs/`, so a database outage
+  degrades pages instead of preventing boot) is `zone-isolation`'s and
+  `unified-auth`'s work: planned, not yet done. Today each project runs its own
+  migrations on boot.
+- **No CI.** Deliberately (D152). Do not add a workflow.
+- Each project owns its `compose.yaml`; the root `include:`s them. Every
+  project must stay runnable standalone.
 
 ## Documentation conventions
 
@@ -32,8 +89,10 @@ Mjølnir app internals live in `mjolnir/docs/findings.md`, not here.
   rationale. Superseded decisions are **marked**, never deleted.
 - Corrected findings are annotated in place so a stale claim cannot be read
   without its correction.
-- OpenSpec is per-repo and implementation-scoped. There is deliberately **no**
-  OpenSpec root here — `docs/` is the ecosystem-level spec layer.
+- OpenSpec: the root `openspec/` holds cross-cutting changes; each project's
+  own `openspec/` holds implementation-scoped ones. **Change ids are bare
+  slugs, never dated** (D153) — the CLI's `--change` flag rejects any name not
+  starting with a letter.
 
 ## OpenSpec / Opsx Workflow Rules
 
@@ -42,3 +101,10 @@ Mjølnir app internals live in `mjolnir/docs/findings.md`, not here.
   - **UI / Visual Checks:** What key elements or changes to look for in the user interface (high-level, not overly detailed).
   - **Data / Storage Verification:** Where to poke around outside of the codebase (e.g., database tables, local storage, API endpoints, logs).
   - **Testing & Checkout:** Key terminal commands to run and specific UI flows/interactions to manually test.
+
+## Do not touch
+
+- `mjolnir/base/` — 35k decompiled files of the stock APK, the input to the one
+  irreversible build (D04). Corrupting it is unrecoverable.
+- `mjolnir_caddy_data` — the TLS certificates. Renaming that volume means
+  re-issuing against Let's Encrypt rate limits.

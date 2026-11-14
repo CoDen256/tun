@@ -1,0 +1,16 @@
+{
+  "name": "mjolnir-builder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Worker (D76): pulls ready+audio'd notes from stabbur, mints cards into hub's card_slots, publishes bundles. Imports tool/ and src/ (bundle-tool, inject-deck) in-process.",
+  "scripts": {
+    "start": "node bin/server.js",
+    "clock": "node bin/clock.js",
+    "publish-now": "node bin/run-pipeline.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
+  }
+}

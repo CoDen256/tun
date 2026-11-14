@@ -1,0 +1,32 @@
+# --- Dependencies ---
+node_modules/
+
+# --- IDE / editor cruft (not related to our work) ---
+.idea/
+*.iml
+.DS_Store
+
+# --- Generated / scratch analysis artifacts ---
+*.analysis.json
+*.exploded/
+diff-output/
+*.orig
+
+# --- Superseded working bundles (source of truth is base/) ---
+/index.android.bundle
+/index.android.bundle.new
+/index.android.bundle.bak
+
+# --- Local Claude settings ---
+.claude/settings.local.json
+
+# --- Build outputs ---
+/build/
+
+# --- Deploy (D84): secrets and served data, mirrors tun's old pattern ---
+.env
+# ANCHORED: an unanchored `data/` also matched 23 tracked smali files in
+# `base/smali.mjolnir.merged/**/data/` (Java packages named `data`). Tracked,
+# so nothing is lost today, but a re-extract of the APK base would silently
+# drop them. Only this project's generated OTA payload directory is meant.
+/data/

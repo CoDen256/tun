@@ -1,0 +1,106 @@
+# The shared cluster (D155). This project no longer runs its own Postgres:
+# `include:` pulls in the one cluster, which holds one database and one role
+# per service. The same fragment included by several projects deduplicates, so
+# `docker compose up phonexa-backend` still starts the cluster and this service and
+# nothing else.
+include:
+  - ../postgres/compose.yaml
+
+# phonexa's own stack — usable standalone (`docker compose up -d` here) and as
+# one of the files the root compose.yaml `include:`s.
+#
+# Service and volume names are prefixed `phonexa-` on purpose: `include:`
+# merges every included file into one namespace and silently keeps only the
+# FIRST definition of a colliding name (D94/D118). The old generic names
+# (`postgres`, `backend`, `adminer`) collided with mjolnir's and stabbur's, so
+# phonexa would simply never have started under the unified stack.
+#
+# One repository is one Compose project is one default network, so there is no
+# shared external network any more and nothing to create by hand: every
+# service reaches every other by its service key.
+#
+# Host port publishing lives in compose.override.yaml, which Compose loads
+# only when you run from inside this directory. See the comment there.
+services:
+  # never starts in the unified stack (whose shared Adminer reaches
+  # `phonexa-postgres` directly):
+  #   docker compose --profile dev up -d
+  phonexa-backend:
+    build:
+      # Context is the repository root so a service can COPY from shared
+      # libraries; every COPY in the Dockerfile is therefore phonexa/-prefixed.
+      # Paths in an included file resolve relative to this file.
+      context: ..
+      dockerfile: phonexa/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      # Waits for the BOOTSTRAP, not merely a healthy server: a failed
+      # bootstrap must stop this service starting against a cluster with no
+      # databases, rather than letting it fail later with an auth error.
+      postgres-init:
+        condition: service_completed_successfully
+    # phonexa-only values (AUDIO_BACKEND). Read here rather than relied on for
+    # interpolation, so it is picked up both standalone and from the root.
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      # Derived, never typed: the role password is "<POSTGRES_PASSWORD>_phonexa",
+      # created by postgres/init/bootstrap.sh from the same one value.
+      DATABASE_URL: postgresql+psycopg2://phonexa:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_phonexa@postgres:5432/phonexa
+      AUDIO_STORAGE_ROOT: /data/audio
+      # unified-auth 4.6: ONE service-to-service token, replacing STABBUR_AUTH_TOKEN
+      # and SMIA_AUTH_TOKEN. NO `:-changeme` default — an unset value must fail
+      # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
+      # and a publicly-known fallback is the opposite of that.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      # SMIA_BASE_URL/the smia token used to be here, for Shadowing's
+      # speech-to-text. They moved to shadow/compose.yaml with /transcribe
+      # (zone-isolation task 3.3): phonexa makes no call to smia any more.
+      #
+      # Where SHADOW is in the BROWSER's URL space — for the "🗣 Shadowing"
+      # and "⚙ Settings" header links only. This is NOT an upstream: phonexa
+      # never calls shadow. It is the gateway's own mount point for shadow,
+      # so it is derived from the Caddyfile, not configured.
+      SHADOW_PUBLIC_PREFIX: /shadow
+      # Python's answer to jsservice's /libs mount: shared code goes on the
+      # import path, since Python has no file-relative import. /libs (not
+      # /app/libs) keeps the one spelling `pyservice.bootstrap` working in the
+      # container and in a native venv (PYTHONPATH=../libs from here).
+      PYTHONPATH: /libs
+    volumes:
+      - phonexa-audio-data:/data/audio
+      # Read-only: a service may import the shared bootstrap, never edit it.
+      - ../libs:/libs:ro
+      # Bind mount (not a named volume): the admin export/import endpoints
+      # must read/write the git-tracked phonexa/db-export/ directory, not an
+      # ephemeral copy baked into the image by Dockerfile's COPY. Resolves
+      # relative to this file.
+      - ./db-export:/app/db-export
+    healthcheck:
+      # Serving is not ready (zone-isolation). /ping still exists and still
+      # returns {"ok": true} unconditionally — which is exactly why it is no
+      # longer the probe: it proves the process is alive, and since
+      # scripts/bootstrap.py replaced the migrate-then-exec entrypoint, being
+      # alive no longer implies having a schema.
+      #
+      # /_health answers 200 ready / 503 degraded (libs/pyservice/bootstrap.py).
+      # phonexa has no auth gate of its own, so nothing to exempt here.
+      # python:3.12-slim has no curl; the shared script uses urllib and prints
+      # the body, so .State.Health.Log carries the reason.
+      test: ["CMD", "python", "/libs/pyservice/healthcheck.py", "http://localhost:5050/_health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  # Unique keys: include: merges top-level volume keys across files just like
+  # service names, and the backup service references phonexa-audio-data
+  # directly. Explicit `name:` so it is the SAME Docker volume whether started
+  # from this directory or from the root (otherwise Compose prefixes the
+  # project name and the two entry points get separate volumes).
+  phonexa-audio-data:
+    # Same name the old `audio_data` volume already resolved to in this
+    # directory, so existing local audio carries over.
+    name: phonexa_audio_data

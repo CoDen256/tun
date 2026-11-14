@@ -1,8 +1,16 @@
 ## Purpose
 
-Unify the deployment of the `tun`, `mjolnir`, and `stabbur` services behind a
-single `docker compose` invocation in the `tun` repository, while keeping
-each included repo's own compose file independently usable on its own.
+Unify the deployment of every project behind a single `docker compose`
+invocation at the root of the `tun` repository, while keeping each project's
+own compose file independently usable on its own.
+
+Since D150 `mjolnir`, `stabbur`, `smia`, `phonexa` and
+`backup` are top-level **directories of this one repository**, not sibling
+checkouts, and there is no `tun-shared` external network: one repository is
+one Compose project is one default network. The requirements below that still
+describe sibling clones and the one-time `docker network create tun-shared`
+step are MODIFIED by the `monorepo-merge` change's own delta spec and are
+corrected there rather than twice.
 
 ## Requirements
 
@@ -36,10 +44,12 @@ reach a container defined in another by its service name, with no manual
 network configuration.
 
 #### Scenario: mjolnir's Caddy reaching stabbur
-- **WHEN** `mjolnir`'s Caddy container is configured to reverse-proxy to
-  `stabbur:8000`
-- **THEN** that name resolves correctly once both files are brought up
-  together via `tun`'s unified compose
+- **WHEN** the gateway container is configured to reverse-proxy to
+  `stabbur-backend:5056` (the service key, which is also the hostname — D152;
+  this scenario was written as `stabbur:8000`, a service name and port that
+  never shipped)
+- **THEN** that name resolves on the project's default network, with no
+  network configuration and no external network to create
 
 ### Requirement: One database-exploration tool serves every included database
 The system SHALL provide a single database-exploration tool reachable at one

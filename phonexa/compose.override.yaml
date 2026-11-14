@@ -1,0 +1,32 @@
+# Dev-only host port publishing for phonexa.
+#
+# Why a file and not `profiles: ["dev"]` on the ports: Compose has no
+# per-port profile. `profiles:` gates a whole service, and both services here
+# must run in production; publishing an empty port string
+# (`ports: ["${P-}"]`) is rejected ("no port specified: <empty>") and a
+# `dev`-profiled sidecar with `network_mode: "service:…"` plus `ports:` is
+# refused by the daemon ("conflicting options: port publishing and the
+# container type network mode"). Both verified on Compose v5.4.0, 2026-11-13.
+#
+# Compose auto-loads compose.override.yaml ONLY for the primary compose file of
+# the project it is run in, so:
+#   docker compose up -d                 # here  → ports published
+#   docker compose up -d                 # root  → no ports, nothing to leak
+#   docker compose -f phonexa/compose.yaml …     → no ports
+# In the unified stack phonexa is reached through Caddy at /phonexa/ (which
+# adds the operator-token gate), never through a published port.
+#
+# The shared cluster publishes its own loopback port from
+# postgres/compose.override.yaml (127.0.0.1:5439), so this file no longer
+# maps a database port.
+#
+# Loopback only, always: never a public interface.
+services:
+  phonexa-postgres:
+    ports:
+      # For the native nix-shell app connecting in during local dev.
+      - "127.0.0.1:5432:5432"
+
+  phonexa-backend:
+    ports:
+      - "127.0.0.1:5050:5050"

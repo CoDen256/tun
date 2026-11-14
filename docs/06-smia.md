@@ -32,7 +32,7 @@ when it has exactly one.
 | `POST /examples` | `{text, lang, provider, limit?}` (`lang` only `nb`; `limit` defaults 3, clamped 1-10, part of the cache key) | `{provider, candidates: [{text, source?, sense?}]}` — no translation field, ever (D137) | `ordbokene` (live, sense-attached), `kaikki` (`senses[].examples[]`, filtered of morphology fragments), `tatoeba` (18,898 local sentences), `leipzig` (one provider spanning three local sub-corpora — `web_2020`/`news_2013`/`wikipedia_2014` — tagged per-candidate by `source`, same "one provider, several varieties" pattern as `nst`'s dialects) |
 | `GET /providers` | — | full catalog, all kinds, plus a `counts` map (kind -> {provider: row count}) for providers backed by a local imported table — live/API/manual-link providers have no entry in `counts` | — |
 | `GET /health` | — | per-provider last-success/last-failure/quota (informational only — never changes routing) | — |
-| `GET /ui` | — | provider health, cache hit rate, manual try-it (bypasses cache) | — |
+| `GET /` | — | provider health, cache hit rate, manual try-it (bypasses cache). ***Was `GET /ui`*** — the UI moved to the prefix root with `unified-auth` 5.1/5.5 (assets under `/static/`), superseding D46's `/ui` convention; `/ui` is 404 now | — |
 
 The response always records **which provider answered**, because quality
 varies a lot — this is now a required top-level `provider` field on every

@@ -1,0 +1,71 @@
+# Build contexts are the REPOSITORY ROOT (D152), so that images can COPY from
+# shared libs/. Without this file every `docker compose build` ships the whole
+# ~940 MB tree to the daemon — mjolnir/base alone is 460 MB and smia/providers
+# 373 MB, and neither is COPYed by any Dockerfile.
+#
+# Derived from the actual COPY lines of all six Dockerfiles, not from a guess.
+# Before adding an entry here, check it is not COPYed:
+#   grep -nE '^(COPY|ADD)' */Dockerfile */*/Dockerfile
+#
+# DO NOT add phonexa/lang — phonexa/Dockerfile:32 copies it into the image.
+
+.git
+.gitignore
+.claude
+
+# --- never needed in any image -------------------------------------------
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.venv
+**/venv
+**/.pytest_cache
+**/.mypy_cache
+
+# --- documentation and planning (no Dockerfile reads these) ---------------
+docs
+openspec
+*.md
+**/*.md
+tun.code-workspace
+
+# --- mjolnir: hub/builder COPY only package.json + lockfiles; the source
+#     arrives at runtime through the `.:/app` bind mount, so the build context
+#     needs none of the rest.
+mjolnir/base
+mjolnir/apk
+mjolnir/data
+mjolnir/diff-output
+mjolnir/index.android.bundle*
+mjolnir/patches
+mjolnir/test
+mjolnir/bundle-tool.iml
+mjolnir/caddy
+
+# --- smia: providers/ is a RUNTIME BIND MOUNT (./providers:/app/providers:ro),
+#     never copied. 373 MB of raw provider dumps.
+smia/providers
+
+# --- stabbur: blobs are a named volume, not image content.
+stabbur/blobs
+stabbur/cookies.txt
+
+# --- phonexa: these are volumes / exports, not image content.
+#     NOTE phonexa/lang IS copied (Dockerfile:32) and must NOT be listed.
+phonexa/backups
+phonexa/data
+phonexa/db-export
+phonexa/sounds
+
+
+# --- the git-backup clone the operator happens to keep inside the checkout.
+tun-backup
+
+# --- archives and binaries -------------------------------------------------
+*.apk
+*.zip
+*.crx
+*.pem
+*.log
+.env
+**/.env

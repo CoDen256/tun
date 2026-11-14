@@ -1,0 +1,2636 @@
+[
+  {
+    "id": 1,
+    "url": "file://lang/de/audio/fit/i_long.mp3",
+    "originalFilename": "i_long.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "iː",
+    "phonemic": "/iː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [
+      {
+        "id": 4,
+        "version": "praat-default-v1",
+        "config": {
+          "pitch_floor": 75.0,
+          "pitch_ceiling": 600.0,
+          "window_length": 0.025,
+          "maximum_formant": 5500.0,
+          "pre_emphasis_from": 50.0,
+          "max_number_of_formants": 5.0
+        },
+        "createdAt": "2026-10-03T20:39:26.718729"
+      }
+    ],
+    "tokens": [
+      {
+        "symbol": "iː",
+        "position": [
+          0,
+          2
+        ],
+        "vowelSymbols": [
+          "iː"
+        ],
+        "timeStartMs": 374,
+        "timeEndMs": 550,
+        "activeAnalysisId": null,
+        "manualF1": 350.0,
+        "manualF2": 2672.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-Liebe.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Liebe",
+    "phonemic": "/liːbə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "iː",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "iː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-wie.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "wie",
+    "phonemic": "/viː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "iː",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "iː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "url": "file://lang/de/audio/fit/y_long.mp3",
+    "originalFilename": "y_long.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "yː",
+    "phonemic": "/yː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "yː",
+        "position": [
+          0,
+          2
+        ],
+        "vowelSymbols": [
+          "yː"
+        ],
+        "timeStartMs": 494,
+        "timeEndMs": 821,
+        "activeAnalysisId": null,
+        "manualF1": 269.0,
+        "manualF2": 1979.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-über.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "über",
+    "phonemic": "/yːbɐ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "yː",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "yː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-grün.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "grün",
+    "phonemic": "/gʁyːn/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "yː",
+        "position": [
+          2,
+          4
+        ],
+        "vowelSymbols": [
+          "yː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 8,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/a/a4/De-M%C3%BChle.ogg/De-M%C3%BChle.ogg.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Mühler",
+    "phonemic": "/myːlɐ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "yː",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "yː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 9,
+    "url": "file://lang/de/audio/fit/i_short.mp3",
+    "originalFilename": "i_short.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɪ",
+    "phonemic": "/ɪ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɪ"
+        ],
+        "timeStartMs": 396,
+        "timeEndMs": 496,
+        "activeAnalysisId": null,
+        "manualF1": 385.0,
+        "manualF2": 1636.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 10,
+    "url": "file://lang/de/audio/in.mp3",
+    "originalFilename": "in.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "in",
+    "phonemic": "/in/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɪ"
+        ],
+        "timeStartMs": 232,
+        "timeEndMs": 309,
+        "activeAnalysisId": null,
+        "manualF1": 341.0,
+        "manualF2": 2241.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 11,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-mit.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "mit",
+    "phonemic": "/mɪt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 12,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-Bitte.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "bitte",
+    "phonemic": "/bɪtə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 13,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/6/61/De-Mitte.ogg/De-Mitte.ogg.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Mitte",
+    "phonemic": "/mɪtə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɪ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 14,
+    "url": "file://lang/de/audio/fit/y_short.mp3",
+    "originalFilename": "y_short.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ʏ",
+    "phonemic": "/ʏ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʏ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ʏ"
+        ],
+        "timeStartMs": 442,
+        "timeEndMs": 525,
+        "activeAnalysisId": null,
+        "manualF1": 410.0,
+        "manualF2": 1743.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 15,
+    "url": "file://lang/de/audio/duenn.mp3",
+    "originalFilename": "duenn.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "dünn",
+    "phonemic": "/dʏn/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʏ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ʏ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 16,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/9/98/De-M%C3%BCller.ogg/De-M%C3%BCller.ogg.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Müller",
+    "phonemic": "/mʏlɐ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʏ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ʏ"
+        ],
+        "timeStartMs": 574,
+        "timeEndMs": 665,
+        "activeAnalysisId": null,
+        "manualF1": 333.0,
+        "manualF2": 1448.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 17,
+    "url": "file://lang/de/audio/fit/ee_long.mp3",
+    "originalFilename": "ee_long.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "eː",
+    "phonemic": "/eː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "eː",
+        "position": [
+          0,
+          2
+        ],
+        "vowelSymbols": [
+          "eː"
+        ],
+        "timeStartMs": 341,
+        "timeEndMs": 544,
+        "activeAnalysisId": null,
+        "manualF1": 381.0,
+        "manualF2": 2699.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 18,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-See.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "See",
+    "phonemic": "/zeː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "eː",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "eː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 19,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-geben.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "geben",
+    "phonemic": "/geːbən/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "eː",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "eː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 20,
+    "url": "file://lang/de/audio/fit/oe_long.mp3",
+    "originalFilename": "oe_long.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "øː",
+    "phonemic": "/øː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "øː",
+        "position": [
+          0,
+          2
+        ],
+        "vowelSymbols": [
+          "øː"
+        ],
+        "timeStartMs": 637,
+        "timeEndMs": 909,
+        "activeAnalysisId": null,
+        "manualF1": 393.0,
+        "manualF2": 1865.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 21,
+    "url": "file://lang/de/audio/schoen.ogg",
+    "originalFilename": "schoen.ogg",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "schön",
+    "phonemic": "/ʃøːn/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "øː",
+        "position": [
+          3,
+          4
+        ],
+        "vowelSymbols": [
+          "øː"
+        ],
+        "timeStartMs": 298,
+        "timeEndMs": 418,
+        "activeAnalysisId": null,
+        "manualF1": 294.0,
+        "manualF2": 1496.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 22,
+    "url": "file://lang/de/audio/hoeren.ogg",
+    "originalFilename": "hoeren.ogg",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "hören",
+    "phonemic": "/høːʁən/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "øː",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "øː"
+        ],
+        "timeStartMs": 128,
+        "timeEndMs": 287,
+        "activeAnalysisId": null,
+        "manualF1": 426.0,
+        "manualF2": 1209.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 23,
+    "url": "file://lang/de/audio/hoelen.ogg",
+    "originalFilename": "hoelen.ogg",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Höhle",
+    "phonemic": "/høːlə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "øː",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "øː"
+        ],
+        "timeStartMs": 644,
+        "timeEndMs": 725,
+        "activeAnalysisId": null,
+        "manualF1": 530.0,
+        "manualF2": 1410.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 24,
+    "url": "file://lang/de/audio/fit/e_short.mp3",
+    "originalFilename": "e_short.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɛ",
+    "phonemic": "/ɛ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɛ"
+        ],
+        "timeStartMs": 376,
+        "timeEndMs": 473,
+        "activeAnalysisId": null,
+        "manualF1": 602.0,
+        "manualF2": 1167.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 25,
+    "url": "file://lang/de/audio/es.mp3",
+    "originalFilename": "es.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "es",
+    "phonemic": "/ɛs/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɛ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 26,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-Bett.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Bett",
+    "phonemic": "/bɛt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɛ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 27,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/e/ed/De-Stelle.ogg/De-Stelle.ogg.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Stelle",
+    "phonemic": "/ʃtɛlə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛ",
+        "position": [
+          2,
+          3
+        ],
+        "vowelSymbols": [
+          "ɛ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 28,
+    "url": "file://lang/de/audio/fit/e_long.mp3",
+    "originalFilename": "e_long.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɛː",
+    "phonemic": "/ɛː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛː",
+        "position": [
+          0,
+          2
+        ],
+        "vowelSymbols": [
+          "ɛː"
+        ],
+        "timeStartMs": 454,
+        "timeEndMs": 684,
+        "activeAnalysisId": null,
+        "manualF1": 569.0,
+        "manualF2": 1430.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 29,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/5/52/De-K%C3%A4se.ogg/De-K%C3%A4se.ogg.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Käse",
+    "phonemic": "/kɛːzə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛː",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɛː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 30,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-Hände.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Hände",
+    "phonemic": "/hɛːndə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɛː",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɛː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 31,
+    "url": "file://lang/de/audio/fit/oe_short.mp3",
+    "originalFilename": "oe_short.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "œ",
+    "phonemic": "/œ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "œ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "œ"
+        ],
+        "timeStartMs": 380,
+        "timeEndMs": 454,
+        "activeAnalysisId": null,
+        "manualF1": 629.0,
+        "manualF2": 1837.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 32,
+    "url": "file://lang/de/audio/oefter.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "öfter",
+    "phonemic": "/œftɐ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "œ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "œ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 33,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-zwölf.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "zwölf",
+    "phonemic": "/t͡svœlf/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "œ",
+        "position": [
+          2,
+          3
+        ],
+        "vowelSymbols": [
+          "œ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 34,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-Hölle.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Hölle",
+    "phonemic": "/hœlə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "œ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "œ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 35,
+    "url": "file://lang/de/audio/fit/a_short.mp3",
+    "originalFilename": "a_short.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "a",
+    "phonemic": "/a/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "a",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "a"
+        ],
+        "timeStartMs": 293,
+        "timeEndMs": 382,
+        "activeAnalysisId": null,
+        "manualF1": 1070.0,
+        "manualF2": 1434.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 36,
+    "url": "file://lang/de/audio/ab.mp3",
+    "originalFilename": "ab.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ab",
+    "phonemic": "/ab/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "a",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "a"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 37,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-Mann.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Mann",
+    "phonemic": "/man/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "a",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "a"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 38,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-das.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "das",
+    "phonemic": "/das/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "a",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "a"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 39,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/b/b8/De-Kamm.ogg/De-Kamm.ogg.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Kamm",
+    "phonemic": "/kam/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "a",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "a"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 40,
+    "url": "file://lang/de/audio/fit/a_long.mp3",
+    "originalFilename": "a_long.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "aː",
+    "phonemic": "/aː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aː",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "aː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 41,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-Bahn.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Bahn",
+    "phonemic": "/baːn/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aː",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "aː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 42,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-ja.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ja",
+    "phonemic": "/jaː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aː",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "aː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 43,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/e/ee/De-kam.ogg/De-kam.ogg.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "kam",
+    "phonemic": "/kaːm/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aː",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "aː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 44,
+    "url": "file://lang/de/audio/fit/o_long.mp3",
+    "originalFilename": "o_long.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "oː",
+    "phonemic": "/oː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "oː",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "oː"
+        ],
+        "timeStartMs": 425,
+        "timeEndMs": 675,
+        "activeAnalysisId": null,
+        "manualF1": 434.0,
+        "manualF2": 538.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 45,
+    "url": "file://lang/de/audio/gross.ogg",
+    "originalFilename": "gross.ogg",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "groß",
+    "phonemic": "/gʁoːs/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "oː",
+        "position": [
+          2,
+          3
+        ],
+        "vowelSymbols": [
+          "oː"
+        ],
+        "timeStartMs": 357,
+        "timeEndMs": 504,
+        "activeAnalysisId": null,
+        "manualF1": 367.0,
+        "manualF2": 497.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 46,
+    "url": "file://lang/de/audio/sohn.ogg",
+    "originalFilename": "sohn.ogg",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Sohn",
+    "phonemic": "/zoːn/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "oː",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "oː"
+        ],
+        "timeStartMs": 686,
+        "timeEndMs": 750,
+        "activeAnalysisId": null,
+        "manualF1": 412.0,
+        "manualF2": 798.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 47,
+    "url": "file://lang/de/audio/ofen.ogg",
+    "originalFilename": "ofen.ogg",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Ofen",
+    "phonemic": "/oːfən/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "oː",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "oː"
+        ],
+        "timeStartMs": 256,
+        "timeEndMs": 369,
+        "activeAnalysisId": null,
+        "manualF1": 523.0,
+        "manualF2": 1426.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 48,
+    "url": "file://lang/de/audio/fit/o_short.mp3",
+    "originalFilename": "o_short.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɔ",
+    "phonemic": "/ɔ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɔ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 49,
+    "url": "file://lang/de/audio/ob.mp3",
+    "originalFilename": "ob.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ob",
+    "phonemic": "/ɔb/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɔ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 50,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-Kopf.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Kopf",
+    "phonemic": "/kɔp͡f/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɔ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 51,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-Post.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Post",
+    "phonemic": "/pɔst/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɔ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 52,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/d/d7/De-offen.ogg/De-offen.ogg.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "offen",
+    "phonemic": "/ɔfən/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɔ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 53,
+    "url": "file://lang/de/audio/fit/u_long.mp3",
+    "originalFilename": "u_long.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "uː",
+    "phonemic": "/uː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "uː",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "uː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 54,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-Buch.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Buch",
+    "phonemic": "/buːx/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "uː",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "uː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 55,
+    "url": "file://lang/de/audio/ruhe.ogg",
+    "originalFilename": "ruhe.ogg",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Ruhe",
+    "phonemic": "/ʁuːə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "uː",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "uː"
+        ],
+        "timeStartMs": 562,
+        "timeEndMs": 727,
+        "activeAnalysisId": null,
+        "manualF1": 439.0,
+        "manualF2": 1061.0,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 56,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/5/5d/De-Mut2.oga/De-Mut2.oga.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Mut",
+    "phonemic": "/muːt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "uː",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "uː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 57,
+    "url": "file://lang/de/audio/fit/u_short.mp3",
+    "originalFilename": "u_short.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ʊ",
+    "phonemic": "/ʊ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 58,
+    "url": "file://lang/de/audio/um.mp3",
+    "originalFilename": "um.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "um",
+    "phonemic": "/ʊm/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 59,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-Mutter.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Mutter",
+    "phonemic": "/mʊtɐ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 60,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-Hund.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Hund",
+    "phonemic": "/hʊnt/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ʊ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 61,
+    "url": "file://lang/de/audio/fit/schwa.mp3",
+    "originalFilename": "schwa.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ə",
+    "phonemic": "/ə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ə"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 62,
+    "url": "file://lang/de/audio/bitte.mp3",
+    "originalFilename": "bitte.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "bitte",
+    "phonemic": "/bɪtə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [
+          4,
+          5
+        ],
+        "vowelSymbols": [
+          "ə"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 63,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/f/f4/De-bitte-2.ogg/De-bitte-2.ogg.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "bitte (2)",
+    "phonemic": "/bɪtə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [
+          4,
+          5
+        ],
+        "vowelSymbols": [
+          "ə"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 64,
+    "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/De-Kette.ogg",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Kette",
+    "phonemic": "/kɛtə/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ə",
+        "position": [
+          4,
+          5
+        ],
+        "vowelSymbols": [
+          "ə"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 65,
+    "url": "file://lang/de/audio/fit/er.mp3",
+    "originalFilename": "er.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɐ",
+    "phonemic": "/ɐ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɐ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɐ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 66,
+    "url": "file://lang/de/audio/er.mp3",
+    "originalFilename": "er.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "er",
+    "phonemic": "/eːɐ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɐ",
+        "position": [
+          1,
+          2
+        ],
+        "vowelSymbols": [
+          "ɐ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 67,
+    "url": "file://lang/de/audio/wir.mp3",
+    "originalFilename": "wir.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "wir",
+    "phonemic": "/viːɐ̯/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɐ",
+        "position": [
+          2,
+          3
+        ],
+        "vowelSymbols": [
+          "ɐ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/f/f8/De-Mieter.ogg/De-Mieter.ogg.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Mieter",
+    "phonemic": "/miːtɐ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "iː",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "iː"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      },
+      {
+        "symbol": "ɐ",
+        "position": [
+          4,
+          6
+        ],
+        "vowelSymbols": [
+          "ɐ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 68,
+    "url": "https://upload.wikimedia.org/wikipedia/commons/transcoded/0/03/De-Mutter.ogg/De-Mutter.ogg.mp3",
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Mutter",
+    "phonemic": "/mʊtɐ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɐ",
+        "position": [
+          4,
+          6
+        ],
+        "vowelSymbols": [
+          "ɐ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 69,
+    "url": null,
+    "originalFilename": null,
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Oper",
+    "phonemic": "/oːpɐ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɐ",
+        "position": [
+          2,
+          4
+        ],
+        "vowelSymbols": [
+          "ɐ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 70,
+    "url": "file://lang/de/audio/fit/ai/ai.mp3",
+    "originalFilename": "ai.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "aɪ",
+    "phonemic": "/aɪ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aɪ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "aɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 71,
+    "url": "file://lang/de/audio/fit/ai/ein.mp3",
+    "originalFilename": "ein.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "eins",
+    "phonemic": "/aɪ̯ns/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aɪ",
+        "position": [
+          0,
+          2
+        ],
+        "vowelSymbols": [
+          "aɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 72,
+    "url": "file://lang/de/audio/fit/ai/arbeit.mp3",
+    "originalFilename": "arbeit.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "arbeit",
+    "phonemic": "/aɐ̯baɪ̯t/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aɪ",
+        "position": [
+          3,
+          5
+        ],
+        "vowelSymbols": [
+          "aɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 73,
+    "url": "file://lang/de/audio/fit/ai/eingang.mp3",
+    "originalFilename": "eingang.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "eingang",
+    "phonemic": "/aɪ̯ngaŋ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aɪ",
+        "position": [
+          0,
+          2
+        ],
+        "vowelSymbols": [
+          "aɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 74,
+    "url": "file://lang/de/audio/fit/au/au.mp3",
+    "originalFilename": "au.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "aʊ",
+    "phonemic": "/aʊ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aʊ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "aʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 75,
+    "url": "file://lang/de/audio/fit/au/bau.mp3",
+    "originalFilename": "bau.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "bau",
+    "phonemic": "/baʊ̯/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aʊ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "aʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 76,
+    "url": "file://lang/de/audio/fit/au/blau.mp3",
+    "originalFilename": "blau.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "blau",
+    "phonemic": "/blaʊ̯/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aʊ",
+        "position": [
+          2,
+          4
+        ],
+        "vowelSymbols": [
+          "aʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 77,
+    "url": "file://lang/de/audio/fit/au/grau.mp3",
+    "originalFilename": "grau.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "grau",
+    "phonemic": "/gʁaʊ̯/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aʊ",
+        "position": [
+          2,
+          4
+        ],
+        "vowelSymbols": [
+          "aʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 78,
+    "url": "file://lang/de/audio/fit/au/schau.mp3",
+    "originalFilename": "schau.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "schau",
+    "phonemic": "/ʃaʊ̯/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "aʊ",
+        "position": [
+          3,
+          5
+        ],
+        "vowelSymbols": [
+          "aʊ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 79,
+    "url": "file://lang/de/audio/fit/oi/oi.mp3",
+    "originalFilename": "oi.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "ɔɪ",
+    "phonemic": "/ɔɪ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔɪ",
+        "position": [
+          0,
+          1
+        ],
+        "vowelSymbols": [
+          "ɔɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 80,
+    "url": "file://lang/de/audio/fit/oi/euro.mp3",
+    "originalFilename": "euro.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "euro",
+    "phonemic": "/ɔɪʁoː/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔɪ",
+        "position": [
+          0,
+          2
+        ],
+        "vowelSymbols": [
+          "ɔɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 81,
+    "url": "file://lang/de/audio/fit/oi/europa.mp3",
+    "originalFilename": "europa.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "europa",
+    "phonemic": "/ɔɪʁoːpa/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔɪ",
+        "position": [
+          0,
+          2
+        ],
+        "vowelSymbols": [
+          "ɔɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 82,
+    "url": "file://lang/de/audio/fit/oi/neu.mp3",
+    "originalFilename": "neu.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "neu",
+    "phonemic": "/nɔɪ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔɪ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "ɔɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 83,
+    "url": "file://lang/de/audio/fit/oi/geraeusch.mp3",
+    "originalFilename": "geraeusch.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Geräusch",
+    "phonemic": "/gəʁɔɪʃ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔɪ",
+        "position": [
+          3,
+          5
+        ],
+        "vowelSymbols": [
+          "ɔɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  },
+  {
+    "id": 84,
+    "url": "file://lang/de/audio/fit/oi/raeuber.mp3",
+    "originalFilename": "raeuber.mp3",
+    "contentType": null,
+    "durationMs": null,
+    "sampleRateHz": null,
+    "channels": null,
+    "text": "Räuber",
+    "phonemic": "/ʁɔɪbɐ/",
+    "createdAt": "2026-10-03T14:22:28.576425",
+    "analyses": [],
+    "tokens": [
+      {
+        "symbol": "ɔɪ",
+        "position": [
+          1,
+          3
+        ],
+        "vowelSymbols": [
+          "ɔɪ"
+        ],
+        "timeStartMs": null,
+        "timeEndMs": null,
+        "activeAnalysisId": null,
+        "manualF1": null,
+        "manualF2": null,
+        "createdAt": "2026-10-03T14:22:28.576425"
+      }
+    ]
+  }
+]

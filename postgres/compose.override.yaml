@@ -1,0 +1,13 @@
+# Dev-only loopback port, for a native venv or psql on the host.
+#
+# Compose auto-loads an override file ONLY for the primary compose file of the
+# directory it runs in, so `cd postgres && docker compose up` publishes this
+# and the unified stack publishes nothing. Same mechanism as every other
+# project (D152) — a per-port profile does not exist.
+#
+# 5432 is deliberately NOT used: phonexa's pre-merge stack published 5432 and
+# may still be running on this host.
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5439:5432"

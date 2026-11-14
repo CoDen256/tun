@@ -16,7 +16,7 @@ and no checkout other than this repository.
 - **THEN** no Docker network has to be created by hand, and no compose file
   declares an external network
 
-### Requirement: One database-exploration tool serves every database
+### Requirement: One database-exploration tool serves every included database
 The system SHALL provide a single database-exploration tool, reachable at one
 URL, able to reach every service's database.
 
@@ -24,7 +24,7 @@ URL, able to reach every service's database.
 - **WHEN** the operator opens the database-exploration tool
 - **THEN** every service's database is reachable from that one instance
 
-### Requirement: A project remains deployable on its own
+### Requirement: Each included repo's compose file stays independently usable
 The system SHALL keep each project's compose file usable on its own, so that a
 single project and the shared dependencies it declares can be brought up without
 the rest of the stack.

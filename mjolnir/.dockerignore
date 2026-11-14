@@ -1,0 +1,8 @@
+node_modules
+builder/node_modules
+hub/node_modules
+.git
+.env
+data/
+*.bundle
+*.bundle.new

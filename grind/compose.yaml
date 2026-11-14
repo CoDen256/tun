@@ -1,0 +1,82 @@
+# grind — the gate into the tun. The only service that publishes a public port.
+#
+# Moved out of `mjolnir/` by `unified-auth` (superseding D84's "mjolnir owns
+# the entire deployable stack"): this file routes seven zones across four
+# projects, so it stopped belonging to any one of them. D84's premise — "the
+# operator will only ever deploy mjolnir" — died with D94 and finally with the
+# monorepo.
+#
+# THE TLS VOLUME NAMES ARE LOAD-BEARING AND MUST NOT CHANGE.
+# `mjolnir_caddy_data` holds the certificates; renaming it means re-issuing
+# against Let's Encrypt rate limits. They keep their `mjolnir_` prefix
+# deliberately, even though the project is now `grind` — the volume's name is
+# an identity on disk, not a description of where its compose file lives.
+include:
+  - ../postgres/compose.yaml
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    entrypoint: ["/bin/sh", "/grind-entrypoint.sh"]
+    restart: unless-stopped
+    # PRODUCTION port shape. These are correct only when TUN_SITE_ADDRESS is a
+    # hostname, because that is what makes Caddy listen on 80/443 and obtain a
+    # certificate. The two settings are NOT coupled by Compose, and getting
+    # them out of step is silent: with the documented local value
+    # `TUN_SITE_ADDRESS=:8080` Caddy listens on 8080 inside the container,
+    # nothing is published on 8080, and the gateway is simply unreachable from
+    # the host — on a rootless-Docker host `up` fails outright instead
+    # ("cannot expose privileged port 80"). Found by a real boot test, 2026-11-13.
+    #
+    # For local plain-HTTP work use the root `compose.dev.yaml`, which
+    # overrides these three mappings to one loopback 8080:
+    #     docker compose -f compose.yaml -f compose.dev.yaml up
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"        # HTTP/3
+    environment:
+      # Site address: a hostname in production (auto-HTTPS), ":8080" locally —
+      # and locally you must also use compose.dev.yaml, see the ports note above.
+      TUN_SITE_ADDRESS: ${TUN_SITE_ADDRESS:?set TUN_SITE_ADDRESS in the root .env}
+      OTA_TOKEN: ${OTA_TOKEN:?set OTA_TOKEN in the root .env}
+      # The gateway derives the operator password hash from this at START
+      # (entrypoint.sh), so no hash is ever stored in a file. That is what
+      # retires P35 and P36 — a `$`-containing value compose would mangle, and
+      # a valueless key that resolved from the wrong .env under `include:`.
+      OPERATOR_TOKEN: ${OPERATOR_AUTH_TOKEN:?set OPERATOR_AUTH_TOKEN in the root .env}
+      # The /stabbur, /smia and /phonexa upstreams are no longer configurable:
+      # caddy/Caddyfile names those services directly, because one repository
+      # is one Compose project and the names always resolve.
+      #
+      # THERE IS NO HASH VARIABLE HERE ANY MORE. `PHONEXA_AUTH_HASH` used to
+      # be passed on this line as `${PHONEXA_AUTH_HASH:-$$2a$$14$$…}`, with a
+      # hand-generated bcrypt hash in a `.env` and a fail-closed default
+      # duplicated from the Caddyfile. unified-auth 3.3 deleted it as a
+      # configured value: entrypoint.sh derives the hash from OPERATOR_TOKEN
+      # above, every operator zone imports the one `(operator_gate)` snippet
+      # that reads it, and nothing types or carries a hash. A `$`-containing
+      # value in a `.env` (P36) and a valueless compose key resolving from
+      # the wrong project's `.env` under `include:` (P35) are both gone with
+      # it, because the value they mangled no longer exists.
+    volumes:
+      # Relative paths in an included file resolve against THIS file's
+      # directory (verified 2026-11-13), so these stay `./…` under both the
+      # root `include:` and standalone `cd mjolnir`.
+      - ./entrypoint.sh:/grind-entrypoint.sh:ro
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/status:/etc/caddy/status:ro
+      - ../mjolnir/data:/srv:ro                   # served read-only; publishing writes from the host
+      - caddy_data:/data                 # TLS certs — LOSING THIS MEANS RE-ISSUING CERTS
+      - caddy_config:/config
+
+  # `decks`, `publications`, `build_jobs`, `occurrence_shipments`,
+
+volumes:
+  caddy_data:
+    # THE CERTIFICATES. Renaming this volume means re-issuing against Let's
+    # Encrypt rate limits. The `mjolnir_` prefix is kept on purpose: it is the
+    # name on disk, unrelated to which project's compose file declares it.
+    name: mjolnir_caddy_data
+  caddy_config:
+    name: mjolnir_caddy_config

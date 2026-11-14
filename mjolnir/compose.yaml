@@ -1,0 +1,241 @@
+# mjolnir — Caddy, postgres, hub, builder.
+#
+# This file still stands alone (`cd mjolnir && docker compose up` works), and
+# the root `compose.yaml` `include:`s it alongside every other project so a
+# deploy is one `git pull` + one `docker compose up` (D94, now one repository).
+# One repository means ONE Compose project and ONE default network: the
+# `tun-shared` external network, its `external: true` declaration and the
+# one-time `docker network create tun-shared` (D98/D104) are gone — sibling
+# services resolve each other by service name with no configuration at all.
+#
+# Values used by more than one project (TUN_SITE_ADDRESS, TUN_PUBLIC_BASE,
+# OTA_TOKEN, OPERATOR_AUTH_TOKEN, MJOLNIR_POSTGRES_PASSWORD, INTERNAL_TOKEN) live
+# in the ROOT `.env` and are interpolated below. Values used only by mjolnir
+# live in `mjolnir/.env` (see .env.example) and are passed through via
+# `env_file`. No value is typed in two files.
+#
+# D-H6 IS SUPERSEDED by unified-auth 4.1/4.2. hub and builder no longer run
+# a credential check of their own against OPERATOR_AUTH_TOKEN, and neither
+# has a login page. They accept the gateway-verified `X-Tun-Operator` marker
+# or INTERNAL_TOKEN (libs/jsservice/auth.js), unconditionally — the old
+# "gate disabled when the value is unset" ergonomic made a missing value an
+# open console, and there is no value left that can be forgotten.
+#
+# OPERATOR_AUTH_TOKEN is still passed to hub, but for one unrelated job: the
+# bundle tool bakes it into an APK as SYNC_TOKEN at assemble time.
+include:
+  - ../postgres/compose.yaml
+
+services:
+  # `pending_occurrences`, `builder_config`, `job_logs`); builder is the
+  # only other writer — both point at the same logical database (02-
+  # services.md's "separate logical DB per service" is per *ecosystem*
+  # service, not split further between these two, which already share
+  # everything by design, D-P3). Bind-mounted, not copied into the image —
+  # own `Dockerfile`s install deps at build time; source comes from the
+  # checkout, not a layer, so `git pull` + restart is enough.
+  #
+  # The build context is the REPOSITORY ROOT (`..`), not mjolnir, so a later
+  # change can `COPY` from shared `libs/`. Both Dockerfiles' COPY paths are
+  # mjolnir/-prefixed to match. A root `.dockerignore` is mandatory: the
+  # combined working tree is ~10 GB.
+  mjolnir-hub:
+    build:
+      context: ..
+      dockerfile: mjolnir/hub/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      # Waits for the BOOTSTRAP, not merely a healthy server: a failed
+      # bootstrap must stop this service starting against a cluster with no
+      # databases, rather than letting it fail later with an auth error.
+      postgres-init:
+        condition: service_completed_successfully
+    # mjolnir's own values (ALLOW_HTTP, ALLOW_NO_COMPANION, SOURCE_LANG, …).
+    # Shared and derived values are set in `environment:` below. Not
+    # required: every mjolnir-local value is optional with a working
+    # default, so a fresh clone with no mjolnir/.env still comes up.
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      # NOTE THE DATABASE NAME. mjolnir's database was historically called
+      # `postgres` — the default database of its own container, never renamed
+      # (D152 recorded it as the one place where database name != project
+      # name). In the shared cluster `postgres` is the superuser's maintenance
+      # database, so mjolnir's data lives in a database actually called
+      # `mjolnir`. The dump restores into it; nothing in hub's SQL refers to
+      # the database by name, so no application change is needed.
+      #
+      # Derived, never typed: the role password is "<POSTGRES_PASSWORD>_mjolnir",
+      # created by postgres/init/bootstrap.sh from the same one value.
+      DATABASE_URL: postgresql://mjolnir:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_mjolnir@postgres:5432/mjolnir
+      DATA_DIR: /app/data
+      TUN_PUBLIC_BASE: ${TUN_PUBLIC_BASE}
+      OPERATOR_AUTH_TOKEN: ${OPERATOR_AUTH_TOKEN}
+      # Derived, never typed: service names resolve. STABBUR_UI_BASE is gone
+      # (unified-auth 5.4) — stabbur's UI moved to the prefix root, so the
+      # browser-facing link is `$TUN_PUBLIC_BASE/stabbur/`, computed in
+      # hub/src/config.js from a value this file already passes.
+      STABBUR_BASE_URL: http://stabbur-backend:5056
+      # unified-auth 4.6: ONE service-to-service token, replacing STABBUR_AUTH_TOKEN
+      # and SMIA_AUTH_TOKEN. NO `:-changeme` default — an unset value must fail
+      # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
+      # and a publicly-known fallback is the opposite of that.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+    volumes:
+      - .:/app
+      # libs/ mounted at /libs, NOT /app/libs, so that the SAME relative
+      # import works in the repo and in the container: `/app` is `tun/mjolnir`
+      # and `/` is `tun`, so `../../../libs/` from a file two levels under
+      # either one resolves identically. Mounting it inside /app would need a
+      # different specifier in each place.
+      - ../libs:/libs:ro
+      - /app/node_modules
+      - /app/hub/node_modules
+    healthcheck:
+      # monorepo-merge 4.4: same four-key shape as phonexa-backend's reference
+      # healthcheck. The *predicate* has to differ, and here is why.
+      #
+      # The comment here used to explain why this probe could only assert
+      # LIVENESS: hub had no unauthenticated route, so any HTTP status line
+      # had to count as a pass. That stopped being true when zone-isolation
+      # added /mjolnir/_health, which is deliberately above the credential
+      # check (a Docker health check cannot present one) and reports
+      # serving-vs-ready. The probe keys on the STATUS CODE — 200 ready, 503
+      # degraded — which is what P47's second half is about.
+      #
+      # unified-auth 4.1 does not change that: /mjolnir/_health is still the
+      # single exemption, and it is the only one.
+      #
+      # node, not curl: this image is node:22-alpine + bash only (builder's has
+      # curl, hub's does not), and `node -e` is CommonJS by default so
+      # require() is fine. 127.0.0.1 rather than localhost: the server binds
+      # all interfaces and the literal skips any IPv6-first resolution.
+      # Keys on the STATUS CODE, not merely on getting a response. The
+      # previous probe exited 0 for any statusCode at all, so with the
+      # database down /_health answered 503 "degraded" while `docker inspect`
+      # still said healthy — the P45 symptom in a new place. Keeps the 3s
+      # timeout guard, which a bare fetch() does not have.
+      test: ["CMD", "node", "-e", "const r=require('http').get({host:'127.0.0.1',port:8000,path:'/mjolnir/_health'},s=>process.exit(s.statusCode===200?0:1));r.setTimeout(3000,()=>{r.destroy();process.exit(1)});r.on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # DEVICE PLANE. Split out of mjolnir-hub by zone-isolation so that
+  # redeploying the operator console cannot interrupt a device's progress
+  # sync, and a fault in either cannot take down the other. Shares the
+  # `mjolnir` database with the workbench but NEVER migrates it — exactly one
+  # service owns each schema.
+  mjolnir-sync:
+    build:
+      context: ..
+      dockerfile: mjolnir/sync/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://mjolnir:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_mjolnir@postgres:5432/mjolnir
+      TUN_PUBLIC_BASE: ${TUN_PUBLIC_BASE}
+      # The DEVICE token. The gateway validates it on /mjolnir/userdata/* and
+      # then vouches for the request with X-Tun-Operator; mjolnir-sync itself
+      # never reads this value. Kept here because hub/src/config.js is the
+      # shared loader and bakes it into an APK as SYNC_TOKEN at assemble time.
+      OPERATOR_AUTH_TOKEN: ${OPERATOR_AUTH_TOKEN}
+      # unified-auth 4.6: ONE service-to-service token, replacing STABBUR_AUTH_TOKEN
+      # and SMIA_AUTH_TOKEN. NO `:-changeme` default — an unset value must fail
+      # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
+      # and a publicly-known fallback is the opposite of that.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      DATA_DIR: /app/data
+      PORT: "8002"
+    volumes:
+      - .:/app
+      # libs/ mounted at /libs, NOT /app/libs, so that the SAME relative
+      # import works in the repo and in the container: `/app` is `tun/mjolnir`
+      # and `/` is `tun`, so `../../../libs/` from a file two levels under
+      # either one resolves identically. Mounting it inside /app would need a
+      # different specifier in each place.
+      - ../libs:/libs:ro
+      - /app/node_modules
+      - /app/hub/node_modules
+    healthcheck:
+      # Liveness only, and outside the auth gate on purpose: /_health is not
+      # part of the device contract and a probe must not need a credential.
+      test: ["CMD", "node", "-e", "const r=require('http').get({host:'127.0.0.1',port:8002,path:'/_health'},s=>process.exit(s.statusCode===200?0:1));r.setTimeout(3000,()=>{r.destroy();process.exit(1)});r.on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  mjolnir-builder:
+    build:
+      context: ..
+      dockerfile: mjolnir/builder/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      # Waits for the BOOTSTRAP, not merely a healthy server: a failed
+      # bootstrap must stop this service starting against a cluster with no
+      # databases, rather than letting it fail later with an auth error.
+      postgres-init:
+        condition: service_completed_successfully
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      # NOTE THE DATABASE NAME. mjolnir's database was historically called
+      # `postgres` — the default database of its own container, never renamed
+      # (D152 recorded it as the one place where database name != project
+      # name). In the shared cluster `postgres` is the superuser's maintenance
+      # database, so mjolnir's data lives in a database actually called
+      # `mjolnir`. The dump restores into it; nothing in hub's SQL refers to
+      # the database by name, so no application change is needed.
+      #
+      # Derived, never typed: the role password is "<POSTGRES_PASSWORD>_mjolnir",
+      # created by postgres/init/bootstrap.sh from the same one value.
+      DATABASE_URL: postgresql://mjolnir:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_mjolnir@postgres:5432/mjolnir
+      DATA_DIR: /app/data
+      TUN_PUBLIC_BASE: ${TUN_PUBLIC_BASE}
+      STABBUR_BASE_URL: http://stabbur-backend:5056
+      # unified-auth 4.6: ONE service-to-service token, replacing STABBUR_AUTH_TOKEN
+      # and SMIA_AUTH_TOKEN. NO `:-changeme` default — an unset value must fail
+      # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
+      # and a publicly-known fallback is the opposite of that.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+    volumes:
+      - .:/app
+      # See the mjolnir-hub comment: /libs keeps one relative import working
+      # in both the repo and the container.
+      - ../libs:/libs:ro
+      - /app/node_modules
+      - /app/builder/node_modules
+    healthcheck:
+      # Same shape as mjolnir-hub's above, against builder's own
+      # /builder/_health. builder shares the one auth implementation
+      # (libs/jsservice/auth.js) and exempts exactly that path, for the same
+      # reason hub does: a container probe carries no credential.
+      #
+      # node rather than curl even though this image does install curl (for
+      # ffmpeg-adjacent ops scripting): keeping the probe byte-for-byte hub's,
+      # modulo the port and path, is the point of 4.4.
+      # Keys on the STATUS CODE, not merely on getting a response. The
+      # previous probe exited 0 for any statusCode at all, so with the
+      # database down /_health answered 503 "degraded" while `docker inspect`
+      # still said healthy — the P45 symptom in a new place. Keeps the 3s
+      # timeout guard, which a bare fetch() does not have.
+      test: ["CMD", "node", "-e", "const r=require('http').get({host:'127.0.0.1',port:8001,path:'/builder/_health'},s=>process.exit(s.statusCode===200?0:1));r.setTimeout(3000,()=>{r.destroy();process.exit(1)});r.on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+# No `volumes:` section any more. mjolnir's postgres data moved into the
+# shared cluster (D155) and its caddy volumes moved to `grind/` with the
+# gateway (unified-auth). The key itself has to go, not just its contents:
+# a `volumes:` key with nothing but comments under it parses as null and
+# makes `docker compose config` PANIC inside ApplyInclude, with a Go stack
+# trace naming no file (P43).

@@ -1,3 +1,142 @@
+# tun — the whole ecosystem, one Compose project (D150).
+#
+# `include:` pulls in each project's OWN compose file, unchanged and still
+# usable standalone (`cd stabbur && docker compose up`). What the monorepo
+# removed is the `tun-shared` external network: one repository is one Compose
+# project is one default network, so every service resolves every other by
+# name with no configuration and no setup step. D94/D98/D101/D104's
+# sibling-checkout apparatus — and the `docker network create tun-shared`
+# that D94 claimed was unnecessary, D98 required and D104 corrected — are all
+# gone with it.
+#
+# There are no prerequisites. Clone, create `.env`, `docker compose up`.
+#
+#   docker compose up                    # everything
+#   docker compose up stabbur-backend    # one service + its database
+#   cd stabbur && docker compose up      # the same, plus loopback ports for a
+#                                        # native venv (compose.override.yaml)
+#
+# Host ports: in the unified stack the gateway is the only service publishing
+# on a PUBLIC interface. This file's `adminer` also publishes, on loopback
+# only (127.0.0.1:8082), because it is an operator tool that has to be
+# reachable here; phonexa's own dev Adminer does the same behind a `dev`
+# profile. Every SERVICE port lives in that project's own
+# `compose.override.yaml`, which Compose auto-loads ONLY for the primary
+# compose file of the directory it runs in — verified — so `docker compose up`
+# here publishes no service ports at all.
 include:
-  - b/compose.yaml
-  - c/compose.yaml
+  # grind first: it is the gate, and reading the stack top-down should start
+  # with the only thing exposed to the internet.
+  - ./grind/compose.yaml
+  - ./mjolnir/compose.yaml
+  - ./stabbur/compose.yaml
+  - ./smia/compose.yaml
+  # phonexa prefixes every service and volume name `phonexa-` precisely so it
+  # can be merged here: `include:` flattens everything into one namespace and
+  # silently keeps only the FIRST definition of a colliding name (D94/D118).
+  # Its own development Adminer is behind a `dev` profile, so it does not
+  # start here; use the shared one below.
+  - ./phonexa/compose.yaml
+  # shadow was split out of phonexa by zone-isolation task 3: the shadowing
+  # domain, its own database, its own pages, and the three stateless
+  # endpoints only it ever called. It is listed AFTER phonexa for readability
+  # only — `include:` order decides nothing but which definition of a
+  # colliding name wins, and `shadow-backend` collides with nothing.
+  - ./shadow/compose.yaml
+
+services:
+  # One database-exploration tool for the one cluster (D-T3, D155). Log in as
+  # a service role (`stabbur` / `smia` / `mjolnir` / `phonexa` / `shadow`) with
+  # that role's derived password, "<POSTGRES_PASSWORD>_<db>" — each role sees
+  # only its own database, which is the same isolation the services get.
+  #
+  # (The comment here used to say this key deep-merges over an `adminer`
+  # service of stabbur's own. That stopped being true when stabbur renamed its
+  # services to `stabbur-*` under D94: stabbur defines no `adminer`, so this
+  # is simply the only one.)
+  adminer:
+    image: adminer
+    restart: unless-stopped
+    environment:
+      # One cluster now (D155) — this is the only server there is, and all
+      # five databases are reachable from it with each service's own role.
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "127.0.0.1:8082:8080"
+
+  # compose-backup-service (D-C1..D-C5): a real service, not a host script
+  # plus crontab. Connects to each Postgres over the network with a real
+  # password (D-C1) — no Docker socket is mounted at all.
+  #
+  # Run one cycle by hand:
+  #   docker compose run --rm -e RUN_ONCE=1 backup
+  #
+  # `stabbur-blobs` and `phonexa-audio-data` are referenced directly even
+  # though they are declared in those projects' own compose files — `include:`
+  # makes that work with no extra declaration here (D-C2).
+  #
+  # Covers ALL FIVE databases — mjolnir, stabbur, smia, phonexa, shadow.
+  # smia joined the set with D155: it had never been backed up at all, while
+  # being the only database carrying 2.7M rows of imported corpora.
+  backup:
+    build: ./backup
+    restart: unless-stopped
+    # A Postgres container goes through its own init-then-restart startup:
+    # reachable on the network but refusing connections for a few seconds.
+    # Without waiting for health, the first run can race it and dump nothing.
+    # entrypoint.sh's atomic dump-then-rename already stops a failed dump from
+    # corrupting the backup repo; this avoids the failure in the first place.
+    depends_on:
+      # One cluster now (D155), and the BOOTSTRAP rather than the bare server:
+      # dumping before the databases exist would produce five empty files.
+      postgres-init:
+        condition: service_completed_successfully
+    environment:
+      BACKUP_REPO_URL: ${BACKUP_REPO_URL:?set BACKUP_REPO_URL in the root .env}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      # ONE password now (D155). The four per-database keys this file used to
+      # carry existed because Postgres applies a password only when it
+      # initialises a fresh data directory, so three live volumes still held
+      # the literals they were created with. Restoring into a fresh cluster is
+      # exactly the moment that constraint lifts — entrypoint.sh derives each
+      # role password as "<POSTGRES_PASSWORD>_<db>", the same rule
+      # postgres/init/bootstrap.sh used to create them.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}
+      BACKUP_RETRY_SECONDS: ${BACKUP_RETRY_SECONDS:-3600}
+    # A HEALTHCHECK THAT REFLECTS WHETHER A BACKUP HAS ACTUALLY HAPPENED.
+    # This service used to be in bin/_check_services.py's
+    # NO_HEALTHCHECK_BY_DESIGN set, and a container that had produced no
+    # backup at all for seven hours (failed clone, placeholder deploy key)
+    # read as "Up 7 hours" and passed check-standards.sh. Liveness was never
+    # the question here — the process stays up perfectly well while backing
+    # up nothing. healthcheck.sh reads the stamp entrypoint.sh writes only
+    # after a run's push returns.
+    #
+    # start_period covers the first run: the container clones, dumps five
+    # databases and pushes before it can stamp anything, and a failing probe
+    # inside the start period leaves the container "starting" rather than
+    # unhealthy.
+    healthcheck:
+      test: ["CMD", "/healthcheck.sh"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+    volumes:
+      # The repo clone persists across restarts (D-C4) — cloned by the
+      # container on first boot, never a host bind mount.
+      - backup-repo-clone:/data
+      - stabbur-blobs:/stabbur-blobs:ro
+      # phonexa's audio is a NESTED tree (lang/<lang>/ingested/<name>.wav)
+      # whose files can be rewritten in place by Formant Lab's sample trim,
+      # which is why entrypoint.sh's copy loop is recursive and why its
+      # copy-if-absent rule has a documented staleness consequence (D147).
+      - phonexa-audio-data:/phonexa-audio:ro
+      # Exactly one mounted private key file (D-C3) — not the operator's whole
+      # ~/.ssh. known_hosts is managed inside the named volume
+      # (StrictHostKeyChecking=accept-new on first connect).
+      - ${BACKUP_SSH_KEY_PATH:?set BACKUP_SSH_KEY_PATH in the root .env}:/root/.ssh/id_backup:ro
+
+volumes:
+  backup-repo-clone:
+    name: tun_backup-repo-clone

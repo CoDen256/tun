@@ -12,34 +12,62 @@ proposals below were written): https://claude.ai/code/artifact/8089939e-7648-423
 — operator-only, not meant for public sharing. Read it alongside this doc —
 the doc explains the *why*, the mockup shows the *what*.
 
-## Deployment: three repos, one `docker compose up`
+## Deployment: one repository, one `docker compose up`
+
+**Amended by D150 (2026-11-13).** The conclusion of this session — one
+`git pull`, one `docker compose up`, `include:` as the composition mechanism,
+one shared Adminer, `compose.yaml` as the canonical filename — all still
+holds. What changed is that the three (then five) *sibling checkouts* it was
+built on are gone: the ecosystem is one repository with each former repo as a
+top-level directory. The original text is corrected in place below rather than
+left readable as if it were still true.
 
 ```
-~/tun/        ← the ONLY thing ever `git pull`ed + `docker compose up`'d
-~/mjolnir/    ← sibling checkout, unchanged, still runs standalone
-~/stabbur/    ← sibling checkout, unchanged, still runs standalone
+tun/                 ← the ONLY thing ever `git pull`ed + `docker compose up`'d
+  mjolnir/           ← a directory, not a sibling checkout; still runs standalone
+  stabbur/           ← same
+  smia/  phonexa/    ← same
 ```
 
-- **Sibling checkout**, not submodules, not a monorepo. Three `git clone`s
-  at the same filesystem level.
-- **`tun/compose.yaml`** uses Compose's native `include:` to pull in
-  `../mjolnir/compose.yaml` and `../stabbur/compose.yaml` as one merged
-  project (one shared network — service-name DNS resolution works across
-  the include boundary with no extra wiring). Each included file stays
-  fully usable on its own (`cd mjolnir && docker compose up` still works
-  for local dev) — `include:` only adds a second way to start them, it
-  doesn't take away the first.
-- **Caddy stays in `mjolnir`.** It is not a cross-service front door today —
-  it only serves `/ota/*` and `/blob/*`, and the `/stabbur`/`/smia`/`/phonexa`
-  routes in its Caddyfile are unused placeholders, not a live thing worth
-  moving for. Revisit only once a second service actually needs routing
-  through it.
+- **One repository** (D150, giving D135 its design), not sibling checkouts,
+  not submodules. *This reverses this session's "not a monorepo" sentence; the
+  reasons are in D150 — five `git pull`s per deploy, configuration duplicated
+  across five `.env` files, and one Claude Code session per repo.*
+- **`include:` survives the merge, and is now in-repo.** The root
+  `compose.yaml` uses Compose's native `include:` to pull in
+  `./mjolnir/compose.yaml`, `./stabbur/compose.yaml`, `./smia/compose.yaml`
+  and `./phonexa/compose.yaml` as one project. Each included file stays fully
+  usable on its own (`cd mjolnir && docker compose up` still works for local
+  dev) — `include:` only adds a second way to start them, it doesn't take away
+  the first. That property is why `include:` was kept rather than flattened
+  into a single root file.
+- **The shared network no longer needs wiring at all.** This section used to
+  describe "one shared network" as something `include:` gave us; in practice
+  it took a `tun-shared` network declared `external: true` in four files plus
+  a one-time `docker network create` on every host (D98/D104). One repository
+  is one Compose project is one default network, so that apparatus is deleted
+  outright: service-name DNS resolution across the include boundary now needs
+  no configuration and no setup step.
+- **Caddy stays in `mjolnir/`** — but no longer because "it is not a
+  cross-service front door". It *is* one now: `/stabbur/*`, `/smia/*`,
+  `/phonexa/*`, `/mjolnir`, `/builder` and `/adminer` are live routes, not the
+  unused placeholders this session found (D119, D147, D149). It stays in
+  `mjolnir/` only because moving it is the `zone-isolation` change's job,
+  which relocates it to `grind/`.
 - **Consistent naming**: every compose file is named `compose.yaml` (the
-  modern canonical name). `stabbur/docker-compose.yml` gets renamed to match
-  `mjolnir`'s existing `compose.yaml`.
-- **One `adminer`**, at the top level in `tun`'s compose file, pointed at
-  both Postgres instances (`mjolnir`'s hub DB, `stabbur`'s DB) via Adminer's
-  native server picker — not one Adminer container per database.
+  modern canonical name). Done — `stabbur/docker-compose.yml` and, last,
+  `smia/compose.yml` were both renamed.
+- **One `adminer`**, defined in the root `compose.yaml`, pointed at every
+  project's Postgres (`mjolnir-postgres`, `stabbur-postgres`,
+  `smia-postgres`, `phonexa-postgres`) via Adminer's native server picker —
+  not one Adminer container per database. Two refinements since: it is now
+  published on `127.0.0.1:8082` only and never publicly (D152), while the
+  gateway also routes `/adminer/*` to it — with **no** auth of its own, as
+  the Caddyfile says explicitly: the operator token gates hub and builder,
+  not this route, so reaching it still needs database credentials; and phonexa's own development
+  Adminer sits behind a `dev` profile so this stays the only one that runs
+  (D147). There are still four Postgres instances — one shared cluster of four
+  databases is the planned `postgres-consolidation` change, not done.
 
 ### What "no shell commands" actually requires
 

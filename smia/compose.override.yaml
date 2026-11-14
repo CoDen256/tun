@@ -1,0 +1,32 @@
+# Dev-only host port publishing for smia.
+#
+# Why a file and not `profiles: ["dev"]` on the ports: Compose has no
+# per-port profile. `profiles:` gates a whole service, and both services here
+# must run in production — a `dev`-profiled smia-postgres makes the project
+# invalid ("service smia-backend depends on undefined service", verified on
+# Compose v5.4.0, 2026-11-13), and `required: false` would instead start the
+# backend with no database at all.
+#
+# Compose auto-loads compose.override.yaml ONLY for the primary compose file
+# of the project it is run in, so:
+#   cd smia && docker compose up -d        # ports published, for a native venv
+#   docker compose up -d        # from the root → no ports, nothing to leak
+#   docker compose -f smia/compose.yaml …  → no ports
+# In the unified stack smia is reached through Caddy's /smia/* route (D118)
+# over the default network, never through a published port.
+#
+# The shared cluster publishes its own loopback port from
+# postgres/compose.override.yaml (127.0.0.1:5439), so this file no longer
+# maps a database port.
+#
+# Loopback only, always: never a public interface. (Both mappings bound
+# 0.0.0.0 before the merge.)
+services:
+  smia-postgres:
+    ports:
+      # For a native venv or psql connecting in during local dev.
+      - "127.0.0.1:5433:5432"
+
+  smia-backend:
+    ports:
+      - "127.0.0.1:5055:5055"

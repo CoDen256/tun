@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>stabbur — notes</title>
+  <link rel="stylesheet" href="__STABBUR_PREFIX__/static/ui.css">
+</head>
+<body>
+
+<header>
+  <h1>stabbur</h1>
+  <p class="muted">Hand-author notes and grammar rules, attach audio. Not the triage UI — no inbox, no suggestions.</p>
+  <nav>
+    <!-- D46: shared header/nav, one domain by path. mjolnir/builder are
+         real and live; smia/phonexa aren't proxied through this stack yet
+         (02-services.md) — left as placeholders until they are. -->
+    <a href="/mjolnir/">mjølnir · hub</a>
+    <a href="/builder/">mjølnir · builder</a>
+    <a href="/smia/">smia</a>
+    <a href="/phonexa/">phonexa</a>
+    <a href="__STABBUR_PREFIX__/">stabbur (this page)</a>
+  </nav>
+</header>
+
+<div class="shell">
+  <div class="rail">
+    <div class="rail-group-label">Content</div>
+    <a href="#/notes" data-route="notes">Notes</a>
+    <a href="#/grammar" data-route="grammar">Grammar rules</a>
+    <div class="rail-group-label">Review</div>
+    <a href="#/triage" data-route="triage">Triage <span class="badge" id="triageRailBadge" style="display:none"></span></a>
+    <div class="rail-group-label">Create</div>
+    <a href="#/new-note" data-route="new-note">+ New note</a>
+    <a href="#/new-grammar" data-route="new-grammar">+ New grammar rule</a>
+    <div class="rail-group-label">Config</div>
+    <a href="#/settings" data-route="settings">Settings</a>
+  </div>
+
+  <div class="content">
+
+    <!-- NOTES LIST -->
+    <section class="page" id="page-notes">
+      <div class="page-head">
+        <div>
+          <h2>Notes</h2>
+          <div class="page-sub" id="notesSummary"></div>
+        </div>
+        <a href="#/new-note" class="btn btn-primary">+ New note</a>
+      </div>
+      <div class="toolbar">
+        <input class="search-input" type="search" id="notesSearch" placeholder="Search text, translation, lemma…">
+      </div>
+      <div class="chip-row">
+        <span class="chip-row-label">Status</span>
+        <div class="chip-group" id="notesStatusChips" data-filter="status">
+          <button type="button" class="chip active" data-value="">All</button>
+          <button type="button" class="chip" data-value="ready">Ready</button>
+          <button type="button" class="chip" data-value="draft">Draft</button>
+        </div>
+      </div>
+      <div class="chip-row">
+        <span class="chip-row-label">Type</span>
+        <div class="chip-group" id="notesTypeChips" data-filter="type">
+          <button type="button" class="chip active" data-value="">All</button>
+          <button type="button" class="chip" data-value="word">word</button>
+          <button type="button" class="chip" data-value="expression">expression</button>
+          <button type="button" class="chip" data-value="listening">listening</button>
+          <button type="button" class="chip" data-value="pronunciation">pronunciation</button>
+          <button type="button" class="chip" data-value="grammar">grammar</button>
+        </div>
+      </div>
+      <div class="chip-row">
+        <span class="chip-row-label">Origin</span>
+        <div class="chip-group" id="notesOriginChips" data-filter="origin">
+          <button type="button" class="chip active" data-value="">All</button>
+          <button type="button" class="chip" data-value="manual">manual</button>
+          <button type="button" class="chip" data-value="capture">capture</button>
+          <button type="button" class="chip" data-value="import">import</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th><span class="sort-th" data-sort="text">Text <span class="sort-caret"></span></span></th>
+                <th>Type</th><th>PoS</th><th>Status</th><th>Audio</th><th>Translation</th>
+                <th><span class="sort-th" data-sort="updated">Updated <span class="sort-caret"></span></span></th>
+              </tr>
+            </thead>
+            <tbody id="notesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- NOTE DETAIL -->
+    <section class="page" id="page-note-detail">
+      <div class="page-head">
+        <div>
+          <h2 id="noteDetailTitle"></h2>
+          <div class="page-sub" id="noteDetailSub"></div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <a href="#/notes" class="btn btn-ghost">◂ Back to notes</a>
+          <button id="noteDeleteBtn" class="btn-danger">Delete</button>
+          <button id="noteSaveBtn" class="btn-primary">Save</button>
+        </div>
+      </div>
+
+      <div class="detail-grid">
+        <div>
+          <div class="panel panel-pad">
+            <form id="noteEditForm">
+              <div class="field-row">
+                <div class="field">
+                  <div class="field-label-row"><label for="e_text">Text (source language)</label>
+                    <button type="button" class="btn-ghost btn-suggest" id="e_stt_toggle" data-suggest-toggle="e_stt_suggest" style="display:none">Propose from audio</button>
+                  </div>
+                  <textarea id="e_text" required></textarea>
+                  <div class="suggest-panel" id="e_stt_suggest" data-kind="stt" data-prefix="e"></div>
+                </div>
+                <div class="field" id="e_lemma_field">
+                  <div class="field-label-row"><label for="e_lemma">Lemma</label></div>
+                  <input id="e_lemma" type="text">
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label for="e_type">Type</label>
+                  <select id="e_type">
+                    <option value="word">word</option>
+                    <option value="expression">expression</option>
+                    <option value="listening">listening</option>
+                    <option value="pronunciation">pronunciation</option>
+                    <option value="grammar">grammar</option>
+                  </select>
+                </div>
+                <div class="field" id="e_pos_field">
+                  <label for="e_pos_select">Part of speech</label>
+                  <select id="e_pos_select">
+                    <option value="">— none —</option>
+                    <option value="substantiv">substantiv</option>
+                    <option value="adjektiv">adjektiv</option>
+                    <option value="verb">verb</option>
+                    <option value="adverb">adverb</option>
+                    <option value="preposisjon">preposisjon</option>
+                    <option value="konjunksjon">konjunksjon / subjunksjon</option>
+                    <option value="__custom__">Custom…</option>
+                  </select>
+                  <input id="e_pos_custom" type="text" placeholder="custom part of speech" style="display:none; margin-top:6px;">
+                  <div class="suggest-control" style="margin-top:8px;">
+                    <button type="button" class="suggest-toggle" data-suggest-toggle="e_pos_suggest">✨ Suggest part of speech<span class="count" id="e_pos_suggest_count" style="display:none"></span></button>
+                    <div class="suggest-control-divider"></div>
+                    <input type="text" class="suggest-query" id="e_pos_suggest_query" spellcheck="false">
+                    <button type="button" class="suggest-rerun-btn" data-suggest-rerun="e_pos_suggest" title="Re-run every provider">⟳</button>
+                  </div>
+                  <div class="suggest-panel" id="e_pos_suggest" data-kind="pos" data-prefix="e"></div>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label for="e_source_lang">Source language</label><input id="e_source_lang" type="text"></div>
+                <div class="field"><label for="e_status">Status</label>
+                  <select id="e_status">
+                    <option value="draft">draft</option>
+                    <option value="ready">ready</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field" id="e_transcription_field">
+                <div class="field-label-row"><label for="e_transcription">Transcription</label></div>
+                <input id="e_transcription" type="text">
+                <div class="suggest-control">
+                  <button type="button" class="suggest-toggle" data-suggest-toggle="e_ipa_suggest">✨ Suggest pronunciations<span class="count" id="e_ipa_suggest_count" style="display:none"></span></button>
+                  <div class="suggest-control-divider"></div>
+                  <input type="text" class="suggest-query" id="e_ipa_suggest_query" spellcheck="false">
+                  <button type="button" class="suggest-rerun-btn" data-suggest-rerun="e_ipa_suggest" title="Re-run every provider">⟳</button>
+                </div>
+                <div class="suggest-panel" id="e_ipa_suggest" data-kind="ipa" data-prefix="e"></div>
+              </div>
+              <div class="field">
+                <div class="field-label-row"><label>Translations</label></div>
+                <div id="e_translations_list" class="translation-list"></div>
+                <button type="button" class="btn-ghost" id="e_add_translation">+ Add translation</button>
+                <div class="suggest-control">
+                  <button type="button" class="suggest-toggle" data-suggest-toggle="e_translations_suggest">✨ Suggest translations<span class="count" id="e_translations_suggest_count" style="display:none"></span></button>
+                  <div class="suggest-control-divider"></div>
+                  <input type="text" class="suggest-query" id="e_translations_suggest_query" spellcheck="false">
+                  <button type="button" class="suggest-rerun-btn" data-suggest-rerun="e_translations_suggest" title="Re-run every provider">⟳</button>
+                </div>
+                <div class="suggest-panel" id="e_translations_suggest" data-kind="translations" data-prefix="e"></div>
+              </div>
+              <div class="field" id="e_inflections_field" style="display:none">
+                <div class="field-label-row"><label>Inflections</label></div>
+                <div id="e_inflections_fields" class="inflection-fields"></div>
+                <div class="suggest-control" style="margin-top:10px;">
+                  <button type="button" class="suggest-toggle" data-suggest-toggle="e_inflections_suggest">✨ Look up paradigm<span class="count" id="e_inflections_suggest_count" style="display:none"></span></button>
+                  <div class="suggest-control-divider"></div>
+                  <input type="text" class="suggest-query" id="e_inflections_suggest_query" spellcheck="false">
+                  <button type="button" class="suggest-rerun-btn" data-suggest-rerun="e_inflections_suggest" title="Re-run every provider">⟳</button>
+                </div>
+                <p class="inline-note">Different providers shape this differently — copy or fill whichever form matches, nothing auto-fills.</p>
+                <div class="suggest-panel" id="e_inflections_suggest" data-kind="inflections" data-prefix="e"></div>
+              </div>
+              <div class="field">
+                <label for="e_context_text">Context text</label>
+                <textarea id="e_context_text"></textarea>
+                <div class="suggest-control">
+                  <button type="button" class="suggest-toggle" data-suggest-toggle="e_examples_suggest">✨ Suggest examples<span class="count" id="e_examples_suggest_count" style="display:none"></span></button>
+                  <div class="suggest-control-divider"></div>
+                  <input type="text" class="suggest-query" id="e_examples_suggest_query" spellcheck="false">
+                  <div class="suggest-control-divider"></div>
+                  <input type="number" class="examples-count-input" id="e_examples_count" min="1" max="10" value="3" title="Candidates per provider">
+                  <button type="button" class="suggest-rerun-btn" data-suggest-rerun="e_examples_suggest" title="Re-run every provider">⟳</button>
+                </div>
+                <div class="suggest-panel" id="e_examples_suggest" data-kind="examples" data-prefix="e"></div>
+              </div>
+              <div class="field" id="e_grammar_rule_field" style="display:none">
+                <label for="e_grammar_rule_id">Grammar rule</label>
+                <select id="e_grammar_rule_id"><option value="">— none —</option></select>
+              </div>
+              <p id="e_no_audio_warning" class="warning" style="display:none">
+                ⚠ No audio attached — marking this note ready now means it will be
+                invisible to Mjølnir forever, with no error anywhere. Attach audio
+                first, or confirm this is intentional before saving.
+              </p>
+            </form>
+            <details class="json-toggle" id="noteJsonToggle">
+              <summary>Raw record (JSON)</summary>
+              <pre class="json" id="noteJsonView"></pre>
+            </details>
+            <p id="noteSaveResult" class="inline-note"></p>
+          </div>
+        </div>
+
+        <div>
+          <div class="panel panel-pad">
+            <div class="field-label-row" style="margin-bottom:12px;">
+              <h3 style="font-size:13px;">Audio</h3>
+            </div>
+            <div id="noteAudioNone" class="inline-note">No audio attached.</div>
+            <div id="noteAudioPlayer" style="display:none">
+              <div class="audio-player">
+                <button class="play-btn" id="audioPlayBtn" type="button">▶</button>
+                <div class="waveform" id="audioWaveform">
+                  <canvas id="audioWaveformCanvas" width="200" height="32" style="width:100%; height:100%; display:block;"></canvas>
+                  <div class="trim-shade" id="trimShadeLeft" style="left:0; width:0%;"></div>
+                  <div class="trim-shade" id="trimShadeRight" style="right:0; width:0%;"></div>
+                  <div class="trim-handle" id="trimHandleStart" style="left:0%;"></div>
+                  <div class="trim-handle" id="trimHandleEnd" style="left:100%;"></div>
+                </div>
+                <span class="audio-time" id="audioTimeLabel"></span>
+              </div>
+              <audio id="audioElement" style="display:none" preload="metadata"></audio>
+              <div style="display:flex; gap:8px; margin-top:10px;">
+                <button class="btn-ghost" id="previewTrimBtn" type="button">▶ Preview trim</button>
+              </div>
+              <div class="inline-note" id="audioClipNote"></div>
+            </div>
+            <div class="suggest-control" style="margin-top:14px;">
+              <button type="button" class="suggest-toggle" data-suggest-toggle="e_tts_suggest">✨ Suggest<span class="count" id="e_tts_suggest_count" style="display:none"></span></button>
+              <div class="suggest-control-divider"></div>
+              <input type="text" class="suggest-query" id="e_tts_suggest_query" spellcheck="false">
+              <button type="button" class="suggest-rerun-btn" data-suggest-rerun="e_tts_suggest" title="Re-run every provider">⟳</button>
+            </div>
+            <div class="suggest-panel" id="e_tts_suggest" data-kind="tts" data-prefix="e"></div>
+            <div class="provider-row" style="margin-top:7px;">
+              <div class="provider-head"><span class="provider-name">Manual upload</span></div>
+              <div class="candidate-row" style="border-top:none; padding-top:0;">
+                <input id="e_audio_file" type="file" accept="audio/*" style="flex:1; min-width:0;">
+                <button id="uploadAudioBtn" class="use-btn" type="button">Use</button>
+              </div>
+            </div>
+            <div class="field" style="margin-top:7px;">
+              <div class="field-label-row"><label for="e_link_url">Paste any audio link</label></div>
+              <div class="linkbox">
+                <input id="e_link_url" class="mono" type="text" placeholder="mp3 / wav / youtube?t=…">
+                <button type="button" class="use-btn link-capture-btn" data-link-prefix="e">Capture</button>
+              </div>
+              <div class="inline-note" id="e_link_status"></div>
+              <div class="inline-note">Not tied to a provider row — the link itself says what to do. The YouTube/timecode path is known-blocked against real YouTube; a direct audio link is the confirmed-working path.</div>
+            </div>
+          </div>
+
+          <div class="panel panel-pad" style="margin-top:16px;">
+            <div class="field-label-row" style="margin-bottom:12px;">
+              <h3 style="font-size:13px;">Similar notes</h3>
+            </div>
+            <div id="e_similar_wrap"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRIAGE BELT -->
+    <section class="page" id="page-triage">
+      <div class="page-head">
+        <div>
+          <h2>Triage</h2>
+          <div class="page-sub">One drafted note at a time, prefilled, three verdicts underneath. The editor is untouched and still the way to open any single note.</div>
+        </div>
+        <div class="toolbar" style="margin:0;">
+          <label for="triageOriginSelect" style="font-size:12px; color:var(--text-dim);">Queue</label>
+          <select id="triageOriginSelect">
+            <option value="import">import</option>
+            <option value="manual">manual</option>
+            <option value="capture">capture</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="belt">
+        <div class="belt-counts">
+          <div class="eyebrow">Drafts left</div>
+          <div class="n" id="triageCount">— <small>/ —</small></div>
+        </div>
+        <div class="belt-track" id="triageBeltTrack" tabindex="0" aria-label="Queue position"></div>
+        <div class="belt-right">
+          <span class="pill pill-warn" id="triageDeferredPill" style="display:none"></span>
+        </div>
+      </div>
+
+      <div id="triageEmpty" class="panel panel-pad" style="display:none">
+        <p class="inline-note">Queue clear — no drafted notes remain for this origin.</p>
+      </div>
+
+      <div id="triageCardWrap" style="display:none; padding-bottom:70px;">
+        <div class="panel panel-pad">
+          <div class="field-label-row" style="margin-bottom:14px;">
+            <div>
+              <h3 id="triageHeadword" style="font-size:18px;"></h3>
+              <div class="page-sub mono" id="triageMeta" style="margin-top:2px;"></div>
+            </div>
+            <span class="spacer"></span>
+            <button type="button" class="btn-ghost" id="triagePrefillBtn">⟳ Prefill again <kbd>L</kbd></button>
+          </div>
+
+          <div class="detail-grid">
+            <div>
+              <form id="triageForm">
+                <div class="field-row">
+                  <div class="field">
+                    <div class="field-label-row"><label for="t_text">Text (source language)</label></div>
+                    <textarea id="t_text" required></textarea>
+                  </div>
+                  <div class="field" id="t_lemma_field">
+                    <div class="field-label-row"><label for="t_lemma">Lemma</label><span class="missing-marker" id="t_lemma_missing" title="Not filled in" style="display:none">●</span><span class="spacer"></span><span class="src" id="t_lemma_src" style="display:none"></span></div>
+                    <input id="t_lemma" type="text">
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label for="t_type">Type</label>
+                    <select id="t_type">
+                      <option value="word">word</option>
+                      <option value="expression">expression</option>
+                      <option value="listening">listening</option>
+                      <option value="pronunciation">pronunciation</option>
+                      <option value="grammar">grammar</option>
+                    </select>
+                  </div>
+                  <div class="field" id="t_pos_field">
+                    <div class="field-label-row"><label for="t_pos_select">Part of speech</label><span class="missing-marker" id="t_pos_missing" title="Not filled in" style="display:none">●</span><span class="spacer"></span><span class="src" id="t_pos_src" style="display:none"></span></div>
+                    <select id="t_pos_select">
+                      <option value="">— none —</option>
+                      <option value="substantiv">substantiv</option>
+                      <option value="adjektiv">adjektiv</option>
+                      <option value="verb">verb</option>
+                      <option value="adverb">adverb</option>
+                      <option value="preposisjon">preposisjon</option>
+                      <option value="konjunksjon">konjunksjon / subjunksjon</option>
+                      <option value="__custom__">Custom…</option>
+                    </select>
+                    <input id="t_pos_custom" type="text" placeholder="custom part of speech" style="display:none; margin-top:6px;">
+                    <div class="suggest-control" style="margin-top:8px;">
+                      <button type="button" class="suggest-toggle" data-suggest-toggle="t_pos_suggest">✨ Suggest part of speech<span class="count" id="t_pos_suggest_count" style="display:none"></span></button>
+                      <div class="suggest-control-divider"></div>
+                      <input type="text" class="suggest-query" id="t_pos_suggest_query" spellcheck="false">
+                      <button type="button" class="suggest-rerun-btn" data-suggest-rerun="t_pos_suggest" title="Re-run every provider">⟳</button>
+                    </div>
+                    <div class="suggest-panel" id="t_pos_suggest" data-kind="pos" data-prefix="t"></div>
+                  </div>
+                </div>
+                <input id="t_source_lang" type="text" style="display:none">
+                <div class="field" id="t_transcription_field">
+                  <div class="field-label-row"><label for="t_transcription">Transcription</label><span class="missing-marker" id="t_transcription_missing" title="Not filled in" style="display:none">●</span><span class="spacer"></span><span class="src" id="t_transcription_src" style="display:none"></span></div>
+                  <input id="t_transcription" type="text">
+                  <div class="suggest-control">
+                    <button type="button" class="suggest-toggle" data-suggest-toggle="t_ipa_suggest">✨ Suggest pronunciations<span class="count" id="t_ipa_suggest_count" style="display:none"></span></button>
+                    <div class="suggest-control-divider"></div>
+                    <input type="text" class="suggest-query" id="t_ipa_suggest_query" spellcheck="false">
+                    <button type="button" class="suggest-rerun-btn" data-suggest-rerun="t_ipa_suggest" title="Re-run every provider">⟳</button>
+                  </div>
+                  <div class="suggest-panel" id="t_ipa_suggest" data-kind="ipa" data-prefix="t"></div>
+                </div>
+                <div class="field">
+                  <div class="field-label-row"><label>Translations</label><span class="missing-marker" id="t_translations_missing" title="Not filled in" style="display:none">●</span><span class="spacer"></span><span class="src" id="t_translations_src" style="display:none"></span></div>
+                  <div id="t_translations_list" class="translation-list"></div>
+                  <button type="button" class="btn-ghost" id="t_add_translation">+ Add translation</button>
+                  <div class="suggest-control">
+                    <button type="button" class="suggest-toggle" data-suggest-toggle="t_translations_suggest">✨ Suggest translations<span class="count" id="t_translations_suggest_count" style="display:none"></span></button>
+                    <div class="suggest-control-divider"></div>
+                    <input type="text" class="suggest-query" id="t_translations_suggest_query" spellcheck="false">
+                    <button type="button" class="suggest-rerun-btn" data-suggest-rerun="t_translations_suggest" title="Re-run every provider">⟳</button>
+                  </div>
+                  <div class="suggest-panel" id="t_translations_suggest" data-kind="translations" data-prefix="t"></div>
+                </div>
+                <div class="field" id="t_inflections_field" style="display:none">
+                  <div class="field-label-row"><label>Inflections</label><span class="missing-marker" id="t_inflections_missing" title="Not filled in" style="display:none">●</span><span class="spacer"></span><span class="src" id="t_inflections_src" style="display:none"></span></div>
+                  <div id="t_inflections_fields" class="inflection-fields"></div>
+                  <div class="suggest-control" style="margin-top:10px;">
+                    <button type="button" class="suggest-toggle" data-suggest-toggle="t_inflections_suggest">✨ Look up paradigm<span class="count" id="t_inflections_suggest_count" style="display:none"></span></button>
+                    <div class="suggest-control-divider"></div>
+                    <input type="text" class="suggest-query" id="t_inflections_suggest_query" spellcheck="false">
+                    <button type="button" class="suggest-rerun-btn" data-suggest-rerun="t_inflections_suggest" title="Re-run every provider">⟳</button>
+                  </div>
+                  <div class="suggest-panel" id="t_inflections_suggest" data-kind="inflections" data-prefix="t"></div>
+                </div>
+                <div class="field">
+                  <div class="field-label-row"><label for="t_context_text">Context text</label><span class="missing-marker" id="t_context_text_missing" title="Not filled in" style="display:none">●</span><span class="spacer"></span><span class="src" id="t_context_text_src" style="display:none"></span></div>
+                  <textarea id="t_context_text"></textarea>
+                  <div class="suggest-control">
+                    <button type="button" class="suggest-toggle" data-suggest-toggle="t_examples_suggest">✨ Suggest examples<span class="count" id="t_examples_suggest_count" style="display:none"></span></button>
+                    <div class="suggest-control-divider"></div>
+                    <input type="text" class="suggest-query" id="t_examples_suggest_query" spellcheck="false">
+                    <div class="suggest-control-divider"></div>
+                    <input type="number" class="examples-count-input" id="t_examples_count" min="1" max="10" value="3" title="Candidates per provider">
+                    <button type="button" class="suggest-rerun-btn" data-suggest-rerun="t_examples_suggest" title="Re-run every provider">⟳</button>
+                  </div>
+                  <div class="suggest-panel" id="t_examples_suggest" data-kind="examples" data-prefix="t"></div>
+                </div>
+                <div class="field" id="t_grammar_rule_field" style="display:none">
+                  <label for="t_grammar_rule_id">Grammar rule</label>
+                  <select id="t_grammar_rule_id"><option value="">— none —</option></select>
+                </div>
+              </form>
+            </div>
+
+            <div>
+              <div class="field-label-row" style="margin-bottom:12px;"><h3 style="font-size:13px;">Audio</h3><span class="missing-marker" id="t_audio_missing" title="Not filled in" style="display:none">●</span><span class="spacer"></span><span class="src" id="t_audio_src" style="display:none"></span></div>
+              <div id="t_audio_none" class="inline-note">No audio attached.</div>
+              <div id="t_audio_player" style="display:none">
+                <audio id="t_audioElement" controls style="width:100%;" preload="metadata"></audio>
+                <div class="inline-note" id="t_audio_sel_note"></div>
+              </div>
+              <div class="suggest-control" style="margin-top:14px;">
+                <button type="button" class="suggest-toggle" data-suggest-toggle="t_tts_suggest">✨ Suggest<span class="count" id="t_tts_suggest_count" style="display:none"></span></button>
+                <div class="suggest-control-divider"></div>
+                <input type="text" class="suggest-query" id="t_tts_suggest_query" spellcheck="false">
+                <button type="button" class="suggest-rerun-btn" data-suggest-rerun="t_tts_suggest" title="Re-run every provider">⟳</button>
+              </div>
+              <div class="suggest-panel" id="t_tts_suggest" data-kind="tts" data-prefix="t"></div>
+              <div class="provider-row" style="margin-top:7px;">
+                <div class="provider-head"><span class="provider-name">Manual upload</span></div>
+                <div class="candidate-row" style="border-top:none; padding-top:0;">
+                  <input id="t_audio_file" type="file" accept="audio/*" style="flex:1; min-width:0;">
+                  <button id="t_upload_audio_btn" class="use-btn" type="button">Use</button>
+                </div>
+              </div>
+              <div class="field" style="margin-top:7px;">
+                <div class="field-label-row"><label for="t_link_url">Paste any audio link</label></div>
+                <div class="linkbox">
+                  <input id="t_link_url" class="mono" type="text" placeholder="mp3 / wav / youtube?t=…">
+                  <button type="button" class="use-btn link-capture-btn" data-link-prefix="t">Capture</button>
+                </div>
+                <div class="inline-note" id="t_link_status"></div>
+                <div class="inline-note">Recognised: direct audio files (confirmed working) and youtube URLs carrying <span class="mono">?t=</span> (known-blocked against real YouTube — still attempted, and the real failure is reported).</div>
+              </div>
+
+              <div class="field-label-row" style="margin:16px 0 12px;"><h3 style="font-size:13px;">Similar notes</h3></div>
+              <div id="t_similar_wrap"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="verdict-bar" id="triageVerdictBar" style="display:none">
+        <div class="verdict-bar-inner">
+          <button type="button" class="btn-danger" id="triageDeleteBtn">Delete <kbd>D</kbd></button>
+          <button type="button" class="btn-ghost" id="triageSendBackBtn">Send to back <kbd>E</kbd></button>
+          <button type="button" class="btn-ghost" id="triageSkipBtn">Skip <kbd>S</kbd></button>
+          <button type="button" class="btn-ghost" id="triagePreviousBtn" title="Undo the last verdict and go back one note">← Previous <kbd>T</kbd></button>
+          <button type="button" class="btn-ghost" id="triagePrefillBtnBottom">⟳ Prefill <kbd>L</kbd></button>
+          <button type="button" class="btn-ghost" id="triageSaveBtn" title="Save this card's edits without accepting, skipping, or sending it back">Save <kbd>M</kbd></button>
+          <span class="inline-note" style="margin:0 0 0 6px;">Save persists edits any time; navigation also saves them when the autosave setting is on</span>
+          <span class="spacer"></span>
+          <span class="inline-note" id="triageCompletionBadge" title="Fields filled in on this card, out of the fields applicable to its current type/part of speech"></span>
+          <button type="button" class="btn-primary" id="triageAcceptBtn">Mark ready &amp; next <kbd>R</kbd></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- GRAMMAR LIST -->
+    <section class="page" id="page-grammar">
+      <div class="page-head">
+        <div>
+          <h2>Grammar rules</h2>
+          <div class="page-sub" id="grammarSummary"></div>
+        </div>
+        <a href="#/new-grammar" class="btn btn-primary">+ New grammar rule</a>
+      </div>
+      <div class="toolbar">
+        <input class="search-input" type="search" id="grammarSearch" placeholder="Search title…">
+      </div>
+      <div class="panel">
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th><span class="sort-th" data-sort="title">Title <span class="sort-caret"></span></span></th>
+              <th><span class="sort-th" data-sort="usage">Used by <span class="sort-caret"></span></span></th>
+            </tr></thead>
+            <tbody id="grammarTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- GRAMMAR DETAIL -->
+    <section class="page" id="page-grammar-detail">
+      <div class="page-head">
+        <div>
+          <h2 id="grammarDetailTitle"></h2>
+          <div class="page-sub">Grammar rule</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <a href="#/grammar" class="btn btn-ghost">◂ Back to grammar rules</a>
+          <button id="grammarDeleteBtn" class="btn-danger">Delete</button>
+          <button id="grammarSaveBtn" class="btn-primary">Save</button>
+        </div>
+      </div>
+      <div class="detail-grid">
+        <div class="panel panel-pad">
+          <div class="field"><label for="gr_title">Title</label><input id="gr_title" type="text"></div>
+          <div class="field"><label for="gr_html">Explanation (HTML)</label><textarea id="gr_html" style="min-height:160px;"></textarea></div>
+          <div class="field">
+            <label>Preview</label>
+            <div id="gr_html_preview" class="html-preview"></div>
+          </div>
+          <p id="grammarSaveResult" class="inline-note"></p>
+        </div>
+        <div class="panel panel-pad">
+          <h3 id="grammarUsageHeading" style="font-size:13px; margin-bottom:10px;"></h3>
+          <div class="usage-list" id="grammarUsageList"></div>
+          <p id="grammarDeleteBlocked" class="inline-note"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- NEW NOTE -->
+    <section class="page" id="page-new-note">
+      <div class="page-head"><div><h2>New note</h2><div class="page-sub">Starts as draft — mark ready once reviewed.</div></div></div>
+      <div class="panel panel-pad" style="max-width:640px;">
+        <form id="createForm">
+          <div class="field"><label for="c_type">Type</label>
+            <select id="c_type">
+              <option value="word">word</option>
+              <option value="expression">expression</option>
+              <option value="listening">listening</option>
+              <option value="pronunciation">pronunciation</option>
+              <option value="grammar">grammar</option>
+            </select>
+          </div>
+          <div class="field" id="c_pos_field" style="display:none">
+            <label for="c_pos">Part of speech</label>
+            <select id="c_pos">
+              <option value="">— none —</option>
+              <option value="substantiv">substantiv</option>
+              <option value="adjektiv">adjektiv</option>
+              <option value="verb">verb</option>
+              <option value="adverb">adverb</option>
+              <option value="preposisjon">preposisjon</option>
+              <option value="konjunksjon">konjunksjon / subjunksjon</option>
+              <option value="__custom__">Custom…</option>
+            </select>
+            <input id="c_pos_custom" type="text" placeholder="custom part of speech" style="display:none; margin-top:6px;">
+            <div class="inline-note">Picking a PoS fills in the right inflection fields below — nothing to remember by hand.</div>
+            <div class="suggest-control" style="margin-top:8px;">
+              <button type="button" class="suggest-toggle" data-suggest-toggle="c_pos_suggest">✨ Suggest part of speech<span class="count" id="c_pos_suggest_count" style="display:none"></span></button>
+              <div class="suggest-control-divider"></div>
+              <input type="text" class="suggest-query" id="c_pos_suggest_query" spellcheck="false">
+              <button type="button" class="suggest-rerun-btn" data-suggest-rerun="c_pos_suggest" title="Re-run every provider">⟳</button>
+            </div>
+            <div class="suggest-panel" id="c_pos_suggest" data-kind="pos" data-prefix="c"></div>
+          </div>
+          <div class="field"><label for="c_source_lang">Source language</label><input id="c_source_lang" type="text" value="no"></div>
+          <div class="field"><label for="c_text">Text</label><textarea id="c_text" required></textarea></div>
+          <div class="field" id="c_lemma_field">
+            <div class="field-label-row"><label for="c_lemma">Lemma</label></div>
+            <input id="c_lemma" type="text">
+          </div>
+          <div class="field" id="c_transcription_field">
+            <div class="field-label-row"><label for="c_transcription">Transcription</label></div>
+            <input id="c_transcription" type="text">
+            <div class="suggest-control">
+              <button type="button" class="suggest-toggle" data-suggest-toggle="c_ipa_suggest">✨ Suggest pronunciations<span class="count" id="c_ipa_suggest_count" style="display:none"></span></button>
+              <div class="suggest-control-divider"></div>
+              <input type="text" class="suggest-query" id="c_ipa_suggest_query" spellcheck="false">
+              <button type="button" class="suggest-rerun-btn" data-suggest-rerun="c_ipa_suggest" title="Re-run every provider">⟳</button>
+            </div>
+            <div class="suggest-panel" id="c_ipa_suggest" data-kind="ipa" data-prefix="c"></div>
+          </div>
+          <div class="field">
+            <div class="field-label-row"><label>Translations</label></div>
+            <div id="c_translations_list" class="translation-list"></div>
+            <button type="button" class="btn-ghost" id="c_add_translation">+ Add translation</button>
+            <div class="suggest-control">
+              <button type="button" class="suggest-toggle" data-suggest-toggle="c_translations_suggest">✨ Suggest translations<span class="count" id="c_translations_suggest_count" style="display:none"></span></button>
+              <div class="suggest-control-divider"></div>
+              <input type="text" class="suggest-query" id="c_translations_suggest_query" spellcheck="false">
+              <button type="button" class="suggest-rerun-btn" data-suggest-rerun="c_translations_suggest" title="Re-run every provider">⟳</button>
+            </div>
+            <div class="suggest-panel" id="c_translations_suggest" data-kind="translations" data-prefix="c"></div>
+          </div>
+          <div class="field" id="c_inflections_field" style="display:none">
+            <div class="field-label-row"><label>Inflections</label></div>
+            <div id="c_inflections_fields" class="inflection-fields"></div>
+            <div class="suggest-control" style="margin-top:10px;">
+              <button type="button" class="suggest-toggle" data-suggest-toggle="c_inflections_suggest">✨ Look up paradigm<span class="count" id="c_inflections_suggest_count" style="display:none"></span></button>
+              <div class="suggest-control-divider"></div>
+              <input type="text" class="suggest-query" id="c_inflections_suggest_query" spellcheck="false">
+              <button type="button" class="suggest-rerun-btn" data-suggest-rerun="c_inflections_suggest" title="Re-run every provider">⟳</button>
+            </div>
+            <p class="inline-note">Different providers shape this differently — copy or fill whichever form matches, nothing auto-fills.</p>
+            <div class="suggest-panel" id="c_inflections_suggest" data-kind="inflections" data-prefix="c"></div>
+          </div>
+          <div class="field">
+            <label for="c_context_text">Context text</label>
+            <textarea id="c_context_text"></textarea>
+            <div class="suggest-control">
+              <button type="button" class="suggest-toggle" data-suggest-toggle="c_examples_suggest">✨ Suggest examples<span class="count" id="c_examples_suggest_count" style="display:none"></span></button>
+              <div class="suggest-control-divider"></div>
+              <input type="text" class="suggest-query" id="c_examples_suggest_query" spellcheck="false">
+              <div class="suggest-control-divider"></div>
+              <input type="number" class="examples-count-input" id="c_examples_count" min="1" max="10" value="3" title="Candidates per provider">
+              <button type="button" class="suggest-rerun-btn" data-suggest-rerun="c_examples_suggest" title="Re-run every provider">⟳</button>
+            </div>
+            <div class="suggest-panel" id="c_examples_suggest" data-kind="examples" data-prefix="c"></div>
+          </div>
+          <div class="field" id="c_grammar_rule_field" style="display:none">
+            <label for="c_grammar_rule_id">Grammar rule (required for type=grammar)</label>
+            <select id="c_grammar_rule_id"><option value="">— none —</option></select>
+          </div>
+          <div class="field">
+            <div class="field-label-row"><label>Audio (optional — can also attach later)</label></div>
+            <div id="c_audio_suggest_chosen" class="inline-note" style="display:none"></div>
+            <div class="suggest-control" style="margin-top:8px;">
+              <button type="button" class="suggest-toggle" data-suggest-toggle="c_tts_suggest">✨ Suggest<span class="count" id="c_tts_suggest_count" style="display:none"></span></button>
+              <div class="suggest-control-divider"></div>
+              <input type="text" class="suggest-query" id="c_tts_suggest_query" spellcheck="false">
+              <button type="button" class="suggest-rerun-btn" data-suggest-rerun="c_tts_suggest" title="Re-run every provider">⟳</button>
+            </div>
+            <div class="suggest-panel" id="c_tts_suggest" data-kind="tts" data-prefix="c"></div>
+            <div class="provider-row" style="margin-top:7px;">
+              <div class="provider-head"><span class="provider-name">Manual upload</span></div>
+              <div class="candidate-row" style="border-top:none; padding-top:0;">
+                <input id="c_audio_file" type="file" accept="audio/*" style="flex:1; min-width:0;">
+                <button id="c_upload_audio_btn" class="use-btn" type="button">Use</button>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:18px;">
+            <button type="submit" class="btn-ghost" id="createDraftBtn">Save as draft</button>
+            <button type="button" class="btn-primary" id="createReadyBtn">Save &amp; mark ready</button>
+          </div>
+        </form>
+        <pre id="createResult" class="inline-note"></pre>
+      </div>
+    </section>
+
+    <!-- NEW GRAMMAR -->
+    <section class="page" id="page-new-grammar">
+      <div class="page-head"><div><h2>New grammar rule</h2></div></div>
+      <div class="panel panel-pad" style="max-width:640px;">
+        <form id="ruleForm">
+          <div class="field"><label for="r_title">Title</label><input id="r_title" type="text" placeholder="e.g. Reflexive verbs with -s" required></div>
+          <div class="field"><label for="r_html">Explanation (HTML)</label><textarea id="r_html" style="min-height:140px;" placeholder="<p>...</p>" required></textarea></div>
+          <div class="field">
+            <label>Preview</label>
+            <div id="r_html_preview" class="html-preview"></div>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:18px;"><button type="submit" class="btn-primary">Create rule</button></div>
+        </form>
+        <pre id="ruleResult" class="inline-note"></pre>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="page" id="page-settings">
+      <div class="page-head">
+        <div>
+          <h2>Settings</h2>
+          <div class="page-sub">One operator-preferences row, stored in stabbur's own database — survives a change of browser or machine.</div>
+        </div>
+      </div>
+
+      <div class="set">
+        <div class="sgroup">
+          <h3>Triage prefilling</h3>
+          <div class="sitem">
+            <div class="txt">
+              <b>When primary providers run</b>
+              <p>On open, every empty field is filled the moment a note is presented for triage. On the fill control, nothing is looked up until it's pressed.</p>
+            </div>
+            <div class="ctl seg" id="settingsPrefillTimingSeg">
+              <button type="button" data-value="on_open">On open</button>
+              <button type="button" data-value="on_demand">On the fill control</button>
+            </div>
+          </div>
+          <div class="sitem">
+            <div class="txt">
+              <b>Saving on Send to back / Skip / Go to previous</b>
+              <p>Autosave persists the card you're leaving before moving on, for all three. Manual-only never does — only the explicit Save action (key <span class="mono">m</span>) persists edits.</p>
+            </div>
+            <div class="ctl seg" id="settingsTriageNavigateSaveSeg">
+              <button type="button" data-value="autosave">Autosave</button>
+              <button type="button" data-value="manual">Manual only</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sgroup">
+          <h3>Provider order <span>drag to reorder · the first enabled one wins</span></h3>
+          <div id="settingsProvidersBody"></div>
+          <div class="dbnote">Providers come from smia's <span class="mono">GET /providers</span>; this page stores only your order and which are enabled.</div>
+        </div>
+
+        <div class="sgroup">
+          <h3>Translations</h3>
+          <div class="sitem">
+            <div class="txt">
+              <b>Using a second suggestion for the same language</b>
+              <p>Appending gives one row reading <span class="mono">to add / to append</span>. Separate rows keeps today's behaviour.</p>
+            </div>
+            <div class="ctl seg" id="settingsMergeModeSeg">
+              <button type="button" data-value="append">Append over “/”</button>
+              <button type="button" data-value="separate">Separate rows</button>
+            </div>
+          </div>
+          <div class="sitem">
+            <div class="txt"><b>Default target languages</b><p>Groups shown in every translation suggest panel, comma-separated.</p></div>
+            <div class="ctl"><input class="mono" type="text" id="settingsDefaultLangsInput" placeholder="en, de" style="width:150px"></div>
+          </div>
+        </div>
+
+        <div class="sgroup">
+          <h3>Lookups</h3>
+          <div class="sitem">
+            <div class="txt">
+              <b>Per-provider query starts prefilled</b>
+              <p>Reverses an earlier decision that opened the override empty so it read as a different input. Prefilled is faster to tweak; off restores the old empty-by-default behaviour.</p>
+            </div>
+            <div class="ctl">
+              <button type="button" class="switch" id="settingsOverridePrefillSwitch" aria-pressed="true" aria-label="Prefill per-provider query"></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sgroup">
+          <h3>Examples prefill <span>triage's automatic context-text fill</span></h3>
+          <div class="sitem">
+            <div class="txt">
+              <b>How many example sentences</b>
+              <p>Total sentences prefilled into context, drawn across however many providers it takes to reach this count.</p>
+            </div>
+            <div class="ctl"><input class="mono" type="number" id="settingsExamplesCountInput" min="1" max="10" style="width:70px"></div>
+          </div>
+          <div class="sitem">
+            <div class="txt">
+              <b>From how many providers</b>
+              <p>A provider with no entry is skipped, not treated as the end of the walk — the next configured provider is tried until this many have been tried or the count above is reached.</p>
+            </div>
+            <div class="ctl"><input class="mono" type="number" id="settingsExamplesMaxProvidersInput" min="1" max="10" style="width:70px"></div>
+          </div>
+        </div>
+
+        <p id="settingsSaveResult" class="inline-note"></p>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script>window.STABBUR_PREFIX = "__STABBUR_PREFIX__";</script>
+<script src="__STABBUR_PREFIX__/static/ui.js"></script>
+</body>
+</html>

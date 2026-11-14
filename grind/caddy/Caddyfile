@@ -1,0 +1,798 @@
+# mjolnir — the only thing the phone talks to. This file is the single
+# ingress for the whole ecosystem (D84's "owned entirely by this repo"
+# framing superseded by D94 and then by the monorepo: the stack is one
+# Compose project, and every upstream below is a sibling service name).
+#
+# P1 serves everything device-facing straight off disk (D55). Python/Node is
+# never in the path of the 6 MB bundle or the audio blobs.
+#
+# Frozen-contract rules enforced here — see tun/docs/11-ota-contract.md:
+#   D49  gzip is TRANSPORT-level only. sha256/size in current.json describe
+#        the UNCOMPRESSED bundle. Never serve a pre-gzipped file as an opaque
+#        body: the hash would never match and native can never be fixed.
+#   P23  the /ota/* token is GET-only.
+#   D26  rollback = rewriting current.json. So it must never be cached.
+#
+# No global options block: `email` with an empty value is a parse error, and
+# Let's Encrypt does not require one. To get expiry warnings, add by hand:
+#     { email you@example.net }
+
+# ---- (operator_gate) : THE operator-plane gate (unified-auth 3.1/3.4) ------
+# One definition, imported by every operator zone. Before this snippet the
+# gate existed only in front of /phonexa/* and /shadow/*, under the
+# phonexa-specific name PHONEXA_AUTH_HASH, while /mjolnir, /builder,
+# /stabbur, /smia and /adminer were gated by each service's own code or (in
+# adminer's case) not at all.
+#
+# A SNIPPET, not a repeated block: the thing that must never drift between
+# eight zones is the credential check. `import operator_gate` is one line per
+# zone and there is exactly one place to change it.
+#
+# WRAPPED IN `route`, DELIBERATELY. Caddy sorts the directives inside a
+# handle block by its own global directive order, not by the order written —
+# the same trap this file's /mjolnir comment documents one level up. Inside a
+# `route` the written order is preserved and therefore verifiable: the
+# preflight answer comes first, the credential check second. Confirmed on the
+# compiled JSON (`caddy adapt`), where this compiles to
+# subroute[0] = the CORS headers, [1] = respond 204, [2] = basic_auth.
+#
+# ---- 3.4: CORS PREFLIGHT IS ANSWERED BEFORE THE CREDENTIAL CHECK ----
+# This is load-bearing and is the easiest thing in unified-auth to get wrong.
+# A browser preflight carries NO credential by definition — it is the request
+# that asks permission to send the real, credentialed one. If a preflight
+# reaches `basic_auth` it gets 401, and the browser reports that to the page
+# as a CORS failure, not as an auth failure: nothing client-side can fix it,
+# and the real request is never sent at all. hover-translate (D154, a
+# standalone extension that is NOT in this repository) calls /smia/* and
+# /stabbur/* from a content script, so this path is live.
+#
+# The matcher is the actual CORS definition of a preflight — OPTIONS *plus*
+# `Origin` *plus* `Access-Control-Request-Method` — not merely "method
+# OPTIONS". A bare OPTIONS with no Origin is not a preflight and keeps
+# falling through to the gate, so this exemption opens nothing beyond the
+# handshake it exists for.
+#
+# `Access-Control-Allow-Headers` reflects what the browser asked for, which is
+# what flask-cors did when the services answered their own preflights
+# (smia/app.py's `CORS(app)`), with `Authorization, Content-Type` as the
+# fallback when nothing is asked. It CANNOT be `*`: the Fetch standard
+# excludes `Authorization` from the wildcard, so a `*` here would reject the
+# one header the operator credential travels in.
+#
+# Allow-Origin is `*`, matching flask-cors's previous answer. `*` is only
+# valid for NON-credentialed requests in the CORS sense — an explicit
+# `Authorization` header does not make a request credentialed (a cookie or
+# `credentials: 'include'` does), so an extension sending the operator
+# credential in the header is served correctly, while a cookie-bearing
+# cross-origin request is refused by the browser. That is the safer failure.
+#
+# ---- ACCEPTED TRADE-OFF: the preflight is an enumeration oracle ----
+# Recorded 2026-11-14 after an adversarial review measured it, and recorded
+# rather than fixed. Because the 204 is answered inside each zone's
+# `handle_path /<zone>/*`, ANY sub-path of a zone that exists answers 204 to
+# an unauthenticated preflight, while a path under no zone falls through to
+# the catch-all and answers 404:
+#
+#   OPTIONS /stabbur/zzz  (Origin + Access-Control-Request-Method) -> 204
+#   OPTIONS /nope/zzz     (same headers)                           -> 404
+#
+# So a cross-origin script can learn WHICH operator prefixes exist, without a
+# credential. That is a finer oracle than the bare-prefix redirects P56 closed
+# (those are gated now), and it is deliberately left open:
+#
+#   * it leaks the existence of a prefix and nothing else — no body, no
+#     header from the upstream, no indication whether the sub-path is real.
+#     The zone list is also printed on the status page, which is itself the
+#     operator plane's own page;
+#   * closing it means answering the preflight only AFTER the credential
+#     check, and 3.4 above is the requirement that it must be answered
+#     BEFORE. A preflight carries no credential by definition, so gating it
+#     breaks hover-translate's content script outright — not degraded, dead,
+#     with the browser reporting a CORS failure the page cannot act on;
+#   * the alternative, enumerating allowed preflight paths per zone, puts a
+#     copy of every service's route table in the gateway, where it would rot
+#     silently. A stale allow-list that starts refusing a real preflight is a
+#     worse failure than a prefix anyone can also read off the status page.
+#
+# If this is ever revisited, revisit it WITH the extension (unified-auth
+# 6.1/6.2), not without it.
+(operator_gate) {
+	route {
+		@preflight {
+			method OPTIONS
+			header Origin *
+			header Access-Control-Request-Method *
+		}
+		@preflight_asked_headers {
+			method OPTIONS
+			header Origin *
+			header Access-Control-Request-Method *
+			header Access-Control-Request-Headers *
+		}
+		header @preflight {
+			Access-Control-Allow-Origin "*"
+			Access-Control-Allow-Methods "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"
+			Access-Control-Allow-Headers "Authorization, Content-Type"
+			Access-Control-Max-Age "600"
+			Vary "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+		}
+		header @preflight_asked_headers Access-Control-Allow-Headers "{http.request.header.Access-Control-Request-Headers}"
+		# No `close` here, unlike the device blocks' `respond`s: those close
+		# the connection because native is reading a frozen contract and
+		# must never find a reusable connection in an unexpected state. A
+		# preflight is immediately followed by the real request on the same
+		# connection, and closing it would throw that away for nothing.
+		respond @preflight "" 204
+
+		# THE credential check. Username fixed to `operator`; the password is
+		# the operator token and the hash is derived from it at container
+		# start by grind/entrypoint.sh (3.2) — no hash is typed into any file,
+		# which is what retires P35 and P36.
+		#
+		# The default is kept even though the entrypoint always sets the
+		# variable: it is a real bcrypt hash of a random string generated
+		# once and discarded, so a bare `caddy run` with no environment
+		# rejects every operator request instead of serving eight zones open.
+		# Caddy falls back to a `{$VAR:default}` default only when the
+		# variable is ABSENT, never when it is set-but-empty (P35) — which is
+		# safe here precisely because nothing passes this variable through
+		# compose any more: the entrypoint derives it and asserts it is a
+		# 60-character cost-10 bcrypt hash before exec'ing caddy.
+		basic_auth {
+			operator {$OPERATOR_HASH:$2a$14$4O3NlHoGMD2./6FpyxpKAell6n5PkW1TaayAPbIKyg4GgwZfc8ESO}
+		}
+
+		# ---- 4.1: mint the verified-operator marker ------------------
+		# INSIDE the `route`, AFTER basic_auth, which is the entire
+		# security property: `route` preserves the written order, so this
+		# runs only on a request the credential check has already let
+		# through. The site-level `request_header -X-Tun-Operator` below
+		# deleted any inbound copy before this block was reached, so the
+		# value a service sees here was always set by this line.
+		#
+		# Services accept it INSTEAD of a token of their own
+		# (libs/pyservice/auth.py, libs/jsservice/auth.js). That is what
+		# retires STABBUR_AUTH_TOKEN and SMIA_AUTH_TOKEN as browser
+		# credentials and what lets phonexa, shadow and adminer be gated
+		# at all.
+		request_header X-Tun-Operator 1
+	}
+}
+
+{$TUN_SITE_ADDRESS} {
+	log {
+		output stdout
+		format console
+	}
+
+	encode gzip
+
+	# ---- 3.5: strip any inbound copy of the operator marker ------------
+	# X-Tun-Operator is the marker the gateway will set for services to
+	# trust (unified-auth section 4). The whole trust model rests on two
+	# requirements, and this is one of them: a client must never be able to
+	# mint the marker itself. So the gateway deletes any inbound copy before
+	# any route that can reach a service — if it did not, `curl -H
+	# 'X-Tun-Operator: 1'` would be a complete bypass of every zone's auth
+	# the moment section 4 lands.
+	#
+	# THE PRECEDING SENTENCE USED TO READ "before a single route is
+	# considered", AND THAT WAS FALSE BY FIVE ROUTES (2026-11-14, P56). Five
+	# bare `redir /<zone> /<zone>/ 308` lines sat at the top level, outside
+	# every handle block, and compiled to route indices 0-4 — ahead of this
+	# strip at index 5. Nothing was bypassable (a `redir` terminates the
+	# request and reaches no service, so there was nothing for a forged marker
+	# to reach), but the claim was wrong, and a wrong claim about compiled
+	# order in THIS file is the exact mistake the /mjolnir comment warns
+	# about. Those redirects now live inside gated `handle` blocks, so this
+	# line really is the first route again — re-verify with
+	# `caddy adapt --adapter caddyfile`, never by reading the file top to
+	# bottom, before trusting any statement of order here.
+	#
+	# SITE-LEVEL, NOT PER-BLOCK, AND THAT IS THE POINT. Written here, this
+	# compiles to a route AHEAD of the whole `handle` group (verified on the
+	# compiled JSON, not inferred), so it covers every zone including the
+	# DEVICE PLANE — /ota/*, /blob/*, /audio-manifest/* and
+	# /mjolnir/userdata/*. mjolnir-sync will adopt the same shared check in
+	# 4.1, so a forged marker aimed at the device path has to be stripped
+	# too, and putting the strip in one place is the only version of this
+	# that cannot be forgotten for one block.
+	#
+	# This changes nothing the device sends: no device request has ever
+	# carried this header, so removing it is a no-op on every real request
+	# and was byte-verified as such (3.6).
+	#
+	# `request_header -Field` deletes. It is unconditional: there is no
+	# matcher, because there is no request on this origin that is allowed to
+	# carry this header inbound.
+	request_header -X-Tun-Operator
+
+	# ---- /ota/* : token-gated, read-only -------------------------------
+	handle /ota/* {
+		@bad_token not header Authorization "Bearer {$OTA_TOKEN}"
+		respond @bad_token "unauthorized" 401 {
+			close
+		}
+
+		@not_read not method GET HEAD
+		respond @not_read "method not allowed" 405 {
+			close
+		}
+
+		# Rollback must take effect on the next launch, never later.
+		header /ota/current.json Cache-Control "no-store"
+
+		# A buildId is permanent and its bundle is immutable.
+		header /ota/bundle/* Cache-Control "public, max-age=31536000, immutable"
+
+		root * /srv
+		# No `precompressed`: D49 requires transport-level gzip only, so the
+		# body native hashes is always the uncompressed bundle.
+		file_server
+	}
+
+	# ---- /blob/<sha256> : content-addressed, immutable ------------------
+	# Unguessable by construction; the hash in the url IS the capability.
+	handle /blob/* {
+		@not_read not method GET HEAD
+		respond @not_read "method not allowed" 405 {
+			close
+		}
+		header Cache-Control "public, max-age=31536000, immutable"
+		root * /srv
+		file_server
+	}
+
+	# ---- /audio-manifest/<buildId>.json : unauthenticated, immutable -----
+	# D-P1 (audio-cache-prefetch): a second, plain copy of the same content
+	# as /ota/<buildId>/audio.json (builder's audio-snapshot step writes
+	# both) — the prefetcher companion has no way to read the OTA bearer
+	# token back, so it fetches this unauthenticated copy instead. Same
+	# "the content isn't sensitive, the buildId that selects it is already
+	# baked into the bundle in plaintext" reasoning /blob/* already relies
+	# on. A given buildId's manifest never changes once published, so this
+	# is immutable the same way /blob/* and /ota/bundle/* already are.
+	# Replaces the retired /audio-by-card/* block (D121/D122, D-P6) — the
+	# device now resolves cardId → sha256 itself from this manifest instead
+	# of hitting a name-based static file.
+	handle /audio-manifest/* {
+		@not_read not method GET HEAD
+		respond @not_read "method not allowed" 405 {
+			close
+		}
+		header Cache-Control "public, max-age=31536000, immutable"
+		root * /srv
+		file_server
+	}
+
+	# ---- service UIs, mounted as each is written (D46) ------------------
+	# D-H6: uncommented only after the shared-bearer-token auth check on
+	# both services was verified working (task 7.3) — never the other way
+	# around. Both services 401/redirect-to-/login on their own for any
+	# request without a valid token or cookie; Caddy adds nothing auth-wise
+	# here, it only routes.
+	#
+	# MUST be `handle` blocks, not bare `reverse_proxy` directives. Every
+	# other route in this file (/ota, /blob, /stabbur, the final catch-all)
+	# is a `handle` block, and Caddy sequences all `handle` blocks together,
+	# first-match-wins, in the order written. A bare directive mixed into a
+	# file that otherwise uses `handle` throughout does NOT slot into that
+	# same sequence — Caddy's global default directive ordering places
+	# `reverse_proxy` after the `handle` group regardless of where it's
+	# written in the file, so it silently never runs: the unconditional
+	# `handle {}` catch-all at the end matches every request first and the
+	# bare `reverse_proxy` lines are unreachable. Confirmed via
+	# `caddy adapt --adapter caddyfile`: a bare `reverse_proxy /mjolnir/*`
+	# compiled to route index 6, two full positions after the catch-all's
+	# index 4 — every request to /mjolnir/* or /builder/* 404'd before this
+	# fix, regardless of path (bare, trailing-slash, or deep).
+	#
+	# Two path patterns per block, not one: Caddy's `/mjolnir/*` matcher
+	# requires the literal "/" before the wildcard, so it does NOT match the
+	# bare path a person actually types (`/mjolnir`, no trailing slash) —
+	# only `/mjolnir/` and anything deeper. hub's own route handler already
+	# treats both forms as equivalent (`url.pathname === "/mjolnir" ||
+	# url.pathname === "/mjolnir/"`); without the bare pattern here, that
+	# branch of hub's code is simply unreachable from outside the container.
+	# ---- /mjolnir/userdata/* : DEVICE PLANE, routed BEFORE the console ------
+	# zone-isolation split device progress sync out of the console into its own
+	# process. This block MUST be matched before @mjolnir below, or every sync
+	# request lands on the workbench instead — and because both are `handle`
+	# blocks, Caddy sequences them first-match-wins in written order, so the
+	# order of these two blocks IS the routing. Verified with
+	# `caddy adapt --adapter caddyfile` rather than by reading: the compiled
+	# route index for this block must be lower than @mjolnir's.
+	#
+	# No trailing-slash variant and no bare-path variant, deliberately: the
+	# device only ever requests /mjolnir/userdata/<uid>, never the prefix
+	# itself. Adding patterns here that hub used to answer would change what a
+	# bare /mjolnir/userdata returns.
+	#
+	# THE DEVICE CREDENTIAL IS CHECKED HERE (unified-auth 2.1/2.2), and this is
+	# the whole reason section 3 can touch operator auth at all. The device's
+	# SYNC_TOKEN currently *is* the operator token (its value, not just its
+	# name — patches/js/2080-progress-sync-shim.edited.js sends
+	# `Authorization: Bearer SYNC_TOKEN` and hub validated it as the operator
+	# credential). So the moment the operator plane becomes `basic_auth`, a
+	# device request landing in the operator gate is challenged for Basic and
+	# sync dies in the field. Gating this path on `Bearer` in its own block,
+	# matched first, is what makes the two credentials independent WITHOUT
+	# changing a single byte the device sends: {$OPERATOR_TOKEN} is exactly the
+	# value the phone already carries. Task 7.1 may later give SYNC_TOKEN a
+	# value of its own via config.json (D39); only the right-hand side of this
+	# one matcher changes when it does.
+	#
+	# THE 302 IS DELIBERATE AND IS NOT A MISTAKE. mjolnir-sync answers an
+	# unauthenticated request with `302 /mjolnir/login?next=<escaped path>`,
+	# because libs/jsservice/auth.js returns 401 only for paths containing
+	# `/api/`. That wrong-looking status is frozen device-contract behaviour
+	# (mjolnir/sync/src/server.js says so in as many words), so the gate
+	# reproduces it rather than "fixing" it out from under an APK that cannot
+	# be rolled back. Status, empty body and Location are all reproduced; the
+	# `next` value is built from the literal matched prefix plus
+	# {http.request.uri.path.2} because Caddy has NO url-escaping placeholder
+	# (`{...path.escaped}` does not exist and `uri replace "/" "%2F"` is
+	# re-decoded before the placeholder is read — both tried against
+	# caddy:2-alpine). Path indexing is 0-based with the leading empty segment
+	# dropped, so for /mjolnir/userdata/<uid> segment 2 is the uid.
+	#
+	# Two inherent differences remain on the REJECTED path, because the gateway
+	# now answers where it used to proxy: `Server: Caddy` + `Content-Length: 0`
+	# instead of `Via: 1.1 Caddy` + `Transfer-Encoding: chunked`, and a uid
+	# containing a literal `/` would lose everything after the first segment.
+	# Neither is reachable by the device, which sends a single-segment Firebase
+	# uid and a valid token on every request.
+	#
+	# P46: no parseable body here, ever. `redir` emits an empty body.
+	#
+	# 4.1 ADDED `request_header X-Tun-Operator 1` HERE. mjolnir-sync adopted
+	# the shared check with every other service, and the shared check accepts
+	# the gateway marker or INTERNAL_TOKEN — not the device's token. The
+	# gateway has already validated that token on the line above, so it is
+	# the thing that can vouch for the request, exactly as it does for the
+	# operator plane. Written inside a `route` so the order is the compiled
+	# order and the marker demonstrably cannot be set before the token check.
+	# The DEVICE sees no difference: a request header added on the way to the
+	# upstream changes no byte of any response, which was verified by
+	# replaying the full device probe before and after.
+	@mjolnir_sync path /mjolnir/userdata/*
+	handle @mjolnir_sync {
+		route {
+			@sync_bad_token not header Authorization "Bearer {$OPERATOR_TOKEN}"
+			redir @sync_bad_token /mjolnir/login?next=%2Fmjolnir%2Fuserdata%2F{http.request.uri.path.2} 302
+
+			request_header X-Tun-Operator 1
+			reverse_proxy mjolnir-sync:8002
+		}
+	}
+
+	# OPERATOR PLANE from here down: every block imports (operator_gate).
+	# hub and builder still run their own cookie/bearer check in application
+	# code today; section 4 replaces that with the shared check. Until it
+	# does, the gateway gate is simply the outer one — a request that fails
+	# here never reaches either service.
+	@mjolnir path /mjolnir /mjolnir/*
+	handle @mjolnir {
+		import operator_gate
+		reverse_proxy mjolnir-hub:8000
+	}
+	@builder path /builder /builder/*
+	handle @builder {
+		import operator_gate
+		reverse_proxy mjolnir-builder:8001
+	}
+
+	# stabbur serves its own routes (/ui, /api/*, /blob/*, /blobs) unprefixed
+	# — handle_path strips /stabbur before forwarding, so stabbur's own code
+	# never needs to know the prefix exists. X-Forwarded-Prefix tells
+	# stabbur's /ui page what prefix the browser is actually using, so it
+	# can template its own asset/API URLs to match (app.py's ui_index()).
+	#
+	# The upstream is the service name, hardcoded. It used to be
+	# {$STABBUR_UPSTREAM} with four documented options, because a bare Docker
+	# service name only resolved when two separate stacks shared the
+	# `tun-shared` external network (D98/D104). One repository is one Compose
+	# project with one default network, so `stabbur-backend` always resolves
+	# and there is nothing left to configure.
+	# `handle_path` needs a single literal prefix to strip, so it can't take
+	# the two-pattern form `handle`/`@matcher` above use for the bare-path
+	# case — there's nothing meaningful to strip from a bare `/stabbur`
+	# anyway. Redirect it to the trailing-slash form instead, which
+	# `handle_path /stabbur/*` already matches correctly.
+	# GATED, and inside a `route` so it STAYS gated (2026-11-14, P56).
+	# This was a bare top-level `redir /stabbur /stabbur/ 308`, which compiled to
+	# one of five routes at indices 0-4 — ahead of the whole handle group and
+	# ahead of the site-level `request_header -X-Tun-Operator` strip. Two
+	# consequences, one cosmetic and one real:
+	#   * the strip's own comment claimed it ran "before a single route is
+	#     considered". It did not; it was route five. Corrected there.
+	#   * `/stabbur` answered 308 to a client with no credential while `/nope`
+	#     answered 404 — an unauthenticated oracle for which operator zones
+	#     exist. Not a content bypass (a `redir` reaches no service), but the
+	#     operator plane is supposed to enumerate to nobody.
+	# The inner `route` is NOT decoration: Caddy sorts the directives inside a
+	# `handle` by its own global order, in which `redir` comes BEFORE `route`
+	# — so writing the gate above the redirect without this wrapper hoists the
+	# redirect back above the gate and changes nothing at all.
+	handle /stabbur {
+		route {
+			import operator_gate
+			# `*` is the matcher. `redir /stabbur/ 308` without it parses as
+			# matcher=/stabbur/, to="308" and compiles to a 302 with
+			# `Location: 308` — caught by reading the adapted JSON, which is
+			# the only way this file's claims are ever worth anything.
+			redir * /stabbur/ 308
+		}
+	}
+	handle_path /stabbur/* {
+		import operator_gate
+		reverse_proxy stabbur-backend:5056 {
+			header_up X-Forwarded-Prefix /stabbur
+		}
+	}
+	# smia serves its own routes (/ui, /providers, /health, /ipa, ...)
+	# unprefixed — handle_path strips /smia before forwarding, same pattern
+	# as /stabbur above, including the X-Forwarded-Prefix hint for its own
+	# ui_index() (app.py, mirrors stabbur's exactly, D46/D118).
+	#
+	# Hardcoded for the same reason as stabbur-backend above: one Compose
+	# project, one default network, the service name always resolves. Note
+	# the name is `smia-backend`, not `backend` — the distinct per-project
+	# names are what keep the three Flask services from colliding now that
+	# they all share one network (the collision D94 renamed
+	# stabbur-postgres to avoid).
+	# GATED, and inside a `route` so it STAYS gated (2026-11-14, P56).
+	# This was a bare top-level `redir /smia /smia/ 308`, which compiled to
+	# one of five routes at indices 0-4 — ahead of the whole handle group and
+	# ahead of the site-level `request_header -X-Tun-Operator` strip. Two
+	# consequences, one cosmetic and one real:
+	#   * the strip's own comment claimed it ran "before a single route is
+	#     considered". It did not; it was route five. Corrected there.
+	#   * `/smia` answered 308 to a client with no credential while `/nope`
+	#     answered 404 — an unauthenticated oracle for which operator zones
+	#     exist. Not a content bypass (a `redir` reaches no service), but the
+	#     operator plane is supposed to enumerate to nobody.
+	# The inner `route` is NOT decoration: Caddy sorts the directives inside a
+	# `handle` by its own global order, in which `redir` comes BEFORE `route`
+	# — so writing the gate above the redirect without this wrapper hoists the
+	# redirect back above the gate and changes nothing at all.
+	handle /smia {
+		route {
+			import operator_gate
+			# `*` is the matcher. `redir /smia/ 308` without it parses as
+			# matcher=/smia/, to="308" and compiles to a 302 with
+			# `Location: 308` — caught by reading the adapted JSON, which is
+			# the only way this file's claims are ever worth anything.
+			redir * /smia/ 308
+		}
+	}
+	handle_path /smia/* {
+		import operator_gate
+		reverse_proxy smia-backend:5055 {
+			header_up X-Forwarded-Prefix /smia
+		}
+	}
+	# ---- /phonexa : the phonetics lab, operator-gated here ---------------
+	# Same handle_path + X-Forwarded-Prefix shape as /stabbur and /smia above
+	# — phonexa's frontend became prefix-aware (its own path-prefix-routing
+	# change: X-Forwarded-Prefix -> window.PHONEXA_PREFIX -> API_BASE, the
+	# third service to adopt stabbur's pattern, D46/D119). This supersedes
+	# the dedicated-hostname site block this file used to carry at the
+	# bottom (D148's routing half): that existed only because phonexa's
+	# absolute `fetch('/api/v1/...')` paths and its `location.host +
+	# '/stream'` WebSocket could not be told what prefix they were under.
+	# They can now, so phonexa needs no hostname, no DNS record and no
+	# certificate of its own.
+	#
+	# THE REDIRECT IS LOAD-BEARING, more than /stabbur's. Every asset and
+	# page link in phonexa's HTML is RELATIVE (`css/index.css`,
+	# `js/shadow.js`, `shadow.html`). At `/phonexa` with no trailing slash a
+	# browser resolves those against `/`, so they escape this block entirely
+	# and hit the catch-all below — a blank page whose 404s point at mjolnir
+	# rather than at the missing slash.
+	#
+	# AUTH. phonexa has none of its own: profiles are name-only with no
+	# password, and it exposes destructive database import/export endpoints
+	# (and a static route that serves any file in its app directory). So the
+	# gate is here, in front of everything this block matches — static
+	# assets, `/ping` and `/api/v1/admin/*` alike. phonexa's own healthcheck
+	# is container-internal and needs no exemption.
+	#
+	# The credential is the operator token the rest of the stack already
+	# uses (D-H6's OPERATOR_AUTH_TOKEN), username fixed to `operator`, and
+	# it is now the SAME gate every operator zone imports — see
+	# (operator_gate) at the top of this file.
+	#
+	# This block used to carry its own `basic_auth { operator
+	# {$PHONEXA_AUTH_HASH:…} }`, with the hash generated by hand and typed
+	# into a `.env` single-quoted. unified-auth 3.2/3.3 retired that: the
+	# hash is derived from OPERATOR_TOKEN at container start
+	# (grind/entrypoint.sh), PHONEXA_AUTH_HASH no longer exists as a
+	# configured value anywhere, and rotating OPERATOR_AUTH_TOKEN now
+	# actually rotates access — previously it did not, and nothing said so.
+	# The variable's name had also stopped being true: it gated /shadow/*
+	# as well, and now gates eight zones.
+	#
+	# With phonexa simply not deployed, an authenticated request 502s, the
+	# same as /stabbur and /smia when their service is down.
+	#
+	# NOTE: phonexa now shares this origin with hub and builder, whose
+	# session cookie is Path=/ (hub/src/auth.js). HttpOnly stops phonexa-
+	# origin JS from reading it; it does not stop the browser sending it.
+	# Accepted deliberately when the operator chose a path over a subdomain.
+	# GATED, and inside a `route` so it STAYS gated (2026-11-14, P56).
+	# This was a bare top-level `redir /phonexa /phonexa/ 308`, which compiled to
+	# one of five routes at indices 0-4 — ahead of the whole handle group and
+	# ahead of the site-level `request_header -X-Tun-Operator` strip. Two
+	# consequences, one cosmetic and one real:
+	#   * the strip's own comment claimed it ran "before a single route is
+	#     considered". It did not; it was route five. Corrected there.
+	#   * `/phonexa` answered 308 to a client with no credential while `/nope`
+	#     answered 404 — an unauthenticated oracle for which operator zones
+	#     exist. Not a content bypass (a `redir` reaches no service), but the
+	#     operator plane is supposed to enumerate to nobody.
+	# The inner `route` is NOT decoration: Caddy sorts the directives inside a
+	# `handle` by its own global order, in which `redir` comes BEFORE `route`
+	# — so writing the gate above the redirect without this wrapper hoists the
+	# redirect back above the gate and changes nothing at all.
+	handle /phonexa {
+		route {
+			import operator_gate
+			# `*` is the matcher. `redir /phonexa/ 308` without it parses as
+			# matcher=/phonexa/, to="308" and compiles to a 302 with
+			# `Location: 308` — caught by reading the adapted JSON, which is
+			# the only way this file's claims are ever worth anything.
+			redir * /phonexa/ 308
+		}
+	}
+	handle_path /phonexa/* {
+		import operator_gate
+		# WebSockets (the live mic tracker's /stream) upgrade transparently
+		# through reverse_proxy, and Caddy does not time out an upgraded
+		# connection by default. No request-body limit is set either —
+		# Formant Lab uploads and trim/ingest posts can be several MB.
+		reverse_proxy phonexa-backend:5050 {
+			header_up X-Forwarded-Prefix /phonexa
+			# Strip the browser's permessage-deflate offer so phonexa's
+			# flask-sock never negotiates WebSocket compression on /stream.
+			# Found live 2026-11-13: the mic tracker failed in the browser
+			# with "Invalid frame header" while every proxy-level check
+			# passed. Uncompressed, the server sets RSV1=0 and the frames
+			# are plain — nothing between the browser and phonexa can
+			# disagree about whether an extension was negotiated. Same
+			# spirit as D49: compression is the transport's business, and a
+			# frozen consumer must never depend on it. Costs nothing here —
+			# the frames are small JSON and the link is local.
+			header_up -Sec-WebSocket-Extensions
+		}
+	}
+
+	# ---- /shadow : shadowing practice, operator-gated here ---------------
+	# Split out of phonexa by zone-isolation task 3. Same handle_path +
+	# X-Forwarded-Prefix shape as /stabbur, /smia and /phonexa above — shadow
+	# serves its own routes unprefixed and templates its pages from the
+	# header, exactly as phonexa does.
+	#
+	# ROUTE ORDER IS NOT A CONCERN HERE, unlike /mjolnir/userdata above.
+	# `/shadow/*` and `/phonexa/*` are disjoint path spaces: no request can
+	# match both, so no ordering between them can send traffic to the wrong
+	# service. Confirmed with `caddy adapt --adapter caddyfile` anyway — the
+	# device blocks must keep their compiled positions, and this block must
+	# compile BEFORE the catch-all `handle {}` at the bottom, which is the
+	# failure mode that actually bites in this file (see the long comment
+	# above /mjolnir).
+	#
+	# THE REDIRECT IS LOAD-BEARING, for exactly phonexa's reason: every asset
+	# and page link in shadow's HTML is RELATIVE (`css/index.css`,
+	# `js/shadow.js`, `settings.html`). At `/shadow` with no trailing slash a
+	# browser resolves those against `/`, so they escape this block and hit
+	# the catch-all below.
+	#
+	# AUTH. shadow has none of its own — profiles are name-only with no
+	# password, inherited from phonexa along with the pages. So the gate is
+	# here, in front of everything this block matches: the same
+	# (operator_gate) snippet every other operator zone imports, one
+	# operator credential, eight prefixes. Rotating OPERATOR_AUTH_TOKEN is
+	# now the whole operation — there is no second value to regenerate
+	# (unified-auth 3.2/3.3 retired PHONEXA_AUTH_HASH, which by then gated
+	# two zones under a name that claimed one).
+	#
+	# Shadow's browser code never calls phonexa directly, deliberately: a
+	# cross-prefix XHR would have to re-satisfy this gate. shadow's backend
+	# proxies profiles, settings and /analyze-praat instead
+	# (shadow/phonexa_client.py), over the internal network, which never
+	# passes through this gateway at all.
+	#
+	# No WebSocket here and no `-Sec-WebSocket-Extensions` strip: /stream is
+	# phonexa's live mic tracker and stayed with the vowel domain. Shadow
+	# uploads can still be several MB (a recorded slice posted to
+	# /transcribe), and as with /phonexa no request-body limit is set.
+	# GATED, and inside a `route` so it STAYS gated (2026-11-14, P56).
+	# This was a bare top-level `redir /shadow /shadow/ 308`, which compiled to
+	# one of five routes at indices 0-4 — ahead of the whole handle group and
+	# ahead of the site-level `request_header -X-Tun-Operator` strip. Two
+	# consequences, one cosmetic and one real:
+	#   * the strip's own comment claimed it ran "before a single route is
+	#     considered". It did not; it was route five. Corrected there.
+	#   * `/shadow` answered 308 to a client with no credential while `/nope`
+	#     answered 404 — an unauthenticated oracle for which operator zones
+	#     exist. Not a content bypass (a `redir` reaches no service), but the
+	#     operator plane is supposed to enumerate to nobody.
+	# The inner `route` is NOT decoration: Caddy sorts the directives inside a
+	# `handle` by its own global order, in which `redir` comes BEFORE `route`
+	# — so writing the gate above the redirect without this wrapper hoists the
+	# redirect back above the gate and changes nothing at all.
+	handle /shadow {
+		route {
+			import operator_gate
+			# `*` is the matcher. `redir /shadow/ 308` without it parses as
+			# matcher=/shadow/, to="308" and compiles to a 302 with
+			# `Location: 308` — caught by reading the adapted JSON, which is
+			# the only way this file's claims are ever worth anything.
+			redir * /shadow/ 308
+		}
+	}
+	handle_path /shadow/* {
+		import operator_gate
+		reverse_proxy shadow-backend:5051 {
+			header_up X-Forwarded-Prefix /shadow
+		}
+	}
+
+	# ---- /adminer : tun/compose.yaml's shared Adminer (D-T3) -------------
+	# Only reachable this way when deployed via tun's `include:` unification
+	# (D94/D101) — that's the only compose file defining a service literally
+	# named "adminer"; mjolnir's own compose.yaml does not, so this route
+	# simply 502s (same as /stabbur above when stabbur isn't up) under any
+	# other deployment mode. `handle_path` strips the prefix before
+	# forwarding, same reasoning as /stabbur above: Adminer generates its
+	# own links relative to wherever it's mounted and has no equivalent of
+	# stabbur's X-Forwarded-Prefix handling, so it must see itself as
+	# mounted at "/", not "/adminer".
+	#
+	# AUTH. This route was open — Adminer has never been gated, and that was
+	# the one genuinely missing gate in the ecosystem: a database-admin tool,
+	# on the public origin, behind nothing, with a login form that will
+	# accept any credentials the operator's own cluster accepts. unified-auth
+	# 3.1 closes it with the same (operator_gate) every other zone imports;
+	# the openspec requirement is explicit about it ("The database tool").
+	#
+	# The loopback `127.0.0.1:8082` mapping in the root compose.yaml stays
+	# and is not an exposure: it is bound to the loopback interface, so it is
+	# reachable from the host only, not from the internet. The route is what
+	# the internet can reach, and the route is now gated.
+	# GATED, and inside a `route` so it STAYS gated (2026-11-14, P56).
+	# This was a bare top-level `redir /adminer /adminer/ 308`, which compiled to
+	# one of five routes at indices 0-4 — ahead of the whole handle group and
+	# ahead of the site-level `request_header -X-Tun-Operator` strip. Two
+	# consequences, one cosmetic and one real:
+	#   * the strip's own comment claimed it ran "before a single route is
+	#     considered". It did not; it was route five. Corrected there.
+	#   * `/adminer` answered 308 to a client with no credential while `/nope`
+	#     answered 404 — an unauthenticated oracle for which operator zones
+	#     exist. Not a content bypass (a `redir` reaches no service), but the
+	#     operator plane is supposed to enumerate to nobody.
+	# The inner `route` is NOT decoration: Caddy sorts the directives inside a
+	# `handle` by its own global order, in which `redir` comes BEFORE `route`
+	# — so writing the gate above the redirect without this wrapper hoists the
+	# redirect back above the gate and changes nothing at all.
+	handle /adminer {
+		route {
+			import operator_gate
+			# `*` is the matcher. `redir /adminer/ 308` without it parses as
+			# matcher=/adminer/, to="308" and compiles to a 302 with
+			# `Location: 308` — caught by reading the adapted JSON, which is
+			# the only way this file's claims are ever worth anything.
+			redir * /adminer/ 308
+		}
+	}
+	handle_path /adminer/* {
+		import operator_gate
+		reverse_proxy adminer:8080
+	}
+
+	# The catch-all. DELIBERATELY NOT GATED, and that is a decision rather
+	# than an omission: it serves one hard-coded word and reaches no service,
+	# no file and no database, so there is nothing here for a credential to
+	# protect. Leaving it open also keeps the one path that must never
+	# require a credential clear — Let's Encrypt's HTTP-01 challenge, which
+	# an expired-certificate incident is a far worse failure than an
+	# unauthenticated 404. Every route that serves anything is above this
+	# line and every one of them is gated.
+	handle {
+		respond "mjolnir" 404
+	}
+
+	# ---- handle_errors : the status page (zone-isolation 4.3) -----------
+	# Without this, a zone whose container is down answers with Caddy's
+	# default error response — a bare status line, no body, no navigation, no
+	# way back to the zones that ARE up. Independent processes are the point
+	# of zone-isolation; one dead process producing a dead-end browser tab
+	# undoes most of the benefit for the operator.
+	#
+	# What is served instead: caddy/status/index.html, a static file inside
+	# THIS container, rendered by `templates`. No upstream, no database, no
+	# JavaScript. It cannot itself fail for the reason the page exists.
+	#
+	# handle_errors is SITE-WIDE — it cannot be scoped to one handle block —
+	# so the device plane has to be excluded by hand, below, and is.
+	#
+	# ---- 401 FIRST: the status page is not served to an unauthenticated
+	# request (unified-auth 3.1, "the status page's non-device paths").
+	#
+	# handle_errors catches basic_auth's 401 as well as a zone's 502, which
+	# had two consequences, both found by running it rather than by reading:
+	#
+	#   1. the full 7 KB status page — every zone's prefix, label and
+	#      description — was served to any client with no credential at all.
+	#      It is not a secret, but it is the one page in the gateway that
+	#      enumerates the whole operator plane, and "gate the operator plane"
+	#      has to include it.
+	#   2. a wrong password rendered "phonexa is not responding", with the
+	#      zone struck out of the list as down. The page's own text says the
+	#      gateway "reached this zone's route, but nothing answered behind
+	#      it", which is false for a 401 and sends the operator looking at a
+	#      container that is perfectly healthy.
+	#
+	# `respond "" {err.status_code}` is the same empty-bodied answer the
+	# device branch below uses. WWW-Authenticate SURVIVES it — basic_auth
+	# sets that header on the response writer before returning the error, and
+	# `respond` does not clear already-set headers, so the browser still gets
+	# its login prompt. Verified live, because a gate that silently stops
+	# prompting would look exactly like a wrong password (P36's shape).
+	#
+	# Status codes, not a path matcher: `handle_errors 401` (Caddy ≥ 2.8,
+	# running 2.11.7) scopes by the error's own status, which is what this
+	# distinction actually is. 403 is included for the same reason — it is a
+	# credential answer, not a zone-down answer — even though nothing in this
+	# file emits one today.
+	handle_errors 401 403 {
+		respond "" {err.status_code}
+	}
+
+	handle_errors {
+		# DEVICE PLANE: never HTML, ever. /ota/*, /blob/*, /audio-manifest/*
+		# and /mjolnir/userdata/* are a frozen contract (docs/11-ota-contract.md,
+		# D55) consumed by an APK in the field that cannot be rolled back.
+		# Native parses the status code; handing it a styled HTML body where
+		# it expects a bare 404 would be a contract change made by accident,
+		# in a file whose device blocks are otherwise untouchable.
+		#
+		# `respond "" {err.status_code}` reproduces exactly what Caddy's
+		# default error handler produced before this block existed: the
+		# status, an empty body, and no Content-Type. Verified byte-for-byte
+		# against the pre-change gateway, not assumed — a missing /ota object
+		# answered 404 with Content-Length: 0 and no Content-Type both
+		# before and after.
+		#
+		# This matcher must stay in sync with the device blocks at the top of
+		# this file. It is the only place in handle_errors where adding a
+		# path is a device-contract decision rather than a cosmetic one.
+		@device path /ota/* /blob/* /audio-manifest/* /mjolnir/userdata/*
+		handle @device {
+			respond "" {err.status_code}
+		}
+
+		# Everything else — the operator plane — gets the status page.
+		#
+		# `rewrite * /index.html` repoints the request at the one template;
+		# the browser's original path survives as
+		# {http.request.orig_uri.path}, which is what the page reads to name
+		# the unreachable zone. (It survives handle_path's prefix strip too:
+		# a 502 on /stabbur/ui still reports orig_uri.path = /stabbur/ui,
+		# confirmed live against a stopped stabbur-backend.)
+		#
+		# `status {err.status_code}` is load-bearing: file_server answers 200
+		# by default, so without it a down zone would report success while
+		# displaying an error page — wrong for curl, for monitoring and for
+		# anything that reads status codes rather than pixels.
+		handle {
+			rewrite * /index.html
+			root * /etc/caddy/status
+			templates
+			file_server {
+				status {err.status_code}
+			}
+		}
+	}
+}
