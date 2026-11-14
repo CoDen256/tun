@@ -258,3 +258,101 @@ to "check the work".
 5. The three remaining open tasks in `monorepo-merge`,
    `postgres-consolidation` and `zone-isolation` are all "needs the VPS" or
    "needs the phone"; each is annotated in its own `tasks.md`.
+
+---
+
+## 9. The cutover happened — 2026-11-14, production is the monorepo
+
+Executed on `contabo` on operator instruction. Production now runs the
+monorepo stack from `/root/tun` on the `monorepo` branch (`989f1c2d`).
+
+### What is running
+
+Eleven services, all healthy: `caddy` (as `grind`'s Caddyfile), `postgres`
+(ONE cluster, five databases), `mjolnir-sync`, `mjolnir-hub`,
+`mjolnir-builder`, `stabbur-backend`, `smia-backend`, `phonexa-backend`,
+`shadow-backend`, `adminer`, `backup`.
+
+### Proven, not assumed
+
+```
+ota-verify https://coden256.dev     16 passed, 0 failed - P1 path proven
+                                    (16/16 over real TLS, incl. D49 gzip-sha256,
+                                     which only runs on https)
+/ota/current.json + real token      200, the live descriptor, cache-control: no-store
+  sha256 ee240508...b411dd          IDENTICAL to the bundle on the handset
+/ota/bundle/b000052.js  HEAD        200
+handset, cache-busted, device shell 401 / 200 / 200 on ota / manifest / blob
+TLS certificate                     notBefore Oct 26 - the ORIGINAL, not a reissue
+seven operator zones                401 without a credential, 200 with
+adminer                             401 - it was openly reachable before
+```
+
+Restore acceptance, per table and against the dump (not against an earlier
+estimate):
+
+```
+mjolnir   15/15 tables, EXACT MATCH on every one, incl. build_jobs 55
+          and job_logs 448 - the two that production's OWN backup had lost
+stabbur   5 tables, 2,551 rows - exact
+phonexa   11 tables, 4,365 rows - exact
+smia      16 tables, 14,799,624 rows, restore exit 0, zero errors (16 -> 17)
+shadow    created empty by design
+```
+
+### P44 is fixed in production
+
+The new daily backup's `mjolnir.sql` has **15** `CREATE TABLE`, not 13. No
+`--exclude-table=` remains anywhere. Five dumps are committed and pushed.
+
+### 🔴 One data-safety finding, pre-existing, NOT fixed — operator decision
+
+Production smia holds **~9 million rows the daily backup does not contain
+and nothing can rebuild**:
+
+```
+nst_dialect       8,191,396 rows      corpus_sentence  3,023,040 rows
+nst_lexicon         792,936 rows
+```
+
+`nst_dialect` and `nst_lexicon` are on `--exclude-table-data`, so the daily
+`smia.sql` carries **zero** of their rows (verified: `grep -c "^COPY
+public.nst_dialect"` → 0). The rationale for excluding them is that they are
+rebuildable from `providers/` — and on production they are not:
+
+```
+providers/nbno/     nb_uttale_tillegg.zip, ordbank  (nb_uttale_leksika.zip ABSENT)
+providers/leipzig/  EMPTY
+```
+
+So the only copy of those 9M rows is the pre-cutover dump:
+`/root/pre-cutover/smia.sql.gz` (449 MB) and an off-host copy at
+`~/tun-cutover-dumps/smia.sql.gz`. **Do not delete either** until this is
+decided. The choice is the operator's: back those tables up daily (hundreds
+of MB into a git commit), re-fetch the provider archives so the rebuild
+claim becomes true, or accept them as disposable cache.
+
+### Rollback
+
+Nothing was destroyed. `docker compose stop` only; no `down`, never `-v`
+(P41). All four pre-cutover volumes are retained and intact
+(`mjolnir_postgres_data`, `stabbur_stabbur-pg-data-17`, `smia_smia-pg-data`,
+`phonexa_postgres_data`), the old sibling checkouts are untouched at
+`/root/{mjolnir,stabbur,smia,phonexa}`, `/root/mjolnir/data` still holds the
+original 684 MB OTA payload (it was copied, not moved), and the old
+per-instance database passwords are preserved in
+`/root/pre-cutover/tun.env.backup`.
+
+### Two things the cutover taught, worth keeping
+
+1. **`docker compose up -d` silently reuses a stale image.** stabbur's image
+   on the VPS was five days old; it ran the pre-merge auth, so `/_health`
+   401'd and the container sat `unhealthy` with no error naming the cause.
+   phonexa's had no `/_health` route at all (404). **`docker compose build`
+   is a required cutover step, not an optimisation.** Recorded as P65.
+2. **A long remote step must be detached.** `ssh … 'sh dump-all.sh'` was
+   killed by the client timeout partway through, after it had already
+   printed `ok` for two of four databases — so phonexa was never dumped and
+   the output looked like progress. The same failure-reports-success shape as
+   P41-P52, this time in my own harness. Verify artefacts file by file, never
+   by reading a script's stdout.

@@ -81,3 +81,43 @@ Severity: **🔴 will bite you** · **🟡 annoying** · **🔵 ops**
 | P38 | **Compose reads an included file's `.env` for `${VAR}` interpolation but NOT for a valueless pass-through key (`SOME_VAR:` with nothing after the colon) — under `include:` such a key resolves to null and is dropped from the container entirely.** The same compose file works standalone, so the bug only appears in the unified deployment. Found live 2026-11-13: `PHONEXA_AUTH_HASH` sat correctly in `mjolnir/.env`, `cd mjolnir && docker compose up` delivered it, but `docker compose up` from `tun` dropped it — Caddy fell back to its own locked fail-closed hash and **every** phonexa login 401'd with a hash that was, in isolation, perfectly valid | Never use the valueless form in a compose file that is `include:`d. Use `${VAR:-<default>}`, which resolves from the included file's own `.env` in BOTH modes (verified both ways), escaping any literal `$` as `$$`. **And verify env-var delivery in the deployment mode you actually run** — `docker compose exec <svc> printenv <VAR>` from the directory you deploy from, not from the service's own repo. A variable that is right in `.env` and absent in the container is invisible to every other check. *Still live after D150: `include:` is deliberately KEPT, so the valueless form is still forbidden. What changed is the blast radius — there is only one `.env` per value now, so "the CHILD repo's `.env`" is no longer a place a value can hide* |
 | P39 | **A WebSocket verified with a client library is not verified for a browser: browsers offer `permessage-deflate`, most test clients do not.** phonexa's `/stream` was checked end to end through the real Caddyfile with a Node client — 101, correct accept key, frames flowing — and still failed in Chrome with `Invalid frame header`. flask-sock accepts the browser's compression offer and sets RSV1 on every frame; somewhere at the TLS edge the browser and server then disagree about whether the extension was negotiated, and the stream dies after a clean handshake | Strip the offer at the proxy (`header_up -Sec-WebSocket-Extensions`) so the upstream never negotiates compression and the frames are plain — verified by a raw handshake advertising exactly what Chrome advertises and checking the RSV1 bit. Generally: **when verifying a protocol a browser will speak, send the headers the browser sends.** A client library's defaults are a different client |
 | P40 | **An inventory built by grepping for a hand-listed set of patterns silently excludes whatever was not on the list.** phonexa's prefix migration converted 74 URL literals found by grepping `api/v1\|audio\|ping\|transcribe\|stream\|frames\|debug` — and missed `/analyze-praat`, which 404'd for the first real user and broke every spectrogram. The sweep that "proved" it (0 requests reaching the catch-all) only ever exercised page loads and list endpoints, never a user action | Enumerate from the authority, not from a guess: `grep -oP "@app\\.route\\('\\K[^']+" app.py` lists every route the server actually serves, and each one must be accounted for. Then exercise the app by **action**, not only by fetching URLs you already know about — the endpoints a grep misses are exactly the ones only a click reaches |
+
+### P65 — `docker compose up -d` silently reuses a stale image, and the symptom names nothing
+
+**Found during the production cutover, 2026-11-14.** After switching the VPS
+to the monorepo branch, `docker compose up -d` started every service from
+images built **before** the merge. stabbur's was five days old and still
+carried the pre-merge `auth.py`, which has no `/_health` exemption, so the
+healthcheck 401'd and the container sat `unhealthy` forever. phonexa's image
+had no `/_health` route at all and 404'd. Neither log line mentions an image,
+a build, or a version — the only visible fact is `unhealthy`, which reads as
+a broken service rather than stale code.
+
+```
+docker inspect --format '{{.Created}}' <image>
+stabbur-backend    2026-11-09T18:47:15      <- cutover day was 2026-11-14
+phonexa-backend    2026-11-13T14:06:24
+shadow-backend     2026-11-14T21:49:35      <- only this one was fresh, because
+                                               no prior image existed to reuse
+```
+
+**Handling:** `docker compose build` is a REQUIRED step in any cutover that
+changes service source, not an optimisation. After it, `up -d` recreated all
+eleven services and every one came up healthy. When a container is
+`unhealthy` after a deploy and the logs make no sense, check the image
+timestamp before debugging the code.
+
+### P66 — a long remote step killed by a client timeout looks exactly like progress
+
+**Found during the same cutover, in my own harness.** `ssh contabo 'sh
+dump-all.sh'` dumps four databases sequentially. The ssh client timeout fired
+during smia's 3-minute dump and killed the whole script — but it had already
+printed `mjolnir ok` and `stabbur ok`, so the output read as a run in
+progress. phonexa was never dumped. Nothing reported an error, and a summary
+line would have been equally silent because it never ran.
+
+**Handling:** detach anything long (`nohup … &`) so a dead session cannot kill
+it, and **verify artefacts file by file** — `ls` each expected output and
+check its table count — rather than reading a script's stdout. This is the
+same failure-reports-success shape as P41-P52; the lesson keeps being that
+the evidence must be the artefact, never the narration.
