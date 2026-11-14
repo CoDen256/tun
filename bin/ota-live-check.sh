@@ -81,6 +81,22 @@ if command -v adb >/dev/null 2>&1 && [ -n "$(adb devices 2>/dev/null | sed -n '2
     fi
     state=$(printf '%s' "$log" | grep 'ota-debug' | tail -1)
     [ -n "$state" ] && say "  handset state: ${state#*ota-debug\', \'}"
+
+    # Leave no residue. Each launch writes an attempt-<id>-N marker; left
+    # alone they accumulate on every run of this check. They are inert while
+    # boot-ok-<id> exists (contract §4: quarantine is attempts >= 2 AND no
+    # boot-ok), so this is tidiness, not safety - but a health check that
+    # mutates the thing it measures is a bad health check. Keep -1 so the
+    # directory matches the state the device was found in; never touch
+    # `active`, `boot-ok-*` or any bundle.
+    active=$(adb shell run-as "$PKG" cat files/mjolnir-ota/active 2>/dev/null | tr -d "\r\n")
+    if [ -n "$active" ] && adb shell run-as "$PKG" ls "files/mjolnir-ota/boot-ok-$active" >/dev/null 2>&1; then
+      for m in $(adb shell run-as "$PKG" ls files/mjolnir-ota/ 2>/dev/null | tr -d "\r" \
+                 | grep -E "^attempt-$active-[0-9]+$" | grep -v -- "-1$"); do
+        adb shell run-as "$PKG" rm -f "files/mjolnir-ota/$m" >/dev/null 2>&1
+      done
+      say "  handset: attempt markers trimmed (boot-ok present; active=$active untouched)"
+    fi
   else
     say "  (handset attached but $PKG not installed - skipping end-to-end probe)"
   fi
