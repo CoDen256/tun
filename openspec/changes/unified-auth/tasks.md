@@ -31,15 +31,49 @@ complete and verify in order. The hard constraint is: **the device never breaks.
 
 ## 2. Carve out device sync — before any operator auth change
 
-- [ ] 2.1 Gateway gates `/mjolnir/userdata/*` on `Bearer`, as its own block,
-      matched before the operator plane.
-- [ ] 2.2 Set its expected value to the **current** `OPERATOR_TOKEN`. The
-      device sends exactly what it sends today. Nothing on the device changes.
-- [ ] 2.3 Capture a real device sync request and response before this step;
-      replay after. Identical, or stop.
-- [ ] 2.4 Verify a real device completes a sync round-trip.
+- [x] 2.1 Gateway gates `/mjolnir/userdata/*` on `Bearer`, as its own block,
+      matched before the operator plane. **Verified on the compiled config**,
+      not on file order: `caddy adapt --adapter caddyfile` puts
+      `/mjolnir/userdata/*` at route index 6, ahead of `/mjolnir`+`/mjolnir/*`
+      at 10, every other operator route (12–16) and the catch-all at 17 — and
+      note the compiled order is NOT the written order (Caddy re-sorts the
+      `handle` group by matcher specificity, which moved `/ota/*` from first in
+      the file to index 9). Inside the block the `302` route compiles at
+      subroute index 0 and `reverse_proxy` at 1. Fail-closed at the gateway and
+      not merely at the upstream: with `mjolnir-sync` **stopped**, an
+      unauthenticated request still gets the 302 while a valid-token request
+      502s.
+- [x] 2.2 Set its expected value to the **current** `OPERATOR_TOKEN`. The
+      matcher is `not header Authorization "Bearer {$OPERATOR_TOKEN}"` and
+      `grind/compose.yaml` already passes `OPERATOR_TOKEN:
+      ${OPERATOR_AUTH_TOKEN}` — the exact value the phone carries today. No
+      compose, `.env` or device change. Task 7.1 changes only the right-hand
+      side of that one matcher.
+- [x] 2.3 Replayed through the gateway before and after, same host, same
+      credential: GET 200 with `_justCreated`, re-read 200 without it, PATCH
+      200 with all six status fields stripped and `realField` merged, PUT 405
+      `method not allowed`, no-token **302** and bad-token **302** to
+      `/mjolnir/login?next=%2Fmjolnir%2Fuserdata%2F<uid>` with an empty body.
+      Codes, bodies and full header sets are byte-identical after normalising
+      only the uid and the timestamps — **with one inherent exception, on the
+      rejected path only**: the gateway now answers where it used to proxy, so
+      the 302 carries `Server: Caddy` + `Content-Length: 0` instead of
+      `Via: 1.1 Caddy` + `Transfer-Encoding: chunked`. Status, empty body and
+      `Location` are identical; no device request takes that path. The
+      `Location` value is reproduced via the literal matched prefix plus
+      `{http.request.uri.path.2}` because Caddy has no url-escaping
+      placeholder (both `{...path.escaped}` and `uri replace "/" "%2F"` were
+      tried and neither works). Separately, the whole compiled config was
+      diffed against `HEAD`'s: the ONLY difference anywhere is this gate, so
+      `/ota/*`, `/blob/*`, `/audio-manifest/*` and `handle_errors` are
+      provably untouched.
+- [ ] 2.4 Verify a real device completes a sync round-trip. **Needs the
+      phone.** 2.3's replay reproduces the shim's request shape (same header,
+      same body fields) from `curl`, which is not a handset.
 - [ ] 2.5 Only once 2.3 and 2.4 pass does section 3 begin. This is a gate, not
-      a guideline.
+      a guideline. **Deliberately left open: 2.3 passes, 2.4 does not yet, so
+      the gate is NOT cleared and section 3 must not start.** Ticking this box
+      while 2.4 is open would say the opposite.
 
 ## 3. Operator plane
 

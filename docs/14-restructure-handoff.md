@@ -27,7 +27,7 @@ deployable, in `openspec/changes/`:
 | `monorepo-merge` | **40/45** | six repos → one. No behaviour change; the bar was "nothing changed" |
 | `postgres-consolidation` | **35/38** | five Postgres clusters → one, five databases |
 | `zone-isolation` | **35/37** | the two service splits, serve-before-migrate, the status page |
-| `unified-auth` | **6/37** | gateway **moved** to `grind/` (done); operator auth collapsing to one credential (open) |
+| `unified-auth` | **9/37** | gateway **moved** to `grind/` and the device-sync carve-out gated (done); operator auth collapsing to one credential (open) |
 
 Every remaining open task is annotated in its own `tasks.md` with *why* it is
 open. They fall into exactly two buckets: **needs the VPS** or **needs the
@@ -182,9 +182,14 @@ to "check the work".
 
 ## 8. Next steps, in order
 
-1. **`unified-auth` section 2** — gate `/mjolnir/userdata/*` at the gateway on
-   the current token value, replay the captured baseline, and do not touch
-   section 3 until it matches.
+1. **`unified-auth` section 2** — 2.1/2.2/2.3 are **done**: `/mjolnir/userdata/*`
+   is gated at the gateway on `Bearer {$OPERATOR_TOKEN}` in its own block,
+   compiled route index 6 (ahead of `/mjolnir/*` at 10 and the catch-all at 17),
+   and the replay matches the baseline — codes, bodies and headers — except on
+   the *rejected* path, where the gateway now answers instead of proxying
+   (`Server: Caddy` + `Content-Length: 0` for `Via` + chunked; status, empty
+   body and `Location` unchanged). **2.4 still needs the phone, so the 2.5 gate
+   is NOT cleared: section 3 must not start yet.**
 2. Sections 3–5 — `basic_auth`, one auth check per service from `libs/`, and
    move the service UIs from `/ui` to the prefix root (which also fixes a live
    401 on `https://coden256.dev/stabbur/`).

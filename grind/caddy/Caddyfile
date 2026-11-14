@@ -125,8 +125,48 @@
 	# device only ever requests /mjolnir/userdata/<uid>, never the prefix
 	# itself. Adding patterns here that hub used to answer would change what a
 	# bare /mjolnir/userdata returns.
+	#
+	# THE DEVICE CREDENTIAL IS CHECKED HERE (unified-auth 2.1/2.2), and this is
+	# the whole reason section 3 can touch operator auth at all. The device's
+	# SYNC_TOKEN currently *is* the operator token (its value, not just its
+	# name — patches/js/2080-progress-sync-shim.edited.js sends
+	# `Authorization: Bearer SYNC_TOKEN` and hub validated it as the operator
+	# credential). So the moment the operator plane becomes `basic_auth`, a
+	# device request landing in the operator gate is challenged for Basic and
+	# sync dies in the field. Gating this path on `Bearer` in its own block,
+	# matched first, is what makes the two credentials independent WITHOUT
+	# changing a single byte the device sends: {$OPERATOR_TOKEN} is exactly the
+	# value the phone already carries. Task 7.1 may later give SYNC_TOKEN a
+	# value of its own via config.json (D39); only the right-hand side of this
+	# one matcher changes when it does.
+	#
+	# THE 302 IS DELIBERATE AND IS NOT A MISTAKE. mjolnir-sync answers an
+	# unauthenticated request with `302 /mjolnir/login?next=<escaped path>`,
+	# because libs/jsservice/auth.js returns 401 only for paths containing
+	# `/api/`. That wrong-looking status is frozen device-contract behaviour
+	# (mjolnir/sync/src/server.js says so in as many words), so the gate
+	# reproduces it rather than "fixing" it out from under an APK that cannot
+	# be rolled back. Status, empty body and Location are all reproduced; the
+	# `next` value is built from the literal matched prefix plus
+	# {http.request.uri.path.2} because Caddy has NO url-escaping placeholder
+	# (`{...path.escaped}` does not exist and `uri replace "/" "%2F"` is
+	# re-decoded before the placeholder is read — both tried against
+	# caddy:2-alpine). Path indexing is 0-based with the leading empty segment
+	# dropped, so for /mjolnir/userdata/<uid> segment 2 is the uid.
+	#
+	# Two inherent differences remain on the REJECTED path, because the gateway
+	# now answers where it used to proxy: `Server: Caddy` + `Content-Length: 0`
+	# instead of `Via: 1.1 Caddy` + `Transfer-Encoding: chunked`, and a uid
+	# containing a literal `/` would lose everything after the first segment.
+	# Neither is reachable by the device, which sends a single-segment Firebase
+	# uid and a valid token on every request.
+	#
+	# P46: no parseable body here, ever. `redir` emits an empty body.
 	@mjolnir_sync path /mjolnir/userdata/*
 	handle @mjolnir_sync {
+		@sync_bad_token not header Authorization "Bearer {$OPERATOR_TOKEN}"
+		redir @sync_bad_token /mjolnir/login?next=%2Fmjolnir%2Fuserdata%2F{http.request.uri.path.2} 302
+
 		reverse_proxy mjolnir-sync:8002
 	}
 
