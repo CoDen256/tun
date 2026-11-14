@@ -813,7 +813,10 @@ export function createServer(pool, config, boot) {
       // different route. Degrade to an honest 503 rather than a driver error.
       if (boot && !boot.dbReady() && url.pathname.startsWith("/builder")
           && url.pathname !== "/builder/_health" && url.pathname !== "/builder/login") {
-        const why = boot.lastError()?.message || "the database is not reachable";
+        // Not `boot.lastError().message` - that is the raw driver text and
+        // names internal hostnames ("getaddrinfo ENOTFOUND postgres"). It
+        // stays in the log, which already records it on every attempt.
+        const why = "the database is not reachable";
         if (url.pathname.includes("/api/")) {
           const payload = JSON.stringify({ error: "database unavailable", detail: why });
           res.writeHead(503, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(payload) });

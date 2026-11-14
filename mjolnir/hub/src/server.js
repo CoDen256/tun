@@ -1147,7 +1147,12 @@ export function createServer(pool, config, boot) {
       // tool, and the login page. That is the whole point: a database outage
       // costs you the catalogue, not the console.
       if (boot && !boot.dbReady() && isDatabaseBacked(url.pathname)) {
-        const why = boot.lastError()?.message || "the database is not reachable";
+        // The raw driver message names internal hostnames and driver
+        // internals ("getaddrinfo ENOTFOUND postgres"). That is log material,
+        // not operator-facing copy - the Python half already learned this
+        // (P59's sibling fix). The detail stays in the log, where
+        // `boot.lastError()` is already recorded on every attempt.
+        const why = "the database is not reachable";
         if (wantsJson(url.pathname)) {
           return sendJson(res, 503, { error: "database unavailable", detail: why });
         }
