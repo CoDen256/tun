@@ -148,16 +148,41 @@ section 7   optional, later: give SYNC_TOKEN its own value — which needs an
             ASSEMBLE + PUBLISH, not a config.json push (P48)
 ```
 
-Section 2's "before" capture is already taken (`scratchpad/ua-baseline/`):
-GET 200 with `_justCreated`, re-read without it, PATCH 200 with the six status
-fields stripped, PUT 405, no-token **302 (not 401)**. That 302 is deliberate —
-`requireAuth` answers 401 only for paths containing `/api/`.
+Section 2's "before" capture was originally taken in `scratchpad/ua-baseline/`
+— **a directory that is not in the tree and never was**, so the evidence for
+the most dangerous change in the repo was not reproducible by anyone, its
+author included. Replaced 2026-11-14 by a committed, regenerable capture:
+
+```
+docs/baselines/device-plane.txt     the capture, committed
+bin/device-baseline.sh              regenerates it; diff before/after a
+                                    gateway change, a zero diff is the proof
+```
+
+It covers the whole device plane, not just sync: `/ota/*` (401 / wrong-token
+401 / 200 `no-store` / POST 405 **with the guard's own body**), the immutable
+bundle headers, `/audio-manifest/*`, `/blob/<sha>`, and `/mjolnir/userdata/*`
+— GET 200 with `_justCreated`, re-read without it, PATCH 200 with the six
+status fields stripped, PUT 405, `%ff` **404 with an empty body** (P46), and
+no-token **302 (not 401)**. That 302 is deliberate — `requireAuth` answers 401
+only for paths containing `/api/`.
+
+Two things it fixed by existing. The six stripped fields are
+`deviceId`/`activeBuildId`/`pendingBuildId`/`audioCached`/`audioTotal`/
+`lastFetchError` (from `mjolnir/sync/src/server.js`) — the first draft of the
+probe guessed a *different* six and the capture showed every one of them
+merged straight into the document. And its own header filter dropped every
+HTTP status line, which the first generated file made obvious. It is
+falsifiable: deleting the `@not_read` guard from the Caddyfile produces a
+two-line diff (`body: method not allowed` → `body: <empty>`), restored by
+putting the guard back. Volatile headers, timestamps and the uid are
+normalised, and **no token is ever written into the file**.
 
 ---
 
 ## 6. What was found by running things, not reading them
 
-Ten new pitfalls, each a case where **the failure reported success**. This is
+Twelve new pitfalls, each a case where **the failure reported success**. This is
 the recurring defect class here; expect the next one to look the same.
 
 | | what |
@@ -172,6 +197,8 @@ the recurring defect class here; expect the next one to look the same.
 | **P48** | The device's `SYNC_TOKEN` is **baked into the JS bundle**, not read from `config.json` — D39's escape hatch is the OTA channel's. Two facts each written down in a different file and nowhere together, so the conclusion was invisible for as long as it existed. Rotation needs a publish. |
 | **P49** | A site-wide `handle_errors` caught `basic_auth`'s 401 and served the **full status page** to unauthenticated clients — and rendered a wrong password as "this zone is not responding". Scope by status code, empty body; `WWW-Authenticate` survives. |
 | **P50** | An auth check written **twice** can be half-removed, and the half that stays is the one that returns first. hub's workbench branch was left open by deleting the other copy. One check above every branch. |
+| **P51** | A probe that reads an `immutable` route through a caching client is **unfalsifiable for as long as the `max-age`**. The handset check passed with **both radios off** — okhttp served `/audio-manifest/*` from its cache — and its header claimed to prove a token on a route that is deliberately unauthenticated. Probe from a client you control; say what a probe cannot prove. |
+| **P52** | A verification script that follows a URL **out of the payload** verifies whatever the payload names, not the host under test. Six assertions, D49 among them, described `current.json`'s `url`. Also: the environment silently discarded in favour of `.env`, and a `405` assertion that could not detect its own deletion. |
 
 Also fixed: both OTA scripts sourced a `.env` the restructure deleted, so the
 documented device-acceptance command aborted before its first check;

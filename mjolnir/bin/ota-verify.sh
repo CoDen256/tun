@@ -131,8 +131,35 @@ if [ -z "$BUILD_ID" ] || [ -z "$SHA" ] || [ -z "$SIZE" ] || [ -z "$URL" ]; then
 fi
 
 echo "bundle"
+# THE BUNDLE HALF MUST TEST $BASE, NOT WHATEVER current.json NAMES.
+# Independent review (2026-11-14): these six assertions used `$URL` verbatim,
+# so they described the host in the `url` field — which on a mutated gateway is
+# routinely a DIFFERENT, healthy host. With `encode gzip` removed from the host
+# under test: a current.json pointing at the real stack gave `15 passed`, one
+# pointing at the mutant gave `FAIL unexpected Content-Length under gzip`. The
+# same six assertions, including D49's sha256-identical-under-gzip — the one
+# the contract calls the most important and the one native can never be fixed
+# for — were checking a host nobody asked about.
+#
+# So: keep the PATH that current.json publishes (that part is the contract),
+# but fetch it from $BASE (that part is the host under test). `url`'s own
+# scheme/absoluteness is still asserted above, against the published string,
+# where it belongs.
+URL_PATH=${URL#*://}
+case "$URL_PATH" in */*) URL_PATH=/${URL_PATH#*/} ;; *) URL_PATH="" ;; esac
+if [ -z "$URL_PATH" ]; then
+	bad "url has no path component ('$URL') - cannot fetch the bundle from \$BASE"
+	BUNDLE_URL="$URL"
+else
+	BUNDLE_URL="$BASE$URL_PATH"
+fi
+if [ "$BUNDLE_URL" != "$URL" ]; then
+	printf '  \033[33mNOTE\033[0m bundle fetched from the HOST UNDER TEST: %s\n' "$BUNDLE_URL"
+	printf '       (current.json publishes %s - a different host, which these\n' "$URL"
+	printf '        assertions deliberately do NOT describe)\n'
+fi
 # Exactly what native does: no Accept-Encoding set by hand (D49).
-curl -sS -H "$AUTH" "$URL" -o "$TMP/plain.js"
+curl -sS -H "$AUTH" "$BUNDLE_URL" -o "$TMP/plain.js"
 if body "$TMP/plain.js" "bundle download"; then
 	eq "sha256 of downloaded bytes matches" "$(sha256sum "$TMP/plain.js" | cut -d' ' -f1)" "$SHA"
 	eq "byte count matches size"            "$(stat -c%s "$TMP/plain.js")"                  "$SIZE"
@@ -146,7 +173,7 @@ fi
 
 # The Java HTTP stack negotiates gzip transparently. The hash must be
 # identical either way, or D49 is violated and native can never be fixed.
-curl -sS --compressed -H "$AUTH" "$URL" -o "$TMP/gz.js"
+curl -sS --compressed -H "$AUTH" "$BUNDLE_URL" -o "$TMP/gz.js"
 if body "$TMP/gz.js" "gzip download"; then
 	eq "sha256 identical with transport gzip (D49)" "$(sha256sum "$TMP/gz.js" | cut -d' ' -f1)" "$SHA"
 else
@@ -155,7 +182,7 @@ fi
 # Under gzip, Caddy sends the bundle CHUNKED with no Content-Length at all.
 # Native therefore cannot pre-check the size from headers: it must enforce the
 # cap while streaming, aborting once bytes written exceed `size` (D49).
-GZ_CL=$(curl -sS --compressed -D - -o /dev/null -H "$AUTH" "$URL" | tr -d ' \r' | grep -i '^content-length:' | cut -d: -f2)
+GZ_CL=$(curl -sS --compressed -D - -o /dev/null -H "$AUTH" "$BUNDLE_URL" | tr -d ' \r' | grep -i '^content-length:' | cut -d: -f2)
 if [ -s "$TMP/gz.js" ]; then
 	[ -z "$GZ_CL" ] \
 		&& ok "gzip GET has no Content-Length (chunked) — native must cap while streaming" \
@@ -163,7 +190,7 @@ if [ -s "$TMP/gz.js" ]; then
 else
 	bad "gzip Content-Length check (skipped: nothing downloaded)"
 fi
-PLAIN_CL=$(curl -sS -H 'Accept-Encoding:' -D - -o /dev/null -H "$AUTH" "$URL" | tr -d ' \r' | grep -i '^content-length:' | cut -d: -f2)
+PLAIN_CL=$(curl -sS -H 'Accept-Encoding:' -D - -o /dev/null -H "$AUTH" "$BUNDLE_URL" | tr -d ' \r' | grep -i '^content-length:' | cut -d: -f2)
 eq "ungzipped GET Content-Length == size" "$PLAIN_CL" "$SIZE"
 
 echo
