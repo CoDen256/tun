@@ -22,59 +22,6 @@ include:
   - ../postgres/compose.yaml
 
 services:
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    # PRODUCTION port shape. These are correct only when TUN_SITE_ADDRESS is a
-    # hostname, because that is what makes Caddy listen on 80/443 and obtain a
-    # certificate. The two settings are NOT coupled by Compose, and getting
-    # them out of step is silent: with the documented local value
-    # `TUN_SITE_ADDRESS=:8080` Caddy listens on 8080 inside the container,
-    # nothing is published on 8080, and the gateway is simply unreachable from
-    # the host — on a rootless-Docker host `up` fails outright instead
-    # ("cannot expose privileged port 80"). Found by a real boot test, 2026-11-13.
-    #
-    # For local plain-HTTP work use the root `compose.dev.yaml`, which
-    # overrides these three mappings to one loopback 8080:
-    #     docker compose -f compose.yaml -f compose.dev.yaml up
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"        # HTTP/3
-    environment:
-      # Site address: a hostname in production (auto-HTTPS), ":8080" locally —
-      # and locally you must also use compose.dev.yaml, see the ports note above.
-      TUN_SITE_ADDRESS: ${TUN_SITE_ADDRESS:?set TUN_SITE_ADDRESS in the root .env}
-      OTA_TOKEN: ${OTA_TOKEN:?set OTA_TOKEN in the root .env}
-      # The /stabbur, /smia and /phonexa upstreams are no longer configurable:
-      # caddy/Caddyfile names those services directly, because one repository
-      # is one Compose project and the names always resolve.
-      #
-      # PHONEXA_AUTH_HASH is mjolnir's alone (only this Caddy consumes it) so
-      # it lives in mjolnir/.env, but it is read here as `${VAR:-default}`
-      # rather than via env_file: the default is a verbatim copy of the
-      # Caddyfile's own fail-closed default (a bcrypt hash of a random string
-      # generated once and discarded), so an unconfigured deploy rejects every
-      # /phonexa request instead of serving phonexa open. `$` is escaped as
-      # `$$` so compose emits the literal hash.
-      #
-      # The valueless pass-through form (`PHONEXA_AUTH_HASH:` with nothing
-      # after the colon) must NOT be used here: under `include:` it resolves
-      # to null and is dropped from the container entirely, Caddy falls back
-      # to its locked default, and every login 401s with a perfectly valid
-      # hash sitting in .env (found live 2026-11-13).
-      PHONEXA_AUTH_HASH: ${PHONEXA_AUTH_HASH:-$$2a$$14$$4O3NlHoGMD2./6FpyxpKAell6n5PkW1TaayAPbIKyg4GgwZfc8ESO}
-    volumes:
-      # Relative paths in an included file resolve against THIS file's
-      # directory (verified 2026-11-13), so these stay `./…` under both the
-      # root `include:` and standalone `cd mjolnir`.
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./caddy/status:/etc/caddy/status:ro
-      - ./data:/srv:ro                   # served read-only; publishing writes from the host
-      - caddy_data:/data                 # TLS certs — LOSING THIS MEANS RE-ISSUING CERTS
-      - caddy_config:/config
-
-  # `decks`, `publications`, `build_jobs`, `occurrence_shipments`,
   # `pending_occurrences`, `builder_config`, `job_logs`); builder is the
   # only other writer — both point at the same logical database (02-
   # services.md's "separate logical DB per service" is per *ecosystem*
@@ -275,20 +222,9 @@ services:
       retries: 5
       start_period: 15s
 
-volumes:
-  # Explicit `name:` (not left to default to "<project>_<key>") so the
-  # actual Docker volume is the SAME one regardless of which project
-  # references it. Without this, running via `cd mjolnir && docker compose
-  # up` creates `mjolnir_postgres_data`, while running the identical file
-  # through the root `compose.yaml`'s `include:` creates a *different*
-  # volume, `tun_postgres_data` — confirmed live: every card_slots/decks/
-  # publications row silently "disappeared" switching between the two
-  # entry points, because they were never in the same volume at all. Same
-  # Docker-level cause as D98's networks needing an explicit shared name;
-  # unnamed volumes have the identical per-project-prefix problem.
-  # THESE NAMES ARE LOAD-BEARING AND MUST NOT CHANGE: mjolnir_caddy_data
-  # holds the TLS certificates.
-  caddy_data:
-    name: mjolnir_caddy_data
-  caddy_config:
-    name: mjolnir_caddy_config
+# No `volumes:` section any more. mjolnir's postgres data moved into the
+# shared cluster (D155) and its caddy volumes moved to `grind/` with the
+# gateway (unified-auth). The key itself has to go, not just its contents:
+# a `volumes:` key with nothing but comments under it parses as null and
+# makes `docker compose config` PANIC inside ApplyInclude, with a Go stack
+# trace naming no file (P43).

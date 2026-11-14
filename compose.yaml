@@ -25,6 +25,9 @@
 # compose file of the directory it runs in — verified — so `docker compose up`
 # here publishes no service ports at all.
 include:
+  # grind first: it is the gate, and reading the stack top-down should start
+  # with the only thing exposed to the internet.
+  - ./grind/compose.yaml
   - ./mjolnir/compose.yaml
   - ./stabbur/compose.yaml
   - ./smia/compose.yaml

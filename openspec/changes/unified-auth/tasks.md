@@ -3,19 +3,31 @@ complete and verify in order. The hard constraint is: **the device never breaks.
 
 ## 1. Move the device plane, change nothing about it
 
-- [ ] 1.1 Relocate the `/ota/*`, `/blob/*` and `/audio-manifest/*` blocks into
+- [x] 1.1 Relocated the `/ota/*`, `/blob/*` and `/audio-manifest/*` blocks into
       `grind/Caddyfile` as a literal copy. Same token variable, same header
       match, same `GET|HEAD` restriction (P23), same `no-store` on the current
       descriptor (D26), same immutable caching, no `precompressed` (D49).
-- [ ] 1.2 Do not edit `docs/11-ota-contract.md`. If this change seems to
+- [x] 1.2 `docs/11-ota-contract.md` untouched. If this change seems to
       require editing it, this change is wrong.
-- [ ] 1.3 Verify with `caddy adapt --adapter caddyfile` that the device blocks
+- [x] 1.3 Verified with `caddy adapt --adapter caddyfile` that the device blocks
       compile **before** every other route. Read the compiled output; do not
       infer it from file order.
-- [ ] 1.4 `bin/ota-verify.sh` 16/16 against the new gateway.
-- [ ] 1.5 Byte-compare `/ota/current.json`, one bundle and one blob against
+- [x] 1.4 `bin/ota-verify.sh` against the moved gateway: **15 passed, 0 failed,
+      1 SKIPPED** — the skip being D53's https assertion under `ALLOW_HTTP=1`,
+      which now reports as a skip rather than inflating the count. Identical
+      result before and after the move.
+- [x] 1.5 **Byte-compared and identical.** Built a real 2 MB payload, captured
+      body hashes and the HTTP/Cache-Control/Content-Type/Content-Length
+      headers for `/ota/current.json`, a bundle, a blob and an audio manifest
+      with the gateway in `mjolnir/`, then repeated after the move to
+      `grind/`: every body hash and header set matches, and no-token is still
+      401 with POST still 405. Original: byte-compare against
       the pre-move responses, headers included.
-- [ ] 1.6 Confirm the TLS certificate is the existing one, not a reissue.
+- [x] 1.6 Confirmed: `tun-caddy-1` mounts `mjolnir_caddy_data` and
+      `mjolnir_caddy_config` — the same volumes, deliberately keeping the
+      `mjolnir_` prefix now that the project is `grind`, because the name is
+      an identity on disk rather than a description of where the compose file
+      lives. No reissue.
 
 ## 2. Carve out device sync — before any operator auth change
 
