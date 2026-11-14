@@ -6,7 +6,7 @@
 # mounted directly (D-C2) instead of via a throwaway container. Runs its
 # own schedule internally (D-C5) — no host cron.
 #
-# Covers FIVE databases in one cluster (mjolnir, stabbur, smia, phonexa,
+# Covers FOUR databases in one cluster (mjolnir, stabbur, phonexa,
 # shadow — D155) and TWO blob-like stores (stabbur's flat content-addressed
 # blob volume, and phonexa's nested audio tree). The five dumps are one
 # all-or-nothing transaction: a failure in any of them leaves every committed
@@ -88,7 +88,15 @@ run_backup() {
   # first time — it was never backed up at all, while holding 2.7M rows of
   # imported corpora, and its volume was destroyed once during the monorepo
   # work with no dump to restore from (P41).
-  DATABASES="mjolnir stabbur smia phonexa shadow"
+  # smia is DELIBERATELY NOT IN THIS SET (operator decision, 2026-11-14):
+  # "remove smia from backup completely, it's totally rebuildable". Every
+  # table it holds is either a cache (lookup_cache, tts_audio, provider_health)
+  # or an imported corpus re-imported by smia/scripts/import_*.py on boot.
+  # A pre-cutover full dump is retained off-host as the one historical copy;
+  # nothing here produces a new one. If smia's volume is lost, the recovery
+  # is a re-import, not a restore - and that means the provider archives are
+  # the thing to keep safe, NOT this backup set. See DEPLOY.md.
+  DATABASES="mjolnir stabbur phonexa shadow"
 
   # Per-database table exclusions. mjolnir's job_logs/build_jobs are
   # regenerable machine output. smia's lookup_cache and tts_audio are a cache
@@ -174,15 +182,17 @@ run_backup() {
   # a git repository, so a 225 MB daily commit of regenerable corpora would
   # bloat the backup repo indefinitely for data the repo already holds in
   # source form.
-  SMIA_DERIVED="lookup_cache tts_audio provider_health corpus_sentence
-                dictcc_static_entry ipa_dict_entry kaikki_entry nst_dialect
-                nst_lexicon ordbank_boying ordbank_fullform ordbank_lemma
-                ordbank_paradigme pygmalion_audio wikipron_entry"
+  # SMIA_DERIVED is gone with smia itself. For the record, it listed every
+  # table that made smia's dump large: lookup_cache, tts_audio,
+  # provider_health, corpus_sentence, dictcc_static_entry, ipa_dict_entry,
+  # kaikki_entry, nst_dialect, nst_lexicon, ordbank_{boying,fullform,lemma,
+  # paradigme}, pygmalion_audio, wikipron_entry. That is every table smia
+  # has, which is exactly why dumping it at all was pointless.
 
   exclusions_for() {
     case "$1" in
       mjolnir) echo "--exclude-table-data=job_logs --exclude-table-data=build_jobs" ;;
-      smia)    for t in $SMIA_DERIVED; do printf -- "--exclude-table-data=%s " "$t"; done ;;
+      # smia) retired - smia is no longer dumped at all (see DATABASES).
       *)       echo "" ;;
     esac
   }

@@ -475,6 +475,22 @@ change. Caddy does not hot-reload — a `git pull` that touches
 
 ## 7. Backups
 
+> **smia is deliberately NOT backed up** (operator decision, 2026-11-14).
+> Every table it holds is a cache or an imported corpus that
+> `smia/scripts/import_*.py` rebuilds on boot, so the recovery path is a
+> re-import, not a restore.
+>
+> **The consequence worth knowing:** that makes `smia/providers/` the thing
+> to keep safe, not the backup repo. Those archives are tracked in git for
+> the sources that have one — and on production two do NOT:
+> `providers/nbno/nb_uttale_leksika.zip` and all of `providers/leipzig/` are
+> absent, so `nst_dialect` (8.2M rows), `nst_lexicon` (793K) and the Leipzig
+> partitions of `corpus_sentence` cannot be re-imported from this repo as it
+> stands. They are live on production today. A pre-cutover full dump is kept
+> off-host as the one historical copy. If you want those tables to be
+> genuinely rebuildable, re-fetch the two archives into `providers/`; until
+> then "rebuildable" is true of smia's other 13 tables, not all 16.
+
 The `backup` service dumps three of the four databases and mirrors two file
 stores into the private git repo at `BACKUP_REPO_URL`. It connects over the
 network with a real password; no Docker socket is mounted.
