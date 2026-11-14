@@ -72,23 +72,55 @@ def public_prefix() -> str:
     return os.environ.get("PHONEXA_PUBLIC_PREFIX", "/phonexa").rstrip("/")
 
 
+def _headers(extra: dict | None = None) -> dict:
+    """The internal service-to-service credential (D159).
+
+    THIS WAS MISSING AND BROKE SHADOW IN PRODUCTION (P67). This module was
+    written while phonexa had NO auth of its own, so sending nothing was
+    correct. `unified-auth` 4.3 gave phonexa the shared check — and every
+    call here started coming back 401: the profile picker 503'd on
+    `list_users` ("phonexa not reachable — HTTP 401") and `create_user`
+    passed phonexa's bare 401 through to the browser. Neither the gateway
+    nor either service was wrong; the caller simply never learned about the
+    new requirement, because nothing fails when a client omits a header
+    that nobody checked yet.
+
+    Internal calls never pass through the gateway (CLAUDE.md zone 3), so the
+    gateway's `X-Tun-Operator` marker is not available here and must not be
+    forged — the bearer is the correct half of that contract.
+    """
+    headers = {"Authorization": f"Bearer {os.environ.get('INTERNAL_TOKEN', '')}"}
+    if extra:
+        headers.update(extra)
+    return headers
+
+
 def _get(path: str, **kwargs):
     try:
-        return requests.get(base_url() + path, timeout=PHONEXA_TIMEOUT_SEC, **kwargs)
+        return requests.get(
+            base_url() + path, timeout=PHONEXA_TIMEOUT_SEC,
+            headers=_headers(kwargs.pop("headers", None)), **kwargs
+        )
     except requests.RequestException as exc:
         raise PhonexaUnavailable(str(exc)) from exc
 
 
 def _post(path: str, timeout: int = PHONEXA_TIMEOUT_SEC, **kwargs):
     try:
-        return requests.post(base_url() + path, timeout=timeout, **kwargs)
+        return requests.post(
+            base_url() + path, timeout=timeout,
+            headers=_headers(kwargs.pop("headers", None)), **kwargs
+        )
     except requests.RequestException as exc:
         raise PhonexaUnavailable(str(exc)) from exc
 
 
 def _put(path: str, **kwargs):
     try:
-        return requests.put(base_url() + path, timeout=PHONEXA_TIMEOUT_SEC, **kwargs)
+        return requests.put(
+            base_url() + path, timeout=PHONEXA_TIMEOUT_SEC,
+            headers=_headers(kwargs.pop("headers", None)), **kwargs
+        )
     except requests.RequestException as exc:
         raise PhonexaUnavailable(str(exc)) from exc
 
