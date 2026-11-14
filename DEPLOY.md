@@ -238,6 +238,25 @@ What that bought:
   `caddy run` with no environment rejects every operator request rather than
   serving eight zones open.
 
+
+> **UPDATE 2026-11-14 — rotating `OPERATOR_AUTH_TOKEN` is now safe.**
+> The device-sync gate reads its own `SYNC_TOKEN` variable, not
+> `OPERATOR_TOKEN`, so changing the operator password no longer touches the
+> phone. Rotate it, `docker compose up -d caddy`, and the bcrypt hash is
+> re-derived at boot. Verified on the compiled config: with the operator
+> token changed to an unrelated value, the sync gate still accepts exactly
+> what the installed APK sends.
+>
+> What is still true: `SYNC_TOKEN` itself defaults to `OPERATOR_AUTH_TOKEN`'s
+> value because that is what the field build has baked in. **Setting
+> `SYNC_TOKEN` to something new without publishing a bundle that carries it
+> will 302 the handset on every sync** — the value is baked at assemble time,
+> not read from `config.json` (P48). If you ever want the device on a strong
+> token, the order is: add the new value as a second accepted token in the
+> Caddyfile, publish a bundle carrying it, confirm the handset activated it,
+> then remove the old one. That sequence has no window where the phone is
+> locked out.
+
 ### Rotating `OPERATOR_AUTH_TOKEN` — read this before you touch the value
 
 Rotation is one step **for the operator plane** and a device operation

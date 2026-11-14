@@ -45,6 +45,16 @@ services:
       # retires P35 and P36 — a `$`-containing value compose would mangle, and
       # a valueless key that resolved from the wrong .env under `include:`.
       OPERATOR_TOKEN: ${OPERATOR_AUTH_TOKEN:?set OPERATOR_AUTH_TOKEN in the root .env}
+      # The DEVICE's progress-sync credential (unified-auth 7.1), separate
+      # from the operator password even though both hold the same value
+      # today. Defaults to OPERATOR_AUTH_TOKEN precisely because that is what
+      # the installed APK already sends - an unset SYNC_TOKEN must keep the
+      # field device working, never lock it out.
+      #
+      # Setting this to anything else WITHOUT publishing a bundle that carries
+      # the new value will 302 the real handset on every sync: the value is
+      # baked into the JS at assemble time, not read from config.json (P48).
+      SYNC_TOKEN: ${SYNC_TOKEN:-${OPERATOR_AUTH_TOKEN:?set OPERATOR_AUTH_TOKEN in the root .env}}
       # The /stabbur, /smia and /phonexa upstreams are no longer configurable:
       # caddy/Caddyfile names those services directly, because one repository
       # is one Compose project and the names always resolve.

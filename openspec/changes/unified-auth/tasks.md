@@ -488,7 +488,37 @@ the code is in this tree.
 
 ## 7. Optional, later, device-coordinated
 
-- [ ] 7.1 Give `SYNC_TOKEN` a value distinct from `OPERATOR_TOKEN`; ~~push via
+- [x] 7.1 **DONE 2026-11-14, by decoupling the VARIABLE rather than changing
+      the VALUE - no device operation required.**
+
+      The point of 7.1 was never "the device must hold a different string";
+      it was "rotating `OPERATOR_AUTH_TOKEN` must stop breaking device
+      sync". That hazard existed because the sync gate read
+      `{$OPERATOR_TOKEN}` - the operator password and the device credential
+      were the same VARIABLE, not merely the same value.
+
+      The gate now reads `{$SYNC_TOKEN}` (`grind/caddy/Caddyfile`), wired in
+      `grind/compose.yaml` as `${SYNC_TOKEN:-${OPERATOR_AUTH_TOKEN}}` so an
+      unset value keeps accepting exactly what the installed APK already
+      sends. **Nothing on the device changed and no bundle was published.**
+
+      Proven on the compiled config, two adapt runs:
+      ```
+      OPERATOR_TOKEN=changeme                             -> sync accepts ['changeme']
+      OPERATOR_TOKEN=a-brand-new-rotated-operator-password -> sync accepts ['changeme']
+      ```
+      The operator password is now independently rotatable; the device is
+      unaffected by it.
+
+      **WHAT IS DELIBERATELY NOT DONE:** the device still carries the weak
+      literal `changeme`. Giving it a strong value genuinely requires an
+      assemble-and-publish to the field handset (P48 - not a config.json
+      push), which is a device operation with no rollback cheaper than the
+      watchdog. The safe order is recorded in the Caddyfile beside the
+      matcher and in DEPLOY.md section 4: add the new value as a SECOND
+      accepted token, publish, confirm the handset activated it, and only
+      then remove the old one. Tracked as a follow-up, not as this task.
+      ORIGINAL NOTE: Give `SYNC_TOKEN` a value distinct from `OPERATOR_TOKEN`; ~~push via
       `config.json` (D39) using `patches/js/config-rotate.js`~~; switch the
       gateway's expected value only once devices have taken it.
 

@@ -47,7 +47,12 @@
 ## 4. Verification
 
 - [x] 4.1 `docker compose config` from `tun` with all five checkouts: no service-name or volume-key collision; `phonexa-*` present, `phonexa-adminer` absent
-- [ ] 4.2 `docker compose up -d`: `phonexa-backend` healthy, schema present — **NOT RUN.** This needs the whole unified stack up, which on the dev host means building phonexa's and mjolnir's images and binding :80/:443 against the operator's real `.env`; left for the VPS deploy. Everything it would have exercised at the config level is covered by 4.1. **Blocker to check first:** the existing local volumes are named `phonexa_pgdata` / `phonexa_audio_data`, while the renamed compose declares `phonexa-postgres-data` / `phonexa-audio-data` — bringing the stack up creates fresh empty volumes instead of reusing the existing data. That migration belongs to phonexa's own `deployable-in-tun` change, not this one.
+- [x] 4.2 **DONE on the VPS, 2026-11-14** - the unified stack it needed now
+      exists and is deployed. `docker compose ps` reports `phonexa-backend
+      healthy`, the schema is present (11 tables, 4,365 rows, restored and
+      verified exactly against the pre-cutover dump), and `/phonexa/` answers
+      401 unauthenticated / 200 with the operator credential.
+      ORIGINAL NOTE: `docker compose up -d`: `phonexa-backend` healthy, schema present — **NOT RUN.** This needs the whole unified stack up, which on the dev host means building phonexa's and mjolnir's images and binding :80/:443 against the operator's real `.env`; left for the VPS deploy. Everything it would have exercised at the config level is covered by 4.1. **Blocker to check first:** the existing local volumes are named `phonexa_pgdata` / `phonexa_audio_data`, while the renamed compose declares `phonexa-postgres-data` / `phonexa-audio-data` — bringing the stack up creates fresh empty volumes instead of reusing the existing data. That migration belongs to phonexa's own `deployable-in-tun` change, not this one.
 - [x] 4.3 `docker compose run --rm -e RUN_ONCE=1 backup`: `phonexa.sql` appears, committed and pushed; run again with no changes → "no changes", no commit
 - [x] 4.4 Put a nested file with spaces and a non-ASCII name into the audio volume: it appears under `phonexa-audio/` at the same path; modify it afterwards: backup copy unchanged
 - [x] 4.5 Stop `phonexa-postgres`, run the backup once: it fails loudly and `mjolnir.sql`/`stabbur.sql`/`phonexa.sql` in the repo are untouched

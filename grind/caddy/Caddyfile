@@ -358,7 +358,29 @@
 	@mjolnir_sync path /mjolnir/userdata/*
 	handle @mjolnir_sync {
 		route {
-			@sync_bad_token not header Authorization "Bearer {$OPERATOR_TOKEN}"
+			# 7.1: this reads SYNC_TOKEN, not OPERATOR_TOKEN.
+			#
+			# They hold the SAME VALUE today, deliberately - the field APK has
+			# it baked into the JS bundle at assemble time (P48), so the gateway
+			# must keep accepting exactly what the installed build already
+			# sends. Nothing about the device changes here.
+			#
+			# What changes is that the two are no longer the SAME VARIABLE.
+			# Before this, the operator password WAS the device credential, so
+			# rotating it silently broke device sync - the hazard P48 records.
+			# Now `OPERATOR_AUTH_TOKEN` can be rotated freely: the operator gate
+			# re-derives its bcrypt hash at boot and this matcher does not move.
+			#
+			# Changing SYNC_TOKEN itself is still an assemble-and-publish
+			# operation, NOT a config.json push (D39/contract section 5 covers
+			# the OTA channel only, and no JS-side reader for config.json
+			# exists). The safe order, for whenever that is done:
+			#   1. add the new value here as a SECOND accepted token
+			#   2. publish a bundle carrying it; confirm the handset activated it
+			#   3. only then remove the old value
+			# Doing it in that order means no window where the phone is locked
+			# out. DEPLOY.md section 4 carries the same note.
+			@sync_bad_token not header Authorization "Bearer {$SYNC_TOKEN}"
 			redir @sync_bad_token /mjolnir/login?next=%2Fmjolnir%2Fuserdata%2F{http.request.uri.path.2} 302
 
 			request_header X-Tun-Operator 1

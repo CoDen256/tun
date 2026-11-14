@@ -185,7 +185,15 @@
       (`/mjolnir/workbench/` 200), and `/ota/*` is untouched. Recovery needs
       no restart. Original: stop the cluster; `/ota/*` unaffected, device
       updates continue, workbench renders degraded.
-- [ ] 6.3 **Cannot be run in this environment, and that caveat applies
+- [x] 6.3 **CLOSED on the VPS, 2026-11-14.** The caveat below was correct for
+      the development host and is now resolved where a real payload exists:
+      `bash bin/ota-verify.sh https://coden256.dev` -> **16 passed, 0 failed
+      - P1 path proven**. That is bundle bytes, sha256, size, the magic
+      prefix and the D49 gzip-sha256 identity, none of which the local run
+      could reach. The retroactive caveat on this change's other claims
+      stands as written - it was honest, and the 12-probe byte-for-byte
+      matrix it cites is what carried those claims until now.
+      ORIGINAL NOTE: **Cannot be run in this environment, and that caveat applies
       retroactively to several claims in this change.** `/srv` inside the
       gateway is EMPTY — there is no OTA payload on the development host — so
       `bin/ota-verify.sh` reports `4 passed, 6 FAILED (aborted early)`. What
