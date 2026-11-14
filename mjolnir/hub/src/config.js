@@ -15,7 +15,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 // INTERNAL_TOKEN line below: hub and builder are operator-plane and refuse to
 // start without the shared token; mjolnir-sync is DEVICE plane, imports this
 // same loader (mjolnir/sync/bin/server.js), and passes `false`.
-export function loadConfig({ requireInternal = true } = {}) {
+export function loadConfig({ requireInternal = true, requirePublicBase = requireInternal } = {}) {
   const dataDir = process.env.DATA_DIR || "../data";
   const publicBase = process.env.TUN_PUBLIC_BASE;
   // D-L1: operator-submitted base+patch bundles are stored here, immutable
@@ -48,12 +48,26 @@ export function loadConfig({ requireInternal = true } = {}) {
   // pages, not hub's whole boot.
   const stabburBaseUrl = process.env.STABBUR_BASE_URL;
   const sourceLang = process.env.SOURCE_LANG || "no";
-  if (!publicBase) throw new Error("TUN_PUBLIC_BASE is required (passed through to the publish module)");
+  // THE CARVE-OUT HAS TO BE COMPLETE, OR IT IS NOT A CARVE-OUT (2026-11-14).
+  //
+  // `requireInternal: false` exempted mjolnir-sync from the one operator-plane
+  // credential it never uses — and then this line killed it anyway:
+  //
+  //     Error: TUN_PUBLIC_BASE is required (passed through to the publish module)
+  //
+  // The publish module is hub's. mjolnir-sync does not publish, does not
+  // render a nav bar and does not link to stabbur's UI; it serves
+  // /mjolnir/userdata/* and nothing else. A device-plane process must not
+  // refuse to boot over a variable belonging to a module it never loads —
+  // that is the same failure the INTERNAL_TOKEN note below rejects, by a
+  // second route. So the requirement is keyed to the ZONE, exactly like
+  // `requireInternal`, and defaults to it.
+  if (requirePublicBase && !publicBase) throw new Error("TUN_PUBLIC_BASE is required (passed through to the publish module)");
   // unified-auth 5.4: STABBUR_UI_BASE is DELETED. It was a configured value
   // that could only ever be `$TUN_PUBLIC_BASE/stabbur/ui`, and `/stabbur/ui`
   // stopped existing in 5.1 — stabbur's UI is at the prefix root now. D151:
   // derivable, so it is derived here and typed nowhere.
-  const stabburUiBase = `${publicBase.replace(/\/$/, "")}/stabbur/`;
+  const stabburUiBase = publicBase ? `${publicBase.replace(/\/$/, "")}/stabbur/` : undefined;
   // unified-auth 4.6: ONE internal token for every service-to-service call,
   // replacing STABBUR_AUTH_TOKEN and SMIA_AUTH_TOKEN. It is also what this
   // service accepts from a caller that is not the gateway

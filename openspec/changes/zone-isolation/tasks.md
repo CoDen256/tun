@@ -9,6 +9,19 @@
       up but has no schema must report degraded, not healthy.
 - [x] 1.4 Exactly one owner of migrations per database. For `mjolnir` that is
       `mjolnir-workbench`; `mjolnir-sync` never migrates.
+      ⚠️ **EXTENDED 2026-11-14 — one owner is an ASSIGNMENT, and an assignment
+      does not survive a second INSTANCE of that owner.** Two workbench
+      instances against an empty database raced each other: one reported
+      `migration 001_init.sql failed: duplicate key … "pg_type_typname_nsp_index"`,
+      the other applied all 18. It self-healed (the per-file
+      `BEGIN/COMMIT/ROLLBACK` rolled the loser back and the ledger stayed
+      honest), which is why it survived review. `mjolnir/hub/src/migrate.js`
+      now takes a `pg_advisory_lock` across the whole run on a dedicated
+      connection and re-reads the ledger inside the lock, so a second instance
+      waits instead of racing. Verified over three iterations of three
+      simultaneous instances against a fresh empty database: exactly one
+      applies 18, the others 0, zero error lines, `schema_migrations = 18`.
+      Pitfall **P58**.
 - [x] 1.5 Implemented as ONE readiness gate ahead of the route list rather
       than a check inside each of twelve handlers — the list of
       database-backed paths is then visible in one place and cannot drift from
@@ -23,6 +36,22 @@
       with a rendered explanation. **Before this change the same test produced
       RestartCount 0→9 in 60s and a bare 502** — the process exited before
       binding a port.
+      ⚠️ **CORRECTED 2026-11-14 — "stays `running` with no crash loop" was
+      FALSE when this was ticked, and the tick was earned by the wrong half of
+      the test.** The port-binding claim above is true: the process does bind
+      before touching the database. But stopping postgres still KILLED all
+      three Node services, by a different route — an unhandled `'error'` event
+      on the pg pool (`57P01 terminating connection due to administrator
+      command`), which is raised below the bootstrap and cannot be degraded by
+      it. Measured by an adversarial reviewer: `mjolnir-hub restarts=1`,
+      `mjolnir-sync restarts=1`, `mjolnir-builder restarts=3`, against
+      `restarts=0` for all four Python services; reproduced on 2026-11-14 as
+      hub 1→2 and builder 3→4 on a single `stop`. Fixed and **re-measured**
+      (pitfall **P56**): pools warmed with a real request, `stop postgres` →
+      RestartCount unchanged at 0 for hub, sync and builder;
+      `/mjolnir/userdata/<uid>` → 503 with `Content-Length: 0` and no
+      `Content-Type`; `start postgres` → all three back to 200 and `healthy`,
+      still 0 restarts. The claim in this task is now true as written.
 
 ## 2. Split `mjolnir-sync` out of hub
 
@@ -68,6 +97,18 @@
       `/api/v1/youtube-extract` to shadow — all three are stateless.
 - [x] 3.4 Shadow stores audio by calling phonexa's storage API. Shadow does not
       mount the audio volume.
+      ⚠️ **CORRECTED 2026-11-14 — the first sentence is FALSE and always was;
+      the CODE is right.** There is no storage call. `shadow/phonexa_client.py`
+      exposes exactly `list_users`, `create_user`, `verify_user`,
+      `get_settings`, `put_setting` and `analyze_praat` — nothing that stores
+      audio — and the module's own docstring already recorded the correction
+      ("there is no storage call to make and no volume to decline to mount").
+      What is actually true, and is what this task should have said: **shadow
+      does not mount the audio volume, and does not need to**, because it
+      stores nothing in it. The second sentence stands; the first was an
+      unannotated claim about an API that does not exist. Left ticked because
+      the intended outcome — no shared audio volume between shadow and
+      phonexa — holds. No source change was made for this correction.
 - [x] 3.5 Migrate `shadowing_media` and `shadowing_segments` from the `phonexa`
       database into `shadow`, preserving ids. Row counts verified both sides.
       Run in the same window as `postgres-consolidation`.

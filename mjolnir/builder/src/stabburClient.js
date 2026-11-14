@@ -1,3 +1,9 @@
+import { fetchWithTimeout, JSON_MS } from "./fetchWithTimeout.js";
+
+// EVERY call below is bounded (fetchWithTimeout.js). An unbounded fetch on
+// this leg made `/builder/` hang forever against a PAUSED stabbur while
+// Docker still reported the container healthy.
+//
 // D85: stabbur's /api/notes and /api/grammar_rules require a bearer token on
 // every path except /ui and /blob/ (same shared-token middleware as smia,
 // D-N1) — missing entirely until found cross-checking a real pull against
@@ -17,7 +23,7 @@ export async function pullNotes({ baseUrl, authToken, sourceLang = "no", since }
   url.searchParams.set("status", "ready");
   if (since) url.searchParams.set("since", since);
 
-  const res = await fetch(url, { headers: authHeaders(authToken) });
+  const res = await fetchWithTimeout(url, { headers: authHeaders(authToken), label: "stabbur /api/notes" });
   if (!res.ok) {
     throw new Error(`stabbur pull failed: ${res.status} ${res.statusText}`);
   }
@@ -34,7 +40,7 @@ export function filterAudioEligible(notes) {
 // first implementation commit — nothing in `builder` called it until now.
 export async function pullGrammarRules({ baseUrl, authToken } = {}) {
   if (!baseUrl) throw new Error("pullGrammarRules requires baseUrl");
-  const res = await fetch(new URL("/api/grammar_rules", baseUrl), { headers: authHeaders(authToken) });
+  const res = await fetchWithTimeout(new URL("/api/grammar_rules", baseUrl), { headers: authHeaders(authToken), label: "stabbur /api/grammar_rules" });
   if (!res.ok) {
     throw new Error(`stabbur grammar_rules pull failed: ${res.status} ${res.statusText}`);
   }

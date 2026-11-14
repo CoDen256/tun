@@ -6,7 +6,7 @@
 // device path has no rollback, so they no longer share a process.
 //
 // THIS service owns the `mjolnir` schema — it is the only one that migrates.
-import { getPool } from "../src/db.js";
+import { getPool, onPoolError } from "../src/db.js";
 import { loadConfig } from "../src/config.js";
 import { createServer } from "../src/server.js";
 import { migrate } from "../src/migrate.js";
@@ -35,6 +35,10 @@ const boot = createBootstrap({
     return `${ran.length} migration(s), ${deckCount} decks seeded`;
   },
 });
+// An idle-client error is a lost database, not a lost process (db.js). The
+// pool handler keeps the process alive; this turns the event into the state
+// every page already knows how to render, without waiting for the 15s poll.
+onPoolError((err) => boot.noteError(err));
 boot.start();
 
 createServer(pool, config, boot).listen(port, () => {

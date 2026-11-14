@@ -3,7 +3,7 @@
 // dependency: with the gateway down its UI is unreachable but the nightly
 // clock keeps running, which is the property zone-isolation's dependency
 // table claims for it.
-import { getPool } from "../src/db.js";
+import { getPool, onPoolError } from "../src/db.js";
 import { loadConfig } from "../src/config.js";
 import { createServer } from "../src/server.js";
 import { startNightlyClock } from "../src/clock.js";
@@ -29,6 +29,10 @@ const boot = createBootstrap({
     return "build_jobs present";
   },
 });
+// An idle-client error is a lost database, not a lost process (db.js). The
+// pool handler keeps the process alive; this turns the event into the state
+// every page already knows how to render, without waiting for the 15s poll.
+onPoolError((err) => boot.noteError(err));
 boot.start();
 
 createServer(pool, config, boot).listen(port, () => {

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { fetchWithTimeout, BLOB_MS } from "./fetchWithTimeout.js";
 
 function sha256OfFile(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
@@ -184,7 +185,11 @@ export async function ensureBlobsPresent(cardAudio, { stabburBaseUrl, dataDir, s
     const dest = path.join(blobDir, sha256);
     if (fs.existsSync(dest)) continue;
 
-    const res = await fetch(new URL(`/blob/${sha256}`, stabburBaseUrl));
+    // Bounded (fetchWithTimeout.js). Blobs are megabytes and this runs in the
+    // nightly pipeline rather than a page render, so the bound is BLOB_MS,
+    // not JSON_MS — long, but finite. A paused stabbur used to hang this
+    // loop forever with no log line and a healthy container.
+    const res = await fetchWithTimeout(new URL(`/blob/${sha256}`, stabburBaseUrl), { timeoutMs: BLOB_MS, label: `stabbur /blob/${sha256}` });
     if (!res.ok) {
       throw new Error(`could not fetch blob ${sha256} from stabbur: ${res.status} ${res.statusText}`);
     }

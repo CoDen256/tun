@@ -1181,16 +1181,41 @@ export function createServer(pool, config, boot) {
           res.writeHead(500, { "Content-Type": "text/plain" });
           return res.end("STABBUR_BASE_URL/INTERNAL_TOKEN are not set for hub — add them to .env to enable this page.");
         }
-        const [forecast, jobs, batches, activeLogicBundle] = await Promise.all([
-          runForecast(pool, {
-            stabburBaseUrl: config.stabburBaseUrl,
-            internalToken: config.internalToken,
-            sourceLang: config.sourceLang,
-          }),
+        // DEGRADE TO A LOST PANEL, NOT A LOST PAGE — the same guard
+        // builder/src/server.js already has on its own copy of this page.
+        // This copy was left unguarded, so hub's Builder nav page answered
+        // 500 for a stabbur fault while builder's identical page degraded
+        // cleanly. One dependency, two answers, decided by which service
+        // rendered it. Now bounded (stabburClient.js) as well as caught, so a
+        // HUNG stabbur lands here too instead of hanging the request.
+        let forecastError = null;
+        const forecastOrNull = runForecast(pool, {
+          stabburBaseUrl: config.stabburBaseUrl,
+          internalToken: config.internalToken,
+          sourceLang: config.sourceLang,
+        }).catch((err) => {
+          forecastError = err;
+          console.error(`[mjolnir-workbench] forecast unavailable: ${err.message}`);
+          return null;
+        });
+        const [forecastRaw, jobs, batches, activeLogicBundle] = await Promise.all([
+          forecastOrNull,
           recentBuildJobs(pool),
           recentBatches(pool, 5),
           getActiveMeta(pool),
         ]);
+        // Shape must match runForecast's exactly or the renderers throw and
+        // we are back to a 500 by another route (builder's note, same rule).
+        const forecast = forecastRaw || {
+          wouldShip: [],
+          wouldQueue: [],
+          byDeck: [],
+          wouldUpdate: [],
+          totalPulled: 0,
+          totalAlreadyMinted: 0,
+          degraded: true,
+          reason: forecastError?.message || "stabbur unavailable",
+        };
         const batchDetails = new Map();
         for (const b of batches) batchDetails.set(b.buildId, await occurrencesForBuild(pool, b.buildId));
         const [deckMeta, shipOrders] = await Promise.all([

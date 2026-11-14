@@ -485,6 +485,33 @@ ${deckCards || `<div class="panel panel-pad">no decks with activity or history y
 // nav group comment. Replaces the earlier iframe-based "unified console"
 // (D-C9), reverted: it doubled chrome and the workbench's own light theme
 // read worse than the operator wanted.
+// A DEGRADED PANEL HAS TO BE VISIBLE, OR IT IS NOT A SIGNAL (2026-11-14, P57).
+//
+// The forecast already degraded to an EMPTY shape with `degraded: true` and a
+// `reason` when stabbur was unreachable — and then rendered that empty shape
+// as a perfectly ordinary page: "nothing would ship right now", which is also
+// exactly what a healthy, idle pipeline looks like. The two states were
+// indistinguishable to the operator, so the dependency fault read as good
+// news. Same family as P45/P47: quietly wrong beats loudly broken only until
+// someone acts on it.
+//
+// Rendered here rather than in either server, so hub's copy of this page
+// (which reuses this exact function) cannot drift from builder's.
+function renderForecastDegradedBanner(forecast) {
+  if (!forecast || !forecast.degraded) return "";
+  const why = String(forecast.reason || "stabbur unavailable");
+  return `<div class="panel" style="border-color:#8a4b2a">
+  <div class="panel-head"><h3>Forecast unavailable — stabbur is not answering</h3></div>
+  <div class="inline-note" style="margin:0 18px 14px;">
+    Every panel below that comes from the pull is <strong>empty because the pull
+    failed</strong>, not because nothing is eligible. Recent jobs, recent
+    batches and the active logic bundle come from this service's own database
+    and are accurate. Devices are unaffected — updates are served off disk.
+    <div class="mono" style="opacity:.7;margin-top:8px">${escapeHtml(why)}</div>
+  </div>
+</div>`;
+}
+
 export function buildForecastBody(forecast, jobs, batches, batchDetails, activeLogicBundle, deckMeta = new Map(), shipOrders = new Map()) {
   // builder-sliding-window-shipping (task 3.1): eligible ≠ ships today —
   // split into what the flush step would actually append to Cards[] this
@@ -540,6 +567,8 @@ export function buildForecastBody(forecast, jobs, batches, batchDetails, activeL
   <div><h2>Forecast &amp; publish</h2><div class="page-sub">What would ship if you published right now — no floor, every eligible note mints.</div></div>
   <button class="btn-primary" id="publish-now">Publish now</button>
 </div>
+
+${renderForecastDegradedBanner(forecast)}
 
 ${renderActiveLogicBundleBanner(activeLogicBundle)}
 

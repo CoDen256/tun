@@ -32,8 +32,10 @@
 //
 // This service does NOT run migrations. Exactly one service owns each
 // database's schema (zone-isolation task 1.4) and for `mjolnir` that is the
-// workbench; two processes racing one migration table is a real failure mode,
-// prevented here by assignment rather than by locking.
+// workbench; two processes racing one migration table is a real failure mode.
+// Assignment alone does not prevent it — a second INSTANCE of the workbench
+// raced itself, measured (P58) — so `hub/src/migrate.js` now holds a
+// `pg_advisory_lock` across the whole run. This service still never migrates.
 import http from "node:http";
 import { getOrCreate, merge, replace, remove } from "../../hub/src/userdata.js";
 import { requireAuth } from "../../../libs/jsservice/auth.js";
