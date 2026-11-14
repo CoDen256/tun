@@ -44,10 +44,13 @@ else
 fi
 
 # --- D151: derivable or retired values must not be typed anywhere ----------
-# PHONEXA_AUTH_HASH is deliberately absent: it is neither derivable nor retired
-# yet (mjolnir/compose.yaml interpolates it). `unified-auth` retires it by
-# deriving the hash in the gateway entrypoint; add it then.
-dead='STABBUR_UPSTREAM|SMIA_UPSTREAM|PHONEXA_UPSTREAM|STABBUR_BASE_URL|STABBUR_UI_BASE|SMIA_BASE_URL|DATABASE_URL'
+# PHONEXA_AUTH_HASH joined the list with `unified-auth` 3.3, which is the
+# "add it then" the previous version of this comment pointed at: the gateway
+# entrypoint now derives the operator hash from OPERATOR_TOKEN at start, no
+# compose file interpolates the variable, and nothing anywhere may type a hash
+# again. (It was deliberately absent before that, because it was then neither
+# derivable nor retired.)
+dead='STABBUR_UPSTREAM|SMIA_UPSTREAM|PHONEXA_UPSTREAM|STABBUR_BASE_URL|STABBUR_UI_BASE|SMIA_BASE_URL|DATABASE_URL|PHONEXA_AUTH_HASH'
 hits=$(grep -nE "^[[:space:]]*#?[[:space:]]*($dead)=" $ENV_FILES 2>/dev/null)
 if [ -n "$hits" ]; then bad "D151: derivable/retired values typed into a .env.example:"; note "$hits"
 else ok "D151: no retired or derivable value is typed into any .env.example"; fi

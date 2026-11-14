@@ -17,6 +17,102 @@
 # Let's Encrypt does not require one. To get expiry warnings, add by hand:
 #     { email you@example.net }
 
+# ---- (operator_gate) : THE operator-plane gate (unified-auth 3.1/3.4) ------
+# One definition, imported by every operator zone. Before this snippet the
+# gate existed only in front of /phonexa/* and /shadow/*, under the
+# phonexa-specific name PHONEXA_AUTH_HASH, while /mjolnir, /builder,
+# /stabbur, /smia and /adminer were gated by each service's own code or (in
+# adminer's case) not at all.
+#
+# A SNIPPET, not a repeated block: the thing that must never drift between
+# eight zones is the credential check. `import operator_gate` is one line per
+# zone and there is exactly one place to change it.
+#
+# WRAPPED IN `route`, DELIBERATELY. Caddy sorts the directives inside a
+# handle block by its own global directive order, not by the order written —
+# the same trap this file's /mjolnir comment documents one level up. Inside a
+# `route` the written order is preserved and therefore verifiable: the
+# preflight answer comes first, the credential check second. Confirmed on the
+# compiled JSON (`caddy adapt`), where this compiles to
+# subroute[0] = the CORS headers, [1] = respond 204, [2] = basic_auth.
+#
+# ---- 3.4: CORS PREFLIGHT IS ANSWERED BEFORE THE CREDENTIAL CHECK ----
+# This is load-bearing and is the easiest thing in unified-auth to get wrong.
+# A browser preflight carries NO credential by definition — it is the request
+# that asks permission to send the real, credentialed one. If a preflight
+# reaches `basic_auth` it gets 401, and the browser reports that to the page
+# as a CORS failure, not as an auth failure: nothing client-side can fix it,
+# and the real request is never sent at all. hover-translate (D154, a
+# standalone extension that is NOT in this repository) calls /smia/* and
+# /stabbur/* from a content script, so this path is live.
+#
+# The matcher is the actual CORS definition of a preflight — OPTIONS *plus*
+# `Origin` *plus* `Access-Control-Request-Method` — not merely "method
+# OPTIONS". A bare OPTIONS with no Origin is not a preflight and keeps
+# falling through to the gate, so this exemption opens nothing beyond the
+# handshake it exists for.
+#
+# `Access-Control-Allow-Headers` reflects what the browser asked for, which is
+# what flask-cors did when the services answered their own preflights
+# (smia/app.py's `CORS(app)`), with `Authorization, Content-Type` as the
+# fallback when nothing is asked. It CANNOT be `*`: the Fetch standard
+# excludes `Authorization` from the wildcard, so a `*` here would reject the
+# one header the operator credential travels in.
+#
+# Allow-Origin is `*`, matching flask-cors's previous answer. `*` is only
+# valid for NON-credentialed requests in the CORS sense — an explicit
+# `Authorization` header does not make a request credentialed (a cookie or
+# `credentials: 'include'` does), so an extension sending the operator
+# credential in the header is served correctly, while a cookie-bearing
+# cross-origin request is refused by the browser. That is the safer failure.
+(operator_gate) {
+	route {
+		@preflight {
+			method OPTIONS
+			header Origin *
+			header Access-Control-Request-Method *
+		}
+		@preflight_asked_headers {
+			method OPTIONS
+			header Origin *
+			header Access-Control-Request-Method *
+			header Access-Control-Request-Headers *
+		}
+		header @preflight {
+			Access-Control-Allow-Origin "*"
+			Access-Control-Allow-Methods "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"
+			Access-Control-Allow-Headers "Authorization, Content-Type"
+			Access-Control-Max-Age "600"
+			Vary "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+		}
+		header @preflight_asked_headers Access-Control-Allow-Headers "{http.request.header.Access-Control-Request-Headers}"
+		# No `close` here, unlike the device blocks' `respond`s: those close
+		# the connection because native is reading a frozen contract and
+		# must never find a reusable connection in an unexpected state. A
+		# preflight is immediately followed by the real request on the same
+		# connection, and closing it would throw that away for nothing.
+		respond @preflight "" 204
+
+		# THE credential check. Username fixed to `operator`; the password is
+		# the operator token and the hash is derived from it at container
+		# start by grind/entrypoint.sh (3.2) — no hash is typed into any file,
+		# which is what retires P35 and P36.
+		#
+		# The default is kept even though the entrypoint always sets the
+		# variable: it is a real bcrypt hash of a random string generated
+		# once and discarded, so a bare `caddy run` with no environment
+		# rejects every operator request instead of serving eight zones open.
+		# Caddy falls back to a `{$VAR:default}` default only when the
+		# variable is ABSENT, never when it is set-but-empty (P35) — which is
+		# safe here precisely because nothing passes this variable through
+		# compose any more: the entrypoint derives it and asserts it is a
+		# 60-character cost-10 bcrypt hash before exec'ing caddy.
+		basic_auth {
+			operator {$OPERATOR_HASH:$2a$14$4O3NlHoGMD2./6FpyxpKAell6n5PkW1TaayAPbIKyg4GgwZfc8ESO}
+		}
+	}
+}
+
 {$TUN_SITE_ADDRESS} {
 	log {
 		output stdout
@@ -24,6 +120,33 @@
 	}
 
 	encode gzip
+
+	# ---- 3.5: strip any inbound copy of the operator marker ------------
+	# X-Tun-Operator is the marker the gateway will set for services to
+	# trust (unified-auth section 4). The whole trust model rests on two
+	# requirements, and this is one of them: a client must never be able to
+	# mint the marker itself. So the gateway deletes any inbound copy before
+	# a single route is considered — if it did not, `curl -H
+	# 'X-Tun-Operator: 1'` would be a complete bypass of every zone's auth
+	# the moment section 4 lands.
+	#
+	# SITE-LEVEL, NOT PER-BLOCK, AND THAT IS THE POINT. Written here, this
+	# compiles to a route AHEAD of the whole `handle` group (verified on the
+	# compiled JSON, not inferred), so it covers every zone including the
+	# DEVICE PLANE — /ota/*, /blob/*, /audio-manifest/* and
+	# /mjolnir/userdata/*. mjolnir-sync will adopt the same shared check in
+	# 4.1, so a forged marker aimed at the device path has to be stripped
+	# too, and putting the strip in one place is the only version of this
+	# that cannot be forgotten for one block.
+	#
+	# This changes nothing the device sends: no device request has ever
+	# carried this header, so removing it is a no-op on every real request
+	# and was byte-verified as such (3.6).
+	#
+	# `request_header -Field` deletes. It is unconditional: there is no
+	# matcher, because there is no request on this origin that is allowed to
+	# carry this header inbound.
+	request_header -X-Tun-Operator
 
 	# ---- /ota/* : token-gated, read-only -------------------------------
 	handle /ota/* {
@@ -170,12 +293,19 @@
 		reverse_proxy mjolnir-sync:8002
 	}
 
+	# OPERATOR PLANE from here down: every block imports (operator_gate).
+	# hub and builder still run their own cookie/bearer check in application
+	# code today; section 4 replaces that with the shared check. Until it
+	# does, the gateway gate is simply the outer one — a request that fails
+	# here never reaches either service.
 	@mjolnir path /mjolnir /mjolnir/*
 	handle @mjolnir {
+		import operator_gate
 		reverse_proxy mjolnir-hub:8000
 	}
 	@builder path /builder /builder/*
 	handle @builder {
+		import operator_gate
 		reverse_proxy mjolnir-builder:8001
 	}
 
@@ -198,6 +328,7 @@
 	# `handle_path /stabbur/*` already matches correctly.
 	redir /stabbur /stabbur/ 308
 	handle_path /stabbur/* {
+		import operator_gate
 		reverse_proxy stabbur-backend:5056 {
 			header_up X-Forwarded-Prefix /stabbur
 		}
@@ -215,6 +346,7 @@
 	# stabbur-postgres to avoid).
 	redir /smia /smia/ 308
 	handle_path /smia/* {
+		import operator_gate
 		reverse_proxy smia-backend:5055 {
 			header_up X-Forwarded-Prefix /smia
 		}
@@ -246,29 +378,20 @@
 	# is container-internal and needs no exemption.
 	#
 	# The credential is the operator token the rest of the stack already
-	# uses (D-H6's OPERATOR_AUTH_TOKEN), username fixed to `operator`. It
-	# cannot be consumed directly — hub and builder verify that token in
-	# their own application code, while `basic_auth` only accepts a
-	# bcrypt/argon hash — so the operator derives one, once:
+	# uses (D-H6's OPERATOR_AUTH_TOKEN), username fixed to `operator`, and
+	# it is now the SAME gate every operator zone imports — see
+	# (operator_gate) at the top of this file.
 	#
-	#     docker run --rm caddy:2-alpine caddy hash-password \
-	#         --plaintext "$OPERATOR_AUTH_TOKEN"
+	# This block used to carry its own `basic_auth { operator
+	# {$PHONEXA_AUTH_HASH:…} }`, with the hash generated by hand and typed
+	# into a `.env` single-quoted. unified-auth 3.2/3.3 retired that: the
+	# hash is derived from OPERATOR_TOKEN at container start
+	# (grind/entrypoint.sh), PHONEXA_AUTH_HASH no longer exists as a
+	# configured value anywhere, and rotating OPERATOR_AUTH_TOKEN now
+	# actually rotates access — previously it did not, and nothing said so.
+	# The variable's name had also stopped being true: it gated /shadow/*
+	# as well, and now gates eight zones.
 	#
-	# and puts it in mjolnir/.env as PHONEXA_AUTH_HASH, SINGLE-QUOTED (a
-	# bcrypt hash contains `$`, which compose would otherwise interpolate
-	# away). Nothing links the two automatically: ROTATING
-	# OPERATOR_AUTH_TOKEN MEANS REGENERATING THIS HASH.
-	#
-	# FAIL-CLOSED DEFAULT. The hash defaults to a real bcrypt hash of a
-	# random string that was generated, used once and discarded — nobody
-	# knows its plaintext, so an unconfigured deploy rejects every request
-	# here instead of serving phonexa open. (Verified to survive the
-	# Caddyfile parser with its `$`s intact; and Caddy falls back to a
-	# `{$VAR:default}` default only when the variable is ABSENT, never when
-	# it is set-but-empty — so compose.yaml must never pass this key through
-	# with an empty value. It uses `${PHONEXA_AUTH_HASH:-<same default>}`,
-	# which is correct in both deployment modes; the valueless pass-through
-	# form it used before was not.)
 	# With phonexa simply not deployed, an authenticated request 502s, the
 	# same as /stabbur and /smia when their service is down.
 	#
@@ -278,9 +401,7 @@
 	# Accepted deliberately when the operator chose a path over a subdomain.
 	redir /phonexa /phonexa/ 308
 	handle_path /phonexa/* {
-		basic_auth {
-			operator {$PHONEXA_AUTH_HASH:$2a$14$4O3NlHoGMD2./6FpyxpKAell6n5PkW1TaayAPbIKyg4GgwZfc8ESO}
-		}
+		import operator_gate
 		# WebSockets (the live mic tracker's /stream) upgrade transparently
 		# through reverse_proxy, and Caddy does not time out an upgraded
 		# connection by default. No request-body limit is set either —
@@ -324,13 +445,12 @@
 	#
 	# AUTH. shadow has none of its own — profiles are name-only with no
 	# password, inherited from phonexa along with the pages. So the gate is
-	# here, in front of everything this block matches, with the SAME
-	# credential and the SAME derived hash phonexa uses: one operator
-	# credential, two prefixes. Rotating OPERATOR_AUTH_TOKEN means
-	# regenerating PHONEXA_AUTH_HASH, which now gates two zones instead of
-	# one. The fail-closed default is the same discarded-plaintext bcrypt
-	# hash, for the same reason: an unconfigured deploy rejects every request
-	# here rather than serving shadow open.
+	# here, in front of everything this block matches: the same
+	# (operator_gate) snippet every other operator zone imports, one
+	# operator credential, eight prefixes. Rotating OPERATOR_AUTH_TOKEN is
+	# now the whole operation — there is no second value to regenerate
+	# (unified-auth 3.2/3.3 retired PHONEXA_AUTH_HASH, which by then gated
+	# two zones under a name that claimed one).
 	#
 	# Shadow's browser code never calls phonexa directly, deliberately: a
 	# cross-prefix XHR would have to re-satisfy this gate. shadow's backend
@@ -344,9 +464,7 @@
 	# /transcribe), and as with /phonexa no request-body limit is set.
 	redir /shadow /shadow/ 308
 	handle_path /shadow/* {
-		basic_auth {
-			operator {$PHONEXA_AUTH_HASH:$2a$14$4O3NlHoGMD2./6FpyxpKAell6n5PkW1TaayAPbIKyg4GgwZfc8ESO}
-		}
+		import operator_gate
 		reverse_proxy shadow-backend:5051 {
 			header_up X-Forwarded-Prefix /shadow
 		}
@@ -363,16 +481,31 @@
 	# stabbur's X-Forwarded-Prefix handling, so it must see itself as
 	# mounted at "/", not "/adminer".
 	#
-	# No auth here, same as today's direct `8082:8080` host port mapping in
-	# tun/compose.yaml (D-H6's OPERATOR_AUTH_TOKEN gates hub/builder, not
-	# this) — this route is a path convenience, not a new exposure. Add a
-	# Caddy `basicauth` block here (or drop the 8082 port mapping) if the
-	# bare port is meant to go away too.
+	# AUTH. This route was open — Adminer has never been gated, and that was
+	# the one genuinely missing gate in the ecosystem: a database-admin tool,
+	# on the public origin, behind nothing, with a login form that will
+	# accept any credentials the operator's own cluster accepts. unified-auth
+	# 3.1 closes it with the same (operator_gate) every other zone imports;
+	# the openspec requirement is explicit about it ("The database tool").
+	#
+	# The loopback `127.0.0.1:8082` mapping in the root compose.yaml stays
+	# and is not an exposure: it is bound to the loopback interface, so it is
+	# reachable from the host only, not from the internet. The route is what
+	# the internet can reach, and the route is now gated.
 	redir /adminer /adminer/ 308
 	handle_path /adminer/* {
+		import operator_gate
 		reverse_proxy adminer:8080
 	}
 
+	# The catch-all. DELIBERATELY NOT GATED, and that is a decision rather
+	# than an omission: it serves one hard-coded word and reaches no service,
+	# no file and no database, so there is nothing here for a credential to
+	# protect. Leaving it open also keeps the one path that must never
+	# require a credential clear — Let's Encrypt's HTTP-01 challenge, which
+	# an expired-certificate incident is a far worse failure than an
+	# unauthenticated 404. Every route that serves anything is above this
+	# line and every one of them is gated.
 	handle {
 		respond "mjolnir" 404
 	}
@@ -390,6 +523,40 @@
 	#
 	# handle_errors is SITE-WIDE — it cannot be scoped to one handle block —
 	# so the device plane has to be excluded by hand, below, and is.
+	#
+	# ---- 401 FIRST: the status page is not served to an unauthenticated
+	# request (unified-auth 3.1, "the status page's non-device paths").
+	#
+	# handle_errors catches basic_auth's 401 as well as a zone's 502, which
+	# had two consequences, both found by running it rather than by reading:
+	#
+	#   1. the full 7 KB status page — every zone's prefix, label and
+	#      description — was served to any client with no credential at all.
+	#      It is not a secret, but it is the one page in the gateway that
+	#      enumerates the whole operator plane, and "gate the operator plane"
+	#      has to include it.
+	#   2. a wrong password rendered "phonexa is not responding", with the
+	#      zone struck out of the list as down. The page's own text says the
+	#      gateway "reached this zone's route, but nothing answered behind
+	#      it", which is false for a 401 and sends the operator looking at a
+	#      container that is perfectly healthy.
+	#
+	# `respond "" {err.status_code}` is the same empty-bodied answer the
+	# device branch below uses. WWW-Authenticate SURVIVES it — basic_auth
+	# sets that header on the response writer before returning the error, and
+	# `respond` does not clear already-set headers, so the browser still gets
+	# its login prompt. Verified live, because a gate that silently stops
+	# prompting would look exactly like a wrong password (P36's shape).
+	#
+	# Status codes, not a path matcher: `handle_errors 401` (Caddy ≥ 2.8,
+	# running 2.11.7) scopes by the error's own status, which is what this
+	# distinction actually is. 403 is included for the same reason — it is a
+	# credential answer, not a zone-down answer — even though nothing in this
+	# file emits one today.
+	handle_errors 401 403 {
+		respond "" {err.status_code}
+	}
+
 	handle_errors {
 		# DEVICE PLANE: never HTML, ever. /ota/*, /blob/*, /audio-manifest/*
 		# and /mjolnir/userdata/* are a frozen contract (docs/11-ota-contract.md,

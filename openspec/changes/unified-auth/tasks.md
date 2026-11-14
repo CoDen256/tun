@@ -128,20 +128,172 @@ complete and verify in order. The hard constraint is: **the device never breaks.
 
 ## 3. Operator plane
 
-- [ ] 3.1 `basic_auth` on the operator plane in `grind/Caddyfile`, username
-      `operator`.
-- [ ] 3.2 `grind/entrypoint.sh` derives the hash from `OPERATOR_TOKEN` at
-      start, cost factor 10. No hash is ever typed into a file.
-- [ ] 3.3 Delete `PHONEXA_AUTH_HASH`, the dedicated phonexa `basic_auth` block,
-      and P35 and P36 from `docs/08-pitfalls.md` with a note of what retired
-      them.
-- [ ] 3.4 Gateway answers CORS preflight `OPTIONS` **before** the auth check.
-      Verify with a real cross-origin request from the extension, not with
-      `curl`.
-- [ ] 3.5 Gateway strips any inbound copy of the verified-operator marker
-      header before proxying. Verify by sending one from outside and asserting
-      the service does not see it.
-- [ ] 3.6 Verify the device plane is untouched: re-run 1.4, 1.5 and 2.4.
+- [x] 3.1 `basic_auth` on the operator plane in `grind/caddy/Caddyfile`,
+      username `operator` — the WHOLE plane, not just phonexa. One
+      `(operator_gate)` snippet, `import`ed by seven blocks: `/mjolnir`
+      + `/mjolnir/*`, `/builder` + `/builder/*`, `/stabbur/*`, `/smia/*`,
+      `/phonexa/*`, `/shadow/*` and `/adminer/*`. Adminer had never been gated
+      at all; it is now. Verified on the COMPILED config, not the file: every
+      one of compiled route indices 10-16 contains an `authentication`
+      handler, and none of 6-9 (the device plane) does. Live, with no
+      credential, all seven answer **401**; with `-u operator:testoperator`,
+      `/stabbur/ui` `/smia/ui` `/phonexa/` `/shadow/` `/adminer/` answer 200
+      and `/mjolnir/` `/builder/` answer 302 (hub's and builder's own login
+      redirect, which section 4 removes — the gateway gate passed).
+
+      **The status page is part of this.** `handle_errors` catches
+      `basic_auth`'s 401, so the full 7 019-byte status page — every zone's
+      prefix, label and description — was being served to clients with no
+      credential, and a wrong password rendered "phonexa is not responding"
+      with a healthy container struck out as down. A `handle_errors 401 403`
+      branch now answers `respond "" {err.status_code}`: 401 with
+      `Content-Length: 0`. `WWW-Authenticate: Basic realm="restricted"`
+      survives it (verified live — basic_auth sets the header before returning
+      the error and `respond` does not clear it), so the browser prompt still
+      works. An upstream's own 401 is NOT affected: it is a proxied response,
+      not a Caddy error, and still arrives with its body
+      (`{"error":"unauthorized"}`, `Server: Werkzeug`, `Via: 1.1 Caddy`).
+
+      **Two things deliberately left ungated,** both stated as decisions:
+      the final `handle {}` catch-all, which serves one hard-coded word,
+      reaches nothing, and is the path an ACME HTTP-01 challenge would use —
+      an expired certificate is a worse failure than an unauthenticated 404;
+      and the five bare-prefix `redir … 308` routes (compiled indices 0-4),
+      which were already unauthenticated redirects and carry no content.
+
+      **Proven to add no failure point** (the spec requirement): with every
+      application service AND postgres stopped — `caddy` the only container
+      running — all seven zones still answered 401 unauthenticated, an
+      authenticated `/phonexa/` answered 502, and the device plane still
+      served (`/ota/current.json` 200 with the token, 401 without).
+- [x] 3.2 `grind/entrypoint.sh` derives the hash from `OPERATOR_TOKEN` at
+      start, cost factor 10. No hash is typed into a file. **It was already
+      doing this and the result was dead:** the script exported
+      `OPERATOR_HASH` while the Caddyfile still read the hand-made
+      `PHONEXA_AUTH_HASH`, so the derivation ran on every boot and nothing
+      consumed it. `(operator_gate)` now reads
+      `{$OPERATOR_HASH:<locked default>}`, which is what makes the file
+      load-bearing; a comment in the entrypoint records what consumes it.
+      The variable name is plane-wide because the gate is: it had stopped
+      being phonexa's even before this change, since it also gated `/shadow/*`.
+- [x] 3.3 `PHONEXA_AUTH_HASH` is gone as a configured value: deleted from the
+      root `.env`, from `grind/compose.yaml`'s `environment:` (the
+      `${PHONEXA_AUTH_HASH:-$$2a$$14$$…}` line with its duplicated
+      fail-closed default), and from `mjolnir/.env.example`, whose
+      "/phonexa gate" section is replaced by an "operator gate" section that
+      says there is nothing to set. The dedicated phonexa `basic_auth` block
+      and shadow's copy of it are both replaced by `import operator_gate`.
+      Verified it is not merely unused but absent:
+      `docker compose exec caddy printenv PHONEXA_AUTH_HASH` exits non-zero.
+      `bin/check-standards.sh` now has the variable in its `dead` list — the
+      file's own comment said to add it "then", and this is then — so it
+      FAILS if a hash is ever typed into a `.env.example` again.
+      P35 and P36 are **annotated RETIRED in place** in `docs/08-pitfalls.md`,
+      naming what retired them, per this repository's convention of marking
+      rather than deleting (the task text's "delete" predates it). Both
+      annotations keep the underlying Caddy/compose traps as facts and retire
+      only their live instances, which is the accurate claim. `DEPLOY.md` §4
+      is rewritten from "derive a hash by hand" to "there is nothing to
+      configure", its auth routing table now shows the gateway gate on all
+      seven zones, and its stale `ota-verify` expectation (16/0) is corrected
+      to 15/0/1.
+- [x] 3.4 The gateway answers the CORS preflight **before** the auth check.
+      In `(operator_gate)`, wrapped in `route` so the written order is the
+      compiled order: CORS response headers, then the reflected
+      `Access-Control-Allow-Headers`, then `respond "" 204`, then
+      `basic_auth`. Confirmed in the compiled JSON — subroute indices 0, 1, 2,
+      3 in exactly that order, inside every one of the seven operator blocks.
+
+      Live, with **no credential**, against `/smia/translate`,
+      `/stabbur/api/notes`, `/phonexa/api/v1/x`, `/mjolnir/x` and `/adminer/`:
+
+      ```sh
+      curl -X OPTIONS -H 'Origin: https://example.com' \
+           -H 'Access-Control-Request-Method: POST' \
+           -H 'Access-Control-Request-Headers: authorization,content-type' \
+           http://localhost:8080/smia/translate
+      ```
+      → `204`, `Access-Control-Allow-Origin: *`,
+      `Access-Control-Allow-Methods: GET, HEAD, POST, PUT, PATCH, DELETE,
+      OPTIONS`, `Access-Control-Allow-Headers: authorization,content-type`
+      (reflected), `Access-Control-Max-Age: 600`,
+      `Vary: Origin, Access-Control-Request-Method,
+      Access-Control-Request-Headers`, empty body.
+
+      The exemption is the actual CORS definition of a preflight, not "method
+      OPTIONS": a bare `OPTIONS` with no `Origin`, and an `OPTIONS` with
+      `Origin` but no `Access-Control-Request-Method`, both still answer
+      **401**. With no `Access-Control-Request-Headers` asked, the fallback
+      `Authorization, Content-Type` is sent — it cannot be `*`, because the
+      Fetch standard excludes `Authorization` from that wildcard, which is the
+      one header the operator credential travels in. And the real request
+      after the preflight is still authenticated: `POST /smia/translate` with
+      no credential is 401 at the gateway.
+
+      **What this does NOT prove.** The task says "from the extension, not
+      with `curl`". hover-translate is not in this repository (D154) and there
+      was no browser in this session, so the browser-driven check is still
+      open; it is task 6.2's, which has to run from the extension anyway.
+      What is proven is the protocol: a credential-free preflight gets a 2xx
+      with the access-control-* headers a browser needs, which is the exact
+      failure mode the task exists to prevent.
+- [x] 3.5 The gateway strips any inbound copy of the verified-operator marker
+      header. The header is `X-Tun-Operator` (section 4 sets it; the strip
+      lands first on purpose, so the bypass window never exists). ONE
+      site-level `request_header -X-Tun-Operator`, written before the device
+      blocks, compiling to route index 5 — **ahead of the entire `handle`
+      group** (verified in the compiled JSON), so it covers every zone
+      INCLUDING the device plane. `mjolnir-sync` adopts the shared check in
+      4.1, so a forged marker aimed at `/mjolnir/userdata/*` has to be
+      stripped too, and one unconditional directive is the only version of
+      this that cannot be forgotten for one block.
+
+      **Verified against a real echo upstream, not by reading.** A
+      header-echoing HTTP server was attached to the compose network with
+      `--network-alias stabbur-backend` while `stabbur-backend` was stopped,
+      so the production Caddyfile proxied to it with no config edit. Sending
+      `-H 'X-Tun-Operator: 1' -H 'x-tun-operator: forged-lowercase'` through
+      `/stabbur/probe`, the upstream saw: Host, User-Agent, Accept,
+      Authorization, Via, X-Forwarded-{For,Host,Prefix,Proto},
+      Accept-Encoding — and no `x-tun-operator` in any casing. Repeated on the
+      DEVICE path with the echo aliased as `mjolnir-sync`: same result,
+      marker absent. **Non-vacuous control:** in the same request,
+      `X-Not-Stripped: yes` and the near-miss `X-Tun-Operatorz: control` both
+      arrived intact, so the test is observing a deletion and not a header
+      that never travels.
+- [x] 3.6 The device plane is untouched. Three independent checks:
+
+      1. **Compiled config.** Adapted HEAD's Caddyfile and the new one with
+         identical environment and diffed per route: `/ota/*`, `/blob/*`,
+         `/audio-manifest/*` and `/mjolnir/userdata/*`, and the device branch
+         of `handle_errors`, are **byte-identical** apart from Caddy's
+         auto-generated mutual-exclusion `group` id (`group16` → `group24`,
+         renumbered because the snippet adds groups; all four device routes
+         still share one group, as before). Compiled indices unchanged: 6, 7,
+         8, 9. No `authentication` handler and no `Access-Control` header
+         anywhere inside them.
+      2. **Live A/B on fresh state.** A second gateway was run on port 8081
+         from `git show HEAD:grind/caddy/Caddyfile`, on the same network and
+         the same `mjolnir/data`, and a 12-request device probe was replayed
+         against both with a fresh uid each (`uaHEAD1` / `uaNEW1`): GET,
+         re-read, PATCH, PUT, no-token, bad-token, `/ota/current.json` with
+         and without the token, `POST /ota/current.json`, and a missing
+         object under each of `/ota`, `/audio-manifest` and `/blob`. **All 12
+         responses byte-identical** — bodies and every header except `Date`
+         and `Alt-Svc`, `Server`/`Via`/`Content-Length`/`Cache-Control`
+         included. (1.4 and 1.5's checks, re-run as a differential.)
+      3. **`ota-verify`.** `cd mjolnir && ALLOW_HTTP=1 bash
+         bin/ota-verify.sh http://localhost:8080` → **15 passed, 0 failed, 1
+         SKIPPED**, the same as before the change. 16/0 would mean D53's
+         assertion had been re-inverted.
+
+      **Not re-run: 2.4, the handset.** There was no phone in this session.
+      That is the one check 3.6 asks for that is still open, and it is open
+      for the same reason it was in section 2 — it needs the device. The A/B
+      in (2) covers the gateway's half of it byte-for-byte, including the
+      rejected path; what it cannot cover is okhttp's own behaviour, which
+      2.4 already proved against a gateway whose device routes are now
+      provably identical.
 
 ## 4. One check per service
 

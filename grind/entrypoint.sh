@@ -2,6 +2,14 @@
 # grind — the gateway's entrypoint. Derives the operator password hash at
 # START, from OPERATOR_TOKEN, so that no hash is ever stored in a file.
 #
+# WHAT CONSUMES IT: caddy/Caddyfile's `(operator_gate)` snippet, as
+# `basic_auth { operator {$OPERATOR_HASH} }`, imported by every operator
+# zone. Until unified-auth 3.1 nothing read this variable at all — the
+# derivation ran on every boot and the Caddyfile still used the hand-made
+# PHONEXA_AUTH_HASH, so the whole file was inert. It is not any more; if this
+# variable stops being exported, every operator zone falls back to the
+# Caddyfile's locked default and rejects everything.
+#
 # THIS RETIRES P35 AND P36 OUTRIGHT, and both were real outages:
 #
 #   P36  a bcrypt hash contains `$`, which compose interpolates. Both

@@ -104,7 +104,7 @@ starts with its project-local file absent (`required: false`).
 
 | file | holds | if absent |
 |---|---|---|
-| `mjolnir/.env` | `PHONEXA_AUTH_HASH` (§4), `SOURCE_LANG`, and the local-only `ALLOW_HTTP` / `ALLOW_NO_COMPANION` | `/phonexa/*` fails closed (401); the rest defaults |
+| `mjolnir/.env` | `SOURCE_LANG` and the local-only `ALLOW_HTTP` / `ALLOW_NO_COMPANION`. **No longer `PHONEXA_AUTH_HASH`** — the gateway derives the operator hash from `OPERATOR_AUTH_TOKEN` at start (§4) | everything defaults |
 | `smia/.env` | `HF_TOKEN`, `DEEPL_TOKEN`, `ELEVENLABS_TOKEN` | smia starts; those providers fail at call time with "needs a *_TOKEN" |
 | `phonexa/.env` | `AUDIO_BACKEND` (only `local` is implemented) | the backend already defaults to `local` |
 | `stabbur/.env` | **nothing. Do not create it.** Everything stabbur needs is shared or derived | — |
@@ -184,49 +184,41 @@ fails, and it fails loudly. `BACKUP_SSH_KEY_PATH` must point at an existing
 **file** on the host: a bind mount of a path that does not exist makes Docker
 create a directory there, and the container then cannot read a private key.
 
-## 4. The `/phonexa` gate
+## 4. The operator gate
 
-phonexa has no login of its own — its profiles are name-only and it exposes
-destructive database import/export endpoints — so the gate is in Caddy:
-HTTP basic auth, username fixed to `operator`, password = your
-`OPERATOR_AUTH_TOKEN`. `basic_auth` accepts only a hash, so derive one once:
+**There is nothing to configure here any more.** This section used to tell you
+to run `caddy hash-password` by hand and put a single-quoted
+`PHONEXA_AUTH_HASH` in `mjolnir/.env`. `unified-auth` 3.1-3.3 deleted that
+value: `grind/entrypoint.sh` derives the bcrypt hash from `OPERATOR_TOKEN`
+(the root `.env`'s `OPERATOR_AUTH_TOKEN`) at container start, cost 10, and
+refuses to start the gateway if the derivation did not produce a 60-character
+cost-10 hash.
 
-```sh
-docker run --rm caddy:2-alpine caddy hash-password --plaintext "<your OPERATOR_AUTH_TOKEN>"
-```
+What that bought:
 
-Put it in **`mjolnir/.env`** (only mjolnir's Caddy consumes it), **single-quoted**:
+- **One credential, every operator zone.** `basic_auth`, username fixed to
+  `operator`, password = `OPERATOR_AUTH_TOKEN`, enforced in the gateway in
+  front of `/mjolnir/*`, `/builder/*`, `/stabbur/*`, `/smia/*`, `/phonexa/*`,
+  `/shadow/*` and `/adminer/*`. Adminer had never been gated before this.
+- **Rotation is now real and is one step.** Change `OPERATOR_AUTH_TOKEN`,
+  restart the gateway. Previously the hash did not follow the token, so the
+  old password kept opening phonexa while the new one opened hub — and
+  nothing said so.
+- **The two pitfalls are gone with the value** (P35, P36): there is no
+  `$`-containing value in a `.env` for compose to mangle, and no valueless
+  compose key to resolve from the wrong project's `.env` under `include:`.
+- **Still fail-closed.** The Caddyfile keeps a locked default — a real bcrypt
+  hash of a random string generated once and discarded — so a bare
+  `caddy run` with no environment rejects every operator request rather than
+  serving eight zones open.
 
-```sh
-PHONEXA_AUTH_HASH='<the hash>'
-```
+**One thing the device still shares with this credential.** The phone's
+`SYNC_TOKEN` *is* `OPERATOR_AUTH_TOKEN`'s value, so rotating it requires a
+`config.json` push (D39) until `unified-auth` 7.1 gives the device its own
+value. §8's pre-cutover checklist carries this; do not rotate without it.
 
-- Single quotes are not cosmetic and double quotes do **not** work: a bcrypt
-  hash contains `$`, which compose interpolates away, leaving something that
-  still *looks* like a hash and fails every login.
-- Verified on Compose v5.4.0: an included file is interpolated with its own
-  directory's `.env`, and the root `.env` wins only if it defines the same
-  key. So a hash in `mjolnir/.env` does reach Caddy in the unified stack —
-  provided you do not also define the key in the root `.env`. Don't; D151
-  forbids it anyway.
-- Confirm what actually arrived rather than what you wrote:
-  `docker compose exec caddy printenv PHONEXA_AUTH_HASH`
-- Leave it unset and `/phonexa/*` **fails closed**: the Caddyfile's default is
-  a real bcrypt hash of a random string that was generated, used once and
-  discarded, so an unconfigured deploy 401s everything instead of serving
-  phonexa open.
-- **Rotation is not automatic.** Changing `OPERATOR_AUTH_TOKEN` does not
-  change this hash — regenerate it in the same deploy, or the old password
-  keeps opening phonexa while the new one opens hub and builder.
-- **Mind the trailing slash.** `/phonexa` 308-redirects to `/phonexa/`; let
-  it. phonexa links its assets relatively, so the un-slashed URL resolves them
-  against the site root where they 404 against mjolnir's catch-all — a blank
-  page whose errors name the wrong service (P37).
-- **Shared origin, accepted deliberately** (D149). phonexa sits on the same
-  origin as hub and builder, whose session cookie is `Path=/`. `HttpOnly`
-  stops phonexa-origin JavaScript from reading it; it does not stop the
-  browser from sending it on requests a phonexa page makes. `basic_auth` in
-  front of phonexa is what bounds that.
+The browser prompts once per session and there is no logout button — accepted
+deliberately (`unified-auth/design.md`).
 
 ## 5. How to run it
 
@@ -313,14 +305,30 @@ publishing publicly, bare-slug change ids, no CI.
 
 **Operator plane**, all on the one hostname, no second certificate:
 
-| route | service | auth |
-|---|---|---|
-| `/mjolnir`, `/mjolnir/*` | `mjolnir-hub:8000` | `OPERATOR_AUTH_TOKEN` in-app → 302 to `/mjolnir/login` |
-| `/builder`, `/builder/*` | `mjolnir-builder:8001` | same → 302 to `/builder/login` |
-| `/stabbur/*` | `stabbur-backend:5056` | the app's own bearer/session check |
-| `/smia/*` | `smia-backend:5055` | the app's own bearer/session check |
-| `/phonexa/*` | `phonexa-backend:5050` | Caddy `basic_auth`, §4 |
-| `/adminer/*` | `adminer:8080` | **none** — see below |
+Every one of these is gated in the gateway by Caddy `basic_auth` (§4) —
+username `operator`, password `OPERATOR_AUTH_TOKEN` — before the request
+reaches the service. The "then" column is what the service still does on top,
+which `unified-auth` section 4 replaces with one shared check.
+
+| route | service | gateway | then |
+|---|---|---|---|
+| `/mjolnir`, `/mjolnir/*` | `mjolnir-hub:8000` | `basic_auth` | `OPERATOR_AUTH_TOKEN` in-app → 302 to `/mjolnir/login` |
+| `/builder`, `/builder/*` | `mjolnir-builder:8001` | `basic_auth` | same → 302 to `/builder/login` |
+| `/stabbur/*` | `stabbur-backend:5056` | `basic_auth` | the app's own bearer/session check |
+| `/smia/*` | `smia-backend:5055` | `basic_auth` | the app's own bearer/session check |
+| `/phonexa/*` | `phonexa-backend:5050` | `basic_auth` | none of its own |
+| `/shadow/*` | `shadow-backend:5051` | `basic_auth` | none of its own |
+| `/adminer/*` | `adminer:8080` | `basic_auth` | Adminer's own cluster login |
+
+A cross-origin **preflight** (`OPTIONS` with `Origin` and
+`Access-Control-Request-Method`) is answered by the gateway with 204 *before*
+`basic_auth`, because a preflight carries no credential by definition and a
+401 there surfaces to the page as a CORS error nothing client-side can fix.
+Any other `OPTIONS` is gated normally.
+
+The gateway also deletes any inbound `X-Tun-Operator` header on every route,
+device plane included: that header is the marker services will trust in
+`unified-auth` section 4, and a client must never be able to mint it.
 
 stabbur and smia serve their UI at `/stabbur/ui` and `/smia/ui`. Moving a
 service's UI to its prefix root is the planned `unified-auth` change's job and
@@ -342,10 +350,12 @@ gateway. One instance for all four databases; point its login screen at one of
 with that database's password from §3. phonexa's own development Adminer is
 behind a `dev` profile and does not start here.
 
-**`/adminer/` has no auth of its own.** Unlike `/mjolnir` and `/builder` it is
-not gated by `OPERATOR_AUTH_TOKEN`. Treat the route as exposed to anyone who
-can reach the host, or delete the `handle_path /adminer/*` block from
-`mjolnir/caddy/Caddyfile` and use the SSH tunnel only.
+**`/adminer/` is gated now.** It used to be the one route with no auth at all
+— a database-admin tool on the public origin behind nothing. `unified-auth`
+3.1 put the same `basic_auth` gate in front of it that every other operator
+zone has (`grind/caddy/Caddyfile`, `handle_path /adminer/*`). The loopback
+`127.0.0.1:8082` mapping is unchanged and is not an exposure: it binds the
+loopback interface, so only the host and an SSH tunnel can reach it.
 
 ### Verifying a deploy
 
@@ -353,14 +363,23 @@ can reach the host, or delete the `handle_path /adminer/*` block from
 docker compose ps                                   # all twelve Up (backup may be Up/healthy-less)
 docker compose exec caddy getent hosts smia-backend     # resolves, no network config needed
 docker compose exec mjolnir-builder getent hosts stabbur-backend
-curl -I https://<host>/stabbur/ui                   # 200
-curl -I https://<host>/smia/ui                      # 200
-curl -I https://<host>/mjolnir                      # 302 to /mjolnir/login
-curl -I https://<host>/builder                      # 302 to /builder/login
-curl -I https://<host>/phonexa/                     # 401 (basic-auth prompt)
-curl -sI -H "Authorization: Bearer $OTA_TOKEN" https://<host>/ota/current.json   # 200
-curl -sI https://<host>/ota/current.json            # 401
-bash mjolnir/bin/ota-verify.sh                      # must print 16 passed, 0 failed
+# every operator zone: 401 with no credential, served with it
+for p in /mjolnir /builder /stabbur/ui /smia/ui /phonexa/ /shadow/ /adminer/; do
+  curl -so /dev/null -w "$p %{http_code}\n" https://<host>$p                   # 401
+  curl -so /dev/null -w "$p %{http_code}\n" -u operator:$OPERATOR_AUTH_TOKEN \
+       https://<host>$p                                                        # 200/302
+done
+# a cross-origin preflight must be 2xx WITHOUT a credential (hover-translate)
+curl -si -X OPTIONS -H 'Origin: https://example.com' \
+     -H 'Access-Control-Request-Method: POST' \
+     -H 'Access-Control-Request-Headers: authorization' \
+     https://<host>/smia/translate | head -1                                   # 204
+# the device plane must be untouched by any of it
+curl -sI -H "Authorization: Bearer $OTA_TOKEN" https://<host>/ota/current.json  # 200
+curl -sI https://<host>/ota/current.json                                       # 401
+bash mjolnir/bin/ota-verify.sh    # must print 15 passed, 0 failed, 1 SKIPPED
+                                  # (the skip is D53's https check under ALLOW_HTTP;
+                                  #  16/0 means the assertion has been re-inverted)
 ```
 
 `ota-verify.sh` is the P1 acceptance test and the only thing that proves the
@@ -682,7 +701,9 @@ working stack as it stands:
    until you are sure.
 3. **The old layout needs `tun-shared` back**, plus the five per-repo `.env`
    files with their duplicated values (`STABBUR_UPSTREAM`, the two copies of
-   each postgres password, the hand-carried `PHONEXA_AUTH_HASH`):
+   each postgres password, and the hand-carried `PHONEXA_AUTH_HASH` that
+   `unified-auth` 3.3 deleted — rolling back to `master` means generating it
+   again by hand):
 
    ```sh
    docker network create tun-shared     # ONLY when rolling back to master

@@ -49,20 +49,16 @@ services:
       # caddy/Caddyfile names those services directly, because one repository
       # is one Compose project and the names always resolve.
       #
-      # PHONEXA_AUTH_HASH is mjolnir's alone (only this Caddy consumes it) so
-      # it lives in mjolnir/.env, but it is read here as `${VAR:-default}`
-      # rather than via env_file: the default is a verbatim copy of the
-      # Caddyfile's own fail-closed default (a bcrypt hash of a random string
-      # generated once and discarded), so an unconfigured deploy rejects every
-      # /phonexa request instead of serving phonexa open. `$` is escaped as
-      # `$$` so compose emits the literal hash.
-      #
-      # The valueless pass-through form (`PHONEXA_AUTH_HASH:` with nothing
-      # after the colon) must NOT be used here: under `include:` it resolves
-      # to null and is dropped from the container entirely, Caddy falls back
-      # to its locked default, and every login 401s with a perfectly valid
-      # hash sitting in .env (found live 2026-11-13).
-      PHONEXA_AUTH_HASH: ${PHONEXA_AUTH_HASH:-$$2a$$14$$4O3NlHoGMD2./6FpyxpKAell6n5PkW1TaayAPbIKyg4GgwZfc8ESO}
+      # THERE IS NO HASH VARIABLE HERE ANY MORE. `PHONEXA_AUTH_HASH` used to
+      # be passed on this line as `${PHONEXA_AUTH_HASH:-$$2a$$14$$…}`, with a
+      # hand-generated bcrypt hash in a `.env` and a fail-closed default
+      # duplicated from the Caddyfile. unified-auth 3.3 deleted it as a
+      # configured value: entrypoint.sh derives the hash from OPERATOR_TOKEN
+      # above, every operator zone imports the one `(operator_gate)` snippet
+      # that reads it, and nothing types or carries a hash. A `$`-containing
+      # value in a `.env` (P36) and a valueless compose key resolving from
+      # the wrong project's `.env` under `include:` (P35) are both gone with
+      # it, because the value they mangled no longer exists.
     volumes:
       # Relative paths in an included file resolve against THIS file's
       # directory (verified 2026-11-13), so these stay `./…` under both the
