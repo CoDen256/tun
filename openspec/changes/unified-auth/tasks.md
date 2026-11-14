@@ -15,7 +15,30 @@ complete and verify in order. The hard constraint is: **the device never breaks.
 - [x] 1.4 `bin/ota-verify.sh` against the moved gateway: **15 passed, 0 failed,
       1 SKIPPED** — the skip being D53's https assertion under `ALLOW_HTTP=1`,
       which now reports as a skip rather than inflating the count. Identical
-      result before and after the move.
+      result before and after the move. **Re-verified 2026-11-14 after the
+      payload under `mjolnir/data/` was cleaned up by an earlier session:
+      same 15/0/1.** `mjolnir/data/` is gitignored (`/data/` in
+      `mjolnir/.gitignore`), so the payload cannot be committed — recreate it
+      with, from the repository root:
+
+      ```sh
+      cd mjolnir && npm install --omit=dev          # bin/* need `commander`
+      cp base/smali.mjolnir.merged/assets/index.android.bundle /tmp/stock.js
+      ALLOW_HTTP=1 ALLOW_NO_COMPANION=1 \
+        bin/ota-publish.sh /tmp/stock.js b000001 "local regression payload"
+      ALLOW_HTTP=1 bin/ota-verify.sh http://localhost:8080
+      ```
+
+      `ALLOW_NO_COMPANION=1` is required and safe: the stock bundle carries no
+      boot-ok companion, and no patched device ever fetches this local
+      `b000001`. The published bytes are the v1.5.12 base this contract was
+      first measured against — sha256 `b3ad6aee…5741`, 6 003 611 B, exactly
+      the pair recorded in `docs/11-ota-contract.md` §7. **`base/` is only
+      read, never written** (D04). The D53 assertion is honest as written:
+      the `http://` arm calls `skip()`, which increments only `SKIP`, and the
+      summary prints "NOT a full proof of the device path" — the inversion
+      noted in the handoff is fixed, verified by reading
+      `mjolnir/bin/ota-verify.sh` and by the run reporting 15/0/1, not 16/0.
 - [x] 1.5 **Byte-compared and identical.** Built a real 2 MB payload, captured
       body hashes and the HTTP/Cache-Control/Content-Type/Content-Length
       headers for `/ota/current.json`, a bundle, a blob and an audio manifest
@@ -67,13 +90,41 @@ complete and verify in order. The hard constraint is: **the device never breaks.
       diffed against `HEAD`'s: the ONLY difference anywhere is this gate, so
       `/ota/*`, `/blob/*`, `/audio-manifest/*` and `handle_errors` are
       provably untouched.
-- [ ] 2.4 Verify a real device completes a sync round-trip. **Needs the
-      phone.** 2.3's replay reproduces the shim's request shape (same header,
-      same body fields) from `curl`, which is not a handset.
-- [ ] 2.5 Only once 2.3 and 2.4 pass does section 3 begin. This is a gate, not
-      a guideline. **Deliberately left open: 2.3 passes, 2.4 does not yet, so
-      the gate is NOT cleared and section 3 must not start.** Ticking this box
-      while 2.4 is open would say the opposite.
+- [x] 2.4 **Done on the real handset (Redmi Note 7, `107e47a6`), 2026-11-14.**
+      `adb reverse tcp:8080 tcp:8080`, the app's own progress-sync companion
+      driven in-process (MIUI refuses `adb shell input` with
+      `SecurityException: INJECT_EVENTS`, so the account screen's "Pull/Push
+      cloud progress" buttons were replayed by calling the same two globals
+      the buttons call — no new request shape). The gateway access log shows
+      `User-Agent: okhttp/4.9.2` — React Native's fetch, not curl:
+      `GET /mjolnir/userdata/q1Px3MgvOZVBdkpM9DKmFBnDnMi1 -> 200` then
+      `PATCH … -> 200` with `bytes_read: 8739`. Device-side logcat:
+      `[mjolnir-progress-sync] restored cloud progress` /
+      `pushed cloud progress`. Postgres confirms the write landed:
+      `userdata.updated_at` for that uid moved
+      `2026-11-09 19:56:03.806266+00` → `2026-11-14 11:44:50.659381+00` (the
+      gateway's PATCH timestamp to the millisecond) and
+      `userdata_history` gained row id 87, 48 → 49 rows for that uid. The
+      `doc` md5 is unchanged, correctly: the device pulled and pushed back the
+      same state. Rejection was also exercised from the handset — no token and
+      a wrong token both give `302` to
+      `/mjolnir/login?next=%2Fmjolnir%2Fuserdata%2F<uid>` with
+      `Content-Length: 0` (P46).
+
+      **The one thing this does NOT prove, and it matters for the cutover.**
+      The sync base URL and token are baked into the JS bundle at assemble
+      time, *not* read from `config.json` — contract §5's escape hatch covers
+      the OTA channel only, and native requires `https` there (D53), so it
+      cannot point at a plain-HTTP local gateway at all. Redirecting the
+      device therefore meant sideloading a copy of its own production bundle
+      with the two literals rewritten. The production bundle `b000052` on the
+      handset carries `SYNC_TOKEN = 'changeme'`. **Whether production's
+      `OPERATOR_AUTH_TOKEN` is also `changeme` was NOT verified** — if it is
+      not, 2.2's matcher will 302 the real device the moment this gateway
+      deploys. Check it on the VPS before cutover.
+- [x] 2.5 Gate cleared: 2.3 and 2.4 both pass, so section 3 may begin — with
+      the production-token check in 2.4 carried into `DEPLOY.md` §8 as a
+      pre-cutover step, because it is a deploy-time fact and not a code one.
 
 ## 3. Operator plane
 

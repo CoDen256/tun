@@ -455,6 +455,26 @@ nothing in the change touches live data or the TLS certificates. Tasks 0.2 and
 0.3 are these steps. Do them in order, and do not skip §8.1 because the volume
 names "look obvious".
 
+### 8.0a BEFORE cutover — the device's sync token must equal `OPERATOR_AUTH_TOKEN`
+
+`unified-auth` 2.1/2.2 gate `/mjolnir/userdata/*` on
+`Bearer {$OPERATOR_TOKEN}`, which compose fills from `OPERATOR_AUTH_TOKEN`.
+The phone's token is **baked into its JS bundle**, not read from
+`config.json` (contract §5 covers the OTA channel only), so it cannot be
+changed from here. The handset's live bundle `b000052` carries
+`SYNC_TOKEN = 'changeme'` (read out of the on-device bundle, 2026-11-14).
+
+On the VPS, before starting the new gateway:
+
+```sh
+grep '^OPERATOR_AUTH_TOKEN=' /path/to/tun/.env
+```
+
+If that value is not the one the device carries, the gateway will answer
+every device sync with a `302` and sync dies in the field. Fix it by setting
+`OPERATOR_AUTH_TOKEN` to the device's value, **not** by rotating the device
+(that needs a publish — task 7.1).
+
 ### 8.0 CRITICAL — a host that already pulled `afb81d39` cannot start at all
 
 Commit `afb81d39` ("Archive phonexa-path-routing; sync unified-deployment
