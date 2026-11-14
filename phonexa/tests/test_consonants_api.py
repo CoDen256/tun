@@ -34,11 +34,17 @@ def check(label, condition):
     print(f"{status} {label}")
 
 
+# unified-auth 4.3: phonexa now requires a credential on every route. This
+# test drives the app in-process, so it presents the gateway marker — the
+# same thing the real gateway sets after basic_auth passes.
+AUTH = {"X-Tun-Operator": "1"}
+
+
 def main():
     client = app.test_client()
 
     # Unknown language -> empty result, not an error.
-    resp = client.get('/api/v1/consonants?languageId=999999')
+    resp = client.get('/api/v1/consonants?languageId=999999', headers=AUTH)
     check("unknown languageId returns 200", resp.status_code == 200)
     check("unknown languageId returns empty list", resp.get_json() == [])
 
@@ -48,7 +54,7 @@ def main():
         print("SKIP: 'ru' language not seeded — run scripts/seed_consonants.py first")
         sys.exit(1)
 
-    resp = client.get(f'/api/v1/consonants?languageId={ru.id}')
+    resp = client.get(f'/api/v1/consonants?languageId={ru.id}', headers=AUTH)
     check("known language returns 200", resp.status_code == 200)
     body = resp.get_json()
     check("known language returns full inventory (34 Russian phones)", len(body) == 34)

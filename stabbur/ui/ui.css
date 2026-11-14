@@ -48,9 +48,6 @@ header {
 }
 header h1 { margin: 0 0 0.25rem; }
 header nav a { margin-right: 1rem; }
-header .tokenRow { margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
-header .tokenRow label { font-size: 0.8rem; color: var(--text-dim); }
-header .tokenRow input { width: 260px; }
 
 .shell { display: flex; min-height: calc(100vh - 110px); }
 .rail {

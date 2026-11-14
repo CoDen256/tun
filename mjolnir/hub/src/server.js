@@ -17,7 +17,7 @@ import { list as listLogicBundles } from "./logicBundles.js";
 import { cardsList, stripHtml, getCardSlot } from "./cards.js";
 import { DECK_ALLOCATION, listDecks, updateDeckDescription } from "./decks.js";
 import { renderShell, escapeHtml } from "./layout.js";
-import { requireAuth, renderLoginPage, handleLoginPost } from "../../../libs/jsservice/auth.js";
+import { requireAuth } from "../../../libs/jsservice/auth.js";
 import { slugify } from "./slug.js";
 import {
   getOrCreate,
@@ -474,7 +474,6 @@ function renderCardsPage(cards, { search, deckCode, statusFilter }, stabburUiBas
   <button type="submit">Filter</button>
 </form>
 ${panels || `<div class="panel panel-pad">no cards match this filter</div>`}
-${!stabburUiBase ? `<div class="inline-note">STABBUR_UI_BASE is not configured — note/grammar-rule links are disabled, but the list above is unaffected.</div>` : ""}
 <script>
 // D109: at most one preview open at a time — opening another closes
 // whichever one was already showing, same "exclusive accordion" behavior
@@ -1085,12 +1084,32 @@ export function createServer(pool, config, boot) {
         });
       }
 
-      // Mounted before the operator-auth gate below would otherwise apply
-      // per-route — checked explicitly here instead, since the workbench's
-      // own routes/static assets live under one prefix rather than hub's
-      // per-page route list. Every path here is already gated the exact
-      // same way every other operator page is: skipped entirely when
-      // `OPERATOR_AUTH_TOKEN` is unset (local/dev), required otherwise.
+      // unified-auth 4.1/4.2. D-H6's cookie, its /mjolnir/login page and its
+      // POST handler are GONE. The gateway is the gate: `basic_auth` on all
+      // seven operator zones, and `X-Tun-Operator` set only on a request
+      // that passed it. This check is what makes the workbench reject
+      // anything that reached the container WITHOUT going through the
+      // gateway — and in production nothing can, because no service
+      // publishes a port outside the loopback interface (4.7).
+      //
+      // UNCONDITIONAL, unlike D-H6's version. The old gate disabled itself
+      // when OPERATOR_AUTH_TOKEN was unset, which made a missing value a
+      // silently open console. The marker needs no configured value at all,
+      // so there is nothing left that can be forgotten into openness.
+      //
+      // ONE CHECK, PLACED ABOVE EVERYTHING INCLUDING THE EMBEDDED WORKBENCH.
+      // D-H6 needed a second copy inside the /mjolnir/workbench branch,
+      // because that branch returns before the per-route gate below it; the
+      // first draft of this change deleted that copy and left the workbench
+      // and its /api/patches open, which hub's own test caught. A single
+      // check above every branch is the version that cannot be half-removed.
+      // /_health is the only thing above it — a container probe cannot
+      // present a credential.
+      if (!requireAuth(req, res, config.internalToken)) return;
+
+      // The embedded workbench's routes and static assets live under one
+      // prefix rather than in hub's per-page route list, so they are handled
+      // here, above that list. The credential check is the one above.
       if (url.pathname === WORKBENCH_MOUNT) {
         // Relative asset/API paths (`app.js`, `api/...`) only resolve
         // correctly against a trailing-slash URL — redirect once, like any
@@ -1099,34 +1118,12 @@ export function createServer(pool, config, boot) {
         return res.end();
       }
       if (url.pathname === WORKBENCH_MOUNT + "/" || url.pathname.startsWith(WORKBENCH_MOUNT + "/")) {
-        if (config.operatorAuthToken) {
-          if (!requireAuth(req, res, config.operatorAuthToken, { loginPath: "/mjolnir/login" })) return;
-        }
         // Strip the mount prefix so the embedded handler sees exactly the
         // same paths it would standalone (`/`, `/app.js`, `/api/...`).
         req.url = url.pathname.slice(WORKBENCH_MOUNT.length) + url.search;
         return workbenchHandler(req, res);
       }
 
-      // D-H6: checked before every route except /mjolnir/login itself.
-      // Namespaced under /mjolnir (not a bare /login) because Caddy only
-      // routes /mjolnir/* to this service (task 7.4) — a path outside that
-      // prefix would never be reachable through the real deploy at all.
-      // Disabled entirely if OPERATOR_AUTH_TOKEN is unset (local/dev) — see
-      // config.js and task 7.4 on why that's safe only before the Caddy
-      // routes are uncommented.
-      const LOGIN_PATH = "/mjolnir/login";
-      if (config.operatorAuthToken) {
-        if (req.method === "GET" && url.pathname === LOGIN_PATH) {
-          const next = url.searchParams.get("next") || "/mjolnir";
-          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-          return res.end(renderLoginPage({ next, loginPath: LOGIN_PATH }));
-        }
-        if (req.method === "POST" && url.pathname === LOGIN_PATH) {
-          return handleLoginPost(req, res, config.operatorAuthToken, { loginPath: LOGIN_PATH });
-        }
-        if (!requireAuth(req, res, config.operatorAuthToken, { loginPath: LOGIN_PATH })) return;
-      }
 
       // ---- READINESS GATE (zone-isolation 1.5) ---------------------------
       // The console now SERVES before it migrates, which means `boot.dbReady()`
@@ -1174,14 +1171,14 @@ export function createServer(pool, config, boot) {
       // routes to builder's container regardless of which service rendered
       // the surrounding page — no proxying needed for those).
       if (req.method === "GET" && url.pathname === "/mjolnir/builder/forecast") {
-        if (!config.stabburBaseUrl || !config.stabburAuthToken) {
+        if (!config.stabburBaseUrl || !config.internalToken) {
           res.writeHead(500, { "Content-Type": "text/plain" });
-          return res.end("STABBUR_BASE_URL/STABBUR_AUTH_TOKEN are not set for hub — add them to .env to enable this page.");
+          return res.end("STABBUR_BASE_URL/INTERNAL_TOKEN are not set for hub — add them to .env to enable this page.");
         }
         const [forecast, jobs, batches, activeLogicBundle] = await Promise.all([
           runForecast(pool, {
             stabburBaseUrl: config.stabburBaseUrl,
-            stabburAuthToken: config.stabburAuthToken,
+            internalToken: config.internalToken,
             sourceLang: config.sourceLang,
           }),
           recentBuildJobs(pool),
@@ -1221,9 +1218,10 @@ export function createServer(pool, config, boot) {
         return sendJson(res, 200, { ok: true });
       }
 
-      // /mjolnir/ui is the canonical entry point, matching stabbur's own
-      // /stabbur/ui and builder's /builder/ui (D46: one convention across
-      // services). The bare path is kept working too — existing bookmarks,
+      // /mjolnir/ui is an alias for the bare path, kept for existing links
+      // and bookmarks. unified-auth 5.5 superseded D46's /ui convention —
+      // stabbur and smia serve at their prefix roots now — so `/mjolnir` is
+      // the entry point and `/mjolnir/ui` is simply the same page. The bare path is kept working too — existing bookmarks,
       // the Caddyfile's own bare-path handling, and every internal link
       // built before this alias existed all still resolve.
       if (

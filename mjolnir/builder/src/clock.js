@@ -24,7 +24,7 @@ export function startNightlyClock(pool, config, { pollIntervalMs = POLL_INTERVAL
       if (!shouldRunNow(schedule, lastRunAt)) return;
 
       // D89: fetch stabbur's grammar rules once per run, not once per note.
-      const grammarRuleLookup = await buildGrammarRuleLookup({ baseUrl: config.stabburBaseUrl, authToken: config.stabburAuthToken });
+      const grammarRuleLookup = await buildGrammarRuleLookup({ baseUrl: config.stabburBaseUrl, authToken: config.internalToken });
       const result = await runPublish(pool, { ...config, grammarRuleLookup, log });
       if (result.published) {
         console.log(`nightly run published ${result.buildId}: ${JSON.stringify(result.decksMinted)}`);

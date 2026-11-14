@@ -64,10 +64,26 @@ from parselmouth.praat import call
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from pyservice.auth import register_auth
+from pyservice.prefix import forwarded_prefix, render_page, safe_page_path
 from flask_sock import Sock
 
 app = Flask(__name__)
 CORS(app)
+
+# unified-auth 4.1/4.3. phonexa had NO auth of its own until now — the only
+# thing in front of it was the gateway's `basic_auth` (D148), so anything
+# that reached the container directly could call `/api/v1/admin/export` and
+# `/api/v1/admin/import`, which are destructive. The check is the shared one:
+# the gateway-verified `X-Tun-Operator` marker, or `Authorization: Bearer
+# INTERNAL_TOKEN`; otherwise 401. `/_health` stays open for the container
+# probe and nothing else does.
+#
+# The WebSocket at /stream goes through Flask routing and therefore through
+# this hook too. That changes nothing about whether it works: /phonexa/* has
+# been behind the gateway's credential check since D148, so a handshake that
+# reaches this service has already passed `basic_auth` and carries the marker.
+register_auth(app)
 sock = Sock(app)
 
 
@@ -1887,19 +1903,10 @@ def put_setting(key):
 # Static frontend
 # ══════════════════════════════════════════════════════════════════════════════
 
-from werkzeug.utils import safe_join  # noqa: E402
-
-
-def _prefix() -> str:
-    """The path prefix this request arrived under, '' when mounted at the root.
-
-    Set by the reverse proxy (`header_up X-Forwarded-Prefix /phonexa` in
-    mjolnir's Caddyfile) alongside stripping that prefix off the path, so
-    every route below stays prefix-agnostic while the URLs we hand back to
-    the browser carry it. Same form stabbur's and smia's app.py use (D46).
-    Empty in standalone development — nothing to configure there.
-    """
-    return request.headers.get('X-Forwarded-Prefix', '').rstrip('/')
+# unified-auth 5.2: `_prefix()` and the HTML-reading half of `_serve_page()`
+# moved to libs/pyservice/prefix.py, which is now the ONE implementation --
+# stabbur, smia, phonexa and shadow had four copies of the same six lines.
+_prefix = forwarded_prefix
 
 
 def _shadow_prefix() -> str:
@@ -1924,11 +1931,8 @@ def _serve_page(filename: str):
     once as API_BASE — see js/utils.js. __SHADOW_PREFIX__ is a plain href
     substitution for the two links into the shadow service; no js/ file
     reads it."""
-    path = Path(app.root_path) / filename
-    html = path.read_text(encoding='utf-8')
-    html = html.replace('__PHONEXA_PREFIX__', _prefix())
-    html = html.replace('__SHADOW_PREFIX__', _shadow_prefix())
-    return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+    return render_page(app.root_path, filename,
+                       PHONEXA_PREFIX=_prefix(), SHADOW_PREFIX=_shadow_prefix())
 
 
 @app.route('/')
@@ -1941,11 +1945,9 @@ def serve_static(path):
     if path.endswith('.html'):
         # send_from_directory's safe_join rules still apply: resolve the
         # request against the app directory and refuse anything escaping it
-        # before reading the file ourselves.
-        safe = safe_join(app.root_path, path)
-        if safe is None or not os.path.isfile(safe):
-            abort(404)
-        return _serve_page(os.path.relpath(safe, app.root_path))
+        # before reading the file ourselves. One implementation, in
+        # libs/pyservice/prefix.py — shadow had the identical block.
+        return _serve_page(safe_page_path(app.root_path, path))
     return send_from_directory('.', path)
 
 

@@ -10,6 +10,18 @@ import { createServer } from "../src/server.js";
 import { startFakeStabbur } from "./helpers/fakeStabbur.js";
 import { seedActiveLogicBundle } from "./helpers/logicBundleFixture.js";
 
+// unified-auth 4.1: every route in this service now requires the
+// gateway-verified `X-Tun-Operator` marker or INTERNAL_TOKEN — the old
+// "gate disabled when no token is configured" escape hatch is gone, because
+// it made a missing value an open console. These tests drive the service
+// DIRECTLY, which production does not allow (4.7: nothing publishes outside
+// the loopback interface), so they present the marker the gateway would have
+// set. `rawFetch` is kept for the tests that assert the rejection itself.
+const rawFetch = globalThis.fetch;
+globalThis.fetch = (input, init = {}) =>
+  rawFetch(input, { ...init, headers: { "X-Tun-Operator": "1", ...(init.headers || {}) } });
+
+
 const DATABASE_URL = process.env.DATABASE_URL;
 const describe = DATABASE_URL ? test : test.skip;
 
@@ -32,7 +44,7 @@ describe("builder's HTTP server: forecast, schedule, and run-log pages all rende
   const stabburBaseUrl = await fake.listen();
   const config = {
     stabburBaseUrl,
-    stabburAuthToken: fake.authToken,
+    internalToken: fake.authToken,
     sourceLang: "no",
     dataDir,
     publicBase: "http://localhost:8080",
@@ -92,35 +104,35 @@ describe("builder's HTTP server: forecast, schedule, and run-log pages all rende
     assert.match(await res.text(), /Run log/);
   });
 
-  await t.test("D-H6: with an operator token configured, pages require it — via cookie (page loads) or bearer header (API)", async () => {
-    const authedServer = createServer(pool, { ...config, operatorAuthToken: "secret123" });
+  await t.test("unified-auth: every route needs the gateway marker or INTERNAL_TOKEN, and there is no login page", async () => {
+    const authedServer = createServer(pool, { ...config, internalToken: "secret123" });
     await new Promise((resolve) => authedServer.listen(0, resolve));
     const authedPort = authedServer.address().port;
     try {
-      const noAuth = await fetch(`http://localhost:${authedPort}/builder`, { redirect: "manual" });
-      assert.equal(noAuth.status, 302);
-      assert.match(noAuth.headers.get("location"), /^\/builder\/login/);
+      const noAuth = await rawFetch(`http://localhost:${authedPort}/builder`, { redirect: "manual" });
+      assert.equal(noAuth.status, 401);
 
-      const apiNoAuth = await fetch(`http://localhost:${authedPort}/builder/api/forecast`);
+      const apiNoAuth = await rawFetch(`http://localhost:${authedPort}/builder/api/forecast`);
       assert.equal(apiNoAuth.status, 401);
 
-      const apiWithHeader = await fetch(`http://localhost:${authedPort}/builder/api/forecast`, {
+      const apiWithHeader = await rawFetch(`http://localhost:${authedPort}/builder/api/forecast`, {
         headers: { Authorization: "Bearer secret123" },
       });
       assert.equal(apiWithHeader.status, 200);
 
-      const rightLogin = await fetch(`http://localhost:${authedPort}/builder/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "token=secret123",
+      const pageWithMarker = await rawFetch(`http://localhost:${authedPort}/builder`, {
+        headers: { "X-Tun-Operator": "1" },
+      });
+      assert.equal(pageWithMarker.status, 200);
+
+      // /builder/login and its cookie are DELETED (unified-auth 4.2).
+      const loginPage = await rawFetch(`http://localhost:${authedPort}/builder/login`);
+      assert.equal(loginPage.status, 401);
+      const cookieAttempt = await rawFetch(`http://localhost:${authedPort}/builder`, {
+        headers: { Cookie: "operator_token=secret123" },
         redirect: "manual",
       });
-      assert.equal(rightLogin.status, 302);
-      const cookie = rightLogin.headers.get("set-cookie");
-      assert.match(cookie, /operator_token=secret123/);
-
-      const pageWithCookie = await fetch(`http://localhost:${authedPort}/builder`, { headers: { Cookie: cookie } });
-      assert.equal(pageWithCookie.status, 200);
+      assert.equal(cookieAttempt.status, 401);
     } finally {
       await new Promise((resolve) => authedServer.close(resolve));
     }

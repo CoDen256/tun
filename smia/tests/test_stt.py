@@ -29,13 +29,13 @@ AUTH = {"Authorization": "Bearer test-token"}
 
 
 def test_missing_audio_is_400(client, monkeypatch):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     resp = client.post("/stt", data={}, headers=AUTH, content_type="multipart/form-data")
     assert resp.status_code == 400
 
 
 def test_missing_provider_is_required(client, monkeypatch):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     # Both providers are dynamically unregistered from `available` when
     # their token isn't configured (see registry.py's `available=`) — set
     # both so this test exercises the "provider required" response, not

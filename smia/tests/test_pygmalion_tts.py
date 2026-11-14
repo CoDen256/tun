@@ -120,7 +120,7 @@ def test_identical_audio_is_deduplicated_by_sha256():
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     return real_app.test_client()
 
 

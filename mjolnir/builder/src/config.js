@@ -2,27 +2,25 @@
 // re-derive it slightly differently.
 export function loadConfig() {
   const stabburBaseUrl = process.env.STABBUR_BASE_URL;
-  const stabburAuthToken = process.env.STABBUR_AUTH_TOKEN;
+  // unified-auth 4.6: ONE value for every service-to-service call, replacing
+  // STABBUR_AUTH_TOKEN here and SMIA_AUTH_TOKEN elsewhere. builder -> stabbur
+  // never passes through the gateway, so the marker is not an option on that
+  // leg and the token is what stabbur checks.
+  const internalToken = process.env.INTERNAL_TOKEN;
   const dataDir = process.env.DATA_DIR || "../data";
   const publicBase = process.env.TUN_PUBLIC_BASE;
   if (!stabburBaseUrl) throw new Error("STABBUR_BASE_URL is required");
-  // D85: stabbur's /api/notes and /api/grammar_rules require a bearer token
-  // on every path except /ui and /blob/ (same shared-token middleware as
-  // smia, D-N1) — this was missing entirely until found cross-checking a
-  // real pull against stabbur's actual auth.py.
-  if (!stabburAuthToken) throw new Error("STABBUR_AUTH_TOKEN is required (stabbur's shared bearer token)");
+  // D85: stabbur's /api/notes and /api/grammar_rules require a credential on
+  // every path (unified-auth 4.5 deleted the /ui and /blob carve-outs) — this
+  // was missing entirely until found cross-checking a real pull against
+  // stabbur's actual auth module.
+  if (!internalToken) throw new Error("INTERNAL_TOKEN is required (the one service-to-service token)");
   if (!publicBase) throw new Error("TUN_PUBLIC_BASE is required (passed through to the publish module)");
-  // D-H6: not required — unset disables the operator-auth gate entirely
-  // (local/dev ergonomics). Task 7.4's ordering constraint is the real
-  // guard: the Caddy routes must never be uncommented for a deploy that
-  // left this unset.
-  const operatorAuthToken = process.env.OPERATOR_AUTH_TOKEN;
   return {
     stabburBaseUrl,
-    stabburAuthToken,
+    internalToken,
     dataDir,
     publicBase,
-    operatorAuthToken,
     sourceLang: process.env.SOURCE_LANG || "no",
   };
 }

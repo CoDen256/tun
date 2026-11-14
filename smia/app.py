@@ -4,7 +4,8 @@ adapter module so provider registration runs before the first request, and
 mounts the provider-catalog routes (`/providers`, `/health`) plus each
 kind's lookup routes once that kind has an adapter.
 
-Run: `flask --app app run` (dev) with DATABASE_URL and SMIA_AUTH_TOKEN set.
+Run: `flask --app app run` (dev) with DATABASE_URL set. Auth is the shared
+check (libs/pyservice/auth.py) — the gateway marker or INTERNAL_TOKEN.
 """
 
 from __future__ import annotations
@@ -13,15 +14,20 @@ import base64
 import hashlib
 import os
 
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
+from pyservice.auth import register_auth
+from pyservice.prefix import forwarded_prefix, render_page
 
 import audio_cache
 import cache
-from auth import register_auth
 from db.session import session_scope
 
-app = Flask(__name__)
+# static_folder="ui" / static_url_path="/static" is what moves the UI to the
+# prefix root (unified-auth 5.1, superseding D46's /ui convention): the page
+# itself is served at `/` and Flask's own static handler serves ui/ under
+# `/static/`. Behind the gateway that is `/smia/` and `/smia/static/`.
+app = Flask(__name__, static_folder="ui", static_url_path="/static")
 CORS(app)
 app.json.ensure_ascii = False  # IPA/Norwegian characters as literal UTF-8, not \uXXXX escapes
 register_auth(app)
@@ -161,24 +167,14 @@ def get_health():
         return jsonify(health_module.get_all(db))
 
 
-@app.route("/ui", methods=["GET"])
-@app.route("/ui/", methods=["GET"])
+@app.route("/", methods=["GET"])
 def ui_index():
-    # Mounted at the domain root in local dev, but under a path prefix
-    # (e.g. /smia) once reverse-proxied through tun's Caddy — mirrors
-    # stabbur's app.py ui_index() exactly (D46). The proxy passes the
-    # prefix along as X-Forwarded-Prefix; ui/ui.js reads it back via
-    # `window.SMIA_PREFIX` for its own absolute API requests.
-    prefix = request.headers.get("X-Forwarded-Prefix", "").rstrip("/")
-    with open(os.path.join(app.root_path, "ui", "index.html"), encoding="utf-8") as f:
-        html = f.read()
-    html = html.replace("__SMIA_PREFIX__", prefix)
-    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
-
-
-@app.route("/ui/<path:filename>", methods=["GET"])
-def ui_asset(filename):
-    return send_from_directory("ui", filename)
+    # Mounted at the domain root in local dev and under /smia/ behind the
+    # gateway, which strips that prefix before forwarding and passes it on as
+    # X-Forwarded-Prefix; ui/ui.js reads it back via `window.SMIA_PREFIX` for
+    # its own absolute asset/API requests. Mirrors stabbur's app.py exactly,
+    # and both now call the one implementation in libs/pyservice/prefix.py.
+    return render_page(app.root_path, "ui/index.html", SMIA_PREFIX=forwarded_prefix())
 
 
 @app.route("/providers", methods=["GET"])

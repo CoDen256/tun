@@ -37,19 +37,22 @@ def test_get_blob_serves_exact_bytes(client):
     upload = client.post("/blobs", data={"audio": (_file(data), "clip.mp3")}, headers=AUTH, content_type="multipart/form-data")
     sha = upload.get_json()["sha256"]
 
-    resp = client.get(f"/blob/{sha}")
+    # unified-auth 4.5: the /blob/<sha256> carve-out is gone. The browser
+    # attaches the operator credential to <audio src=...> like any other
+    # same-origin subresource, so there is nothing left to exempt.
+    resp = client.get(f"/blob/{sha}", headers=AUTH)
     assert resp.status_code == 200
     assert resp.data == data
     assert "immutable" in resp.headers["Cache-Control"]
 
 
 def test_get_unknown_blob_is_404(client):
-    resp = client.get("/blob/" + "0" * 64)
+    resp = client.get("/blob/" + "0" * 64, headers=AUTH)
     assert resp.status_code == 404
 
 
 def test_get_blob_rejects_malformed_sha256(client):
-    resp = client.get("/blob/not-a-sha256")
+    resp = client.get("/blob/not-a-sha256", headers=AUTH)
     assert resp.status_code == 404
 
 

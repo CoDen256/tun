@@ -21,7 +21,7 @@ AUTH = {"Authorization": "Bearer test-token"}
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     return real_app.test_client()
 
 
@@ -71,7 +71,7 @@ def test_provider_error_on_phrase_attempt_yields_502_with_no_split():
     boom = Boom()
     registry.register("ipa", "boomy", boom)
     import os
-    os.environ["SMIA_AUTH_TOKEN"] = "test-token"
+    os.environ["INTERNAL_TOKEN"] = "test-token"
     client = real_app.test_client()
     resp = client.post("/ipa", json={"text": "god morgen", "lang": "nb", "provider": "boomy"}, headers=AUTH)
     assert resp.status_code == 502
@@ -172,7 +172,7 @@ def test_same_ipa_no_variety_candidates_dedupe_to_one():
     registry.register("ipa", "dupprovider", dup)
 
     import os
-    os.environ["SMIA_AUTH_TOKEN"] = "test-token"
+    os.environ["INTERNAL_TOKEN"] = "test-token"
     client = real_app.test_client()
     resp = client.post("/ipa", json={"text": "word", "lang": "nb", "provider": "dupprovider"}, headers=AUTH)
     body = resp.get_json()
@@ -216,7 +216,7 @@ def test_gap_is_not_filled_by_another_provider():
     registry.register("ipa", "hasitprovider", has_it)
 
     import os
-    os.environ["SMIA_AUTH_TOKEN"] = "test-token"
+    os.environ["INTERNAL_TOKEN"] = "test-token"
     client = real_app.test_client()
     resp = client.post(
         "/ipa", json={"text": "foo bar", "lang": "nb", "provider": "emptyprovider"}, headers=AUTH
@@ -260,7 +260,7 @@ def test_force_refresh_reinvokes_provider_for_every_token():
 
     registry.register("ipa", "counting", Counting())
     import os
-    os.environ["SMIA_AUTH_TOKEN"] = "test-token"
+    os.environ["INTERNAL_TOKEN"] = "test-token"
     client = real_app.test_client()
 
     client.post("/ipa", json={"text": "foo bar", "lang": "nb", "provider": "counting"}, headers=AUTH)

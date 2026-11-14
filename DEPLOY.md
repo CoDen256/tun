@@ -326,13 +326,33 @@ A cross-origin **preflight** (`OPTIONS` with `Origin` and
 401 there surfaces to the page as a CORS error nothing client-side can fix.
 Any other `OPTIONS` is gated normally.
 
-The gateway also deletes any inbound `X-Tun-Operator` header on every route,
-device plane included: that header is the marker services will trust in
-`unified-auth` section 4, and a client must never be able to mint it.
+The gateway deletes any inbound `X-Tun-Operator` header on every route,
+device plane included, and then SETS it after the credential check passes —
+inside the same `route`, so the written order is the compiled order. That
+header is the only thing every service trusts besides `INTERNAL_TOKEN`
+(`libs/pyservice/auth.py`, `libs/jsservice/auth.js`), so a client must never
+be able to mint it. Two things make that true and both are requirements: the
+strip above, and the fact that **no service publishes a port outside the
+loopback interface** (`bin/check-standards.sh` fails if one ever does).
 
-stabbur and smia serve their UI at `/stabbur/ui` and `/smia/ui`. Moving a
-service's UI to its prefix root is the planned `unified-auth` change's job and
-has **not** happened.
+`/mjolnir/userdata/*` sets the marker too, after validating the device's own
+`Bearer` token. The device is unaffected: nothing it sends changed, only
+which process reads it.
+
+stabbur and smia serve their UI at the **prefix root** — `/stabbur/` and
+`/smia/`, assets under `/stabbur/static/` and `/smia/static/`. The old `/ui`
+paths are gone (404); D46's `/ui` convention is superseded. There is no token
+box on either page any more: the operator authenticates once at the gateway
+and the browser attaches that credential to every same-origin request,
+`<audio src=...>` included.
+
+### The one internal token
+
+`INTERNAL_TOKEN` in the root `.env` is the only service-to-service credential
+(builder → stabbur, stabbur → smia, shadow → smia, shadow → phonexa).
+`STABBUR_AUTH_TOKEN` and `SMIA_AUTH_TOKEN` are **retired names** and
+`bin/check-standards.sh` fails if either is typed into a `.env.example` again.
+A human never sends this value.
 
 ### Adminer
 
@@ -364,10 +384,10 @@ docker compose ps                                   # all twelve Up (backup may 
 docker compose exec caddy getent hosts smia-backend     # resolves, no network config needed
 docker compose exec mjolnir-builder getent hosts stabbur-backend
 # every operator zone: 401 with no credential, served with it
-for p in /mjolnir /builder /stabbur/ui /smia/ui /phonexa/ /shadow/ /adminer/; do
+for p in /mjolnir/ /builder/ /stabbur/ /smia/ /phonexa/ /shadow/ /adminer/; do
   curl -so /dev/null -w "$p %{http_code}\n" https://<host>$p                   # 401
   curl -so /dev/null -w "$p %{http_code}\n" -u operator:$OPERATOR_AUTH_TOKEN \
-       https://<host>$p                                                        # 200/302
+       https://<host>$p                                                        # 200
 done
 # a cross-origin preflight must be 2xx WITHOUT a credential (hover-translate)
 curl -si -X OPTIONS -H 'Origin: https://example.com' \

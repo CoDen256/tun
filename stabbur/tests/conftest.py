@@ -100,7 +100,7 @@ def make_capture(capture_id="cap-1", **overrides):
 
 @pytest.fixture
 def client(monkeypatch, tmp_path):
-    monkeypatch.setenv("STABBUR_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     monkeypatch.setenv("STABBUR_BLOB_DIR", str(tmp_path / "blobs"))
     import blob_storage
 

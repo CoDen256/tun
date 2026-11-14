@@ -15,7 +15,7 @@ WHAT MOVED AND WHY EACH PIECE IS HERE
   matched the domain boundary.
 * `/transcribe` and `/transcribe/providers` — a pure proxy to smia's STT.
   Stateless: VERIFIED, they touch no model, no session and no file, only
-  SMIA_BASE_URL/SMIA_AUTH_TOKEN and the uploaded slice. Only the shadowing
+  SMIA_BASE_URL/INTERNAL_TOKEN and the uploaded slice. Only the shadowing
   page and the shadowing settings page ever called them.
 * `/api/v1/youtube-extract` — shells out to yt-dlp, streams the WAV back,
   writes nothing. Stateless: VERIFIED. Its comment in phonexa called it
@@ -51,7 +51,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
 from urllib.parse import urlsplit
 
 import requests
@@ -65,13 +64,22 @@ from flask import (
     send_from_directory,
 )
 from flask_cors import CORS
-from werkzeug.utils import safe_join
+from pyservice.auth import register_auth
+from pyservice.prefix import forwarded_prefix, render_page, safe_page_path
 
 import phonexa_client
 from shadowing import shadowing_bp
 
 app = Flask(__name__)
 CORS(app)
+
+# unified-auth 4.1/4.3. shadow had NO auth of its own until now — the only
+# thing in front of it was the gateway's credential check, inherited when
+# zone-isolation split it out of phonexa. The check is the shared one: the
+# gateway-verified `X-Tun-Operator` marker, or `Authorization: Bearer
+# INTERNAL_TOKEN`; otherwise 401. `/_health` stays open for the container
+# probe and nothing else does.
+register_auth(app)
 app.register_blueprint(shadowing_bp)
 
 
@@ -109,12 +117,12 @@ def _smia_config():
     """(base_url, bearer_token) from the environment; token may be empty."""
     return (
         os.environ.get('SMIA_BASE_URL', 'http://smia-backend:5055').rstrip('/'),
-        os.environ.get('SMIA_AUTH_TOKEN', ''),
+        os.environ.get('INTERNAL_TOKEN', ''),
     )
 
 
 def _smia_not_configured():
-    return jsonify({'error': 'Transcription is not configured (SMIA_AUTH_TOKEN is not set on the server)'}), 503
+    return jsonify({'error': 'Transcription is not configured (INTERNAL_TOKEN is not set on the server)'}), 503
 
 
 def _smia_unreachable(base_url):
@@ -128,7 +136,7 @@ def _smia_error_response(resp):
     if resp.status_code in (401, 403):
         # Our own token was refused — not something the browser's user can fix,
         # and a bare 401 here would read as shadow's own login failing.
-        return jsonify({'error': "smia rejected shadow's credentials (check SMIA_AUTH_TOKEN)"}), 502
+        return jsonify({'error': "smia rejected shadow's credentials (check INTERNAL_TOKEN)"}), 502
     try:
         body = resp.json()
     except ValueError:
@@ -375,16 +383,9 @@ def youtube_extract():
 # Formant Lab handoff are navigations the human follows, not data calls.
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _prefix() -> str:
-    """The path prefix this request arrived under, '' when mounted at the root.
-
-    Set by the reverse proxy (`header_up X-Forwarded-Prefix /shadow` in
-    mjolnir's Caddyfile) alongside stripping that prefix off the path, so
-    every route above stays prefix-agnostic while the URLs we hand back to
-    the browser carry it. Empty in standalone development — nothing to
-    configure there.
-    """
-    return request.headers.get('X-Forwarded-Prefix', '').rstrip('/')
+# unified-auth 5.2: one implementation, in libs/pyservice/prefix.py. This
+# was the fourth copy of the same six lines.
+_prefix = forwarded_prefix
 
 
 def _serve_page(filename: str):
@@ -399,11 +400,9 @@ def _serve_page(filename: str):
     Only HTML is read-and-rewritten; every other asset streams through
     send_from_directory untouched.
     """
-    path = Path(app.root_path) / filename
-    html = path.read_text(encoding='utf-8')
-    html = html.replace('__SHADOW_PREFIX__', _prefix())
-    html = html.replace('__PHONEXA_PREFIX__', phonexa_client.public_prefix())
-    return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+    return render_page(app.root_path, filename,
+                       SHADOW_PREFIX=_prefix(),
+                       PHONEXA_PREFIX=phonexa_client.public_prefix())
 
 
 @app.route('/')
@@ -416,11 +415,9 @@ def serve_static(path):
     if path.endswith('.html'):
         # send_from_directory's safe_join rules still apply: resolve the
         # request against the app directory and refuse anything escaping it
-        # before reading the file ourselves.
-        safe = safe_join(app.root_path, path)
-        if safe is None or not os.path.isfile(safe):
-            abort(404)
-        return _serve_page(os.path.relpath(safe, app.root_path))
+        # before reading the file ourselves. One implementation, in
+        # libs/pyservice/prefix.py — phonexa had the identical block.
+        return _serve_page(safe_page_path(app.root_path, path))
     return send_from_directory('.', path)
 
 

@@ -119,7 +119,7 @@ describe("builder pipeline: forecast + publish against a fixture stabbur and an 
 
   const config = {
     stabburBaseUrl,
-    stabburAuthToken: fake.authToken,
+    internalToken: fake.authToken,
     sourceLang: "no",
     dataDir,
     publicBase: "https://tun.example.test",

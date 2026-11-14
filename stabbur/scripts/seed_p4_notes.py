@@ -11,7 +11,7 @@ references. Batches are independent — running batch 2 does not require
 batch 1 to have been run first.
 
 Not part of the service itself — run once per batch, by hand:
-  STABBUR_AUTH_TOKEN=... python scripts/seed_p4_notes.py <batch> [base_url]
+  INTERNAL_TOKEN=... python scripts/seed_p4_notes.py <batch> [base_url]
 """
 
 from __future__ import annotations
@@ -227,7 +227,7 @@ def main() -> None:
     base_url = sys.argv[2] if len(sys.argv) > 2 else "http://localhost:5056"
     import os
 
-    token = os.environ["STABBUR_AUTH_TOKEN"]
+    token = os.environ["INTERNAL_TOKEN"]
     headers = {"Authorization": f"Bearer {token}"}
 
     rule_create = requests.post(f"{base_url}/api/grammar_rules", headers=headers, json=batch["grammar_rule"])

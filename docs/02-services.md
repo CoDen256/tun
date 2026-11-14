@@ -139,8 +139,8 @@ Routes through the gateway, as served today:
 | `/ota/*` `/blob/*` `/audio-manifest/*` | caddy, off disk | **device-facing** — byte-identical to the frozen contract in `11-ota-contract.md` (D55) |
 | `/mjolnir` | mjolnir-hub | operator login |
 | `/builder` | mjolnir-builder | operator login |
-| `/stabbur/*` | stabbur-backend | UI at `/stabbur/ui` |
-| `/smia/*` | smia-backend | UI at `/smia/ui` |
+| `/stabbur/*` | stabbur-backend | UI at `/stabbur/` (D46's `/ui` superseded) |
+| `/smia/*` | smia-backend | UI at `/smia/` (D46's `/ui` superseded) |
 | `/phonexa/*` | phonexa-backend | Caddy `basic_auth`; `/phonexa` must redirect to `/phonexa/` |
 | `/adminer/*` | adminer | **unauthenticated at the gateway** — the operator token gates hub/builder, not this route (see the Caddyfile comment); also on `127.0.0.1:8082` |
 
@@ -207,9 +207,9 @@ mjolnir-builder   worker + operator UI: live forecast (dry-run deck assignment
                   against stabbur's current ready+audio'd notes) and the
                   manual "publish now" button (D78, D80)
 stabbur-postgres  stabbur database
-stabbur-backend   web + API, reached at /stabbur/ (its UI at /stabbur/ui)
+stabbur-backend   web + API, reached at /stabbur/ (its UI is that same path)
 smia-postgres     smia database — deliberately still postgres:16
-smia-backend      web + API, reached at /smia/ (its UI at /smia/ui)
+smia-backend      web + API, reached at /smia/ (its UI is that same path)
 phonexa-postgres  phonexa database (PG 17); its data volume and the audio
                   volume are both in the backup set (D147)
 phonexa-backend   web + API (/stream and js/realtime.js frame pipeline

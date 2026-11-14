@@ -160,7 +160,7 @@ def test_tts_use_fetches_bytes_and_stores_a_real_stabbur_blob(client, monkeypatc
     assert sha == hashlib.sha256(audio_bytes).hexdigest()
 
     # And it's a real stabbur blob, fetchable the normal way.
-    blob_resp = client.get(f"/blob/{sha}")
+    blob_resp = client.get(f"/blob/{sha}", headers=AUTH)
     assert blob_resp.status_code == 200
     assert blob_resp.data == audio_bytes
 
@@ -192,7 +192,7 @@ def test_tts_preview_streams_bytes_without_storing_a_blob(client, monkeypatch):
     monkeypatch.setattr(smia_client, "get_bytes", fake_get_bytes)
     # No AUTH header — this route must be reachable from a plain <audio
     # src=...>, which can't attach one (same exemption as /blob/<sha256>).
-    resp = client.get("/api/enrich/tts/preview/preview123")
+    resp = client.get("/api/enrich/tts/preview/preview123", headers=AUTH)
     assert resp.status_code == 200
     assert resp.data == audio_bytes
     assert resp.content_type == "audio/mpeg"
@@ -205,7 +205,7 @@ def test_tts_preview_streams_bytes_without_storing_a_blob(client, monkeypatch):
 
 def test_tts_preview_surfaces_smia_fetch_failure(client, monkeypatch):
     monkeypatch.setattr(smia_client, "get_bytes", lambda path, timeout=30.0: (404, b"", "application/json"))
-    resp = client.get("/api/enrich/tts/preview/missing")
+    resp = client.get("/api/enrich/tts/preview/missing", headers=AUTH)
     assert resp.status_code == 502
 
 

@@ -152,7 +152,7 @@ describe("deck-consolidation: migrate a synthetic pre-consolidation fixture, the
 
   const fake = startFakeStabbur();
   const stabburBaseUrl = await fake.listen();
-  const config = { stabburBaseUrl, stabburAuthToken: fake.authToken, sourceLang: "no", dataDir, publicBase: "https://tun.example.test" };
+  const config = { stabburBaseUrl, internalToken: fake.authToken, sourceLang: "no", dataDir, publicBase: "https://tun.example.test" };
 
   function outputModel(buildId) {
     return loadDeckCardModel(path.join(dataDir, "ota", "bundle", `${buildId}.js`));

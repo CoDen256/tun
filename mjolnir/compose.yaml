@@ -9,15 +9,20 @@
 # services resolve each other by service name with no configuration at all.
 #
 # Values used by more than one project (TUN_SITE_ADDRESS, TUN_PUBLIC_BASE,
-# OTA_TOKEN, OPERATOR_AUTH_TOKEN, MJOLNIR_POSTGRES_PASSWORD, STABBUR_AUTH_TOKEN) live
+# OTA_TOKEN, OPERATOR_AUTH_TOKEN, MJOLNIR_POSTGRES_PASSWORD, INTERNAL_TOKEN) live
 # in the ROOT `.env` and are interpolated below. Values used only by mjolnir
 # live in `mjolnir/.env` (see .env.example) and are passed through via
 # `env_file`. No value is typed in two files.
 #
-# D-H6: OPERATOR_AUTH_TOKEN gates hub's/builder's own operator routes; it is
-# NOT optional for a real deploy (Caddy exposes both publicly at /mjolnir/*
-# and /builder/*) even though each service's own config loader treats it as
-# optional for local/dev ergonomics.
+# D-H6 IS SUPERSEDED by unified-auth 4.1/4.2. hub and builder no longer run
+# a credential check of their own against OPERATOR_AUTH_TOKEN, and neither
+# has a login page. They accept the gateway-verified `X-Tun-Operator` marker
+# or INTERNAL_TOKEN (libs/jsservice/auth.js), unconditionally — the old
+# "gate disabled when the value is unset" ergonomic made a missing value an
+# open console, and there is no value left that can be forgotten.
+#
+# OPERATOR_AUTH_TOKEN is still passed to hub, but for one unrelated job: the
+# bundle tool bakes it into an APK as SYNC_TOKEN at assemble time.
 include:
   - ../postgres/compose.yaml
 
@@ -67,15 +72,16 @@ services:
       DATA_DIR: /app/data
       TUN_PUBLIC_BASE: ${TUN_PUBLIC_BASE}
       OPERATOR_AUTH_TOKEN: ${OPERATOR_AUTH_TOKEN}
-      # Derived, never typed: service names resolve, and stabbur's browser-
-      # facing UI is this site's own /stabbur/ui route through Caddy. The two
-      # are NOT interchangeable — the first is an in-container fetch
-      # (pullNotes/pullGrammarRules), the second is a link a human clicks.
+      # Derived, never typed: service names resolve. STABBUR_UI_BASE is gone
+      # (unified-auth 5.4) — stabbur's UI moved to the prefix root, so the
+      # browser-facing link is `$TUN_PUBLIC_BASE/stabbur/`, computed in
+      # hub/src/config.js from a value this file already passes.
       STABBUR_BASE_URL: http://stabbur-backend:5056
-      STABBUR_UI_BASE: ${TUN_PUBLIC_BASE}/stabbur/ui
-      # Shared with stabbur itself (D85) — root .env until unified-auth
-      # replaces it with one INTERNAL_TOKEN.
-      STABBUR_AUTH_TOKEN: ${STABBUR_AUTH_TOKEN}
+      # unified-auth 4.6: ONE service-to-service token, replacing STABBUR_AUTH_TOKEN
+      # and SMIA_AUTH_TOKEN. NO `:-changeme` default — an unset value must fail
+      # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
+      # and a publicly-known fallback is the opposite of that.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     volumes:
       - .:/app
       # libs/ mounted at /libs, NOT /app/libs, so that the SAME relative
@@ -90,21 +96,16 @@ services:
       # monorepo-merge 4.4: same four-key shape as phonexa-backend's reference
       # healthcheck. The *predicate* has to differ, and here is why.
       #
-      # hub has no unauthenticated health route. src/auth.js's requireAuth()
-      # gates every path except its one carve-out, /mjolnir/login (D-H6), and
-      # answers a rejected request with 401 for anything under /api/ and a 302
-      # to the login page otherwise. /mjolnir/login is not reliably 200 either:
-      # src/server.js only mounts it when OPERATOR_AUTH_TOKEN is set, and falls
-      # through to the normal route list (404) when it is unset for local/dev.
+      # The comment here used to explain why this probe could only assert
+      # LIVENESS: hub had no unauthenticated route, so any HTTP status line
+      # had to count as a pass. That stopped being true when zone-isolation
+      # added /mjolnir/_health, which is deliberately above the credential
+      # check (a Docker health check cannot present one) and reports
+      # serving-vs-ready. The probe keys on the STATUS CODE — 200 ready, 503
+      # degraded — which is what P47's second half is about.
       #
-      # So this probe asserts liveness, not success: it passes on ANY HTTP
-      # status line. A 200, a 302 to /mjolnir/login, a 401 and a 404 all prove
-      # the same thing — the node process is up, accepting connections and
-      # routing. Only a connection refusal, a hang or a crashed process fails
-      # it. Deliberately weaker than phonexa's /ping check, because a
-      # strictly-stronger one here could only be made to pass by opening an
-      # unauthenticated route, which is a behaviour change this change does not
-      # make.
+      # unified-auth 4.1 does not change that: /mjolnir/_health is still the
+      # single exemption, and it is the only one.
       #
       # node, not curl: this image is node:22-alpine + bash only (builder's has
       # curl, hub's does not), and `node -e` is CommonJS by default so
@@ -140,7 +141,16 @@ services:
     environment:
       DATABASE_URL: postgresql://mjolnir:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_mjolnir@postgres:5432/mjolnir
       TUN_PUBLIC_BASE: ${TUN_PUBLIC_BASE}
+      # The DEVICE token. The gateway validates it on /mjolnir/userdata/* and
+      # then vouches for the request with X-Tun-Operator; mjolnir-sync itself
+      # never reads this value. Kept here because hub/src/config.js is the
+      # shared loader and bakes it into an APK as SYNC_TOKEN at assemble time.
       OPERATOR_AUTH_TOKEN: ${OPERATOR_AUTH_TOKEN}
+      # unified-auth 4.6: ONE service-to-service token, replacing STABBUR_AUTH_TOKEN
+      # and SMIA_AUTH_TOKEN. NO `:-changeme` default — an unset value must fail
+      # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
+      # and a publicly-known fallback is the opposite of that.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
       DATA_DIR: /app/data
       PORT: "8002"
     volumes:
@@ -190,9 +200,12 @@ services:
       DATABASE_URL: postgresql://mjolnir:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_mjolnir@postgres:5432/mjolnir
       DATA_DIR: /app/data
       TUN_PUBLIC_BASE: ${TUN_PUBLIC_BASE}
-      OPERATOR_AUTH_TOKEN: ${OPERATOR_AUTH_TOKEN}
       STABBUR_BASE_URL: http://stabbur-backend:5056
-      STABBUR_AUTH_TOKEN: ${STABBUR_AUTH_TOKEN}
+      # unified-auth 4.6: ONE service-to-service token, replacing STABBUR_AUTH_TOKEN
+      # and SMIA_AUTH_TOKEN. NO `:-changeme` default — an unset value must fail
+      # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
+      # and a publicly-known fallback is the opposite of that.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     volumes:
       - .:/app
       # See the mjolnir-hub comment: /libs keeps one relative import working
@@ -201,12 +214,10 @@ services:
       - /app/node_modules
       - /app/builder/node_modules
     healthcheck:
-      # Same shape and same liveness-not-success predicate as mjolnir-hub's
-      # above, for the same reason: builder/src/auth.js is hub's auth.js, and
-      # builder/src/server.js gates every route behind it except /builder/login
-      # — which, again, only exists while OPERATOR_AUTH_TOKEN is set. Any HTTP
-      # status proves the node process is alive and routing; only a refused
-      # connection or a hang fails the check.
+      # Same shape as mjolnir-hub's above, against builder's own
+      # /builder/_health. builder shares the one auth implementation
+      # (libs/jsservice/auth.js) and exempts exactly that path, for the same
+      # reason hub does: a container probe carries no credential.
       #
       # node rather than curl even though this image does install curl (for
       # ffmpeg-adjacent ops scripting): keeping the probe byte-for-byte hub's,

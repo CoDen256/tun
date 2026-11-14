@@ -32,12 +32,12 @@ import crypto from "node:crypto";
 // family's actual active code here, once per family per run, so every
 // downstream caller (forecast's prediction and the real mint) keeps dealing
 // in literal deck codes exactly as before this change.
-async function pullAndAssign(pool, { stabburBaseUrl, stabburAuthToken, sourceLang }) {
+async function pullAndAssign(pool, { stabburBaseUrl, internalToken, sourceLang }) {
   // `since` is deliberately never passed: every run does a full pull, since
   // regenerating every already-minted card's content (not just new ones)
   // needs each note's current state anyway, and note counts are small
   // enough that this is cheap (task 4.1's finding).
-  const notes = await pullNotes({ baseUrl: stabburBaseUrl, authToken: stabburAuthToken, sourceLang });
+  const notes = await pullNotes({ baseUrl: stabburBaseUrl, authToken: internalToken, sourceLang });
   const eligible = filterAudioEligible(notes);
 
   const { rows } = await pool.query("SELECT note_id FROM minted_notes WHERE note_id = ANY($1)", [
@@ -233,8 +233,8 @@ export async function pruneRetiredDecks(pool, model, log, buildJobId) {
 // `willShipThisRun` so a caller can't mistake "eligible" for "ships today";
 // `byDeck` gains `stagedBeforeThisRun`/`wouldFlushCount`/`wouldHoldCount` so
 // the sliding-window state is visible without inspecting `wouldShip` at all.
-export async function runForecast(pool, { stabburBaseUrl, stabburAuthToken, sourceLang = "no" } = {}) {
-  const { newlyEligibleByDeck, alreadyMinted, eligibleNotesById } = await pullAndAssign(pool, { stabburBaseUrl, stabburAuthToken, sourceLang });
+export async function runForecast(pool, { stabburBaseUrl, internalToken, sourceLang = "no" } = {}) {
+  const { newlyEligibleByDeck, alreadyMinted, eligibleNotesById } = await pullAndAssign(pool, { stabburBaseUrl, internalToken, sourceLang });
   const queueDepths = await pendingQueueDepths(pool);
   // card-flow-view (D-H2-style "one implementation, two call sites" extended
   // to read-only totals): absolute lifetime totals and the pending-by-tier
@@ -381,7 +381,7 @@ export async function runPublish(
   pool,
   {
     stabburBaseUrl,
-    stabburAuthToken,
+    internalToken,
     sourceLang = "no",
     dataDir,
     publicBase,
@@ -396,7 +396,7 @@ export async function runPublish(
 ) {
   const { eligibleNotesById, alreadyMinted, newlyEligibleByDeck } = await pullAndAssign(pool, {
     stabburBaseUrl,
-    stabburAuthToken,
+    internalToken,
     sourceLang,
   });
   const decksToMint = [...newlyEligibleByDeck.entries()];

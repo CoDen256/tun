@@ -67,7 +67,7 @@ def test_manual_link_adapter_returns_empty_candidates_and_url():
 
 
 def test_providers_catalog_still_lists_forvo_and_filmot_for_tts(monkeypatch):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     resp = real_app.test_client().get("/providers", headers={"Authorization": "Bearer test-token"})
     assert resp.status_code == 200
     assert {"forvo", "filmot"} <= set(resp.get_json()["tts"])

@@ -160,25 +160,15 @@ function carryForwardInflectionValues(prefix, newPos) {
   return (note && note.pos === newPos) ? note.inflections : null;
 }
 
+// unified-auth 4.5: there is no token to paste any more. The operator
+// authenticates ONCE at the gateway (Basic, username `operator`) and the
+// browser attaches that credential to every same-origin request this page
+// makes, including `<audio src=...>` — which is the exact reason /blob/ and
+// the TTS preview needed carve-outs before. Kept as a function returning {}
+// so the ~40 call sites stay one edit away from any future header.
 function authHeaders() {
-  const token = document.getElementById('tokenInput').value;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return {};
 }
-
-// Remember the bearer token across page loads (same-origin localStorage —
-// this is a single-operator internal tool, not a multi-user app, so there's
-// no session-separation concern). The script runs at the end of <body>, so
-// the DOM is already parsed by the time this executes.
-const TOKEN_STORAGE_KEY = 'stabbur_token';
-(function restoreToken() {
-  const input = document.getElementById('tokenInput');
-  const saved = localStorage.getItem(TOKEN_STORAGE_KEY);
-  if (saved) input.value = saved;
-  input.addEventListener('input', () => {
-    if (input.value) localStorage.setItem(TOKEN_STORAGE_KEY, input.value);
-    else localStorage.removeItem(TOKEN_STORAGE_KEY);
-  });
-})();
 
 async function api(path, options = {}) {
   const resp = await fetch(`${API_BASE}${path}`, {

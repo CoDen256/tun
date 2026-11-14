@@ -56,11 +56,11 @@ def api_base() -> str:
 
 
 def _auth_headers() -> dict:
-    """stabbur's own `auth.py` requires a bearer token on every
-    non-`/ui`/`/blob` request — `STABBUR_AUTH_TOKEN` matches the same env
-    var name the app itself reads, so pointing this tool at a running
-    instance needs no separate credential."""
-    token = os.environ.get("STABBUR_AUTH_TOKEN")
+    """stabbur requires a credential on EVERY request since unified-auth 4.5
+    — the `/ui` and `/blob/` carve-outs are gone. `INTERNAL_TOKEN` matches
+    the same env var name the app itself reads (libs/pyservice/auth.py), so
+    pointing this tool at a running instance needs no separate credential."""
+    token = os.environ.get("INTERNAL_TOKEN")
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 

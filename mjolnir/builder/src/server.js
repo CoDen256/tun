@@ -7,7 +7,7 @@ import { jobLogLines, makeDbLogger } from "./jobLogs.js";
 import { recentBatches, occurrencesForBuild } from "./batchHistory.js";
 import { getActiveMeta } from "./logicBundle.js";
 import { renderShell, escapeHtml } from "./layout.js";
-import { requireAuth, renderLoginPage, handleLoginPost } from "../../../libs/jsservice/auth.js";
+import { requireAuth } from "../../../libs/jsservice/auth.js";
 import { shipOrderForDeck } from "./cardFlow.js";
 import { occurrencesPerCardForDeck } from "./deckFamilies.js";
 
@@ -757,32 +757,23 @@ export function createServer(pool, config, boot) {
 try {
       const url = new URL(req.url, "http://localhost");
 
-      // D-H6: checked before every route except /builder/login itself.
-      // Namespaced under /builder (not a bare /login) because Caddy only
-      // routes /builder/* to this service (task 7.4) — a path outside that
-      // prefix would never be reachable through the real deploy at all.
-      // Disabled entirely if OPERATOR_AUTH_TOKEN is unset (local/dev) — see
-      // config.js and task 7.4 on why that's safe only before the Caddy
-      // routes are uncommented.
-      const LOGIN_PATH = "/builder/login";
-      if (config.operatorAuthToken) {
-        if (req.method === "GET" && url.pathname === LOGIN_PATH) {
-          const next = url.searchParams.get("next") || "/builder";
-          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-          return res.end(renderLoginPage({ next, loginPath: LOGIN_PATH }));
-        }
-        if (req.method === "POST" && url.pathname === LOGIN_PATH) {
-          return handleLoginPost(req, res, config.operatorAuthToken, { loginPath: LOGIN_PATH });
-        }
-        if (!requireAuth(req, res, config.operatorAuthToken, { loginPath: LOGIN_PATH })) return;
-      }
+      // unified-auth 4.1/4.2. /builder/login and its cookie are GONE — the
+      // gateway is the gate (`basic_auth`, then `X-Tun-Operator`). This check
+      // rejects anything that reached the container without going through it,
+      // and is UNCONDITIONAL: the old gate disabled itself when
+      // OPERATOR_AUTH_TOKEN was unset, so a missing value meant an open
+      // console. The marker needs no configured value, so nothing can be
+      // forgotten into openness.
+      if (!requireAuth(req, res, config.internalToken)) return;
 
       if (req.method === "GET" && url.pathname === "/builder/api/forecast") {
         return sendJson(res, 200, await runForecast(pool, config));
       }
-      // /builder/ui is the canonical entry point, matching stabbur's own
-      // /stabbur/ui and hub's /mjolnir/ui (D46: one convention across
-      // services). The bare path keeps working too.
+      // /builder/ui is an alias for the bare path, kept for existing links
+      // and bookmarks. It is no longer "the convention": unified-auth 5.1
+      // moved stabbur's and smia's UIs to their prefix roots and 5.5
+      // superseded D46's /ui mount point, so `/builder` is the entry point
+      // and `/builder/ui` is simply the same page.
       // READINESS GATE. The forecast panel already degrades when stabbur is
       // unreachable, but the other three queries on this page read builder's
       // OWN database — so with postgres down the page still 500'd, just by a
@@ -862,7 +853,7 @@ try {
       // Task 4.15: triggers 4.2-4.12 immediately, independent of the
       // schedule — a no-op if nothing is newly eligible (runPublish handles it).
       if (req.method === "POST" && url.pathname === "/builder/api/publish") {
-        const grammarRuleLookup = await buildGrammarRuleLookup({ baseUrl: config.stabburBaseUrl, authToken: config.stabburAuthToken });
+        const grammarRuleLookup = await buildGrammarRuleLookup({ baseUrl: config.stabburBaseUrl, authToken: config.internalToken });
         const result = await runPublish(pool, { ...config, grammarRuleLookup, log: makeDbLogger(pool) });
         return sendJson(res, 200, result);
       }

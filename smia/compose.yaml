@@ -21,7 +21,7 @@ include:
 # and mjolnir's Caddy all reach `smia-backend` by service name on the default
 # network, with no network configuration at all.
 #
-# Shared values (SMIA_POSTGRES_PASSWORD, SMIA_AUTH_TOKEN) are interpolated from the
+# Shared values (SMIA_POSTGRES_PASSWORD, INTERNAL_TOKEN) are interpolated from the
 # ROOT .env — the one Compose reads for the project you invoke it in. Running
 # this file standalone from smia/ therefore needs them passed in:
 #   docker compose --env-file ../.env up
@@ -65,7 +65,11 @@ services:
       # Derived, never typed: the role password is "<POSTGRES_PASSWORD>_smia",
       # created by postgres/init/bootstrap.sh from the same one value.
       DATABASE_URL: postgresql+psycopg2://smia:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_smia@postgres:5432/smia
-      SMIA_AUTH_TOKEN: ${SMIA_AUTH_TOKEN}
+      # unified-auth 4.6: ONE service-to-service token, replacing STABBUR_AUTH_TOKEN
+      # and SMIA_AUTH_TOKEN. NO `:-changeme` default — an unset value must fail
+      # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
+      # and a publicly-known fallback is the opposite of that.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
       FLASK_DEBUG: "0"
       # Python's answer to jsservice's /libs mount: shared code goes on the
       # import path, since Python has no file-relative import. /libs (not

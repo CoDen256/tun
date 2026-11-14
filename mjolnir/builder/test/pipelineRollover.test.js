@@ -84,7 +84,7 @@ describe("builder pipeline: a family rolls over once its active code hits capaci
 
   const config = {
     stabburBaseUrl,
-    stabburAuthToken: fake.authToken,
+    internalToken: fake.authToken,
     sourceLang: "no",
     dataDir,
     publicBase: "https://tun.example.test",

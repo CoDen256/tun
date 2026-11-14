@@ -16,7 +16,7 @@ import os
 import requests
 
 SMIA_BASE_URL_ENV = "SMIA_BASE_URL"
-SMIA_AUTH_TOKEN_ENV = "SMIA_AUTH_TOKEN"
+INTERNAL_TOKEN_ENV = "INTERNAL_TOKEN"
 
 
 class SmiaUnavailableError(Exception):
@@ -32,7 +32,7 @@ def _base_url() -> str:
 
 
 def _headers() -> dict:
-    return {"Authorization": f"Bearer {os.environ.get(SMIA_AUTH_TOKEN_ENV, '')}"}
+    return {"Authorization": f"Bearer {os.environ.get(INTERNAL_TOKEN_ENV, '')}"}
 
 
 def _json_or_text(resp: requests.Response):

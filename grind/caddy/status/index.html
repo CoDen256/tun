@@ -31,15 +31,16 @@
 {{- $path := placeholder "http.request.orig_uri.path" -}}
 {{- $code := placeholder "http.error.status_code" -}}
 {{- /* `match` is the gateway route prefix, `href` is where a human should be
-       sent. They differ for stabbur and smia: the route is /stabbur/*, but
-       the bare prefix is that service's JSON API root and answers 401 to a
-       browser, so the link goes to the HTML shell at /stabbur/ui. Same split,
-       same reason, as ZONES in libs/jsservice/layout.js. */ -}}
+       sent. They used to differ for stabbur and smia, whose bare prefix was
+       a JSON API root that answered 401 to a browser; unified-auth 5.1 moved
+       both UIs to the prefix root, so match and href are the same string for
+       every zone again. Same list, same order, as ZONES in
+       libs/jsservice/layout.js. */ -}}
 {{- $zones := list
       (dict "match" "/mjolnir"  "href" "/mjolnir"    "label" "workbench" "desc" "cards, decks, OTA publish history, bundle workbench")
       (dict "match" "/builder"  "href" "/builder"    "label" "builder"   "desc" "build forecast, schedule, run log")
-      (dict "match" "/stabbur"  "href" "/stabbur/ui" "label" "stabbur"   "desc" "captures, notes, enrichment, triage")
-      (dict "match" "/smia"     "href" "/smia/ui"    "label" "smia"      "desc" "inflect, ipa, tts, stt, translate")
+      (dict "match" "/stabbur"  "href" "/stabbur/"   "label" "stabbur"   "desc" "captures, notes, enrichment, triage")
+      (dict "match" "/smia"     "href" "/smia/"      "label" "smia"      "desc" "inflect, ipa, tts, stt, translate")
       (dict "match" "/phonexa"  "href" "/phonexa/"   "label" "phonexa"   "desc" "vowels, consonants, formants, live speech")
       (dict "match" "/shadow"   "href" "/shadow/"    "label" "shadow"    "desc" "shadowing: media, segments, transcription")
       (dict "match" "/adminer"  "href" "/adminer"    "label" "adminer"   "desc" "the shared Postgres cluster")

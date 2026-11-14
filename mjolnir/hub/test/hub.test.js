@@ -10,6 +10,18 @@ import { listPublications, writePublication, updateLabel, deleteBuild } from "..
 import { cardsList } from "../src/cards.js";
 import { createServer } from "../src/server.js";
 
+// unified-auth 4.1: every route in this service now requires the
+// gateway-verified `X-Tun-Operator` marker or INTERNAL_TOKEN — the old
+// "gate disabled when no token is configured" escape hatch is gone, because
+// it made a missing value an open console. These tests drive the service
+// DIRECTLY, which production does not allow (4.7: nothing publishes outside
+// the loopback interface), so they present the marker the gateway would have
+// set. `rawFetch` is kept for the tests that assert the rejection itself.
+const rawFetch = globalThis.fetch;
+globalThis.fetch = (input, init = {}) =>
+  rawFetch(input, { ...init, headers: { "X-Tun-Operator": "1", ...(init.headers || {}) } });
+
+
 // Needs a real postgres (separate logical DB per service, 02-services.md) —
 // point DATABASE_URL at a throwaway database to run these. Skipped, not
 // failed, when none is configured, since this is a solo-dev repo with no CI.
@@ -33,7 +45,7 @@ describe("hub: migrate, seed, publications, cards, ota, server", async (t) => {
   const config = {
     dataDir,
     publicBase: "http://localhost:8080",
-    stabburUiBase: "http://localhost:5056",
+    stabburUiBase: "http://localhost:8080/stabbur/",
     workbenchPatchesDir,
   };
 
@@ -485,58 +497,70 @@ describe("hub: migrate, seed, publications, cards, ota, server", async (t) => {
     }
   });
 
-  await t.test("D-H6: with an operator token configured, pages require it — via cookie (page loads) or bearer header (API)", async () => {
-    const authedServer = createServer(pool, { ...config, operatorAuthToken: "secret123" });
+  await t.test("unified-auth: every route needs the gateway marker or INTERNAL_TOKEN, and there is no login page", async () => {
+    const authedServer = createServer(pool, { ...config, internalToken: "secret123" });
     await new Promise((resolve) => authedServer.listen(0, resolve));
     const port = authedServer.address().port;
     try {
-      const noAuth = await fetch(`http://localhost:${port}/mjolnir/`, { redirect: "manual" });
-      assert.equal(noAuth.status, 302);
-      assert.match(noAuth.headers.get("location"), /^\/mjolnir\/login/);
+      // rawFetch, not the marker-injecting fetch above: these assert the
+      // rejection, so they must NOT carry the marker.
+      const noAuth = await rawFetch(`http://localhost:${port}/mjolnir/`, { redirect: "manual" });
+      assert.equal(noAuth.status, 401);
+      assert.equal(await noAuth.text(), JSON.stringify({ error: "unauthorized" }));
 
-      const apiNoAuth = await fetch(`http://localhost:${port}/mjolnir/api/publications`);
+      const apiNoAuth = await rawFetch(`http://localhost:${port}/mjolnir/api/publications`);
       assert.equal(apiNoAuth.status, 401);
 
-      const workbenchNoAuth = await fetch(`http://localhost:${port}/mjolnir/workbench/`, { redirect: "manual" });
-      assert.equal(workbenchNoAuth.status, 302);
-      assert.match(workbenchNoAuth.headers.get("location"), /^\/mjolnir\/login/);
-      const workbenchApiNoAuth = await fetch(`http://localhost:${port}/mjolnir/workbench/api/patches`);
+      const workbenchNoAuth = await rawFetch(`http://localhost:${port}/mjolnir/workbench/`, { redirect: "manual" });
+      assert.equal(workbenchNoAuth.status, 401);
+      const workbenchApiNoAuth = await rawFetch(`http://localhost:${port}/mjolnir/workbench/api/patches`);
       assert.equal(workbenchApiNoAuth.status, 401);
-      const workbenchWithHeader = await fetch(`http://localhost:${port}/mjolnir/workbench/api/patches`, {
+
+      // The two credentials that DO work.
+      const withMarker = await rawFetch(`http://localhost:${port}/mjolnir/api/publications`, {
+        headers: { "X-Tun-Operator": "1" },
+      });
+      assert.equal(withMarker.status, 200);
+
+      const withToken = await rawFetch(`http://localhost:${port}/mjolnir/api/publications`, {
         headers: { Authorization: "Bearer secret123" },
       });
-      assert.equal(workbenchWithHeader.status, 200);
+      assert.equal(withToken.status, 200);
 
-      const apiWithHeader = await fetch(`http://localhost:${port}/mjolnir/api/publications`, {
-        headers: { Authorization: "Bearer secret123" },
+      const wrongToken = await rawFetch(`http://localhost:${port}/mjolnir/api/publications`, {
+        headers: { Authorization: "Bearer nope" },
       });
-      assert.equal(apiWithHeader.status, 200);
+      assert.equal(wrongToken.status, 401);
 
-      const loginPage = await fetch(`http://localhost:${port}/mjolnir/login`);
-      assert.equal(loginPage.status, 200);
-      assert.match(await loginPage.text(), /Operator sign in/);
-
-      const wrongLogin = await fetch(`http://localhost:${port}/mjolnir/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "token=wrong",
-      });
-      assert.equal(wrongLogin.status, 401);
-
-      const rightLogin = await fetch(`http://localhost:${port}/mjolnir/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "token=secret123",
+      // D-H6's login page and its cookie are DELETED (4.2). /mjolnir/login is
+      // now just another gated path, and the cookie is not a credential.
+      const loginPage = await rawFetch(`http://localhost:${port}/mjolnir/login`);
+      assert.equal(loginPage.status, 401);
+      const cookieAttempt = await rawFetch(`http://localhost:${port}/mjolnir/`, {
+        headers: { Cookie: "operator_token=secret123" },
         redirect: "manual",
       });
-      assert.equal(rightLogin.status, 302);
-      const cookie = rightLogin.headers.get("set-cookie");
-      assert.match(cookie, /operator_token=secret123/);
-
-      const pageWithCookie = await fetch(`http://localhost:${port}/mjolnir/`, { headers: { Cookie: cookie } });
-      assert.equal(pageWithCookie.status, 200);
+      assert.equal(cookieAttempt.status, 401);
     } finally {
       await new Promise((resolve) => authedServer.close(resolve));
+    }
+  });
+
+  await t.test("unified-auth: the gate cannot be disabled by leaving a value unset", async () => {
+    // The old gate was `if (config.operatorAuthToken) { ... }`, so an unset
+    // value served every page to anyone. With no token configured at all the
+    // service must still reject.
+    const openServer = createServer(pool, { ...config, internalToken: undefined });
+    await new Promise((resolve) => openServer.listen(0, resolve));
+    const port = openServer.address().port;
+    try {
+      assert.equal((await rawFetch(`http://localhost:${port}/mjolnir/api/publications`)).status, 401);
+      const withMarker = await rawFetch(`http://localhost:${port}/mjolnir/api/publications`, {
+        headers: { "X-Tun-Operator": "1" },
+      });
+      assert.equal(withMarker.status, 200);
+    } finally {
+      await new Promise((resolve) => openServer.close(resolve));
     }
   });
 

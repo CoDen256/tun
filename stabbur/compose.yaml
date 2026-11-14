@@ -17,7 +17,7 @@ include:
 # network, so the `tun-shared` external network (D98/D104) and its one-time
 # `docker network create` are gone. Service names resolve on the default
 # network with no configuration. Shared values (STABBUR_POSTGRES_PASSWORD,
-# STABBUR_AUTH_TOKEN, SMIA_AUTH_TOKEN) come from the root `.env`; nothing in
+# INTERNAL_TOKEN) come from the root `.env`; nothing in
 # this file is also typed in another file.
 services:
   stabbur-backend:
@@ -39,13 +39,11 @@ services:
       # Derived, never typed: the role password is "<POSTGRES_PASSWORD>_stabbur",
       # created by postgres/init/bootstrap.sh from the same one value.
       DATABASE_URL: postgresql+psycopg2://stabbur:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}_stabbur@postgres:5432/stabbur
-      # NO `:-changeme` default. An unset token must fail CLOSED, not fall back
-      # to a publicly-known string: auth.py's check is `if not token or
-      # provided != token -> 401`, so empty means "reject everything", which is
-      # the safe end. The old default also disagreed with mjolnir's
-      # `${STABBUR_AUTH_TOKEN}` (no default) — stabbur would have accepted
-      # `changeme` while builder sent an empty string and got 401 anyway.
-      STABBUR_AUTH_TOKEN: ${STABBUR_AUTH_TOKEN}
+      # unified-auth 4.6: ONE service-to-service token, replacing STABBUR_AUTH_TOKEN
+      # and SMIA_AUTH_TOKEN. NO `:-changeme` default — an unset value must fail
+      # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
+      # and a publicly-known fallback is the opposite of that.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
       FLASK_DEBUG: "0"
       # smia-enrichment-panel: the note editor's "Suggest" panels proxy
       # through this backend to smia. "smia-backend" is smia's own service
@@ -55,7 +53,6 @@ services:
       # address is derived from that service name, so it is no longer an
       # environment value anyone has to keep in sync.
       SMIA_BASE_URL: http://smia-backend:5055
-      SMIA_AUTH_TOKEN: ${SMIA_AUTH_TOKEN}
       # manual-link-audio-capture: optional, only read if the file at this
       # path actually exists inside the container (routes/enrich.py checks
       # os.path.exists before adding --cookies) — fine to leave unset/absent

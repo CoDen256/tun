@@ -110,6 +110,21 @@
 		basic_auth {
 			operator {$OPERATOR_HASH:$2a$14$4O3NlHoGMD2./6FpyxpKAell6n5PkW1TaayAPbIKyg4GgwZfc8ESO}
 		}
+
+		# ---- 4.1: mint the verified-operator marker ------------------
+		# INSIDE the `route`, AFTER basic_auth, which is the entire
+		# security property: `route` preserves the written order, so this
+		# runs only on a request the credential check has already let
+		# through. The site-level `request_header -X-Tun-Operator` below
+		# deleted any inbound copy before this block was reached, so the
+		# value a service sees here was always set by this line.
+		#
+		# Services accept it INSTEAD of a token of their own
+		# (libs/pyservice/auth.py, libs/jsservice/auth.js). That is what
+		# retires STABBUR_AUTH_TOKEN and SMIA_AUTH_TOKEN as browser
+		# credentials and what lets phonexa, shadow and adminer be gated
+		# at all.
+		request_header X-Tun-Operator 1
 	}
 }
 
@@ -285,12 +300,26 @@
 	# uid and a valid token on every request.
 	#
 	# P46: no parseable body here, ever. `redir` emits an empty body.
+	#
+	# 4.1 ADDED `request_header X-Tun-Operator 1` HERE. mjolnir-sync adopted
+	# the shared check with every other service, and the shared check accepts
+	# the gateway marker or INTERNAL_TOKEN — not the device's token. The
+	# gateway has already validated that token on the line above, so it is
+	# the thing that can vouch for the request, exactly as it does for the
+	# operator plane. Written inside a `route` so the order is the compiled
+	# order and the marker demonstrably cannot be set before the token check.
+	# The DEVICE sees no difference: a request header added on the way to the
+	# upstream changes no byte of any response, which was verified by
+	# replaying the full device probe before and after.
 	@mjolnir_sync path /mjolnir/userdata/*
 	handle @mjolnir_sync {
-		@sync_bad_token not header Authorization "Bearer {$OPERATOR_TOKEN}"
-		redir @sync_bad_token /mjolnir/login?next=%2Fmjolnir%2Fuserdata%2F{http.request.uri.path.2} 302
+		route {
+			@sync_bad_token not header Authorization "Bearer {$OPERATOR_TOKEN}"
+			redir @sync_bad_token /mjolnir/login?next=%2Fmjolnir%2Fuserdata%2F{http.request.uri.path.2} 302
 
-		reverse_proxy mjolnir-sync:8002
+			request_header X-Tun-Operator 1
+			reverse_proxy mjolnir-sync:8002
+		}
 	}
 
 	# OPERATOR PLANE from here down: every block imports (operator_gate).

@@ -50,7 +50,12 @@ fi
 # compose file interpolates the variable, and nothing anywhere may type a hash
 # again. (It was deliberately absent before that, because it was then neither
 # derivable nor retired.)
-dead='STABBUR_UPSTREAM|SMIA_UPSTREAM|PHONEXA_UPSTREAM|STABBUR_BASE_URL|STABBUR_UI_BASE|SMIA_BASE_URL|DATABASE_URL|PHONEXA_AUTH_HASH'
+#
+# STABBUR_AUTH_TOKEN and SMIA_AUTH_TOKEN joined it with `unified-auth` 4.6:
+# there is ONE internal token now (INTERNAL_TOKEN) and the two per-pair names
+# are retired. They are listed here so neither can be retyped into a
+# .env.example and quietly become a second credential nobody reads.
+dead='STABBUR_UPSTREAM|SMIA_UPSTREAM|PHONEXA_UPSTREAM|STABBUR_BASE_URL|STABBUR_UI_BASE|SMIA_BASE_URL|DATABASE_URL|PHONEXA_AUTH_HASH|STABBUR_AUTH_TOKEN|SMIA_AUTH_TOKEN'
 hits=$(grep -nE "^[[:space:]]*#?[[:space:]]*($dead)=" $ENV_FILES 2>/dev/null)
 if [ -n "$hits" ]; then bad "D151: derivable/retired values typed into a .env.example:"; note "$hits"
 else ok "D151: no retired or derivable value is typed into any .env.example"; fi
@@ -59,6 +64,38 @@ else ok "D151: no retired or derivable value is typed into any .env.example"; fi
 hits=$(grep -nE '^[[:space:]]*(container_name:|external:[[:space:]]*true)' $COMPOSE_FILES 2>/dev/null)
 if [ -n "$hits" ]; then bad "D152: container_name / external network:"; note "$hits"
 else ok "D152: no container_name and no external network (all $(echo $COMPOSE_FILES | wc -w) compose files)"; fi
+
+# --- unified-auth 4.7: nothing but the gateway leaves the loopback ---------
+# THE MARKER-HEADER TRUST MODEL DEPENDS ON THIS, which is why it is a check
+# and not a convention. Services accept `X-Tun-Operator` as proof that the
+# gateway authenticated the caller (libs/pyservice/auth.py,
+# libs/jsservice/auth.js). The gateway strips any inbound copy, so the only
+# way to forge one is to reach a service WITHOUT going through the gateway.
+#
+# Text-level and over EVERY compose file, deliberately: the rendered-config
+# check below sees only the root project, so a per-project
+# `compose.override.yaml` — which is exactly where a dev port is added —
+# is invisible to it. grind/compose.yaml is the one file allowed a public
+# mapping, because publishing 80/443 is what a gateway is.
+portleaks=$(for f in $COMPOSE_FILES; do
+              case "$f" in ./grind/compose.yaml) continue;; esac
+              awk -v F="$f" '
+                /^[[:space:]]*ports:/ { inports=1; next }
+                inports && /^[[:space:]]*-[[:space:]]*["'"'"']?[0-9:.]+/ {
+                  line=$0; sub(/^[^"'"'"']*["'"'"']?/, "", line);
+                  if (line !~ /^127\.0\.0\.1:/ && line !~ /^::1:/) print F ":" NR ": " $0;
+                  next
+                }
+                inports && /^[[:space:]]*-[[:space:]]*#/ { next }
+                inports && !/^[[:space:]]*-/ { inports=0 }
+              ' "$f"
+            done)
+if [ -n "$portleaks" ]; then
+  bad "unified-auth 4.7: a non-gateway service publishes outside the loopback interface:"
+  note "$portleaks"
+else
+  ok "unified-auth 4.7: only grind/compose.yaml publishes publicly; every other mapping is 127.0.0.1 (marker-header trust holds)"
+fi
 
 hits=$(grep -nE 'tun-shared' $COMPOSE_FILES 2>/dev/null | grep -vE ':[0-9]+:[[:space:]]*#')
 if [ -n "$hits" ]; then bad "D150: tun-shared referenced outside a comment:"; note "$hits"

@@ -79,9 +79,26 @@ export function createServer(config, boot) {
         });
       }
 
-      if (config.operatorAuthToken) {
-        if (!requireAuth(req, res, config.operatorAuthToken, { loginPath: "/mjolnir/login" })) return;
-      }
+      // unified-auth 4.1. The shared check, like every other service: the
+      // gateway-verified `X-Tun-Operator` marker, or INTERNAL_TOKEN.
+      //
+      // THE DEVICE'S OWN TOKEN IS NOT CHECKED HERE ANY MORE — it is checked
+      // by the gateway, one hop earlier (`not header Authorization "Bearer
+      // {$OPERATOR_TOKEN}"` in the /mjolnir/userdata/* block), which then
+      // sets the marker. Nothing the device sends changed; what changed is
+      // which process reads it.
+      //
+      // `rejectWith: "redirect"` reproduces the frozen contract EXACTLY: 302
+      // to /mjolnir/login?next=<escaped path>, EMPTY BODY. Never a 401 and
+      // never anything parseable — mod 2080's shim calls res.json() with no
+      // status check (P46). In the deployed stack this branch is unreachable
+      // from the device, because the gateway rejects first with byte-identical
+      // output; it is kept exact because "unreachable" is a deployment fact
+      // and the contract is a code one.
+      //
+      // UNCONDITIONAL, where the old gate was `if (config.operatorAuthToken)`
+      // — an unset value used to leave the device plane wide open.
+      if (!requireAuth(req, res, config.internalToken, { rejectWith: "redirect", loginPath: "/mjolnir/login" })) return;
 
       if (url.pathname.startsWith(USERDATA_PREFIX) && url.pathname.length > USERDATA_PREFIX.length) {
         // userdata-console (D-C1): this path segment is the real Firebase uid

@@ -1,100 +1,65 @@
-// Shared operator auth, used by hub, builder and sync.
+// auth.js — THE operator/internal check for every Node service
+// (mjolnir-hub, mjolnir-builder, mjolnir-sync).
 //
-// Moved here from mjolnir/hub/src/auth.js by zone-isolation, verbatim: three
-// services now need the identical check, and the alternative was a third copy.
-// `unified-auth` replaces the whole mechanism with a gateway-verified marker
-// header; until then this is the one implementation.
+// `unified-auth` 4.1/4.2 replaced the whole mechanism. What was here before
+// was the cookie-or-bearer check D-H6 grew for hub, moved verbatim into
+// libs/ by zone-isolation, plus the login page and the login POST handler
+// that went with it. All three are gone: the gateway is the gate now
+// (`basic_auth` on all seven operator zones, unified-auth 3.1), so a login
+// page inside a service would be a second credential store and a 302 to it
+// would be a redirect loop for anything the gateway already let through.
 //
-// NOTE THE 302. requireAuth answers 401 only for paths containing `/api/` (or
-// ending in /verify or /publish) and REDIRECTS everything else to a login
-// page. That means an unauthenticated device sync request gets a 302 to HTML,
-// not a 401 — surprising, but it is the frozen behaviour and mjolnir-sync
-// copies it deliberately rather than "fixing" it out from under a device that
-// cannot be rolled back.
-// (D-N1) — one long-lived token, env-configured, no per-client identity, no
-// scopes. The one real difference from that pattern: stabbur protects a
-// JSON API consumed by its own SPA, which can attach `Authorization: Bearer`
-// to every fetch after an unauthenticated shell loads. hub/builder render
-// full HTML pages server-side — a plain GET navigation never carries a
-// custom header, so the token has to also be acceptable via a cookie, set
-// once from an unauthenticated `/login` page, for page loads to work at
-// all. Both forms check the exact same configured token.
-const COOKIE_NAME = "operator_token";
-
-function tokenFromCookie(req) {
-  const header = req.headers.cookie || "";
-  const match = header.split(";").map((s) => s.trim()).find((s) => s.startsWith(`${COOKIE_NAME}=`));
-  return match ? decodeURIComponent(match.slice(COOKIE_NAME.length + 1)) : null;
-}
+// The rule, from `unified-auth/design.md`:
+//
+//     allow if  the gateway-verified marker header is present
+//     allow if  Authorization: Bearer INTERNAL_TOKEN
+//     else      reject
+//
+// THE MARKER IS ONLY TRUSTWORTHY BECAUSE OF TWO THINGS OUTSIDE THIS FILE:
+// the gateway deletes any inbound copy before any route is considered
+// (site-level `request_header -X-Tun-Operator`, unified-auth 3.5) and sets
+// it only after the credential check passes; and no service publishes a port
+// outside the loopback interface in production (4.7). Both are requirements,
+// not conventions.
+//
+// HOW THE REJECTION IS SHAPED IS A DEVICE-CONTRACT MATTER, hence `rejectWith`.
+// `/mjolnir/userdata/<uid>` must answer an unauthenticated request with a
+// **302 carrying an EMPTY body**, never a 401 and never anything parseable:
+// mod 2080's progress-sync shim calls `res.json()` with no status check, so a
+// parseable error body is handed to the app AS userdata (P46). That shape is
+// frozen — there is an APK in the field — so mjolnir-sync passes
+// `rejectWith: "redirect"` and everything else takes the plain 401. In the
+// deployed stack the gateway rejects first and this path is only reached by
+// something talking to the service directly, which production does not allow;
+// it is kept exact anyway, because "unreachable" is a deployment fact and the
+// contract is a code one.
+const MARKER_HEADER = "x-tun-operator"; // node lowercases incoming header names
 
 function tokenFromAuthHeader(req) {
   const header = req.headers.authorization || "";
   return header.startsWith("Bearer ") ? header.slice("Bearer ".length) : null;
 }
 
-// Returns true (request may proceed) or writes a 401/redirect and returns
-// false. `loginPath` stays reachable unauthenticated — the one carve-out
-// D-H6 names explicitly.
-export function requireAuth(req, res, token, { loginPath = "/login" } = {}) {
-  const url = new URL(req.url, "http://localhost");
-  if (url.pathname === loginPath) return true;
+export function isAuthorized(req, internalToken) {
+  if (req.headers[MARKER_HEADER]) return true;
+  if (!internalToken) return false;
+  return tokenFromAuthHeader(req) === internalToken;
+}
 
-  const provided = tokenFromAuthHeader(req) || tokenFromCookie(req);
-  if (provided && provided === token) return true;
+// Returns true (the request may proceed) or writes the rejection and returns
+// false. `internalToken` is INTERNAL_TOKEN; the marker needs no configuration
+// at all, which is the point — a service cannot be left open by a missing
+// value, only closed by one.
+export function requireAuth(req, res, internalToken, { rejectWith = "json", loginPath = "/login" } = {}) {
+  if (isAuthorized(req, internalToken)) return true;
 
-  // Every JSON endpoint in this service's routing lives under `/api/`
-  // (`/mjolnir/api/publications`, `/mjolnir/ota/api/*`, `/mjolnir/ota/verify`,
-  // `/mjolnir/ota/publish`) — a more reliable signal than `Accept`, which a
-  // plain `fetch()` call (test or otherwise) often omits entirely.
-  if (url.pathname.includes("/api/") || url.pathname.endsWith("/verify") || url.pathname.endsWith("/publish")) {
+  if (rejectWith === "redirect") {
+    const url = new URL(req.url, "http://localhost");
+    res.writeHead(302, { Location: `${loginPath}?next=${encodeURIComponent(url.pathname)}` });
+    res.end(); // EMPTY BODY. P46 — never anything parseable on a device path.
+  } else {
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "unauthorized" }));
-  } else {
-    res.writeHead(302, { Location: `${loginPath}?next=${encodeURIComponent(url.pathname)}` });
-    res.end();
   }
   return false;
-}
-
-export function renderLoginPage({ next = "/", error = false, loginPath = "/login" } = {}) {
-  return `<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>mjolnir / hub — sign in</title>
-<style>
-  body { font-family: system-ui, sans-serif; background: #14171c; color: #e8e6e1; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-  form { background: #1b1f26; border: 1px solid #2a3039; border-radius: 10px; padding: 24px; width: 280px; }
-  input { width: 100%; padding: 8px 10px; margin: 8px 0 16px; border-radius: 6px; border: 1px solid #2a3039; background: #0f1216; color: #e8e6e1; box-sizing: border-box; }
-  button { width: 100%; padding: 8px; border-radius: 6px; border: none; background: #c6703f; color: #1a0d05; font-weight: 600; cursor: pointer; }
-  .error { color: #d1453f; font-size: 13px; margin-bottom: 8px; }
-</style>
-</head>
-<body>
-<form method="POST" action="${loginPath}">
-  <h3>Operator sign in</h3>
-  ${error ? '<div class="error">wrong token</div>' : ""}
-  <input type="hidden" name="next" value="${next.replace(/"/g, "&quot;")}">
-  <label>Token<input type="password" name="token" autofocus></label>
-  <button type="submit">Sign in</button>
-</form>
-</body>
-</html>`;
-}
-
-export async function handleLoginPost(req, res, token, { loginPath = "/login" } = {}) {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const params = new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
-  const provided = params.get("token") || "";
-  const next = params.get("next") || "/";
-
-  if (provided !== token) {
-    res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" });
-    return res.end(renderLoginPage({ next, error: true, loginPath }));
-  }
-
-  res.writeHead(302, {
-    Location: next,
-    "Set-Cookie": `${COOKIE_NAME}=${encodeURIComponent(provided)}; HttpOnly; SameSite=Strict; Path=/`,
-  });
-  res.end();
 }

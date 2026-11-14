@@ -29,7 +29,7 @@ COPY stabbur/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-COPY stabbur/app.py stabbur/auth.py stabbur/blob_storage.py stabbur/smia_client.py stabbur/settings_store.py stabbur/similarity.py ./
+COPY stabbur/app.py stabbur/blob_storage.py stabbur/smia_client.py stabbur/settings_store.py stabbur/similarity.py ./
 COPY stabbur/db/ ./db/
 COPY stabbur/routes/ ./routes/
 COPY stabbur/ui/ ./ui/

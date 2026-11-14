@@ -74,9 +74,13 @@ every `.env` and must not be re-added** (D151). They are derived in
   (`pullNotes`/`pullGrammarRules`). D100's live failure was setting this to a
   public `https://` URL, which made every scheduled run fail; it can no longer
   be set wrong because it is not set by hand at all.
-- `STABBUR_UI_BASE: ${TUN_PUBLIC_BASE}/stabbur/ui` — the one browser-facing
-  value, used only for the Cards page's "open note" link a human clicks. Not
-  interchangeable with the above.
+- `STABBUR_UI_BASE` is **gone entirely** (unified-auth 5.4). It was the one
+  browser-facing value, used only for the Cards page's "open note" link a
+  human clicks, and it could only ever be `$TUN_PUBLIC_BASE/stabbur/ui` — a
+  path that stopped existing when stabbur's UI moved to its prefix root.
+  `hub/src/config.js` now derives `$TUN_PUBLIC_BASE/stabbur/` itself.
+- `INTERNAL_TOKEN` replaces `STABBUR_AUTH_TOKEN` on builder → stabbur and hub
+  → stabbur. One value for every service-to-service leg in the stack.
 - `caddy/Caddyfile` names `stabbur-backend`, `smia-backend` and
   `phonexa-backend` directly. The four documented `STABBUR_UPSTREAM` options
   existed only because a bare service name resolved across two stacks solely

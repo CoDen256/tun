@@ -49,7 +49,11 @@ services:
       # These two moved here from phonexa with /transcribe: phonexa no longer
       # calls smia at all.
       SMIA_BASE_URL: http://smia-backend:5055
-      SMIA_AUTH_TOKEN: ${SMIA_AUTH_TOKEN}
+      # unified-auth 4.6: ONE service-to-service token, replacing STABBUR_AUTH_TOKEN
+      # and SMIA_AUTH_TOKEN. NO `:-changeme` default — an unset value must fail
+      # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
+      # and a publicly-known fallback is the opposite of that.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
       # Profiles, settings and Praat analysis still belong to phonexa; shadow
       # proxies them server-side (see phonexa_client.py). Derived from
       # phonexa's service key, never configured.

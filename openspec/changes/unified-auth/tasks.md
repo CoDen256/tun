@@ -297,32 +297,157 @@ complete and verify in order. The hard constraint is: **the device never breaks.
 
 ## 4. One check per service
 
-- [ ] 4.1 `libs/pyservice/auth.py` and `libs/jsservice/auth.js`: accept the
-      gateway marker, or `INTERNAL_TOKEN`; otherwise 401.
-- [ ] 4.2 Delete `stabbur/auth.py`, `smia/auth.py`, `hub/src/auth.js`,
-      `builder/src/auth.js` and their login pages.
-- [ ] 4.3 phonexa and shadow adopt the same check. Neither has auth of its own
-      today; phonexa exposes destructive import/export endpoints.
-- [ ] 4.4 Adminer is behind the gate. It has never been gated.
-- [ ] 4.5 Delete every carve-out: `/ui`, `/blob/*`, the TTS preview, `OPTIONS`.
-- [ ] 4.6 `INTERNAL_TOKEN` replaces the per-pair tokens on builder → stabbur,
-      stabbur → smia, shadow → smia, shadow → phonexa. Delete
-      `STABBUR_AUTH_TOKEN` and `SMIA_AUTH_TOKEN` from all five `.env` files.
-- [ ] 4.7 No service publishes a port outside the loopback interface in
-      production. The marker-header trust model depends on it.
+- [x] 4.1 `libs/pyservice/auth.py` and `libs/jsservice/auth.js`: accept the
+      gateway marker, or `INTERNAL_TOKEN`; otherwise 401. ONE implementation
+      each, both replacing what was there rather than sitting beside it.
+      The marker is `X-Tun-Operator` and the gateway now **sets** it, in two
+      places and only after a credential has been checked: inside
+      `(operator_gate)`'s `route`, immediately after `basic_auth` — verified
+      on the COMPILED config, where every one of the seven operator routes
+      (indices 10–16) reads `… authentication, headers[X-Tun-Operator],
+      reverse_proxy` in that order — and inside the `/mjolnir/userdata/*`
+      block after the device's `Bearer` check, where the compiled subroute is
+      `redir(bad token)` at index 0 and `headers[X-Tun-Operator] +
+      reverse_proxy` at index 1. The device plane proper (`/ota/*`,
+      `/blob/*`, `/audio-manifest/*`, compiled 7/8/9) contains neither an
+      `authentication` handler nor the string `X-Tun-Operator` and is
+      **byte-identical to `HEAD`'s compiled routes**, `handle_errors`
+      included.
+- [x] 4.2 Deleted. `stabbur/auth.py` and `smia/auth.py` are gone from the
+      tree and from both Dockerfiles' `COPY` lines (the build fails loudly
+      otherwise, which is how the second one was caught).
+      `hub/src/auth.js` and `builder/src/auth.js` had already been merged
+      into `libs/jsservice/auth.js` by zone-isolation; what was deleted there
+      is the mechanism — `renderLoginPage`, `handleLoginPost`, the
+      `operator_token` cookie, and the `/mjolnir/login` and `/builder/login`
+      GET/POST routes. Both services answered `302 → /…/login` for a page
+      load before this; both now answer `401 {"error":"unauthorized"}`, and
+      through the gateway with a credential both answer **200** where they
+      answered 302 before (measured: `/mjolnir/` and `/builder/`
+      `-u operator:testoperator` → 200).
+
+      **One real hole was created and then caught by the service's own
+      test.** hub checked auth twice: once inside the `/mjolnir/workbench`
+      branch, which returns before the per-route gate, and once below it.
+      Deleting the first copy left the embedded workbench and
+      `/mjolnir/workbench/api/patches` open. The fix is one check placed
+      above every branch (`/mjolnir/_health` is the only thing above it),
+      which is the version that cannot be half-removed. Verified after the
+      fix: `/mjolnir/workbench/` with no credential → **401**, with the
+      operator credential → 200.
+- [x] 4.3 phonexa and shadow adopt the same check — a real tightening, since
+      neither had any auth of its own. Proven non-vacuous on the destructive
+      endpoint the task names: direct to the container on the compose
+      network, `POST /api/v1/admin/export` → **401** with no credential and
+      **200** with `X-Tun-Operator: 1`. Same for `GET /` on both services
+      (401 → 200). `/_health` stays open on both, which is why the
+      containers are still `healthy`.
+- [x] 4.4 Verified, not redone: `/adminer/` answers **401** with no
+      credential and **200** with `-u operator:testoperator`. Section 3.1
+      put it behind the gate; adminer is a third-party image with no code of
+      ours in it, so the gateway is the whole of its auth and there is
+      nothing to adopt in 4.1's sense.
+- [x] 4.5 Every carve-out deleted, and each one re-tested in the direction
+      that would hide a mistake:
+      * `/ui` — gone as a route as well as an exemption (5.1).
+        `/stabbur/ui` and `/smia/ui` are **404**.
+      * `/blob/<sha256>` — stabbur's OWN carve-out, deleted. Direct to the
+        container with no credential: **401**. This is NOT the gateway's
+        device-plane `/blob/*`, which is a different route in a different
+        zone and is untouched — proven by the compiled-config diff above and
+        by `ota-verify` still passing its blob assertions.
+      * `/api/enrich/tts/preview/<sha256>` — deleted; stabbur's own tests
+        now send the credential, and failed loudly (401 vs 502/200) until
+        they did.
+      * `OPTIONS` — smia's blanket method exemption deleted. Direct to the
+        container, a full preflight shape now gets **401**; through the
+        gateway the same preflight gets **204** with the access-control-*
+        headers, because 3.4 answers it before the auth check. The real
+        `POST /smia/translate` with no credential is still 401.
+- [x] 4.6 `INTERNAL_TOKEN` replaces the per-pair tokens. One value in the
+      root `.env`, passed to all seven application services;
+      `STABBUR_AUTH_TOKEN` and `SMIA_AUTH_TOKEN` are deleted from every
+      `.env`, `.env.example` and `compose.yaml`, and from the code that read
+      them (`stabbur/smia_client.py`, `shadow/app.py`,
+      `builder/src/config.js`, `hub/src/config.js`, both stabbur scripts).
+      Both names are added to `bin/check-standards.sh`'s `dead` list, so
+      retyping either into a `.env.example` is a FAIL rather than a
+      discovery. Exercised live, end to end: builder → stabbur
+      (`GET /api/notes` 200 in stabbur's log, forecast renders), stabbur →
+      smia (`POST /stabbur/api/enrich/inflections` returns smia's own
+      provider list), shadow → smia (`/shadow/transcribe/providers` 200).
+- [x] 4.7 Asserted, as a check rather than a convention —
+      `bin/check-standards.sh` now fails if any compose file except
+      `grind/compose.yaml` publishes a mapping whose host IP is not
+      `127.0.0.1`/`::1`, including the bare `"5056:5056"` form. It is
+      TEXT-level and covers every file, because the rendered-config check
+      beside it sees only the root project and is blind to a per-project
+      `compose.override.yaml` — which is exactly where a dev port gets
+      added. Proven non-vacuous by breaking it on purpose twice
+      (`0.0.0.0:5056:5056` and `5056:5056` both FAIL, exit 1) and restoring.
+      Today: `grind` publishes 80/443, the root `adminer` publishes
+      `127.0.0.1:8082`, every project override publishes `127.0.0.1:…`, and
+      no project `compose.yaml` publishes a service port at all.
 
 ## 5. UI at the prefix root
 
-- [ ] 5.1 stabbur and smia serve their UI at `/` and assets under `/static/`,
-      following phonexa's existing `X-Forwarded-Prefix` pattern.
-- [ ] 5.2 `libs/pyservice/prefix.py`: one implementation replacing three
-      near-copies.
-- [ ] 5.3 Verify `https://<host>/stabbur/` returns the UI, not 401. This is a
-      live defect today.
-- [ ] 5.4 Update every link to `/stabbur/ui` and `/smia/ui`, including
-      `hub/src/layout.js:317` and `STABBUR_UI_BASE`'s consumers. Delete
-      `STABBUR_UI_BASE`.
-- [ ] 5.5 Supersede D46's `/ui` convention in the ADR log.
+- [x] 5.1 stabbur and smia serve their UI at `/` with assets under
+      `/static/`, via `Flask(__name__, static_folder="ui",
+      static_url_path="/static")` — Flask's own static handler, so there is
+      no hand-rolled path join to get wrong. The `/ui` and `/ui/<path>`
+      routes are deleted. Live through the gateway with the operator
+      credential: `/stabbur/` and `/smia/` return the HTML with
+      `__*_PREFIX__` substituted (`<link rel="stylesheet"
+      href="/stabbur/static/ui.css">`), and all four of
+      `/stabbur/static/ui.{css,js}` and `/smia/static/ui.{css,js}` return
+      200 with the right content types.
+
+      **The token box is gone from both pages**, with its localStorage
+      persistence and its `Authorization` header. That is the point of the
+      carve-out deletion: the credential is the browser's now.
+      `authHeaders()` is kept as a function returning `{}` so the ~55 call
+      sites stay one edit away from any future header.
+- [x] 5.2 `libs/pyservice/prefix.py`: `forwarded_prefix()`, `render_page()`
+      and `safe_page_path()`, replacing FOUR near-copies (stabbur's and
+      smia's inline `request.headers.get("X-Forwarded-Prefix", "")…`,
+      phonexa's `_prefix()`/`_serve_page()` pair and shadow's copy of that
+      pair, including its duplicate `safe_join`-then-`abort(404)` block).
+      phonexa and shadow keep a one-line `_prefix = forwarded_prefix` alias
+      because each has its own SECOND prefix to substitute
+      (`__SHADOW_PREFIX__` / `__PHONEXA_PREFIX__`), which is per-service
+      data, not another implementation.
+- [x] 5.3 Verified. `/stabbur/` with no credential → 401 (the gateway), with
+      `-u operator:testoperator` → **200 and the UI**. Before this change it
+      was 401 with a correct credential too, because stabbur had no route at
+      `/` at all — that is the live defect the task names, and it is fixed.
+      All seven zones measured together: 401 unauthenticated / 200
+      authenticated, `/mjolnir/` and `/builder/` included (they were 302
+      before 4.2).
+- [x] 5.4 Every link updated and `STABBUR_UI_BASE` deleted —
+      `libs/jsservice/layout.js`'s `ZONES` (the file `hub/src/layout.js:317`
+      became when zone-isolation moved it; the two entries are now
+      `/stabbur/` and `/smia/`), the gateway status page's zone table,
+      `docs/02-services.md`, `DEPLOY.md`, `mjolnir/DEPLOY.md`,
+      `mjolnir/.env.example` and both services' own nav. Verified by reading
+      the RENDERED pages, not the source: `/mjolnir/`, `/builder/` and the
+      status page served for an unreachable zone all emit
+      `href="/stabbur/"` and `href="/smia/"` and no `/ui` variant.
+      The variable is gone from `mjolnir/compose.yaml`; hub derives
+      `${TUN_PUBLIC_BASE}/stabbur/` in `config.js`, which is D151's rule
+      (derivable → computed, typed nowhere). `STABBUR_UI_BASE` was already
+      in `check-standards.sh`'s `dead` list and stays there.
+- [x] 5.5 D46 is annotated in place in `docs/07-decisions.md` — marked, not
+      deleted, per this repository's convention. The annotation records that
+      the `/ui` MOUNT POINT is superseded, why it existed (the bare prefix
+      was a JSON API root that 401'd a plain navigation, and the page had to
+      load unauthenticated so a token could be pasted into it), that both
+      reasons are gone, and that `/mjolnir/ui` and `/builder/ui` remain as
+      aliases for their bare prefixes — which is all they ever were. The
+      rest of D46, and D157/D158's earlier amendment of it, stand.
+
+      Not done here: 8.1 also asks for D46's `/ui` convention to be
+      superseded. This is that work; 8.1 remains open for its other two
+      halves (collapsing D-H6/D-N1/D-S6, and D148's auth half).
 
 ## 6. Clients
 

@@ -52,7 +52,7 @@ def test_extract_input_requires_text():
 
 
 def test_post_examples_default_limit_is_3(monkeypatch, fake_provider):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     resp = _client().post("/examples", json={"text": "kalv", "provider": fake_provider}, headers=AUTH)
     assert resp.status_code == 200
     body = resp.get_json()
@@ -60,7 +60,7 @@ def test_post_examples_default_limit_is_3(monkeypatch, fake_provider):
 
 
 def test_post_examples_explicit_limit_is_honored(monkeypatch, fake_provider):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     resp = _client().post(
         "/examples", json={"text": "kalv", "provider": fake_provider, "limit": 10}, headers=AUTH
     )
@@ -68,7 +68,7 @@ def test_post_examples_explicit_limit_is_honored(monkeypatch, fake_provider):
 
 
 def test_post_examples_unsupported_lang_is_400(monkeypatch, fake_provider):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     resp = _client().post(
         "/examples", json={"text": "kalv", "lang": "en", "provider": fake_provider}, headers=AUTH
     )
@@ -76,7 +76,7 @@ def test_post_examples_unsupported_lang_is_400(monkeypatch, fake_provider):
 
 
 def test_limit_3_and_limit_10_are_distinct_cache_resources(monkeypatch, fake_provider):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     client = _client()
     resp3 = client.post("/examples", json={"text": "kalv", "provider": fake_provider, "limit": 3}, headers=AUTH)
     resp10 = client.post("/examples", json={"text": "kalv", "provider": fake_provider, "limit": 10}, headers=AUTH)
@@ -92,7 +92,7 @@ def test_limit_3_and_limit_10_are_distinct_cache_resources(monkeypatch, fake_pro
 
 
 def test_providers_catalog_lists_examples_kind_with_counts(monkeypatch):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     resp = _client().get("/providers", headers=AUTH)
     body = resp.get_json()
     assert "examples" in body

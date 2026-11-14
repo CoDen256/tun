@@ -11,7 +11,6 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 export function loadConfig() {
   const dataDir = process.env.DATA_DIR || "../data";
   const publicBase = process.env.TUN_PUBLIC_BASE;
-  const stabburUiBase = process.env.STABBUR_UI_BASE;
   // D-L1: operator-submitted base+patch bundles are stored here, immutable
   // once written. `BUNDLE_PATH` is gone entirely — there is no more single
   // mutable working file for hub to read card content from; that now lives
@@ -41,13 +40,24 @@ export function loadConfig() {
   // them, so a misconfigured/absent value degrades just the three Builder
   // pages, not hub's whole boot.
   const stabburBaseUrl = process.env.STABBUR_BASE_URL;
-  const stabburAuthToken = process.env.STABBUR_AUTH_TOKEN;
   const sourceLang = process.env.SOURCE_LANG || "no";
   if (!publicBase) throw new Error("TUN_PUBLIC_BASE is required (passed through to the publish module)");
-  // D-H6: not required — unset disables the operator-auth gate entirely
-  // (local/dev ergonomics). Task 7.4's ordering constraint is the real
-  // guard: the Caddy routes must never be uncommented for a deploy that
-  // left this unset.
+  // unified-auth 5.4: STABBUR_UI_BASE is DELETED. It was a configured value
+  // that could only ever be `$TUN_PUBLIC_BASE/stabbur/ui`, and `/stabbur/ui`
+  // stopped existing in 5.1 — stabbur's UI is at the prefix root now. D151:
+  // derivable, so it is derived here and typed nowhere.
+  const stabburUiBase = `${publicBase.replace(/\/$/, "")}/stabbur/`;
+  // unified-auth 4.6: ONE internal token for every service-to-service call,
+  // replacing STABBUR_AUTH_TOKEN and SMIA_AUTH_TOKEN. It is also what this
+  // service accepts from a caller that is not the gateway
+  // (libs/jsservice/auth.js) — the gateway's verified `X-Tun-Operator`
+  // marker is the other way in, and needs no value at all.
+  const internalToken = process.env.INTERNAL_TOKEN;
+  // NOT the gate any more (unified-auth 4.2 deleted hub's own login). This
+  // is the DEVICE token: the bundle tool bakes it into an APK as SYNC_TOKEN
+  // at assemble time (`assembleDefaults`), and until section 7.1 gives
+  // SYNC_TOKEN a value of its own it is the same string the gateway checks
+  // on /mjolnir/userdata/*. Rotating it still requires a config.json push.
   const operatorAuthToken = process.env.OPERATOR_AUTH_TOKEN;
   // Not required: without it, the Cards page's "open note" link just can't
   // be built — the list itself still renders fully from hub's own data
@@ -59,11 +69,11 @@ export function loadConfig() {
     publicBase,
     stabburUiBase,
     operatorAuthToken,
+    internalToken,
     logicBundleDir,
     workbenchPatchesDir,
     baseFolderDir,
     stabburBaseUrl,
-    stabburAuthToken,
     sourceLang,
   };
 }

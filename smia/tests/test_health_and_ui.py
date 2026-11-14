@@ -1,5 +1,6 @@
-"""Tests for GET /providers, GET /health (task 8.1-8.2), and /ui static
-serving + its auth exemption (tasks 8.3-8.4)."""
+"""Tests for GET /providers, GET /health (task 8.1-8.2) and the UI served
+at the prefix root (unified-auth 5.1), which is NO LONGER exempt from auth
+(unified-auth 4.5 deleted every carve-out)."""
 
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ AUTH = {"Authorization": "Bearer test-token"}
 
 
 def test_providers_catalog_lists_registered_adapters(monkeypatch):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     resp = _client().get("/providers", headers=AUTH)
     assert resp.status_code == 200
     body = resp.get_json()
@@ -25,7 +26,7 @@ def test_providers_catalog_lists_registered_adapters(monkeypatch):
 
 
 def test_providers_catalog_reports_counts_for_table_backed_providers_only(monkeypatch):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     resp = _client().get("/providers", headers=AUTH)
     assert resp.status_code == 200
     body = resp.get_json()
@@ -38,7 +39,7 @@ def test_providers_catalog_reports_counts_for_table_backed_providers_only(monkey
 
 
 def test_health_reflects_requests_and_cache_hits(monkeypatch):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     registry.register("testkind", "only", type("A", (), {"lookup": lambda self, i: {"ok": True}})())
 
     with session_scope() as db:
@@ -54,11 +55,29 @@ def test_health_reflects_requests_and_cache_hits(monkeypatch):
     assert row["hitCount"] == 1
 
 
-def test_ui_index_and_assets_are_unauthenticated():
+def test_ui_index_and_assets_now_require_a_credential():
+    # unified-auth 4.5 deleted the /ui carve-out and 5.1 moved the page from
+    # /ui to the prefix root. There is nothing to paste a token into any more,
+    # so there is no chicken-and-egg left to carve out for: the operator is
+    # already authenticated at the gateway by the time the page loads.
     c = _client()
-    assert c.get("/ui").status_code == 200
-    assert c.get("/ui/ui.css").status_code == 200
-    assert c.get("/ui/ui.js").status_code == 200
+    assert c.get("/").status_code == 401
+    assert c.get("/static/ui.css").status_code == 401
+    assert c.get("/static/ui.js").status_code == 401
+
+
+def test_ui_index_and_assets_are_served_at_the_prefix_root_when_authorized(monkeypatch):
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
+    c = _client()
+    assert c.get("/", headers=AUTH).status_code == 200
+    assert c.get("/static/ui.css", headers=AUTH).status_code == 200
+    assert c.get("/static/ui.js", headers=AUTH).status_code == 200
+
+
+def test_the_gateway_marker_is_accepted_instead_of_a_token():
+    # No INTERNAL_TOKEN configured at all: the marker is the whole credential.
+    c = _client()
+    assert c.get("/providers", headers={"X-Tun-Operator": "1"}).status_code == 200
 
 
 def test_api_routes_still_require_auth_under_ui_unrelated_paths():
@@ -67,6 +86,6 @@ def test_api_routes_still_require_auth_under_ui_unrelated_paths():
 
 
 def test_missing_server_token_is_401_not_500(monkeypatch):
-    monkeypatch.delenv("SMIA_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("INTERNAL_TOKEN", raising=False)
     resp = _client().get("/providers", headers=AUTH)
     assert resp.status_code == 401

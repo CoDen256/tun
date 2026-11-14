@@ -16,6 +16,18 @@ import {
 } from "../src/userdata.js";
 import { createServer } from "../src/server.js";
 
+// unified-auth 4.1: every route in this service now requires the
+// gateway-verified `X-Tun-Operator` marker or INTERNAL_TOKEN — the old
+// "gate disabled when no token is configured" escape hatch is gone, because
+// it made a missing value an open console. These tests drive the service
+// DIRECTLY, which production does not allow (4.7: nothing publishes outside
+// the loopback interface), so they present the marker the gateway would have
+// set. `rawFetch` is kept for the tests that assert the rejection itself.
+const rawFetch = globalThis.fetch;
+globalThis.fetch = (input, init = {}) =>
+  rawFetch(input, { ...init, headers: { "X-Tun-Operator": "1", ...(init.headers || {}) } });
+
+
 const DATABASE_URL = process.env.DATABASE_URL;
 const describe = DATABASE_URL ? test : test.skip;
 

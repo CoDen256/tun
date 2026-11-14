@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>stabbur — notes</title>
-  <link rel="stylesheet" href="__STABBUR_PREFIX__/ui/ui.css">
+  <link rel="stylesheet" href="__STABBUR_PREFIX__/static/ui.css">
 </head>
 <body>
 
@@ -15,16 +15,12 @@
     <!-- D46: shared header/nav, one domain by path. mjolnir/builder are
          real and live; smia/phonexa aren't proxied through this stack yet
          (02-services.md) — left as placeholders until they are. -->
-    <a href="/mjolnir/ui">mjølnir · hub</a>
-    <a href="/builder/ui">mjølnir · builder</a>
+    <a href="/mjolnir/">mjølnir · hub</a>
+    <a href="/builder/">mjølnir · builder</a>
     <a href="/smia/">smia</a>
     <a href="/phonexa/">phonexa</a>
-    <a href="__STABBUR_PREFIX__/ui">stabbur (this page)</a>
+    <a href="__STABBUR_PREFIX__/">stabbur (this page)</a>
   </nav>
-  <div class="tokenRow">
-    <label for="tokenInput">Bearer token</label>
-    <input id="tokenInput" type="password" placeholder="shared STABBUR_AUTH_TOKEN" autocomplete="off">
-  </div>
 </header>
 
 <div class="shell">
@@ -784,6 +780,6 @@
 </div>
 
 <script>window.STABBUR_PREFIX = "__STABBUR_PREFIX__";</script>
-<script src="__STABBUR_PREFIX__/ui/ui.js"></script>
+<script src="__STABBUR_PREFIX__/static/ui.js"></script>
 </body>
 </html>

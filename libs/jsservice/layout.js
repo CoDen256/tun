@@ -290,15 +290,16 @@ function escapeHtml(s) {
 // are handle_path routes that strip the prefix, `/mjolnir` and `/builder` are
 // passed through whole.
 //
-// stabbur and smia are linked at their `/ui` page, not at their bare prefix,
-// and that is a measured decision rather than a style one: `/stabbur/` and
-// `/smia/` are each service's JSON API root, which answers
-// `401 {"error":"unauthorized"}` to a browser because the API wants a bearer
-// token no plain navigation carries. `/stabbur/ui` and `/smia/ui` are the
-// unauthenticated HTML shells that then fetch with the token. Linking the
-// bare prefix would put two dead links in every page of the console.
-// (Checked live, not assumed: /stabbur/ -> 401 application/json,
-// /stabbur/ui -> 200 text/html.)
+// stabbur and smia are linked at their BARE PREFIX since unified-auth 5.1.
+// They used to be linked at `/ui`, and that was a measured decision rather
+// than a style one: `/stabbur/` and `/smia/` were each service's JSON API
+// root and answered `401 {"error":"unauthorized"}` to a plain navigation,
+// so linking the bare prefix put two dead links in every page of the
+// console. 5.1 removed the cause — each service now serves its UI at `/`
+// with assets under `/static/`, following phonexa's X-Forwarded-Prefix
+// pattern, and D46's `/ui` convention is superseded in the ADR log.
+// (Checked live, not assumed: with the operator credential,
+// /stabbur/ -> 200 text/html and /stabbur/ui -> 404.)
 //
 // `/shadow/` is listed even though shadow is still being split out of phonexa
 // (zone-isolation section 3). Deliberately: a link to a zone that is not up
@@ -307,8 +308,8 @@ function escapeHtml(s) {
 export const ZONES = [
   { href: "/mjolnir", label: "workbench" },
   { href: "/builder", label: "builder" },
-  { href: "/stabbur/ui", label: "stabbur" },
-  { href: "/smia/ui", label: "smia" },
+  { href: "/stabbur/", label: "stabbur" },
+  { href: "/smia/", label: "smia" },
   { href: "/phonexa/", label: "phonexa" },
   { href: "/shadow/", label: "shadow" },
   { href: "/adminer", label: "adminer" },

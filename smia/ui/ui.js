@@ -1,14 +1,14 @@
 // ui/ui.js — vanilla JS, no build step (matches phonexa's plain HTML/JS
-// pattern). The shared bearer token (D-S6) is pasted once and kept in
-// localStorage; this is an operator tool, not an end-user page.
+// pattern). There is no token to paste since unified-auth 4.5: the
+// operator authenticates once at the gateway (Basic, username `operator`)
+// and the browser attaches that credential to every same-origin request
+// this page makes.
 
 // Empty at the domain root (local dev); the mount prefix (e.g. "/smia")
 // once reverse-proxied — set by app.py's ui_index() templating in
 // index.html from the proxy's X-Forwarded-Prefix header (mirrors
 // stabbur's ui.js exactly, D46).
 const API_BASE = window.SMIA_PREFIX || "";
-
-const TOKEN_KEY = "smia_ui_token";
 
 // One ready-to-send example body per kind, prefilled into the try-it form
 // whenever the kind selector changes. /stt gets its own audio-upload/
@@ -27,12 +27,10 @@ const EXAMPLE_BODIES = {
 let recordedAudioBlob = null;
 let mediaRecorder = null;
 
-function getToken() {
-  return localStorage.getItem(TOKEN_KEY) || "";
-}
-
+// Kept as a function returning {} rather than deleted at ~15 call sites, so
+// any future header is one edit. The credential itself is the browser's.
 function authHeaders() {
-  return { Authorization: `Bearer ${getToken()}` };
+  return {};
 }
 
 async function refreshAll() {
@@ -50,7 +48,7 @@ async function refreshAll() {
   // provider list. Surface it plainly instead.
   if (!providersResp.ok || !healthResp.ok) {
     document.getElementById("catalog").innerHTML =
-      `<tr><td colspan="2" class="bad">${providers.error || healthRows.error || "request failed"} — check the bearer token above</td></tr>`;
+      `<tr><td colspan="2" class="bad">${providers.error || healthRows.error || "request failed"}</td></tr>`;
     document.getElementById("health").innerHTML = "";
     return;
   }
@@ -279,12 +277,6 @@ async function submitTryIt(event) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  const tokenInput = document.getElementById("tokenInput");
-  tokenInput.value = getToken();
-  tokenInput.addEventListener("change", () => {
-    localStorage.setItem(TOKEN_KEY, tokenInput.value.trim());
-    refreshAll();
-  });
   document.getElementById("tryForm").addEventListener("submit", submitTryIt);
   document.getElementById("refreshBtn").addEventListener("click", refreshAll);
   document.getElementById("tryRecordBtn").addEventListener("click", toggleRecording);

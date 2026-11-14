@@ -9,14 +9,14 @@ import os
 import pytest
 from flask import Flask
 
-from auth import register_auth
+from pyservice.auth import register_auth
 from registry import registry
 from routes.generic import register_lookup_routes
 
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv("SMIA_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
     app = Flask(__name__)
     register_auth(app)
 
