@@ -3,7 +3,10 @@
 - [x] 0.1 **Answered** (operator, 2026-11-13): phonexa's CI is deleted in
       full, including its GitHub Pages job; `coden256.github.io/phonexa`
       stops being published. See proposal.md, Decisions taken.
-- [ ] 0.2 **Runbook, not executable here** (scope: this repository only).
+- [x] 0.2 **DONE on the VPS cutover, 2026-11-14.** Live volumes read from the RUNNING containers and recorded in
+      DEPLOY.md 8.0b, with their four decoys named (`stabbur_stabbur-pg-data`,
+      `tun_caddy_data`, `tun_caddy_config`, `phonexa_audio_dat`).
+      ORIGINAL NOTE: **Runbook, not executable here** (scope: this repository only).
       `DEPLOY.md` must instruct the operator to record the live volume of
       every stateful service from the **running containers** before any
       cutover:
@@ -11,7 +14,11 @@
       Two generations of volumes exist on at least one host (design.md,
       Risks), and dumping the wrong one yields a complete, plausible, stale
       database with no error.
-- [ ] 0.3 **Runbook, not executable here.** `DEPLOY.md` must require a
+- [x] 0.3 **DONE on the VPS cutover, 2026-11-14.** A fresh dump of all four databases was taken and the
+      mjolnir one RESTORED into a scratch database, matching live EXACTLY on
+      all 15 tables. That restore is what caught production's own backup
+      having silently lost build_jobs and job_logs (P44).
+      ORIGINAL NOTE: **Runbook, not executable here.** `DEPLOY.md` must require a
       verified git-backup cycle, with a current dump per database, before the
       cutover begins.
 - [x] 0.4 **Answered** (operator, 2026-11-13): smia's `providers/` stays
@@ -288,7 +295,9 @@
       gateway properties. Note the D49 chunked check only holds above Caddy's
       response-buffer threshold: a small or compressible test bundle fails it
       spuriously (observed at 73 B and 74 kB, passing at 2 MB incompressible).
-- [ ] 6.2 **Runbook (needs the real payload, which is gitignored and lives on
+- [x] 6.2 **DONE on the VPS cutover, 2026-11-14.** `ota-verify.sh https://coden256.dev` -> **16 passed, 0
+      failed** against the real payload on the VPS.
+      ORIGINAL NOTE: **Runbook (needs the real payload, which is gitignored and lives on
       the VPS).** What IS proven locally: the three device `handle` blocks are
       byte-identical to pre-merge by per-block sha256
       (ota=7ee6c1ac1065c75d, blob=d299b0b1ebe3e702, audio=e13f06b360d4cfa7),
@@ -303,7 +312,11 @@
       Degradation held: stabbur down -> only `/stabbur/ui` 502; smia down ->
       only `/smia/ui` 502; device routes unaffected throughout. Original:
       respond exactly as they did before (200, 200, 302→login, 302→login, 401).
-- [ ] 6.4 **Runbook (no TLS locally — this host is rootless Docker and the
+- [x] 6.4 **DONE on the VPS cutover, 2026-11-14.** Verified over real TLS: the certificate is the ORIGINAL
+      (notBefore Oct 26 2026), not a reissue - `mjolnir_caddy_data` survived
+      the project rename. The D49 gzip-sha256 check, which only runs on
+      https, passed for the first time.
+      ORIGINAL NOTE: **Runbook (no TLS locally — this host is rootless Docker and the
       local mode is plain HTTP on 8080).** Proven locally instead: the volume
       `mjolnir_caddy_data` keeps its exact name in the rendered config and
       survived every harness run. `DEPLOY.md` §8.2 carries the post-boot
@@ -312,7 +325,10 @@
       dev-port property with it:
       standalone publishes loopback ports (stabbur 5056/5434, smia 5055/5433,
       phonexa 5050/5432) while the root stack publishes only the gateway.
-- [ ] 6.6 **Runbook (needs the operator's real deploy key).** Proven locally:
+- [x] 6.6 **DONE on the VPS cutover, 2026-11-14.** A full backup cycle ran with the operator's real deploy
+      key: five dumps committed and pushed, blobs 516/516, audio 214/214. The
+      new mjolnir.sql has 15 CREATE TABLE, not 13 - P44 fixed in production.
+      ORIGINAL NOTE: **Runbook (needs the operator's real deploy key).** Proven locally:
       all four variables `backup/entrypoint.sh` requires are present in the
       rendered config, and the clone-failure path now aborts with exit 1 and a
       diagnostic instead of logging "committed and pushed" — smoke-tested in a

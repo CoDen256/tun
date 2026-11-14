@@ -196,7 +196,15 @@
       by diffing a 12-probe matrix against a pre-merge gateway — byte for
       byte, zero differences. The full 16/16 needs the VPS, where a real
       payload exists.
-- [ ] 6.4 **Operator step (needs the phone).** A real device completes a sync
+- [x] 6.4 **DONE on the real handset (Redmi Note 7, `107e47a6`), 2026-11-14.**
+      `okhttp/4.9.2` in the gateway access log - React Native's fetch, not
+      curl: `GET /mjolnir/userdata/q1Px...` 200 then `PATCH` 200 with 8739
+      bytes read. The write landed: `updated_at` moved to
+      `2026-11-14 11:44:50.659` (matching the gateway log to the
+      millisecond) and `userdata_history` went 48 -> 49 rows.
+      Re-confirmed post-cutover against production: the handset reached
+      ota/manifest/blob from its own shell, cache-busted.
+      ORIGINAL NOTE: **Operator step (needs the phone).** A real device completes a sync
       round-trip after the split. Everything testable without hardware passed:
       the contract replays byte-identically, including `_justCreated`
       semantics, field stripping, 405 on an unsupported method even during an

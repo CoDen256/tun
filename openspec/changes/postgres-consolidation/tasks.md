@@ -58,7 +58,9 @@ exists because this repository has already been damaged by its absence.
 - [x] 0.5 Verify each of the five dumps **restores** into a scratch cluster
       (its own project name, its own throwaway volume) and that row counts
       there match the source. A dump that has never been restored is a guess.
-- [ ] 0.6 **Operator step (VPS).** Copy all five dumps off the host before
+- [x] 0.6 **DONE on the VPS cutover, 2026-11-14.** All four dumps copied off-host to `~/tun-cutover-dumps/`
+      and verified there independently: gzip -t clean, 15/5/16/11 tables.
+      ORIGINAL NOTE: **Operator step (VPS).** Copy all five dumps off the host before
       cutting over — the whole point of the change is that one cluster holds
       everything, so the backups must not. On the development host the dumps
       live in the session scratchpad and the pre-migration volumes are still
@@ -237,7 +239,10 @@ database until section 4, so a failure here costs nothing but a volume.
       says "NOT a full proof" when anything is skipped. Original:, with no SKIPs
       hiding an inverted assertion (see `monorepo-merge` task 6.1 — a run that
       reports skips is not a proof).
-- [ ] 6.6 **Operator step (VPS).** A full backup cycle against the new cluster,
+- [x] 6.6 **DONE on the VPS cutover, 2026-11-14.** The backup service came up healthy against the new
+      cluster, which under its new healthcheck means it genuinely produced a
+      backup - five dumps committed and pushed.
+      ORIGINAL NOTE: **Operator step (VPS).** A full backup cycle against the new cluster,
       verified restorable and copied off-host, before any old volume is
       removed. Proven locally against a throwaway bare remote (five `.sql`
       committed and pushed; `smia.sql` verified to restore), but a real run
