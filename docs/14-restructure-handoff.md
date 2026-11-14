@@ -356,3 +356,63 @@ per-instance database passwords are preserved in
    the output looked like progress. The same failure-reports-success shape as
    P41-P52, this time in my own harness. Verify artefacts file by file, never
    by reading a script's stdout.
+
+---
+
+## 10. Closed — 2026-11-14
+
+All five OpenSpec changes are **archived**; `openspec list` reports no active
+changes. `openspec validate --specs` → 9 passed, 0 failed.
+
+```
+openspec/changes/archive/2026-11-14-monorepo-merge
+                         2026-11-14-postgres-consolidation
+                         2026-11-14-zone-isolation
+                         2026-11-14-unified-auth
+                         2026-11-14-add-phonexa-to-stack
+```
+
+Archived with `--skip-specs` because the main specs were already synced by
+hand to their newest state. That was not a convenience: replaying
+`add-phonexa-to-stack`'s deltas at this point would have **regressed**
+`unified-deployment` back to its sibling-checkout wording.
+
+### The last three things, and why they were safe
+
+**7.1 — the device credential.** Done by decoupling the VARIABLE, not the
+value. The sync gate reads `{$SYNC_TOKEN}`, wired as
+`${SYNC_TOKEN:-${OPERATOR_AUTH_TOKEN}}`, so an unset value keeps accepting
+exactly what the installed APK sends. Proven on the compiled config:
+
+```
+OPERATOR_TOKEN=changeme                             -> sync accepts ['changeme']
+OPERATOR_TOKEN=a-brand-new-rotated-operator-password -> sync accepts ['changeme']
+```
+
+The operator password is now rotatable on its own — the hazard P48 recorded
+is gone — at zero device risk. **Still open by choice:** the device carries
+the weak literal `changeme`. Changing that needs an assemble-and-publish to
+the handset; the zero-downtime order is beside the matcher and in DEPLOY.md.
+
+**6.7 — the old volumes.** Retired, 4.2 GB reclaimed, after three gates: the
+new cluster had served production for hours, four dumps exist off-host, and
+the *current* daily backup was RESTORED and compared per table. Four of the
+eight removed were DEPLOY.md 8.0b's decoys, so the dump-the-wrong-volume
+hazard is gone with them. The six live volumes were untouched — the script
+refused to remove anything a container mounts.
+
+**The backup now prunes a departed dump.** Removing smia from `DATABASES`
+left a committed `smia.sql` behind: dated, plausible, and reading as a
+current backup of a database nothing dumps any more. Same
+failure-reports-success shape as P41–P68. The repo now holds exactly
+`mjolnir.sql`, `stabbur.sql`, `phonexa.sql`, `shadow.sql`.
+
+### Follow-ups, none blocking
+
+| | |
+|---|---|
+| device token | `changeme` → a strong value; needs a bundle publish |
+| operator password | now safely rotatable; still `changeme` until you rotate it |
+| smia providers | two archives absent (`nb_uttale_leksika.zip`, `leipzig/`), so 9M rows are live but not re-importable from this repo |
+| hub/builder tests | nondeterministic against one shared database; `hub/test/userdata.test.js` asserts a route that moved to `mjolnir-sync` |
+| phonexa Pages | `coden256.github.io/phonexa` stops being published (CI deleted as instructed) |
