@@ -11,6 +11,8 @@ import {
   setCurrent,
   assembleDefaults,
   assembleAndSubmit,
+  defaultSyncBaseUrl,
+  defaultAudioBaseUrl,
 } from "./ota.js";
 import { findBakedBaseVersion, findBakedPatchRev } from "../../tool/src/otaPublish.js";
 import { list as listLogicBundles } from "./logicBundles.js";
@@ -56,29 +58,10 @@ const WORKBENCH_MOUNT = "/mjolnir/workbench";
 
 const MAX_BODY_BYTES = 67108864; // D48 — same ceiling the publish guards enforce anyway
 
-// progress-sync-shim's shim/restore-companion fetch against
-// `${SYNC_BASE_URL}/<id>` directly (confirmed: `patches/js/
-// 2080-progress-sync-shim.edited.js` and `progress-sync-restore-
-// companion.js` both do `fetch(SYNC_BASE_URL + '/' + encodeURIComponent(id), ...)`)
-// — the default needs the full `/mjolnir/userdata` path, not just the host
-// `publicBase` already names.
-function defaultSyncBaseUrl(publicBase) {
-  if (!publicBase) return undefined;
-  return `${publicBase.replace(/\/+$/, "")}/mjolnir/userdata`;
-}
-
-// audio-cache-prefetch: the prefetcher companion and the rewritten mod 1440
-// patch both build their own `/audio-manifest/...` and `/blob/...` paths
-// off this one base (confirmed: `audio-prefetch-companion.js` does
-// `fetch(AUDIO_BASE_URL + '/audio-manifest/' + buildId + '.json')` and
-// `AUDIO_BASE_URL + '/blob/' + sha256`) — a single fixed sub-path default
-// no longer makes sense now that the device resolves cardId → sha256
-// itself (D-P6 retires `/audio-by-card/*`), so this defaults to the bare
-// public base, not a sub-path.
-function defaultAudioBaseUrl(publicBase) {
-  if (!publicBase) return undefined;
-  return publicBase.replace(/\/+$/, "");
-}
+// defaultSyncBaseUrl/defaultAudioBaseUrl now live in ./ota.js (imported
+// above) — assembly-tab-usability item 1 needed `assembleDefaults` to
+// compute the same resolved URLs it reports to the Assemble tab, so they
+// moved to where both callers can reach them without a circular import.
 
 // ---- readiness helpers (zone-isolation 1.5) -------------------------------
 // Which routes genuinely need the database. Deliberately an explicit list and

@@ -236,6 +236,12 @@ function renderCatalogueLists(data) {
 
 let explorerModules = [];
 let explorerSearchResults = null;
+// assembly-tab-usability item 2: the query that produced
+// `explorerSearchResults`, kept alongside it so renderExplorerList can
+// decide whether to add the id-match groups (numeric query) without
+// re-reading the live input value (which may have changed again by the
+// time a debounced search resolves).
+let explorerSearchQuery = "";
 
 const EXPLORER_SORTS = {
   id: (a, b) => a.id - b.id,
@@ -253,13 +259,59 @@ async function loadExplorerModules() {
   renderExplorerList();
 }
 
+// assembly-tab-usability item 2: a module row, shared by the plain list,
+// the exact-id jump row and the "ids containing" group — same shape
+// (id/classification/size/verboseName) everywhere, per the spec.
+function moduleRow(m, { jump = false } = {}) {
+  const li = document.createElement("li");
+  if (jump) li.classList.add("jump");
+  const tag = jump ? `<span class="tag-exact">exact id</span>` : "";
+  li.innerHTML = `<span class="mod-id">${m.id}</span>${tag}<span class="mod-class">${m.classification || ""}</span><span class="mod-size">${m.size}b</span><span class="mod-verbose">${m.verboseName || ""}</span>`;
+  li.addEventListener("click", () => openExplorerModule(m.id));
+  return li;
+}
+
+function appendGroupHeading(list, text) {
+  const h = document.createElement("div");
+  h.className = "ex-group-head";
+  h.textContent = text;
+  list.appendChild(h);
+}
+
 function renderExplorerList() {
   const list = el("explorer-module-list");
   list.innerHTML = "";
 
   if (explorerSearchResults) {
+    // assembly-tab-usability item 2: a numeric query gains two id-based
+    // groups above the source hits — an exact-id jump row, then "ids
+    // containing" — matched against the already-loaded module list, no
+    // extra server round trip. Each omitted when empty (never rendered
+    // with a heading and nothing under it). A non-numeric query renders
+    // exactly as before: only the source-mentions group.
+    const query = explorerSearchQuery.trim();
+    const isNumeric = query !== "" && /^\d+$/.test(query);
+    if (isNumeric) {
+      const exact = explorerModules.find((m) => String(m.id) === query);
+      const containing = explorerModules
+        .filter((m) => String(m.id) !== query && String(m.id).includes(query))
+        .sort((a, b) => a.id - b.id);
+
+      if (exact) {
+        appendGroupHeading(list, "Exact id match");
+        list.appendChild(moduleRow(exact, { jump: true }));
+      }
+      if (containing.length > 0) {
+        appendGroupHeading(list, `Ids containing "${query}" (${containing.length})`);
+        for (const m of containing) list.appendChild(moduleRow(m));
+      }
+      if (explorerSearchResults.length > 0) {
+        appendGroupHeading(list, `Source mentions of "${query}" (${explorerSearchResults.length})`);
+      }
+    }
     for (const hit of explorerSearchResults) {
       const li = document.createElement("li");
+      li.className = "src";
       li.innerHTML = `<span class="mod-id">${hit.moduleId}</span><span class="mod-snippet">...${hit.snippet}...</span>`;
       li.addEventListener("click", () => openExplorerModule(hit.moduleId));
       list.appendChild(li);
@@ -269,15 +321,11 @@ function renderExplorerList() {
 
   const sortKey = el("explorer-sort").value;
   const sorted = [...explorerModules].sort(EXPLORER_SORTS[sortKey]);
-  for (const m of sorted) {
-    const li = document.createElement("li");
-    li.innerHTML = `<span class="mod-id">${m.id}</span><span class="mod-class">${m.classification || ""}</span><span class="mod-size">${m.size}b</span><span class="mod-verbose">${m.verboseName || ""}</span>`;
-    li.addEventListener("click", () => openExplorerModule(m.id));
-    list.appendChild(li);
-  }
+  for (const m of sorted) list.appendChild(moduleRow(m));
 }
 
 async function runExplorerSearch(query) {
+  explorerSearchQuery = query;
   if (!query.trim()) {
     explorerSearchResults = null;
     renderExplorerList();
@@ -738,32 +786,48 @@ let companionsDefaultApplied = false;
 // the original path-based flow."
 let assembleEmbedded = false;
 
-// generic-placeholder-substitution (D-G4): one ordered list of {key, value}
-// rows, replacing the old fixed set of named fields. Pre-filled on first
-// load with the keys this project's own patches already rely on — BUILD_ID
-// (blank; moot in embedded mode, where hub always assigns its own build id
-// at submit time, but harmless to leave an unused row), SYNC_BASE_URL/
-// SYNC_TOKEN/AUDIO_BASE_URL (blank — same "leave blank to use the server's
-// own default" behavior the old dedicated fields had). BASE_VERSION is
-// never a row here — it's always read from the base folder's own
-// apktool.yml (D-G2), never operator-editable.
+// generic-placeholder-substitution (D-G4) + assembly-tab-usability item 1:
+// one ordered list of {key, value} rows — the single home for every baked
+// value, replacing both the old fixed set of named fields AND the formerly-
+// dedicated Label/Patch rev fields. Seeded in the agreed order: PATCH_REV,
+// LABEL, DATA_VERSION, BUILD_ID, SYNC_BASE_URL, SYNC_TOKEN, AUDIO_BASE_URL.
+// All start blank; `loadAssembleView` below fills PATCH_REV/LABEL/
+// DATA_VERSION/SYNC_BASE_URL/SYNC_TOKEN/AUDIO_BASE_URL from hub's own
+// `/mjolnir/ota/assemble-defaults` in embedded mode, or leaves them blank
+// with an explanatory caption in standalone mode. BASE_VERSION is never a
+// row here — it's always read from the base folder's own apktool.yml
+// (D-G2), never operator-editable.
 let assemblePlaceholders = [
+  { key: "PATCH_REV", value: "" },
+  { key: "LABEL", value: "" },
+  { key: "DATA_VERSION", value: "" },
   { key: "BUILD_ID", value: "" },
   { key: "SYNC_BASE_URL", value: "" },
   { key: "SYNC_TOKEN", value: "" },
   { key: "AUDIO_BASE_URL", value: "" },
-  // boot-companion-label-data-version: LABEL/DATA_VERSION rows, pre-filled
-  // once hub's /assemble-defaults responds (loadAssembleView below) — blank
-  // here same as the other rows above until that happens.
-  { key: "LABEL", value: "" },
-  { key: "DATA_VERSION", value: "" },
 ];
 let assemblePlaceholdersInitialized = false;
+
+// Per-row caption text, keyed by placeholder key — set by loadAssembleView
+// once embedded/standalone mode and `assembleDefaults` are known, read by
+// renderAssemblePlaceholders. A plain object rather than baked into the row
+// itself, since it depends on mode/server state, not on what the operator
+// typed.
+let assemblePlaceholderCaptions = {};
+
+// SYNC_TOKEN's masked/revealed state, keyed by row object identity so
+// re-rendering (e.g. after adding another row) doesn't reset an open
+// reveal.
+const assembleRevealedRows = new WeakSet();
 
 function renderAssemblePlaceholders() {
   const container = el("assemble-placeholders-list");
   container.innerHTML = "";
   assemblePlaceholders.forEach((row, idx) => {
+    const wrap = document.createElement("div");
+    const promoted = row.key === "PATCH_REV" || row.key === "LABEL";
+    if (promoted) wrap.className = "ph-row-promoted";
+
     const rowEl = document.createElement("div");
     rowEl.className = "field-grid";
 
@@ -782,17 +846,41 @@ function renderAssemblePlaceholders() {
     const valueLabel = document.createElement("label");
     valueLabel.textContent = "Value";
     const valueInput = document.createElement("input");
-    valueInput.type = isSecret ? "password" : "text";
+    // BUILD_ID: left as plain text (never masked) — it isn't a secret, it's
+    // just blank because hub assigns the real one at submit time.
+    valueInput.type = isSecret && !assembleRevealedRows.has(row) ? "password" : "text";
     valueInput.value = row.value;
-    valueInput.placeholder = isSecret
-      ? "(default from OPERATOR_AUTH_TOKEN, if configured)"
-      : row.key.endsWith("_URL")
-        ? "(default from TUN_PUBLIC_BASE, if configured)"
-        : "";
+    valueInput.placeholder =
+      row.key === "BUILD_ID"
+        ? "(assigned by hub at submit time)"
+        : isSecret
+          ? "(default from OPERATOR_AUTH_TOKEN, if configured)"
+          : row.key.endsWith("_URL")
+            ? "(default from TUN_PUBLIC_BASE, if configured)"
+            : "";
     valueInput.addEventListener("input", () => {
       row.value = valueInput.value;
     });
-    valueLabel.appendChild(valueInput);
+
+    if (isSecret) {
+      const secretWrap = document.createElement("span");
+      secretWrap.className = "ph-secret-wrap";
+      const eyeBtn = document.createElement("button");
+      eyeBtn.type = "button";
+      eyeBtn.className = "small";
+      const revealed = assembleRevealedRows.has(row);
+      eyeBtn.textContent = revealed ? "🙈 hide" : "👁 show";
+      eyeBtn.setAttribute("aria-label", revealed ? "hide token" : "show token");
+      eyeBtn.addEventListener("click", () => {
+        if (assembleRevealedRows.has(row)) assembleRevealedRows.delete(row);
+        else assembleRevealedRows.add(row);
+        renderAssemblePlaceholders();
+      });
+      secretWrap.append(valueInput, eyeBtn);
+      valueLabel.appendChild(secretWrap);
+    } else {
+      valueLabel.appendChild(valueInput);
+    }
 
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
@@ -803,7 +891,26 @@ function renderAssemblePlaceholders() {
     });
 
     rowEl.append(keyLabel, valueLabel, removeBtn);
-    container.appendChild(rowEl);
+    wrap.appendChild(rowEl);
+
+    if (promoted) {
+      const tag = document.createElement("div");
+      tag.className = "ph-row-caption";
+      tag.textContent =
+        row.key === "PATCH_REV"
+          ? "promoted from the removed Patch rev field"
+          : "promoted from the removed Label field";
+      wrap.insertBefore(tag, rowEl);
+    }
+    const caption = assemblePlaceholderCaptions[row.key];
+    if (caption) {
+      const captionEl = document.createElement("div");
+      captionEl.className = "ph-row-caption";
+      captionEl.textContent = caption;
+      wrap.appendChild(captionEl);
+    }
+
+    container.appendChild(wrap);
   });
 }
 
@@ -828,55 +935,70 @@ async function detectAssembleMode() {
 async function loadAssembleView() {
   const defaults = await detectAssembleMode();
   assembleEmbedded = !!defaults;
-  el("assemble-embedded-fields").classList.toggle("hidden", !assembleEmbedded);
   el("assemble-standalone-fields").classList.toggle("hidden", assembleEmbedded);
   el("assemble-run-btn").textContent = assembleEmbedded ? "Assemble & submit logic bundle" : "Assemble";
+  assemblePlaceholderCaptions = {};
   if (assembleEmbedded) {
     el("assemble-mode-caption").textContent =
       `Assembling against this repo's own base folder: ${defaults.baseFolderDir} ` +
       `(base_version ${defaults.baseVersion}). Result is submitted straight to hub's logic bundles — ` +
       `activate it from /mjolnir/ota when ready.`;
-    el("assemble-patch-rev-hint").textContent =
-      `optional — auto-incremented to ${defaults.nextPatchRev} (the next global patch_rev) if left blank`;
-    // The hint text alone isn't enough — write the actual suggested value
-    // into the field so the operator sees a real, already-filled number
-    // they can accept or override, not just a number mentioned in grey text
-    // next to an empty box.
-    if (!el("assemble-patch-rev").value) el("assemble-patch-rev").value = defaults.nextPatchRev;
-    if (!el("assemble-label").value) el("assemble-label").value = `${defaults.baseVersion}-patch${defaults.nextPatchRev}`;
-    el("assemble-placeholders-hint").textContent =
-      `BUILD_ID is ignored here (hub assigns its own at submit time). SYNC_BASE_URL/SYNC_TOKEN/AUDIO_BASE_URL: ` +
-      `${defaults.syncBaseUrlConfigured ? "configured on this server — leave blank to use it" : "not configured (TUN_PUBLIC_BASE unset)"}; ` +
-      `${defaults.syncTokenConfigured ? "token configured — leave blank to use it" : "token not configured (OPERATOR_AUTH_TOKEN unset)"}. ` +
-      `Leave any row blank to use the server's own default, or fill it to override.`;
+    assemblePlaceholderCaptions.PATCH_REV = `suggested next patch_rev from this server — accept or override`;
+    assemblePlaceholderCaptions.LABEL = `suggested label, generated from base version + patch rev — accept or override`;
+    assemblePlaceholderCaptions.DATA_VERSION = `the most recently published data rev on this server`;
+    assemblePlaceholderCaptions.SYNC_BASE_URL = defaults.syncBaseUrl
+      ? "prefilled from this server's own TUN_PUBLIC_BASE"
+      : "not configured on this server (TUN_PUBLIC_BASE unset) — clear to use its own default at assemble time";
+    assemblePlaceholderCaptions.SYNC_TOKEN = defaults.syncToken
+      ? "prefilled from this server's own OPERATOR_AUTH_TOKEN — masked, use the reveal to check it"
+      : "not configured on this server (OPERATOR_AUTH_TOKEN unset)";
+    assemblePlaceholderCaptions.AUDIO_BASE_URL = defaults.audioBaseUrl
+      ? "prefilled from this server's own TUN_PUBLIC_BASE"
+      : "not configured on this server (TUN_PUBLIC_BASE unset)";
+    assemblePlaceholderCaptions.BUILD_ID = "hub assigns its own build id at submit time — leave blank";
   } else {
     el("assemble-mode-caption").textContent =
       "Running standalone (no hub reachable) — base folder and output bundle path are required below.";
-    el("assemble-patch-rev-hint").textContent =
-      "the operator's responsibility — read the current max off /mjolnir/ota's history";
-    el("assemble-placeholders-hint").textContent =
-      "BUILD_ID is required if a selected patch/companion bakes __MJOLNIR_BUILD_ID__. SYNC_BASE_URL/SYNC_TOKEN/AUDIO_BASE_URL: " +
-      "blank = use this process's own TUN_PUBLIC_BASE/OPERATOR_AUTH_TOKEN env vars, if set — otherwise required if a selected patch/companion bakes the matching placeholder.";
+    // tier 2 (assembly-tab-usability item 1, standalone hint wording):
+    // chose one shared "no server was reachable" caption on the three
+    // version rows over three differently-worded ones, because the reason
+    // is the same for all three and a single wording is easier to
+    // recognise as "this is the fix-landed hint," not a per-row error.
+    const noServerHint = "no server was reachable to suggest this value";
+    assemblePlaceholderCaptions.PATCH_REV = noServerHint;
+    assemblePlaceholderCaptions.LABEL = noServerHint;
+    assemblePlaceholderCaptions.DATA_VERSION = noServerHint;
+    assemblePlaceholderCaptions.BUILD_ID =
+      "required if a selected patch/companion bakes __MJOLNIR_BUILD_ID__";
+    assemblePlaceholderCaptions.SYNC_BASE_URL =
+      "blank = use this process's own TUN_PUBLIC_BASE env var, if set — otherwise required if baked";
+    assemblePlaceholderCaptions.SYNC_TOKEN =
+      "blank = use this process's own OPERATOR_AUTH_TOKEN env var, if set — otherwise required if baked";
+    assemblePlaceholderCaptions.AUDIO_BASE_URL =
+      "blank = use this process's own TUN_PUBLIC_BASE env var, if set — otherwise required if baked";
   }
   if (!assemblePlaceholdersInitialized) {
     assemblePlaceholdersInitialized = true;
-    // D-L3: pre-fill DATA_VERSION/LABEL from hub's own suggested values —
-    // only meaningful in embedded mode, since standalone has no publications
-    // table (or dedicated Label field) to read from. LABEL's row mirrors the
-    // same suggested default just written into the dedicated Label field
-    // above, so the generic placeholder list visibly shows what will
-    // actually be baked, not a blank row that silently resolves to
-    // something else at submit time.
+    // assembly-tab-usability item 1: prefill PATCH_REV/LABEL/DATA_VERSION/
+    // SYNC_BASE_URL/SYNC_TOKEN/AUDIO_BASE_URL rows with the server's real
+    // resolved values as actual editable text, not merely described in
+    // hint text beside an empty box. Only meaningful in embedded mode;
+    // standalone leaves them blank (captions above explain why).
     if (assembleEmbedded) {
-      if (defaults.dataRev !== undefined && defaults.dataRev !== null) {
-        const dataVersionRow = assemblePlaceholders.find((r) => r.key === "DATA_VERSION");
-        if (dataVersionRow && !dataVersionRow.value) dataVersionRow.value = String(defaults.dataRev);
-      }
-      const labelRow = assemblePlaceholders.find((r) => r.key === "LABEL");
-      if (labelRow && !labelRow.value) labelRow.value = el("assemble-label").value;
+      const fill = (key, value) => {
+        if (value === undefined || value === null || value === "") return;
+        const row = assemblePlaceholders.find((r) => r.key === key);
+        if (row && !row.value) row.value = String(value);
+      };
+      fill("PATCH_REV", defaults.nextPatchRev);
+      fill("LABEL", defaults.label);
+      fill("DATA_VERSION", defaults.dataRev);
+      fill("SYNC_BASE_URL", defaults.syncBaseUrl);
+      fill("SYNC_TOKEN", defaults.syncToken);
+      fill("AUDIO_BASE_URL", defaults.audioBaseUrl);
     }
-    renderAssemblePlaceholders();
   }
+  renderAssemblePlaceholders();
   el("assemble-placeholder-add-btn").onclick = () => {
     assemblePlaceholders = [...assemblePlaceholders, { key: "", value: "" }];
     renderAssemblePlaceholders();
@@ -1003,7 +1125,6 @@ async function runAssemble() {
   errorEl.classList.add("hidden");
   resultEl.classList.add("hidden");
 
-  const patchRevRaw = el("assemble-patch-rev").value.trim();
   const companionFiles = assembleCompanionsSelected
     .map((name) => assembleCompanionsCache.find((c) => c.name === name)?.path)
     .filter(Boolean);
@@ -1011,14 +1132,15 @@ async function runAssemble() {
   // server falls back to its own default for SYNC_BASE_URL/SYNC_TOKEN/
   // AUDIO_BASE_URL when the key is absent, same as before.
   const placeholders = assemblePlaceholdersAsObject();
+  // assembly-tab-usability item 1: patchRev/label now come from the
+  // PATCH_REV/LABEL rows themselves — there is no separate field to read
+  // and reconcile into the row any more. A blank row means "let the server
+  // resolve it" (embedded: `nextPatchRev()`/generated label; standalone:
+  // not baked at all), exactly like any other blank placeholder row.
+  const patchRevRaw = placeholders.PATCH_REV || "";
+  const labelValue = placeholders.LABEL || "";
 
   if (assembleEmbedded) {
-    const labelFieldValue = el("assemble-label").value.trim();
-    // D-L3: reuse the Label field's own value for the baked LABEL
-    // placeholder too, rather than asking the operator to type it twice —
-    // only when the LABEL row was left blank; an explicit row value wins.
-    const embeddedPlaceholders = { ...placeholders };
-    if (!embeddedPlaceholders.LABEL && labelFieldValue) embeddedPlaceholders.LABEL = labelFieldValue;
     try {
       const res = await fetch("/mjolnir/ota/assemble-submit", {
         method: "POST",
@@ -1027,9 +1149,9 @@ async function runAssemble() {
           patchNames: assembleSelected,
           patchbackPairNames: assemblePatchbackPairsSelected,
           companionFiles,
-          label: labelFieldValue || undefined,
+          label: labelValue || undefined,
           patchRev: patchRevRaw ? Number(patchRevRaw) : undefined,
-          placeholders: embeddedPlaceholders,
+          placeholders,
         }),
       });
       const result = await res.json();
@@ -1055,16 +1177,14 @@ async function runAssemble() {
     // Standalone mode has no hub/database, so unlike embedded mode there's
     // no server-side patch_rev auto-resolution (D108) — PATCH_REV must come
     // through the same generic placeholders map as everything else here,
-    // from the dedicated "Patch rev" field above.
-    const standalonePlaceholders = { ...placeholders };
-    if (patchRevRaw) standalonePlaceholders.PATCH_REV = patchRevRaw;
+    // from the PATCH_REV row itself (already in `placeholders` if filled).
     const result = await api("POST", "/api/assemble", {
       baseFolderPath,
       patchNames: assembleSelected,
       patchbackPairNames: assemblePatchbackPairsSelected,
       outputPath,
       companionFiles,
-      placeholders: standalonePlaceholders,
+      placeholders,
     });
     resultEl.innerHTML = `Assembled <code>${result.outputPath}</code> — base_version <strong>${result.baseVersion}</strong>, patch_rev <strong>${result.placeholders.PATCH_REV ?? "(not baked)"}</strong>, ${result.appliedPatches.length} patch(es) applied, ${result.appliedPatchbackPairs.length} patch-back pair(s) applied, ${result.appliedCompanions.length} companion(s) appended.<br>Submit it to hub's OTA console (<code>/mjolnir/ota</code>) when ready, or drag-drop it there by hand.`;
     resultEl.classList.remove("hidden");

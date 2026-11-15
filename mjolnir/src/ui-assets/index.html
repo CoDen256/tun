@@ -38,7 +38,12 @@
       <section id="view-explorer" class="view">
         <div class="explorer-layout">
           <div class="explorer-list-pane">
-            <input id="explorer-search" type="search" placeholder="Search module source..." />
+            <!-- assembly-tab-usability item 2: one box, no mode toggle. A
+                 numeric query is treated as a module id first (exact match,
+                 then "ids containing"), and as source text second — both
+                 id groups render above the existing full-text source hits.
+                 A non-numeric query is unchanged. -->
+            <input id="explorer-search" type="search" placeholder="module id or source text, e.g. 2110" />
             <select id="explorer-sort">
               <option value="id">Sort: id</option>
               <option value="size-desc">Sort: size (largest)</option>
@@ -166,18 +171,12 @@
           <div class="assemble-form-pane">
             <div id="assemble-mode-caption" class="dir-caption"></div>
 
-            <!-- D112: shown only when running embedded in hub (detected via
-                 GET /mjolnir/ota/assemble-defaults on load) — assembling
-                 always uses this repo's own one base folder, server-side,
-                 never a client-typed path, and the result is submitted
-                 straight to hub's logic_bundles store, not written to an
-                 operator-picked output path. -->
-            <div id="assemble-embedded-fields" class="hidden field-grid">
-              <label class="full-width">
-                Label <span class="field-hint">optional — auto-generated from base version + patch rev if left blank</span>
-                <input id="assemble-label" type="text" placeholder="e.g. november-vocab-patch" />
-              </label>
-            </div>
+            <!-- assembly-tab-usability item 1: the dedicated embedded
+                 "Label" field and the dedicated "Patch rev (logic version)"
+                 field (both formerly here) are REMOVED — PATCH_REV and
+                 LABEL are now rows in the Placeholders list below, the one
+                 home for every baked value. assemble-embedded-fields no
+                 longer exists; nothing is shown twice. -->
 
             <!-- Standalone bundle-tool/bundle-workbench (no hub, no
                  database, D108) keeps the original path-based flow. -->
@@ -192,19 +191,15 @@
               </label>
             </div>
 
-            <div class="field-grid">
-              <label>
-                Patch rev (logic version) <span id="assemble-patch-rev-hint" class="field-hint"></span>
-                <input id="assemble-patch-rev" type="number" min="0" step="1" />
-              </label>
-            </div>
-
             <!-- generic-placeholder-substitution: any KEY/value pair here
                  substitutes __MJOLNIR_<KEY>__ wherever it appears in a
-                 selected patch/companion — replaces the old fixed set of
-                 named fields (Build id, Sync base URL, Sync token, Audio
-                 base URL). BASE_VERSION is never shown here — it's always
-                 read from the base folder's own apktool.yml (D-G2). -->
+                 selected patch/companion. assembly-tab-usability item 1:
+                 this is now the single home for PATCH_REV and LABEL too,
+                 seeded in the order PATCH_REV, LABEL, DATA_VERSION,
+                 BUILD_ID, SYNC_BASE_URL, SYNC_TOKEN, AUDIO_BASE_URL and
+                 prefilled from /mjolnir/ota/assemble-defaults in embedded
+                 mode. BASE_VERSION is never shown here — it's always read
+                 from the base folder's own apktool.yml (D-G2). -->
             <h3>Placeholders <span class="field-hint">__MJOLNIR_&lt;KEY&gt;__ substituted wherever a selected patch/companion bakes it — add a row for any key you need, beyond the common ones already listed</span></h3>
             <div id="assemble-placeholders-hint" class="field-hint" style="margin-bottom:8px;"></div>
             <div id="assemble-placeholders-list"></div>

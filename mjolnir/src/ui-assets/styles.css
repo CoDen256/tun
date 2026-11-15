@@ -157,6 +157,35 @@ body {
 .mod-class { font-size: 11px; color: #889; }
 .mod-size { font-size: 11px; color: #999; }
 
+/* assembly-tab-usability item 2: id-match groups above the source-mention
+   group, for a numeric Explorer query. */
+.ex-group-head {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: #777;
+  margin: 10px 0 5px;
+}
+.module-list li.jump {
+  background: #eef5ff;
+  border-color: #8fb0ef;
+  box-shadow: inset 3px 0 0 #1d3f86;
+  padding: 10px 11px;
+}
+.module-list li.jump .mod-id { font-size: 15px; color: #1d3f86; }
+.tag-exact {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+  background: #1d3f86;
+  color: #fff;
+  border-radius: 3px;
+  padding: 2px 6px;
+  flex: none;
+}
+
 .source-view {
   background: #f7f7f9;
   border: 1px solid #eee;
@@ -549,6 +578,33 @@ input, select {
 }
 .field-grid .checkbox-label input {
   width: auto;
+}
+/* assembly-tab-usability item 1: SYNC_TOKEN's masked value + reveal
+   toggle, inside a Placeholders row's "Value" cell. */
+.ph-secret-wrap {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.ph-secret-wrap input {
+  flex: 1;
+}
+.ph-secret-wrap button {
+  flex: none;
+  font-size: 11px;
+  padding: 0 9px;
+}
+.ph-row-promoted {
+  background: #f3f7ff;
+  border: 1px solid #b9c8f0;
+  border-radius: 5px;
+  padding: 8px;
+  margin-bottom: 4px;
+}
+.ph-row-caption {
+  font-size: 11px;
+  color: #777;
+  margin: -4px 0 8px;
 }
 #sort-select {
   margin-left: auto;

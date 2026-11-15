@@ -201,10 +201,25 @@ describe("hub: migrate, seed, publications, cards, ota, server", async (t) => {
       "version: 2.12.1\nversionInfo:\n  versionCode: 1\n  versionName: 9.9.1\n"
     );
 
-    const defaults = await assembleDefaults({ baseFolderDir });
+    const defaults = await assembleDefaults({
+      baseFolderDir,
+      publicBase: "https://tun.example.no",
+      operatorAuthToken: "op_test_token",
+    });
     assert.equal(defaults.baseVersion, "9.9.1");
     assert.equal(typeof defaults.nextPatchRev, "number");
     assert.equal(typeof defaults.dataRev, "number");
+    // assembly-tab-usability item 1: assembleDefaults now returns the
+    // server's real resolved values (reversing the earlier "booleans
+    // only" choice), since the Assemble tab's Placeholders rows prefill
+    // directly from this response as editable text.
+    assert.equal(defaults.label, `9.9.1-patch${defaults.nextPatchRev}`);
+    assert.equal(defaults.syncBaseUrl, "https://tun.example.no/mjolnir/userdata");
+    assert.equal(defaults.audioBaseUrl, "https://tun.example.no");
+    assert.equal(defaults.syncToken, "op_test_token");
+    assert.equal(defaults.syncTokenConfigured, undefined);
+    assert.equal(defaults.syncBaseUrlConfigured, undefined);
+    assert.equal(defaults.audioBaseUrlConfigured, undefined);
   });
 
   await t.test("D112: assembleAndSubmit assembles against the repo's own base folder and submits directly, no output path or base folder from the caller", async () => {
@@ -451,6 +466,10 @@ describe("hub: migrate, seed, publications, cards, ota, server", async (t) => {
       assert.equal(defaultsRes.status, 200);
       const defaults = await defaultsRes.json();
       assert.equal(defaults.baseVersion, "9.9.3");
+      // assembly-tab-usability item 1: the real resolved values travel over
+      // the wire now, not booleans.
+      assert.equal(typeof defaults.nextPatchRev, "number");
+      assert.equal(defaults.label, `9.9.3-patch${defaults.nextPatchRev}`);
 
       const submitRes = await fetch(`http://localhost:${port}/mjolnir/ota/assemble-submit`, {
         method: "POST",

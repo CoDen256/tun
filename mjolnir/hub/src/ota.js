@@ -147,10 +147,53 @@ export async function submitBundle(bytes, { label, baseVersion, patchRev, dataDi
 // so any value matching `appendCompanion`'s own charset (D48) is fine here.
 const ASSEMBLE_PLACEHOLDER_BUILD_ID = "unassigned";
 
-// D-L7 follow-up: what the embedded Assemble tab shows the operator before
-// they hit "Assemble" — the base version it'll read (so an empty Patch rev/
-// Label field's eventual value isn't a total surprise) and what Patch rev
-// will resolve to if left blank.
+// progress-sync-shim's shim/restore-companion fetch against
+// `${SYNC_BASE_URL}/<id>` directly (confirmed: `patches/js/
+// 2080-progress-sync-shim.edited.js` and `progress-sync-restore-
+// companion.js` both do `fetch(SYNC_BASE_URL + '/' + encodeURIComponent(id), ...)`)
+// — the default needs the full `/mjolnir/userdata` path, not just the host
+// `publicBase` already names. Moved here (from server.js) so
+// `assembleDefaults` below can compute the same resolved value it now
+// returns, instead of only a boolean — server.js imports these back for
+// its own `/mjolnir/ota/assemble-submit` default-filling.
+export function defaultSyncBaseUrl(publicBase) {
+  if (!publicBase) return undefined;
+  return `${publicBase.replace(/\/+$/, "")}/mjolnir/userdata`;
+}
+
+// audio-cache-prefetch: the prefetcher companion and the rewritten mod 1440
+// patch both build their own `/audio-manifest/...` and `/blob/...` paths
+// off this one base (confirmed: `audio-prefetch-companion.js` does
+// `fetch(AUDIO_BASE_URL + '/audio-manifest/' + buildId + '.json')` and
+// `AUDIO_BASE_URL + '/blob/' + sha256`) — a single fixed sub-path default
+// no longer makes sense now that the device resolves cardId → sha256
+// itself (D-P6 retires `/audio-by-card/*`), so this defaults to the bare
+// public base, not a sub-path.
+export function defaultAudioBaseUrl(publicBase) {
+  if (!publicBase) return undefined;
+  return publicBase.replace(/\/+$/, "");
+}
+
+// D-L7 follow-up / assembly-tab-usability item 1: what the embedded
+// Assemble tab shows the operator before they hit "Assemble & submit logic
+// bundle" — now the real resolved values the Placeholders rows prefill
+// with, not booleans.
+//
+// REVERSAL, recorded deliberately: this function used to return
+// `syncTokenConfigured`/`syncBaseUrlConfigured`/`audioBaseUrlConfigured`
+// booleans with the comment "Booleans only — never the token value itself
+// — so the Assemble tab can tell the operator 'leave blank, this server
+// already has one' without echoing a secret into a GET response any page
+// script can read." The operator reversed that in the assembly-tab-
+// usability design session: `OPERATOR_AUTH_TOKEN` is the same credential
+// the browser already holds to reach this very page (it's behind the one
+// operator-plane `basic_auth`, D159/D160) — returning it to a page that
+// could not be open without already having it adds no new reader. This
+// route never crosses into the device plane. A box that claims
+// "configured" but renders nothing was exactly the complaint
+// assembly-tab-usability item 1 was filed about, so the real value now
+// goes out, masked client-side with a reveal toggle instead of withheld
+// server-side.
 export async function assembleDefaults({ baseFolderDir, publicBase, operatorAuthToken }) {
   const baseVersion = readBaseVersion(baseFolderDir);
   const nextRev = await nextPatchRev();
@@ -159,21 +202,18 @@ export async function assembleDefaults({ baseFolderDir, publicBase, operatorAuth
   // PATCH_REV, nothing here increments it; the real next value is only
   // known once builder actually publishes.
   const { dataRev } = await previousVersions();
-  // Booleans only — never the token value itself — so the Assemble tab can
-  // tell the operator "leave blank, this server already has one" without
-  // echoing a secret into a GET response any page script can read.
   return {
     baseFolderDir,
     baseVersion,
     nextPatchRev: nextRev,
+    label: `${baseVersion}-patch${nextRev}`,
     dataRev,
-    syncBaseUrlConfigured: !!publicBase,
-    syncTokenConfigured: !!operatorAuthToken,
+    syncBaseUrl: defaultSyncBaseUrl(publicBase),
+    syncToken: operatorAuthToken || undefined,
     // D120/audio-cache-prefetch: this base URL has no token of its own
     // (the Caddy `/audio-manifest/*` and `/blob/*` routes are plain static,
-    // unauthenticated by design) — only the URL needs a configured default
-    // to report.
-    audioBaseUrlConfigured: !!publicBase,
+    // unauthenticated by design).
+    audioBaseUrl: defaultAudioBaseUrl(publicBase),
   };
 }
 
@@ -208,13 +248,22 @@ export async function assembleAndSubmit({
       patchbackPairNames: patchbackPairNames || [],
       outputPath: tmpPath,
       companionFiles: companionFiles || [],
-      // BUILD_ID/PATCH_REV are hub's own values, not operator-editable via
-      // the generic placeholder map here — BUILD_ID is a real id only
-      // assigned once this bundle is actually submitted (below), and
-      // PATCH_REV is this function's own `patchRev` param (resolved via
-      // `nextPatchRev()` above) — both always override anything the caller
-      // might have put in `placeholders`, same as `assembleBundle`'s own
-      // BASE_VERSION auto-override (D-G2).
+      // BUILD_ID is still hub's own value, not operator-editable via the
+      // generic placeholder map — it's a real id only assigned once this
+      // bundle is actually submitted (below), so it always overrides
+      // anything the caller put in `placeholders`, same as
+      // `assembleBundle`'s own BASE_VERSION auto-override (D-G2).
+      //
+      // PATCH_REV is DIFFERENT since assembly-tab-usability item 1: the
+      // Assemble tab's `PATCH_REV` row *is* this function's `patchRev`
+      // argument now (both read off the same row, server.js's
+      // `/mjolnir/ota/assemble-submit` sends them together) — so this
+      // override is identity, not a silent discard of what the operator
+      // typed into the row. It stays written explicitly, rather than
+      // relying on `placeholders.PATCH_REV` already matching, so a caller
+      // that omits the row but passes `patchRev` (or vice versa) still gets
+      // one coherent resolved value instead of two sources quietly
+      // disagreeing.
       placeholders: { ...placeholders, BUILD_ID: ASSEMBLE_PLACEHOLDER_BUILD_ID, PATCH_REV: resolvedPatchRev },
     });
     const bytes = fs.readFileSync(tmpPath);
