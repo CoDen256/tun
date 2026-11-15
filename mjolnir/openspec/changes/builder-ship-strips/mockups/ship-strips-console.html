@@ -1,0 +1,976 @@
+<title>Builder — ship strips</title>
+
+<style>
+/* ──────────────────────────────────────────────────────────────────────
+   Palette + chrome: copied verbatim from libs/jsservice/layout.js so this
+   page reads as the same console. Dark only — the real /builder page is
+   dark in practice and this mockup commits to it. The ONLY palette
+   addition is --new (the "new this run" accent ring), which has to be
+   orthogonal to the five lifecycle fills and so cannot reuse ok / warn /
+   err / accent.
+   ────────────────────────────────────────────────────────────────────── */
+:root {
+  --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
+  --border: #2a3039; --border-soft: #232832;
+  --text: #e8e6e1; --text-dim: #8b94a3; --text-faint: #566073;
+  --accent: #c6703f; --accent-soft: #c6703f26; --accent-text: #f2b688;
+  --ok: #5bab7e; --ok-soft: #5bab7e1f;
+  --warn: #d4a73d; --warn-soft: #d4a73d1f;
+  --err: #d1453f; --err-soft: #d1453f1f;
+  --new: #7aa2f7; --new-soft: #7aa2f726;
+  --radius: 6px;
+  --header-h: 98px;
+  --sans: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--text); font-family: var(--sans);
+  font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+h1, h2, h3, h4 { text-wrap: balance; font-weight: 650; margin: 0; }
+code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+a { color: var(--accent-text); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+button, .btn {
+  font: inherit; font-weight: 600; font-size: 13px; padding: 7px 14px;
+  border-radius: var(--radius); border: 1px solid var(--border);
+  background: var(--bg-elevated); color: var(--text); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+button:hover { border-color: var(--text-faint); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #1a0d05; }
+.btn-primary:hover { filter: brightness(1.08); border-color: var(--accent); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--text-dim); padding: 7px 9px; }
+.btn-ghost:hover { background: var(--bg-elevated); color: var(--text); border-color: transparent; }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 2px 9px 3px; border-radius: 99px; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill-ok { background: var(--ok-soft); color: var(--ok); }
+.pill-neutral { background: var(--border-soft); color: var(--text-dim); }
+
+.panel { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; }
+.panel-pad { padding: 18px 20px; }
+.inline-note { font-size: 12.5px; color: var(--text-faint); margin-top: 6px; }
+
+/* ── page shell ─────────────────────────────────────────────────────── */
+.page { padding: 0 0 64px; transition: padding-right .18s ease; min-width: 0; }
+.content { padding: 18px 24px 0; }
+
+/* ── 1. slim sticky header ──────────────────────────────────────────── */
+.ship-head {
+  position: sticky; top: 0; z-index: 40;
+  background: var(--bg-sunken); border-bottom: 1px solid var(--border);
+}
+.ship-head-main {
+  display: flex; align-items: center; gap: 14px; padding: 10px 24px 9px;
+  flex-wrap: wrap;
+}
+.ship-head-main h1 { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+.ship-head-main .brand { font-size: 12px; color: var(--text-faint); font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.ship-head-main .sep { width: 1px; align-self: stretch; background: var(--border); }
+.bundle-chip {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px;
+  font-family: var(--mono); color: var(--text-dim);
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: 999px; padding: 3px 11px;
+}
+.bundle-chip b { color: var(--text); font-weight: 650; }
+.bundle-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+.run-line { font-size: 12.5px; color: var(--text-dim); }
+.run-line b { color: var(--text); font-weight: 650; }
+.run-line .plus { color: var(--ok); font-weight: 700; }
+.run-line .hold { color: var(--warn); font-weight: 700; }
+.run-line .chg { color: var(--accent-text); font-weight: 700; }
+.head-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+
+/* ── 4. the legend, once, in the header ─────────────────────────────── */
+.legend-bar {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 7px 24px 8px; border-top: 1px solid var(--border-soft);
+  font-size: 11px; color: var(--text-dim); background: var(--bg-sunken);
+}
+.legend-bar .grp { display: inline-flex; align-items: center; gap: 9px; }
+.legend-bar .sw { display: inline-flex; align-items: center; gap: 5px; }
+.legend-bar .axis { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 650; }
+.legend-bar .vsep { width: 1px; height: 18px; background: var(--border); }
+.legend-bar .flow-u { cursor: default; }
+.legend-bar .info { position: relative; display: inline-flex; }
+.legend-bar .info > button {
+  border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text-dim);
+  width: 15px; height: 15px; min-width: 15px; padding: 0; border-radius: 50%;
+  font-size: 10px; font-weight: 700; justify-content: center; line-height: 1;
+}
+.legend-bar .info.open > button { border-color: var(--accent); color: var(--accent-text); }
+.legend-bar .info .pop {
+  display: none; position: absolute; top: 22px; left: -10px; z-index: 50;
+  width: 340px; white-space: normal; background: var(--bg-elevated);
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 13px 11px;
+  font-size: 11.5px; line-height: 1.65; color: var(--text-dim); box-shadow: 0 10px 30px #000a;
+}
+.legend-bar .info.open .pop { display: block; }
+.legend-bar .info .pop b { color: var(--text); }
+
+/* ── 2. global totals (buildGlobalTotals) ───────────────────────────── */
+.flow-totals {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1px;
+  background: var(--border); border: 1px solid var(--border); border-radius: 10px;
+  overflow: hidden; margin-bottom: 18px;
+}
+.flow-cell-stat { background: var(--bg-elevated); padding: 14px 18px; }
+.flow-cell-stat .label { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; margin-bottom: 6px; }
+.flow-cell-stat .value { font-size: 22px; font-weight: 700; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.flow-cell-stat .sub { font-size: 11.5px; color: var(--text-faint); margin-top: 3px; }
+.flow-cell-stat .delta { font-size: 11.5px; font-weight: 650; color: var(--text-dim); margin-top: 3px; }
+.flow-cell-stat .delta .plus { color: var(--ok); font-weight: 700; }
+.flow-cell-stat .delta .minus { color: var(--text-faint); font-weight: 700; }
+.flow-cell-stat .delta.neutral { color: var(--text-faint); font-weight: 500; }
+
+/* ── 3. one rail per deck, always expanded ──────────────────────────── */
+.flow-deck { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 18px; }
+.deck-head {
+  position: sticky; top: var(--header-h); z-index: 20;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 13px 18px; background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: 10px 10px 0 0;
+}
+.flow-deck-code { font-weight: 700; font-size: 16px; font-family: var(--mono); letter-spacing: .02em; }
+.flow-deck-title { color: var(--text-dim); font-size: 12.5px; }
+/* ONE readout, one order — minted → eventual → shipped → staged →
+   pending — rendered identically in the top panel and in each rail head. */
+.stat-readout {
+  display: inline-flex; align-items: center; gap: 13px; white-space: nowrap;
+  font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+  background: var(--bg-sunken); border: 1px solid var(--border);
+  border-radius: 999px; padding: 4px 14px;
+}
+.stat-readout .f { display: inline-flex; align-items: baseline; gap: 5px; }
+.stat-readout .i { color: var(--text-faint); font-size: 11px; }
+.stat-readout b { color: var(--text); font-weight: 700; }
+.stat-readout .plus { color: var(--ok); font-weight: 700; font-size: 11px; }
+.flow-cell-stat .label .i { font-family: var(--mono); color: var(--text-faint); margin-right: 6px; }
+.flow-status-chip {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 650;
+  padding: 4px 9px; border-radius: 999px; white-space: nowrap;
+}
+.flow-status-chip.ok { background: var(--ok-soft); color: var(--ok); }
+.flow-status-chip .sdot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+.deck-body { padding: 14px 18px 18px; }
+
+/* ── the strip ──────────────────────────────────────────────────────── */
+.flow-shape-box { padding: 12px 10px 12px 12px; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; }
+.flow-shape-rows { display: flex; flex-direction: column; gap: 7px; min-width: min-content; }
+.flow-shape-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; row-gap: 5px; }
+.flow-row-no { width: 46px; flex: none; font-size: 9.5px; color: var(--text-faint); font-family: var(--mono); text-align: right; margin-right: 8px; }
+
+.flow-u {
+  width: 16px; height: 21px; padding: 0; margin: 0; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; border-radius: 3px; font-family: var(--mono);
+  position: relative; cursor: pointer; appearance: none;
+}
+.flow-u.shipped { background: var(--ok-soft); color: var(--text); border: 1px solid transparent; }
+/* The staged fill carries the lifecycle split INSIDE the colour axis:
+   a staged occurrence that flushes in this publish changes state this run,
+   one that is held does not. Solid = flushes, hollow = held. Both are the
+   same warn hue, so both still read as "staged" at a glance, and both
+   compose with the --new ring (a box-shadow, which neither touches). */
+.flow-u.staged { background: var(--warn-soft); border: 1.5px solid var(--warn); color: var(--text); }
+.flow-u.staged.flush { background: var(--warn); border-color: var(--warn); color: #1a1205; }
+.flow-u.staged.held { background: transparent; border-style: dashed; color: var(--warn); }
+.flow-u.open    { background: transparent; border: 1.5px dashed var(--text-faint); opacity: .7; color: var(--text-faint); }
+.flow-u.pending { background: transparent; border: 1px dotted var(--text-faint); opacity: .6; color: var(--text-dim); }
+.flow-u.gap     { background: transparent; border: 1.5px dotted var(--accent); opacity: .55; color: var(--accent-text); }
+.flow-u:hover { border-color: var(--text); opacity: 1; z-index: 2; }
+
+/* axis 2 — "new this run", identical on staged AND pending cells */
+.flow-u.is-new { box-shadow: 0 0 0 1.5px var(--new); opacity: 1; }
+.flow-u.is-new:hover { box-shadow: 0 0 0 1.5px var(--new); }
+/* axis 3 — content rewritten by this publish; shipped cells only */
+.flow-u.is-changed::after {
+  content: ""; position: absolute; top: -3px; right: -3px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent-text); border: 1px solid var(--bg-sunken);
+}
+.flow-u.kin { outline: 2px dashed var(--text); outline-offset: 2px; opacity: 1; z-index: 3; }
+.flow-u.sel { outline: 2px solid var(--accent-text); outline-offset: 2px; opacity: 1; z-index: 4; }
+.flow-u:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; z-index: 5; }
+
+.flow-batch-div { width: 1px; height: 21px; background: var(--border); margin: 0 5px; flex: none; }
+
+.flow-shape-wrap > h4 { margin: 0 0 9px; font-size: 11.5px; font-weight: 650; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+.flow-shape-note { font-size: 11.5px; color: var(--text-faint); margin: 12px 0 2px; line-height: 1.7; max-width: 980px; }
+.flow-shape-note b { color: var(--text-dim); }
+.flow-pending-empty { font-size: 11.5px; color: var(--text-faint); margin-top: 10px; }
+
+/* ── hover tooltip ──────────────────────────────────────────────────── */
+.tip {
+  position: fixed; z-index: 90; pointer-events: none; display: none;
+  background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 6px;
+  padding: 5px 10px 6px; font-size: 11.5px; font-family: var(--mono);
+  color: var(--text); box-shadow: 0 8px 26px #000a; max-width: 460px;
+}
+.tip .st { color: var(--text-dim); }
+.tip .kin { display: block; color: var(--text-dim); font-size: 11px; margin-top: 3px; }
+
+/* ── the drawer ─────────────────────────────────────────────────────── */
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 452px; max-width: 100vw;
+  background: var(--bg-elevated); border-left: 1px solid var(--border);
+  overflow-y: auto; z-index: 70; transform: translateX(100%);
+  transition: transform .18s ease;
+}
+body.drawer-open .drawer { transform: none; }
+body.drawer-open .page { padding-right: 452px; }
+.drawer-head {
+  position: sticky; top: 0; background: var(--bg-elevated); z-index: 2;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 14px 18px 12px; border-bottom: 1px solid var(--border-soft);
+}
+.drawer-head h3 { font-size: 14px; font-family: var(--mono); }
+.drawer-head .sub { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+.drawer-body { padding: 14px 18px 40px; }
+.facts { display: grid; grid-template-columns: 94px 1fr; gap: 6px 12px; font-size: 12.5px; margin-bottom: 14px; }
+.facts dt { color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-weight: 650; padding-top: 2px; }
+.facts dd { margin: 0; font-family: var(--mono); font-size: 12px; color: var(--text); }
+.facts dd.sans { font-family: var(--sans); font-size: 12.5px; }
+.state-ship { color: var(--ok); font-weight: 700; }
+.state-hold { color: var(--warn); font-weight: 700; }
+.state-pend { color: var(--text-dim); }
+.kin-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 12px; font-size: 12px; color: var(--text-dim); margin-bottom: 14px;
+  font-family: var(--mono); cursor: pointer;
+}
+.kin-row:hover { border-color: var(--accent); color: var(--text); }
+.kin-row .lbl { color: var(--text-faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 650; }
+.kin-row .arrow { margin-left: auto; color: var(--accent-text); }
+.kin-row.dead { cursor: default; opacity: .75; }
+.kin-row.dead:hover { border-color: var(--border); color: var(--text-dim); }
+
+.changed-note {
+  background: var(--accent-soft); border: 1px solid var(--accent);
+  border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.55;
+  color: var(--text); margin-bottom: 14px;
+}
+.changed-note b { color: var(--accent-text); }
+
+.preview-head { display: flex; align-items: center; gap: 10px; margin: 4px 0 10px; }
+.preview-head h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); }
+.theme-toggle { margin-left: auto; display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.theme-toggle button { border: 0; border-radius: 0; background: transparent; color: var(--text-dim); font-size: 11px; padding: 4px 11px; font-weight: 650; }
+.theme-toggle button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+
+/* ── the mjølnir card preview ───────────────────────────────────────────
+   Values from openspec/changes/assembly-tab-usability/design.md, Item 3.
+   dark:  cardText #fff · headingAccent #3F8CFF · headingGray/borderColor
+          #7C8296 · studyCardHeading #737B95 · green #5DD8D0
+   light: cardText #16215B · headingAccent #246BFD · cardBackground #FAFAFA
+          · borderColor #DADFF2 · studyCardHeading #ACB1C0
+   card:  width 342 · radius 20 · border 1 · faces .28/.28/.44 of card
+          height · divider 60% wide, centred, 1px, borderColor
+   ──────────────────────────────────────────────────────────────────── */
+.mcard {
+  --c-bg: #1B1D21; --c-text: #ffffff; --c-border: #7C8296;
+  --c-accent: #3F8CFF; --c-head: #737B95; --c-green: #5DD8D0;
+  width: 342px; max-width: 100%; height: 424px;
+  border-radius: 20px; border: 1px solid var(--c-border);
+  background: var(--c-bg); color: var(--c-text);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.mcard.light {
+  --c-bg: #FAFAFA; --c-text: #16215B; --c-border: #DADFF2;
+  --c-accent: #246BFD; --c-head: #ACB1C0; --c-green: #1aa79e;
+}
+.mface { padding: 10px 18px; display: flex; flex-direction: column; overflow-y: auto; }
+.mface > .inner { margin: auto 0; width: 100%; text-align: center; } /* centres when it fits, top-aligns when it overflows — no clipped top */
+.mface.n { height: 28%; }
+.mface.e { height: 28%; }
+.mface.x { height: 44%; }
+.mdiv { width: 60%; height: 1px; background: var(--c-border); margin: 0 auto; flex: none; }
+.m-head { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--c-head); font-weight: 700; margin-bottom: 5px; }
+.m-word { font-size: 21px; font-weight: 700; color: var(--c-accent); line-height: 1.25; }
+.m-infl { font-size: 13px; margin-top: 3px; opacity: .92; }
+.m-ipa { font-family: Arial, "Helvetica Neue", sans-serif; font-size: 13px; margin-top: 3px; color: var(--c-green); }
+.m-tr { font-size: 16px; font-weight: 600; }
+.m-tr2 { font-size: 13px; margin-top: 4px; opacity: .72; }
+.m-sup { font-size: 11px; vertical-align: super; opacity: .7; }
+.m-ex { font-size: 14px; line-height: 1.5; }
+.m-ex b { color: var(--c-accent); font-weight: 700; }
+.m-exen { font-size: 12.5px; margin-top: 8px; opacity: .66; font-style: italic; }
+.mapped-note { font-size: 10.5px; color: var(--text-faint); margin-top: 9px; line-height: 1.5; }
+.mapped-note code { color: var(--text-dim); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+
+<div class="page" id="page">
+
+  <!-- 1. slim sticky header -->
+  <header class="ship-head">
+    <div class="ship-head-main">
+      <span class="brand">mjølnir · builder</span>
+      <span class="sep"></span>
+      <h1>Ship strips</h1>
+      <span class="bundle-chip">
+        <span class="dot"></span>
+        <b>logic bundle #3</b> · base 1.5.12 · patch rev 7
+      </span>
+      <span class="run-line mono" title="this run: 6 new cards · 5 occurrences flush · 6 held · 3 cards' content rewritten">
+        <b>+6</b>◆ · <span class="plus">5</span>▲ · <span class="hold">6</span>⏸ · <span class="chg">3</span>✎
+      </span>
+      <div class="head-right">
+        <button class="btn-primary">Publish now</button>
+      </div>
+    </div>
+
+    <!-- 4. the legend — once, here, never repeated per deck -->
+    <div class="legend-bar">
+      <span class="grp">
+        <span class="axis">fill</span>
+        <span class="sw"><span class="flow-u shipped">A</span>shipped</span>
+        <span class="sw"><span class="flow-u staged flush">A</span>staged, flushes</span>
+        <span class="sw"><span class="flow-u staged held">A</span>staged, held</span>
+        <span class="sw"><span class="flow-u open">?</span>open</span>
+        <span class="sw"><span class="flow-u pending">E</span>pending</span>
+        <span class="info" id="pending-info">
+          <button type="button" aria-label="How the pending countdown moves" aria-expanded="false">?</button>
+          <span class="pop">A pending occurrence counts down by the number of
+            <b>brand-new cards minted into that deck</b> in a run — not occurrences, not publishes.
+            Mint 4 cards and every tier drops by 4, so <b>several tiers can drain in the same
+            publish</b>. The <span class="flow-u gap" style="cursor:default">?</span> cells after a
+            tier are that distance, one cell per card still to arrive.</span>
+        </span>
+        <span class="sw"><span class="flow-u gap">?</span>to come</span>
+      </span>
+      <span class="vsep"></span>
+      <span class="grp">
+        <span class="axis">ring</span>
+        <span class="sw"><span class="flow-u staged flush is-new">A</span><span class="flow-u staged held is-new">A</span><span class="flow-u pending is-new">E</span>new this run</span>
+      </span>
+      <span class="vsep"></span>
+      <span class="grp">
+        <span class="axis">dot</span>
+        <span class="sw"><span class="flow-u shipped is-changed">A</span>content rewritten</span>
+      </span>
+    </div>
+  </header>
+
+  <div class="content">
+    <!-- 2. global totals -->
+    <div class="flow-totals" id="totals"></div>
+
+    <!-- 3. one full-width rail per deck, all expanded -->
+    <div id="decks"></div>
+  </div>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<aside class="drawer" id="drawer" aria-label="Occurrence detail">
+  <div class="drawer-head">
+    <div>
+      <h3 id="dw-title">—</h3>
+      <div class="sub" id="dw-sub">—</div>
+    </div>
+    <button class="btn-ghost" id="dw-close" style="margin-left:auto" aria-label="Close">✕</button>
+  </div>
+  <div class="drawer-body" id="dw-body"></div>
+</aside>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════
+   MOCKUP DATA — hardcoded, internally consistent, no network.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const WORDS = [
+  { no: "en bil",       infl: "en bil / bilen / biler / bilene",                     ipa: "[biːl]",          en: "car",                 en2: "automobile, vehicle",        ex: "<b>Bilen</b> min står i garasjen.",            exEn: "My car is in the garage." },
+  { no: "et hus",       infl: "et hus / huset / hus / husene",                       ipa: "[hʉːs]",          en: "house",               en2: "home, building",             ex: "<b>Huset</b> ligger like ved sjøen.",          exEn: "The house lies right by the sea." },
+  { no: "ei bok",       infl: "ei bok / boka / bøker / bøkene",                      ipa: "[buːk]",          en: "book",                en2: "volume",                     ex: "Jeg leste <b>boka</b> ferdig i går.",          exEn: "I finished the book yesterday." },
+  { no: "et barn",      infl: "et barn / barnet / barn / barna",                     ipa: "[bɑːɳ]",          en: "child",               en2: "kid",                        ex: "<b>Barnet</b> sover allerede.",                exEn: "The child is already asleep." },
+  { no: "en venn",      infl: "en venn / vennen / venner / vennene",                 ipa: "[ʋenː]",          en: "friend",              en2: "companion",                  ex: "Han er den beste <b>vennen</b> jeg har.",      exEn: "He is the best friend I have." },
+  { no: "et eple",      infl: "et eple / eplet / epler / eplene",                    ipa: "[ˈeːplə]",        en: "apple",               en2: "—",                          ex: "Hun spiste et <b>eple</b> til lunsj.",         exEn: "She ate an apple for lunch." },
+  { no: "en dag",       infl: "en dag / dagen / dager / dagene",                     ipa: "[dɑːɡ]",          en: "day",                 en2: "daytime",                    ex: "Det var en lang <b>dag</b> på jobb.",          exEn: "It was a long day at work." },
+  { no: "et år",        infl: "et år / året / år / årene",                           ipa: "[oːr]",           en: "year",                en2: "—",                          ex: "Vi flyttet hit for tre <b>år</b> siden.",      exEn: "We moved here three years ago." },
+  { no: "en by",        infl: "en by / byen / byer / byene",                         ipa: "[byː]",           en: "city",                en2: "town",                       ex: "Oslo er den største <b>byen</b> i Norge.",     exEn: "Oslo is the largest city in Norway." },
+  { no: "et vann",      infl: "et vann / vannet / vann / vanna",                     ipa: "[ʋɑnː]",          en: "water",               en2: "lake",                       ex: "Vi badet i <b>vannet</b> om kvelden.",         exEn: "We swam in the lake in the evening." },
+  { no: "en stol",      infl: "en stol / stolen / stoler / stolene",                 ipa: "[stuːl]",         en: "chair",               en2: "seat",                       ex: "Sett deg på <b>stolen</b> ved vinduet.",       exEn: "Sit down on the chair by the window." },
+  { no: "et bord",      infl: "et bord / bordet / bord / bordene",                   ipa: "[buːr]",          en: "table",               en2: "desk",                       ex: "Maten står på <b>bordet</b>.",                 exEn: "The food is on the table." },
+  { no: "ei kvinne",    infl: "ei kvinne / kvinna / kvinner / kvinnene",             ipa: "[ˈkʋɪnə]",        en: "woman",               en2: "—",                          ex: "<b>Kvinna</b> i resepsjonen hjalp oss.",       exEn: "The woman at the reception helped us." },
+  { no: "en mann",      infl: "en mann / mannen / menn / mennene",                   ipa: "[mɑnː]",          en: "man",                 en2: "husband",                    ex: "<b>Mannen</b> hennes er lærer.",               exEn: "Her husband is a teacher." },
+  { no: "et språk",     infl: "et språk / språket / språk / språkene",               ipa: "[sprɔːk]",        en: "language",            en2: "tongue",                     ex: "Norsk er et vakkert <b>språk</b>.",            exEn: "Norwegian is a beautiful language." },
+  { no: "en skole",     infl: "en skole / skolen / skoler / skolene",                ipa: "[ˈskuːlə]",       en: "school",              en2: "—",                          ex: "Barna går på <b>skolen</b> i nabolaget.",      exEn: "The children go to the school in the neighbourhood." },
+  { no: "et fjell",     infl: "et fjell / fjellet / fjell / fjella",                 ipa: "[fjelː]",         en: "mountain",            en2: "fell",                       ex: "Vi gikk opp på <b>fjellet</b> søndag.",        exEn: "We walked up the mountain on Sunday." },
+  { no: "ei gate",      infl: "ei gate / gata / gater / gatene",                     ipa: "[ˈɡɑːtə]",        en: "street",              en2: "road",                       ex: "Han bor i <b>gata</b> bak kirka.",             exEn: "He lives on the street behind the church." },
+  { no: "et brev",      infl: "et brev / brevet / brev / brevene",                   ipa: "[breːʋ]",         en: "letter",              en2: "note",                       ex: "Hun skrev et langt <b>brev</b> til moren.",    exEn: "She wrote a long letter to her mother." },
+  { no: "en nøkkel",    infl: "en nøkkel / nøkkelen / nøkler / nøklene",             ipa: "[ˈnøkːəl]",       en: "key",                 en2: "—",                          ex: "Jeg mistet <b>nøkkelen</b> til leiligheten.",  exEn: "I lost the key to the flat." },
+  { no: "å fastsette",  infl: "å fastsette / fastsetter / fastsatte / har fastsatt", ipa: "[ˈfɑstˌsetːə]",   en: "to determine",        en2: "to fix, to set",             ex: "Datoen ble <b>fastsatt av</b> styret i mars.", exEn: "The date was set by the board in March." },
+  { no: "en regel",     infl: "en regel / regelen / regler / reglene",               ipa: "[ˈreːɡəl]",       en: "rule",                en2: "regulation",                 ex: "Det finnes ett unntak fra <b>regelen</b>.",    exEn: "There is one exception to the rule." },
+  { no: "et spørsmål",  infl: "et spørsmål / spørsmålet / spørsmål / spørsmålene",   ipa: "[ˈspœʂˌmoːl]",    en: "question",            en2: "issue, matter",              ex: "Det er et godt <b>spørsmål</b>.",              exEn: "That is a good question." },
+  { no: "en vei",       infl: "en vei / veien / veier / veiene",                     ipa: "[ʋæi]",           en: "road",                en2: "way, route",                 ex: "<b>Veien</b> videre er ikke brøytet.",         exEn: "The road onwards has not been ploughed." },
+];
+const wordFor = (n) => WORDS[(n - 1) % WORDS.length];
+const noteFor = (n) => "«" + wordFor(n).no.replace(/^(en|et|ei|å) /, "") + "»";
+
+// Three already-shipped C30 cards whose content this publish rewrites —
+// each a different shape, so the tooltip's specificity is visible.
+const CHANGED_FACES = { 118: ["E"], 207: ["E", "X"], 241: ["N"] };
+const faceList = (f) => f.length === 1 ? f[0] : f.slice(0, -1).join(", ") + " and " + f[f.length - 1];
+
+const pad3 = (n) => String(n).padStart(3, "0");
+const buildId = (b) => "b" + String(b).padStart(6, "0");
+// Build 49 is the most recent C30 flush, 2026-11-14; one build per day back.
+const buildDate = (b) => {
+  const d = new Date(Date.UTC(2026, 10, 14));
+  d.setUTCDate(d.getUTCDate() - (49 - b));
+  return d.toISOString().slice(0, 10);
+};
+
+/* ── C30 — Lexic, 2 occurrences per card (A immediate, E queued at 11) ──
+   189 cards minted → 378 eventual occurrences.
+   254 of them are real (245 shipped + 9 staged), 124 are pending E's.
+   E's already in the real zone belong to cards 1–65; cards 66–189 still
+   have their E in the queue.  245 + 9 = 254, the next multiple of 5 above
+   245 is 250 → the first 5 staged flush, the remaining 4 are held.        */
+function buildC30() {
+  const units = [];
+  const CHANGED = new Set([118, 207, 241]); // shipped cards whose content this publish rewrites
+  let idx = 0;
+
+  const seq = [];
+  for (let n = 1; n <= 189; n++) {
+    seq.push({ card: n, letter: "A" });
+    if (n >= 125) seq.push({ card: n - 124, letter: "E" }); // the long E lag
+  }
+  // seq.length === 254
+
+  for (const o of seq) {
+    idx++;
+    const shipped = idx <= 245;
+    const isNew = !shipped && ((o.letter === "A" && o.card >= 186) || (o.letter === "E" && o.card >= 63));
+    units.push({
+      kind: "cell",
+      idx,
+      cls: shipped ? "shipped" : "staged",
+      letter: o.letter,
+      card: o.card,
+      cardId: "C30" + pad3(o.card),
+      deck: "C30",
+      isNew,
+      changed: shipped && CHANGED.has(idx),
+      faces: shipped && CHANGED.has(idx) ? CHANGED_FACES[idx] : null,
+      build: shipped ? Math.ceil(idx / 5) : null,
+      flushing: !shipped && idx <= 250,
+      newKind: isNew ? (o.letter === "A" ? "minted" : "drained") : null,
+    });
+  }
+
+  // OPEN. The live code computes `nextMultipleOf5(shipped) - (shipped +
+  // staged)`, which for C30 is 250 - 254 = -4, clamped to 0 — so C30 shows
+  // no open slot at all. The correct expression is
+  // `nextMultipleOf5(shipped + staged) - (shipped + staged)`, always 1..5:
+  // 255 - 254 = 1 here. C20 gets the same answer either way (50 - 47 = 3).
+  idx++;
+  units.push({
+    kind: "cell", idx, cls: "open", letter: "?", card: null,
+    cardId: null, deck: "C30", isNew: false, changed: false,
+  });
+
+  // No publish-line marker is drawn: the batch-of-5 divider at the next
+  // multiple of 5 (250) IS the boundary — staged cells before it flush,
+  // staged cells after it hold. Nothing to label.
+
+  // pending zone: tiers by remaining countdown, then that many gap cells.
+  // The tier's distance is spoken by its `remaining` gap cells and by
+  // nothing else — no inline text in the strip.
+  const tiers = [
+    { rem: 3,  from: 66, to: 71  },
+    { rem: 7,  from: 72, to: 81  },
+    { rem: 11, from: 82, to: 189 },
+  ];
+  for (const t of tiers) {
+    const count = t.to - t.from + 1;
+    for (let n = t.from; n <= t.to; n++) {
+      idx++;
+      units.push({
+        kind: "cell", idx, cls: "pending", letter: "E", card: n,
+        cardId: "C30" + pad3(n), deck: "C30",
+        isNew: n >= 186, newKind: n >= 186 ? "queued" : null,
+        changed: false, remaining: t.rem, tierSize: count,
+      });
+    }
+    for (let i = 0; i < t.rem; i++) {
+      idx++;
+      units.push({
+        kind: "cell", idx, cls: "gap", letter: "?", card: null,
+        cardId: null, deck: "C30", isNew: false, changed: false,
+        remaining: t.rem, tierSize: count,
+      });
+    }
+  }
+  return units;
+}
+
+/* ── C20 — Practice, 1 occurrence per card, never queues ───────────────
+   45 shipped + 2 newly staged = 47; the next multiple of 5 is 50, so
+   nothing flushes and 3 open slots complete the batch.                   */
+function buildC20() {
+  const units = [];
+  let idx = 0;
+  for (let n = 1; n <= 45; n++) {
+    idx++;
+    units.push({
+      kind: "cell", idx, cls: "shipped", letter: "N", card: n,
+      cardId: "C20" + pad3(n), deck: "C20", isNew: false, changed: false,
+      build: Math.ceil(idx / 5) * 5, flushing: false,
+    });
+  }
+  for (let n = 46; n <= 47; n++) {
+    idx++;
+    units.push({
+      kind: "cell", idx, cls: "staged", letter: "N", card: n,
+      cardId: "C20" + pad3(n), deck: "C20", isNew: true, newKind: "minted",
+      changed: false, flushing: false,
+    });
+  }
+  for (let i = 0; i < 3; i++) {
+    idx++;
+    units.push({
+      kind: "cell", idx, cls: "open", letter: "?", card: null,
+      cardId: null, deck: "C20", isNew: false, changed: false,
+    });
+  }
+  return units;
+}
+
+const DECKS = [
+  {
+    code: "C30", title: "Lexic", desc: "vocabulary — A + E pair per card",
+    occPerCard: 2, minted: 189, eventual: 378,
+    shipped: 245, staged: 9, pending: 124, open: 1,
+    target: 250, wouldFlush: 5, held: 4, newCards: 4, newOcc: 10,
+    stagedBefore: 2, pendingQueued: 4, pendingDrained: 3,
+    units: buildC30(),
+  },
+  {
+    code: "C20", title: "Practice", desc: "single-occurrence drill cards",
+    occPerCard: 1, minted: 47, eventual: 47,
+    shipped: 45, staged: 2, pending: 0, open: 3,
+    target: 50, wouldFlush: 0, held: 2, newCards: 2, newOcc: 2,
+    stagedBefore: 0, pendingQueued: 0, pendingDrained: 0,
+    units: buildC20(),
+  },
+];
+
+/* ══════════════════════════════════════════════════════════════════════
+   RENDER — global totals
+   ══════════════════════════════════════════════════════════════════════ */
+// ONE order, ONE icon set, ONE label set — reused verbatim by the top
+// panel and by every deck rail header.
+const ORDER = ["minted", "eventual", "shipped", "staged", "pending"];
+const ICON = { minted: "◆", eventual: "Σ", shipped: "●", staged: "◐", pending: "○" };
+const LABEL = {
+  minted: "Cards minted",
+  eventual: "Occurrences, eventual",
+  shipped: "Shipped",
+  staged: "Staged — short of next 5",
+  pending: "Pending — 11-card spacing",
+};
+const TOTAL = { minted: 236, eventual: 425, shipped: 290, staged: 11, pending: 124 };
+const DELTA = {
+  minted: '<span class="plus">+6</span>',
+  eventual: '<span class="plus">+10</span>',
+  shipped: '<span class="plus">+5</span>',
+  staged: '<span class="plus">+9</span>',
+  pending: '<span class="plus">+4</span> / <span class="minus">−3</span>',
+};
+const SUB = {
+  minted: "C20 47 · C30 189",
+  eventual: "C20 47 · C30 378",
+  shipped: "C20 45 · C30 245",
+  staged: "C20 2 · C30 9",
+  pending: "C20 0 · C30 124",
+};
+document.getElementById("totals").innerHTML = ORDER.map((k) => `<div class="flow-cell-stat">
+    <div class="label"><span class="i">${ICON[k]}</span>${LABEL[k]}</div>
+    <div class="value">${TOTAL[k]}</div>
+    <div class="delta">${DELTA[k]}</div>
+    <div class="sub">${SUB[k]}</div>
+  </div>`).join("");
+
+// This run's per-deck deltas, DERIVED from the deck's own scenario rather
+// than typed in, so a rail can never disagree with the totals row:
+//   minted   = cards minted this run
+//   eventual = those cards × this family's occurrences per card
+//   shipped  = what would flush
+//   staged   = staged now − staged before the run  (net)
+//   pending  = queued this run − drained this run  (net)
+const deckDeltas = (d) => ({
+  minted: d.newCards,
+  eventual: d.newCards * d.occPerCard,
+  shipped: d.wouldFlush,
+  staged: d.staged - d.stagedBefore,
+  pending: d.pendingQueued - d.pendingDrained,
+});
+
+// the same five figures, same order, same icons — plus this run's delta
+const readout = (d) => {
+  const dd = deckDeltas(d);
+  return `<span class="stat-readout">` + ORDER.map((k) =>
+    `<span class="f" title="${LABEL[k]}"><span class="i">${ICON[k]}</span><b>${d[k]}</b>` +
+    (dd[k] > 0 ? `<span class="plus">+${dd[k]}</span>` : "") + `</span>`
+  ).join("") + `</span>`;
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   RENDER — the strips
+   Rows of 40 CELLS (labels and the publish line never count), a thin
+   divider between every block of 5 throughout, carried row numbering.
+   ══════════════════════════════════════════════════════════════════════ */
+const ROW = 40;
+const CELLS = new Map(); // "deck#idx" -> {unit, el}
+const BY_CARD = new Map(); // cardId -> [keys]
+
+function cellHtml(u) {
+  const cls = [
+    "flow-u", u.cls,
+    u.cls === "staged" ? (u.flushing ? "flush" : "held") : "",
+    u.isNew ? "is-new" : "",
+    u.changed ? "is-changed" : "",
+  ].filter(Boolean).join(" ");
+  return `<button class="${cls}" data-key="${u.deck}#${u.idx}" type="button">${u.letter}</button>`;
+}
+
+function renderStrip(deck) {
+  const rows = [];
+  let cells = [];
+  let rowStart = 0;
+  let count = 0; // cells in this row
+  let placed = 0; // cells placed overall
+
+  const flush = () => {
+    if (count === 0) return;
+    rows.push(
+      `<div class="flow-shape-row"><span class="flow-row-no">${rowStart + 1}–${rowStart + count}</span>${cells.join("")}</div>`
+    );
+    cells = [];
+    count = 0;
+  };
+
+  for (const u of deck.units) {
+    if (placed % ROW === 0) {
+      flush();
+      rowStart = placed;
+    } else if (placed % 5 === 0) {
+      cells.push('<span class="flow-batch-div"></span>');
+    }
+    cells.push(cellHtml(u));
+    const key = deck.code + "#" + u.idx;
+    CELLS.set(key, { u });
+    if (u.cardId) {
+      if (!BY_CARD.has(u.cardId)) BY_CARD.set(u.cardId, []);
+      BY_CARD.get(u.cardId).push(key);
+    }
+    count++;
+    placed++;
+  }
+  flush();
+  return rows.join("");
+}
+
+document.getElementById("decks").innerHTML = DECKS.map((d) => `
+  <section class="flow-deck">
+    <div class="deck-head">
+      <span class="flow-deck-code">${d.code}</span>
+      <span class="flow-deck-title">${d.title}</span>
+      ${readout(d)}
+      <span class="flow-status-chip ok"><span class="sdot"></span>On grid</span>
+    </div>
+    <div class="deck-body">
+      <div class="flow-shape-wrap">
+        <h4>Ship order — shipped → staged → open → pending</h4>
+        <div class="flow-shape-box"><div class="flow-shape-rows">${renderStrip(d)}</div></div>
+        ${d.occPerCard === 2 ? "" : `<p class="flow-pending-empty">No pending zone — single-occurrence deck.</p>`}
+      </div>
+    </div>
+  </section>
+`).join("");
+
+// bind the rendered elements back to their units
+for (const el of document.querySelectorAll(".flow-u[data-key]")) {
+  const rec = CELLS.get(el.dataset.key);
+  if (rec) rec.el = el;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   FACTS — shared by the tooltip and the drawer
+   ══════════════════════════════════════════════════════════════════════ */
+// What this publish does to this card's CONTENT — the tooltip's whole job.
+function changeText(u) {
+  if (u.changed) return `${faceList(u.faces)} change${u.faces.length === 1 ? "s" : ""} this publish`;
+  if (u.isNew && u.newKind === "minted") return "new card — every face written this publish";
+  if (!u.cardId) return "no card in this slot";
+  return "unchanged";
+}
+
+function stateText(u) {
+  if (u.cls === "shipped") return `shipped in ${buildId(u.build)}, ${buildDate(u.build)}`;
+  if (u.cls === "staged") {
+    if (u.flushing) return "would flush this run";
+    // held: this occurrence sits past the multiple of 5 this run reaches,
+    // so it waits for the NEXT one.
+    return u.deck === "C30"
+      ? "held — 4 staged sit past 250, waiting on 255 (1 more occurrence)"
+      : "held — 47 staged against a target of 50, 3 occurrences short";
+  }
+  if (u.cls === "open") return `open slot — not yet minted, counts toward ${u.deck === "C30" ? 255 : 50}`;
+  if (u.cls === "pending") return `pending — drains after ${u.remaining} more new cards into ${u.deck}`;
+  return `filler — ${u.remaining} more new cards must land in ${u.deck} before this tier drains`;
+}
+function kinKey(u) {
+  if (!u.cardId) return null;
+  const keys = BY_CARD.get(u.cardId) || [];
+  return keys.find((k) => k !== u.deck + "#" + u.idx) || null;
+}
+function kinText(u) {
+  if (!u.cardId) return null;
+  const k = kinKey(u);
+  if (!k) {
+    return u.deck === "C20"
+      ? "no partner — C20 cards have one occurrence only"
+      : `partner: E, still queued — not yet placed in the strip`;
+  }
+  const p = CELLS.get(k).u;
+  const where =
+    p.cls === "shipped" ? `shipped in ${buildId(p.build)}` :
+    p.cls === "staged" ? (p.flushing ? "staged, flushes this run" : "staged, held") :
+    p.cls === "pending" ? `still pending — ${p.remaining} more cards away` : p.cls;
+  const dist = Math.abs(p.idx - u.idx);
+  return `partner: ${p.letter}, #${p.idx}, ${where} — ${dist} cells apart`;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   HOVER — instant text tooltip + kin highlight
+   ══════════════════════════════════════════════════════════════════════ */
+const tip = document.getElementById("tip");
+let litKin = null;
+
+function clearKin() { if (litKin) { litKin.classList.remove("kin"); litKin = null; } }
+
+function showFor(el) {
+  const u = CELLS.get(el.dataset.key).u;
+  const id = u.cardId ? u.cardId : "—";
+  // Index · card · letter, then what CHANGES. Build ids, timestamps and
+  // flush/queue detail live in the drawer, not here.
+  tip.innerHTML =
+    `#${u.idx} · ${id} · ${u.letter}` +
+    `<span class="kin">${changeText(u)}</span>`;
+  tip.style.display = "block";
+
+  clearKin();
+  const k = kinKey(u);
+  if (k) {
+    const rec = CELLS.get(k);
+    if (rec && rec.el) { rec.el.classList.add("kin"); litKin = rec.el; }
+  }
+}
+function placeTip(x, y) {
+  const r = tip.getBoundingClientRect();
+  let left = x + 14, top = y + 16;
+  if (left + r.width > window.innerWidth - 8) left = window.innerWidth - r.width - 8;
+  if (top + r.height > window.innerHeight - 8) top = y - r.height - 12;
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+}
+
+document.addEventListener("mouseover", (e) => {
+  const el = e.target.closest(".flow-u[data-key]");
+  if (!el) return;
+  showFor(el);
+  placeTip(e.clientX, e.clientY);
+});
+document.addEventListener("mousemove", (e) => {
+  if (tip.style.display === "block") placeTip(e.clientX, e.clientY);
+});
+document.addEventListener("mouseout", (e) => {
+  const el = e.target.closest(".flow-u[data-key]");
+  if (!el) return;
+  tip.style.display = "none";
+  clearKin();
+});
+// keyboard walk gets the same readout
+document.addEventListener("focusin", (e) => {
+  const el = e.target.closest ? e.target.closest(".flow-u[data-key]") : null;
+  if (!el) return;
+  showFor(el);
+  const r = el.getBoundingClientRect();
+  placeTip(r.left, r.bottom);
+});
+document.addEventListener("focusout", (e) => {
+  if (e.target.closest && e.target.closest(".flow-u[data-key]")) { tip.style.display = "none"; clearKin(); }
+});
+
+/* ══════════════════════════════════════════════════════════════════════
+   CLICK → drawer
+   ══════════════════════════════════════════════════════════════════════ */
+const drawer = document.getElementById("drawer");
+const dwTitle = document.getElementById("dw-title");
+const dwSub = document.getElementById("dw-sub");
+const dwBody = document.getElementById("dw-body");
+let selected = null;
+let previewTheme = "dark";
+
+function cardPreview(u) {
+  const w = wordFor(u.card);
+  return `
+  <div class="preview-head">
+    <h4>Card preview</h4>
+    <div class="theme-toggle" role="group" aria-label="Preview theme">
+      <button type="button" data-theme="dark"  aria-pressed="${previewTheme === "dark"}">Dark</button>
+      <button type="button" data-theme="light" aria-pressed="${previewTheme === "light"}">Light</button>
+    </div>
+  </div>
+  <div class="mcard${previewTheme === "light" ? " light" : ""}" id="mcard">
+    <div class="mface n">
+      <div class="inner">
+        <div class="m-head">N</div>
+        <div class="m-word">${w.no}<span class="m-sup">1</span></div>
+        <div class="m-infl">${w.infl}</div>
+        <div class="m-ipa">${w.ipa}</div>
+      </div>
+    </div>
+    <div class="mdiv"></div>
+    <div class="mface e">
+      <div class="inner">
+        <div class="m-head">E</div>
+        <div class="m-tr">${w.en}</div>
+        <div class="m-tr2">${w.en2}</div>
+      </div>
+    </div>
+    <div class="mdiv"></div>
+    <div class="mface x">
+      <div class="inner">
+        <div class="m-head">X</div>
+        <div class="m-ex">${w.ex}</div>
+        <div class="m-exen">${w.exEn}</div>
+      </div>
+    </div>
+  </div>
+  <div class="mapped-note">
+    342×(0.28 / 0.28 / 0.44) faces, radius 20, 1px <code>borderColor</code>, 60% centred divider —
+    extracted from the stock bundle (assembly-tab-usability, Item 3). The dark card background
+    <code>#1B1D21</code> is <b>MAPPED</b>, not extracted: the dark theme has no <code>cardBackground</code>
+    key, so this comes from <code>archivedBackground</code> / <code>navigationRoot</code>.
+    IPA renders in the bundled Arial face because Poppins carries no IPA glyphs.
+  </div>`;
+}
+
+function openDrawer(key) {
+  const rec = CELLS.get(key);
+  if (!rec) return;
+  const u = rec.u;
+
+  if (selected) selected.classList.remove("sel");
+  selected = rec.el || null;
+  if (selected) selected.classList.add("sel");
+
+  dwTitle.textContent = `#${u.idx} · ${u.cardId || "no card"} · ${u.letter}`;
+  dwSub.textContent = `${u.deck} ${DECKS.find((d) => d.code === u.deck).title} · ${u.cls}`;
+
+  const stateCls = u.cls === "shipped" ? "" : (u.cls === "staged" && u.flushing) ? "state-ship" : u.cls === "staged" ? "state-hold" : "state-pend";
+
+  const facts = `<dl class="facts">
+    <dt>Index</dt><dd>#${u.idx}</dd>
+    <dt>Card</dt><dd>${u.cardId || "—"}</dd>
+    <dt>Deck</dt><dd>${u.deck} · ${DECKS.find((d) => d.code === u.deck).title}</dd>
+    <dt>Letter</dt><dd>${u.letter}</dd>
+    <dt>Note</dt><dd class="sans">${u.cardId ? noteFor(u.card) : "—"}</dd>
+    <dt>State</dt><dd class="${stateCls}">${stateText(u)}</dd>
+    <dt>Changes</dt><dd class="sans"${u.changed ? ' style="color:var(--accent-text)"' : ""}>${changeText(u)}</dd>
+    ${u.cls === "shipped" ? `<dt>Build</dt><dd>${buildId(u.build)} · ${buildDate(u.build)}</dd>` : ""}
+    ${u.cls === "pending" ? `<dt>Countdown</dt><dd>${u.remaining} more new cards into ${u.deck} (tier of ${u.tierSize})</dd>` : ""}
+    ${u.isNew ? `<dt>This run</dt><dd style="color:var(--new)">new — ${u.newKind === "minted" ? "card minted this run" : u.newKind === "drained" ? "countdown hit zero, drained into staged" : "queued at remaining 11"}</dd>` : ""}
+  </dl>`;
+
+  const k = kinKey(u);
+  const kinRow = u.cardId
+    ? `<button class="kin-row${k ? "" : " dead"}" ${k ? `data-go="${k}"` : "disabled"} type="button">
+         <span class="lbl">kin</span><span>${kinText(u)}</span>${k ? '<span class="arrow">→</span>' : ""}
+       </button>`
+    : `<div class="kin-row dead"><span class="lbl">kin</span><span>no card in this slot — nothing to pair with</span></div>`;
+
+  const changed = u.changed
+    ? `<div class="changed-note"><b>${faceList(u.faces)} rewritten.</b> This card already shipped in
+       ${buildId(u.build)} (${buildDate(u.build)}). The preview below shows the <b>NEW content this
+       publish will write</b>, not what is currently on the device.</div>`
+    : "";
+
+  dwBody.innerHTML = facts + kinRow + changed + (u.cardId ? cardPreview(u) : `<div class="inline-note">Filler slot — there is no card to preview. This cell measures distance, not content.</div>`);
+  document.body.classList.add("drawer-open");
+  drawer.dataset.key = key;
+}
+
+function closeDrawer() {
+  document.body.classList.remove("drawer-open");
+  if (selected) { selected.classList.remove("sel"); selected = null; }
+}
+
+document.addEventListener("click", (e) => {
+  const cell = e.target.closest(".flow-u[data-key]");
+  if (cell) { openDrawer(cell.dataset.key); return; }
+
+  const go = e.target.closest("[data-go]");
+  if (go) {
+    const rec = CELLS.get(go.dataset.go);
+    openDrawer(go.dataset.go);
+    if (rec && rec.el) rec.el.scrollIntoView({ block: "center", behavior: "smooth" });
+    return;
+  }
+
+  const th = e.target.closest(".theme-toggle button");
+  if (th) {
+    previewTheme = th.dataset.theme;
+    document.getElementById("mcard").classList.toggle("light", previewTheme === "light");
+    for (const b of document.querySelectorAll(".theme-toggle button")) {
+      b.setAttribute("aria-pressed", String(b.dataset.theme === previewTheme));
+    }
+    return;
+  }
+
+  if (e.target.closest("#dw-close")) closeDrawer();
+});
+
+/* the legend's single `?` — the one fact the strip itself cannot say */
+const info = document.getElementById("pending-info");
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("#pending-info > button");
+  if (btn) {
+    const open = info.classList.toggle("open");
+    btn.setAttribute("aria-expanded", String(open));
+    return;
+  }
+  if (!e.target.closest("#pending-info")) {
+    info.classList.remove("open");
+    info.querySelector("button").setAttribute("aria-expanded", "false");
+  }
+});
+info.addEventListener("mouseenter", () => info.classList.add("open"));
+info.addEventListener("mouseleave", () => {
+  if (info.querySelector("button").getAttribute("aria-expanded") !== "true") info.classList.remove("open");
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    closeDrawer();
+    info.classList.remove("open");
+    info.querySelector("button").setAttribute("aria-expanded", "false");
+  }
+});
+</script>

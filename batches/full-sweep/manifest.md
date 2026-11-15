@@ -7,6 +7,11 @@ Batch opened 2026-11-15 from all triaged packages.
 - Builder UI rehaul & data versioning **before** Device sync & userdata storage
   — the pull-tracking display identifies bundles, and the builder package
   rethinks bundle/data versioning.
+- Assembly tab usability **before** Builder UI rehaul & data versioning — added
+  during the builder design session. The strip console's card preview consumes
+  the style map emitted by the assembly package's extractor. A DATA dependency
+  only (the operator chose it over sharing a renderer module precisely to keep
+  the two build-parallel in code), but the file has to exist first.
 
 All other packages are parallel-safe.
 
@@ -14,7 +19,7 @@ All other packages are parallel-safe.
 
 | package | status |
 |---|---|
-| Builder UI rehaul & data versioning | in design |
+| Builder UI rehaul & data versioning | designed (mjolnir: `builder-ship-strips`, `flush-record-atomicity`) |
 | Assembly tab usability | building — `mjolnir/openspec/changes/assembly-tab-usability` |
 | Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
 | Stabbur merging & dict.cc translations | pending |
@@ -25,6 +30,49 @@ All other packages are parallel-safe.
 
 ### Builder UI rehaul & data versioning
 projects: mjolnir
+status: designed 2026-11-15 — changes `builder-ship-strips` (items 1, 3, 4) and
+`flush-record-atomicity` (item 2, designed earlier and unchanged), both mjolnir
+
+Item 1 is a REPLACEMENT, not an addition: the backlog says "in addition to
+forecast and publish", and the operator reversed that in session — one page,
+so nothing has to stay in sync. The 5-stage pipeline rail and the
+past-batches section are dropped from it (the run log owns past runs).
+
+Three correctness defects were found while designing against the real data,
+and all three are folded into `builder-ship-strips` because the redesign is
+worthless if the cells lie:
+- `shipOrderForDeck`'s open-slot count measures against the next multiple of
+  5 above *shipped*, so a deck at 245 shipped with 9 staged computes −4,
+  clamps to 0, and logs a "data-integrity signal" blaming the data. Spotted
+  by the operator noticing C30 had no open cells in the mockup.
+  `card-flow-view`'s own spec contains a scenario wrong in the same
+  direction; the change supersedes it explicitly, so the build phase cannot
+  "fix" the formula back.
+- `syncDeckDescription` runs before `flushDeck`'s append loop, so any count
+  formatted there is stale by exactly that run's flush.
+- `LABEL`/`DATA_VERSION` are baked at assemble and never restamped — the
+  operator's "data version is either not being updated or just not that
+  relevant" was the first of those two.
+
+Also corrected in the UI copy: D91's prose says the queued `E` waits for "11
+other occurrences", but the implementation decrements by the count of new
+CARDS. The mechanism is unchanged; every label now describes it accurately.
+
+Accepted mockup: `builder-ship-strips/mockups/ship-strips-console.html`,
+after three operator iterations — inline strip text removed (it broke the
+40-cell grid), the page trimmed of prose, one stat order adopted everywhere,
+deltas added per deck, and staged split into flushing vs held.
+
+Deferred to the builder's judgement (tier 2, not guesses):
+- the stalled-run threshold, and the progress polling interval
+- the exact icon/glyph set for the five stats, provided it is identical in
+  the global totals and every rail header
+- whether the per-deck pending delta stays a single net number or gains the
+  queued/drained split the global totals carry
+- the detail view's exact field order
+- where the extractor's style map is read from, provided an absent map fails
+  loudly instead of falling back to invented values
+
 
 [REHAUL] builder UI new version. Completely new from the scratch in addition to "forecost and publish". Should have similar concept, but it should be based on the ship strip of occurances.
 [BUG] builder flush-record-atomicity
@@ -42,15 +90,20 @@ tab keeps no search box.
 
 Semantic overlap to watch: this package restructures the `PATCH_REV` /
 `LABEL` / `DATA_VERSION` form fields, while "Builder UI rehaul & data
-versioning" redefines what those numbers mean. No shared files, so the two
-remain build-parallel, but the builder of each should not redefine the
-other's half.
+versioning" redefines what those numbers mean. Still no shared files, but
+the two are no longer order-free: see the dependency above. The builder of
+each must not redefine the other's half — in particular `LABEL` keeps being
+baked and `logic_bundles.label` stays the bundle's name in the console;
+only the DEVICE's display of it is removed, by the other package.
 
 Deferred to the builder's judgement (tier 2, not guesses):
 - the exact wording of the standalone-mode hint when no server can suggest
   a patch rev
-- where the extractor's output lives and how it is invoked, provided it is
-  re-runnable and fails loudly on a style map it cannot find
+- how the extractor is invoked, provided it is re-runnable and fails loudly
+  on a style map it cannot find. Its OUTPUT LOCATION is no longer fully
+  free: `builder-ship-strips` reads that style map to render cards in its
+  detail view, so it must land somewhere another service in the monorepo can
+  read, not inside a single tab's private assets
 - the visual treatment of the "no audio on this face" indication
 
 [UX] assembly tab: label and patch rev should also be as env vars there, and it should be really preffiled with values, it does not, it say e.g. for logic rev that it is autoincremented to 17, but it doesn't prefill it, and it should suggest it, so the text field with already written value there
