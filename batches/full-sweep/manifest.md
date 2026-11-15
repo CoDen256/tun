@@ -23,7 +23,7 @@ All other packages are parallel-safe.
 | Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` |
 | Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
 | Stabbur merging & dict.cc translations | pending |
-| Shadow studying mode | pending |
+| Shadow studying mode | designed (shadow: `shadow-studying-mode`) |
 | Calst/pygmalion audio consolidation | archived (smia: `2026-11-15-calst-audio-union`) |
 
 ## Packages
@@ -171,8 +171,65 @@ projects: stabbur, smia
 
 ### Shadow studying mode
 projects: shadow
+status: designed 2026-11-15 — change `shadow-studying-mode` (shadow)
 
 [OVERHAUL] shadow shadowing should support studying mode where i just press 3 buttons (one makes the audio play, the second compares, the third marks as completed and goes to the next one) RETHINK THE DESIGN
+
+The "RETHINK THE DESIGN" was taken literally and the operator **reversed a
+founding decision**: shadow now stores audio server-side. `db/models.py`,
+`shadowing.py` and D147 all assert the opposite and are corrected in place
+by the change. What makes the reversal safe is that the thing originally
+reverted was server-side *decoding per request* (a Praat decode on upload,
+again on split, again on every chapter request, nothing cached) — not
+storage. This design transcodes **once** to a mono Opus master and cuts a
+chapter chunk as a stream copy. The whole point is the phone: without a
+server-side master, continuing a book on a phone means re-picking a
+multi-hour file through a file input (no File System Access API on mobile)
+and re-decoding it locally, which is why the phone was unusable.
+
+Three buttons became four — the operator was asked whether Compare could be
+demoted on mobile and said no. Slow playback (0.7×) was **removed**
+outright, and so was the upload time-range selector.
+
+The subtle decision, and the one most likely to be got wrong at build time:
+**progress is a set of completed TIME RANGES on the book**, not per-segment
+booleans, and the cursor is a **time position**. That is what lets a book
+hold several named split configs with progress carrying across them for
+free — and it makes merge conjunctive (done only if both halves were) and
+split preserving (both halves done). It also forces a one-time migration of
+the operator's existing `done` flags, which carries its own acceptance
+criterion (19) because he is part-way through a book and a lossy migration
+loses his place irrecoverably.
+
+Four screens under one navigation — Library, Explore, Study, Prepare. The
+operator rejected a second per-book tab row as redundant. Explore is new:
+browse by chapter, preview any sentence, range-select or whole-chapter
+select, bulk mark done, jump straight into Study.
+
+Accepted mockup:
+`shadow/openspec/changes/shadow-studying-mode/mockups/shadow-studying-mode.html`,
+after three operator iterations — Compare promoted to a mobile primary,
+slow playback deleted, split/merge added to the Study tray, Explore added,
+Prepare rebuilt around named split configs with per-sentence audio preview
+(the operator: "otherwise i can't see anything"), the duplicated per-book
+tab row removed, and the phone's `⋯` trigger moved to the top.
+
+Nothing here touches the device plane, and no other project is modified —
+notably `backup/` is untouched, because the audio volume is deliberately
+**not** added to the backup set. That is the same failure this batch's
+`userdata-history-offload` package exists to undo.
+
+Deferred to the builder's judgement (tier 2, not guesses):
+- resumable-upload chunk size and abandoned-upload cleanup policy
+- the Opus bitrate and ffmpeg flags, provided the master is mono and a
+  chapter cut is a stream copy
+- whether `shadowing_segments.done` is dropped or kept as a derived column
+- the chapter-chunk cache's location, naming and eviction, provided it is
+  derivable and its loss costs only a re-cut
+- the server-side silence-analysis implementation, provided re-analysis is
+  repeatable from the two thresholds already in the data model
+- waveform rendering detail, and when Explore virtualises its grid
+- the exact wording of in-page confirms and warnings
 
 ### Calst/pygmalion audio consolidation
 projects: smia
