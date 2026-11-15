@@ -1,0 +1,497 @@
+<title>Ship strips — deck rails</title>
+<style>
+/* ---- tokens: lifted from libs/jsservice/layout.js — this mocks the dark console, dark committed ---- */
+:root {
+  --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
+  --border: #2a3039; --border-soft: #232832;
+  --text: #e8e6e1; --text-dim: #8b94a3; --text-faint: #566073;
+  --accent: #c6703f; --accent-soft: #c6703f26; --accent-text: #f2b688;
+  --ok: #5bab7e; --ok-soft: #5bab7e1f;
+  --warn: #d4a73d; --warn-soft: #d4a73d1f;
+  --err: #d1453f; --err-soft: #d1453f1f;
+  --radius: 6px;
+  --sans: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+h1, h2, h3, h4 { text-wrap: balance; font-weight: 650; margin: 0; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+a { color: var(--accent-text); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---- console shell: top bar + rail, same idiom as the live console ---- */
+.top-bar { display: flex; align-items: center; gap: 14px; padding: 10px 20px; background: var(--bg-sunken); border-bottom: 1px solid var(--border); font-size: 13px; }
+.top-bar strong { font-weight: 700; }
+.top-bar nav { margin-left: auto; display: flex; gap: 14px; }
+.top-bar nav a { color: var(--text-dim); text-decoration: none; }
+.top-bar nav a:hover { color: var(--text); }
+.top-bar nav a.zone-current { color: var(--accent-text); font-weight: 650; }
+.top-bar nav a.zone-current::before { content: "● "; font-size: 9px; vertical-align: 2px; }
+
+.shell { display: flex; min-height: calc(100vh - 41px); }
+.rail { width: 192px; flex: none; border-right: 1px solid var(--border); padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; }
+.rail-group-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint); padding: 12px 10px 6px; }
+.rail-group-label:first-child { padding-top: 2px; }
+.rail a { padding: 7px 10px; border-radius: var(--radius); font-size: 13px; color: var(--text-dim); text-decoration: none; display: block; }
+.rail a:hover { background: var(--bg-elevated); color: var(--text); }
+.rail a.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.content { flex: 1; min-width: 0; padding: 0 28px 48px; }
+
+button { font: inherit; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+button:hover { border-color: var(--text-faint); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #1a0d05; }
+.btn-primary:hover { filter: brightness(1.08); border-color: var(--accent); }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 2px 9px 3px; border-radius: 99px; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill-ok { background: var(--ok-soft); color: var(--ok); }
+.pill-warn { background: var(--warn-soft); color: var(--warn); }
+.pill-neutral { background: var(--border-soft); color: var(--text-dim); }
+
+/* ---- the slim pinned header: title · totals · bundle · publish ---- */
+.ship-head {
+  position: sticky; top: 0; z-index: 40;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--border);
+  margin: 0 -28px; padding: 12px 28px 11px;
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+.ship-head h2 { font-size: 16px; white-space: nowrap; }
+.ship-head .page-sub { color: var(--text-faint); font-size: 11.5px; margin-top: 1px; white-space: nowrap; }
+
+.head-totals { display: flex; gap: 0; align-items: stretch; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-elevated); }
+.ht-cell { padding: 5px 13px 6px; border-right: 1px solid var(--border-soft); min-width: 74px; }
+.ht-cell:last-child { border-right: none; }
+.ht-cell .label { font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 600; white-space: nowrap; }
+.ht-cell .value { font-size: 16px; font-weight: 700; font-family: var(--mono); font-variant-numeric: tabular-nums; line-height: 1.25; }
+.ht-cell.hot .value { color: var(--warn); }
+
+.bundle-chip { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 99px; background: var(--bg-elevated); color: var(--text-dim); white-space: nowrap; }
+.bundle-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.bundle-chip .mono { color: var(--text); font-weight: 650; }
+
+.publish-group { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.publish-forecast { font-size: 12px; color: var(--text-dim); text-align: right; line-height: 1.35; }
+.publish-forecast .ship { color: var(--ok); font-weight: 700; font-family: var(--mono); }
+.publish-forecast .hold { color: var(--warn); font-weight: 700; font-family: var(--mono); }
+
+/* ---- legend ---- */
+.strip-legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 11px; color: var(--text-dim); margin: 14px 0 4px; }
+.strip-legend .sw { display: inline-flex; align-items: center; gap: 6px; }
+.strip-legend .u { width: 15px; height: 19px; cursor: default; pointer-events: none; }
+
+/* ---- deck rails ---- */
+.deck-rail { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; margin-top: 14px; overflow: hidden; }
+.deck-rail.stalled { border-color: color-mix(in srgb, var(--err) 55%, var(--border)); }
+.deck-rail-head { display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-bottom: 1px solid var(--border-soft); flex-wrap: wrap; }
+.deck-code { font-family: var(--mono); font-weight: 700; font-size: 16px; letter-spacing: .01em; }
+.deck-title { color: var(--text-dim); font-size: 12.5px; }
+.deck-counts { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-dim); border: 1px solid var(--border-soft); background: var(--bg-sunken); border-radius: 99px; padding: 3px 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.deck-counts b { color: var(--text); font-weight: 650; font-family: var(--mono); }
+.deck-counts .plus { color: var(--ok); font-weight: 700; }
+.deck-counts .quiet { color: var(--text-faint); }
+.flow-status-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 650; padding: 4px 9px; border-radius: 999px; white-space: nowrap; }
+.flow-status-chip.ok { background: var(--ok-soft); color: var(--ok); }
+.flow-status-chip.stalled { background: var(--err-soft); color: var(--err); }
+.flow-status-chip .sdot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.deck-rail-head .spacer { flex: 1; }
+.deck-flush-note { font-size: 11.5px; color: var(--text-faint); white-space: nowrap; }
+.deck-flush-note b { color: var(--ok); font-weight: 700; font-family: var(--mono); }
+
+.strip-scroll { overflow-x: auto; padding: 14px 18px 16px; background: var(--bg-sunken); }
+.strip-rows { display: flex; flex-direction: column; gap: 7px; min-width: max-content; }
+.strip-row { display: flex; align-items: center; gap: 3px; }
+.row-no { width: 58px; flex: none; font-size: 9.5px; color: var(--text-faint); font-family: var(--mono); text-align: right; margin-right: 8px; font-variant-numeric: tabular-nums; }
+.batch-div { width: 1px; height: 21px; background: var(--border); margin: 0 6px; flex: none; }
+
+/* ---- the occurrence cell: a real button (keyboard) in the flow-u idiom ---- */
+.u {
+  width: 16px; height: 21px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; border-radius: 3px; font-family: var(--mono);
+  flex: none; cursor: pointer; border: 1px solid transparent; background: transparent; color: var(--text);
+}
+.u.shipped { background: var(--ok-soft); color: var(--text); }
+.u.staged { background: var(--warn-soft); border: 1.5px dashed var(--warn); }
+.u.open { background: transparent; border: 1.5px dashed var(--text-faint); opacity: .7; color: var(--text-faint); }
+.u.pending { background: transparent; border: 1px dotted var(--text-faint); opacity: .65; color: var(--text-dim); }
+.u.gap { background: transparent; border: 1.5px dotted var(--accent); opacity: .5; color: var(--accent-text); cursor: default; }
+.u.preview { background: var(--accent-soft); border: 1.5px solid var(--accent); color: var(--accent-text); animation: previewPulse 1.6s ease-in-out infinite; }
+@keyframes previewPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(198, 112, 63, .45); }
+  50% { box-shadow: 0 0 0 4px rgba(198, 112, 63, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .u.preview { animation: none; } }
+
+.u:hover { filter: brightness(1.35); }
+.u.kin { outline: 1.5px solid var(--accent-text); outline-offset: 0; filter: brightness(1.3); z-index: 2; }
+.u.selected { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 3; }
+
+.zone-mark { align-self: center; flex: none; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-faint); border-left: 1px solid var(--border); margin: 0 8px 0 10px; padding-left: 10px; height: 21px; display: inline-flex; align-items: center; white-space: nowrap; }
+
+.rail-foot { padding: 9px 18px 11px; font-size: 11.5px; color: var(--text-faint); border-top: 1px solid var(--border-soft); line-height: 1.55; }
+.rail-foot b { color: var(--text-dim); }
+
+/* ---- inspector drawer ---- */
+.inspector {
+  position: fixed; top: 41px; right: 0; bottom: 0; width: 330px; z-index: 50;
+  background: var(--bg-elevated); border-left: 1px solid var(--border);
+  transform: translateX(100%); transition: transform .18s ease;
+  display: flex; flex-direction: column; box-shadow: -18px 0 40px rgba(0,0,0,.35);
+}
+@media (prefers-reduced-motion: reduce) { .inspector { transition: none; } }
+.inspector.openp { transform: translateX(0); }
+.insp-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; border-bottom: 1px solid var(--border-soft); }
+.insp-head h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 650; }
+.insp-close { padding: 3px 9px; font-size: 13px; color: var(--text-dim); background: transparent; border-color: transparent; }
+.insp-close:hover { background: var(--bg-sunken); color: var(--text); }
+.insp-body { padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.insp-card-id { font-family: var(--mono); font-size: 21px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+.insp-note { font-size: 14px; background: var(--bg-sunken); border: 1px solid var(--border-soft); border-radius: 8px; padding: 11px 13px; line-height: 1.5; }
+.insp-note .lang { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint); margin-bottom: 3px; }
+.insp-rows { display: flex; flex-direction: column; }
+.insp-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--border-soft); font-size: 12.5px; }
+.insp-row:last-child { border-bottom: none; }
+.insp-row .k { color: var(--text-faint); }
+.insp-row .v { text-align: right; color: var(--text); }
+.insp-status { font-size: 12.5px; line-height: 1.55; border-radius: 8px; padding: 10px 13px; border: 1px solid var(--border); }
+.insp-status.s-shipped { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
+.insp-status.s-staged { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
+.insp-status.s-pending { background: var(--bg-sunken); }
+.insp-status.s-preview { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.insp-status b { font-family: var(--mono); }
+.insp-kin { font-size: 11.5px; color: var(--text-faint); line-height: 1.5; }
+.insp-kin b { color: var(--text-dim); }
+.insp-hint { font-size: 11px; color: var(--text-faint); margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border-soft); }
+kbd { font-family: var(--mono); font-size: 10.5px; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+</style>
+
+<div class="top-bar">
+  <strong>mjølnir · builder</strong>
+  <nav>
+    <a href="#">workbench</a>
+    <a href="#" class="zone-current">builder</a>
+    <a href="#">stabbur</a>
+    <a href="#">smia</a>
+    <a href="#">phonexa</a>
+    <a href="#">shadow</a>
+    <a href="#">adminer</a>
+  </nav>
+</div>
+
+<div class="shell">
+  <div class="rail">
+    <div class="rail-group-label">Builder</div>
+    <a href="#">Forecast &amp; publish</a>
+    <a href="#" class="active">Ship strips</a>
+    <a href="#">Schedule</a>
+    <a href="#">Run log</a>
+  </div>
+
+  <div class="content">
+    <div class="ship-head">
+      <div>
+        <h2>Ship strips</h2>
+        <div class="page-sub">every deck's Cards[], in ship order — state and forecast in one picture</div>
+      </div>
+
+      <div class="head-totals" role="group" aria-label="Global totals">
+        <div class="ht-cell"><div class="label">Cards minted</div><div class="value">294</div></div>
+        <div class="ht-cell"><div class="label">Occ. eventual</div><div class="value">441</div></div>
+        <div class="ht-cell"><div class="label">Shipped</div><div class="value">290</div></div>
+        <div class="ht-cell hot"><div class="label">Staged</div><div class="value">11</div></div>
+        <div class="ht-cell"><div class="label">Pending</div><div class="value">14</div></div>
+      </div>
+
+      <span class="bundle-chip" title="active logic bundle — what the next publish builds onto">
+        <span class="dot"></span><span class="mono">base 1.5.12 · logic 3</span>
+      </span>
+
+      <div class="publish-group">
+        <div class="publish-forecast">would ship <span class="ship">10</span>, hold <span class="hold">1</span><br>C30 flushes to 255 · C20 held</div>
+        <button class="btn-primary" id="publish-now">Publish now</button>
+      </div>
+    </div>
+
+    <div class="strip-legend" aria-hidden="true">
+      <span class="sw"><span class="u shipped">A</span>shipped — in the published bundle</span>
+      <span class="sw"><span class="u staged">E</span>staged — short of next 5</span>
+      <span class="sw"><span class="u preview">A</span>this run — newly eligible, not yet committed</span>
+      <span class="sw"><span class="u open">?</span>open — slots to the next multiple of 5</span>
+      <span class="sw"><span class="u pending">E</span>pending — 11-batch spacing lag</span>
+      <span class="sw"><span class="u gap">?</span>not yet landed</span>
+      <span class="sw" style="color: var(--text-faint);">│ batch divider, every 5 · click a cell to inspect · hover shows the card's other side</span>
+    </div>
+
+    <div id="rails"></div>
+  </div>
+</div>
+
+<aside class="inspector" id="inspector" aria-label="Occurrence inspector" aria-hidden="true">
+  <div class="insp-head">
+    <h3>Occurrence</h3>
+    <button class="insp-close" id="insp-close" aria-label="Close inspector">✕</button>
+  </div>
+  <div class="insp-body" id="insp-body"></div>
+</aside>
+
+<script>
+// ---------------------------------------------------------------- fake data
+const NOTES = [
+  "fastsatt av", "en avgjørelse", "å ta hensyn til", "i henhold til", "en forutsetning",
+  "å fastslå", "vedkommende", "et vedtak", "å gjennomføre", "en søknad",
+  "å avklare", "innen fristen", "et unntak", "å vurdere", "på vegne av",
+  "en bekreftelse", "å utsette", "i utgangspunktet", "en tilbakemelding", "å oppnå",
+  "dessverre", "nettopp", "en sammenheng", "å innebære", "forholdsvis",
+  "en erfaring", "å utvikle seg", "et krav", "omtrent", "for øvrig",
+  "en utfordring", "å benytte", "et hensyn", "samtidig som", "en ordning"
+];
+const P_NOTES = [
+  "lytt og gjenta: kj-lyden i «kjøre»", "bøy verbet: å synge, sang, har sunget",
+  "uttale: skj- mot kj-", "sett inn riktig preposisjon: ___ mandag",
+  "lytt: tonelag 1 eller 2?", "bøy: et øye, øyet, øyne", "diktat: kort setning",
+  "uttale: lang mot kort vokal i «tak/takk»", "svar muntlig: hva gjorde du i går?",
+  "bøy adjektivet: en god bok, et godt hus"
+];
+const noteFor = (deck, n) => deck === "C20" ? P_NOTES[n % P_NOTES.length] : NOTES[n % NOTES.length];
+
+// shipped builds — each entry: last shipped C30-strip position covered, build id, when
+const C30_BUILDS = [
+  [60,  "b000029", "2026-09-18 02:00"], [105, "b000031", "2026-09-29 02:00"],
+  [140, "b000033", "2026-10-08 02:00"], [170, "b000035", "2026-10-19 02:00"],
+  [195, "b000037", "2026-10-27 02:00"], [215, "b000038", "2026-11-02 02:00"],
+  [235, "b000040", "2026-11-08 02:00"], [245, "b000041", "2026-11-12 03:10"]
+];
+const C20_BUILDS = [
+  [15, "b000031", "2026-09-29 02:00"], [30, "b000035", "2026-10-19 02:00"],
+  [40, "b000038", "2026-11-02 02:00"], [45, "b000040", "2026-11-08 02:00"]
+];
+const buildFor = (builds, pos) => { for (const b of builds) if (pos <= b[0]) return b; return builds[builds.length - 1]; };
+
+// C30 shipped strip: mint card i → its A ships; its E ships 11 cards later
+// (the 11-batch spacing lag). 128 cards → 128 A + 117 E = 245 occurrences.
+function c30Shipped() {
+  const out = [];
+  for (let i = 0; i < 128 && out.length < 245; i++) {
+    out.push({ card: 101 + i, letter: "A" });
+    if (i >= 11 && out.length < 245) out.push({ card: 101 + i - 11, letter: "E" });
+  }
+  return out;
+}
+
+const DECKS = [
+  {
+    code: "C30", title: "Lexic — Vocabulary and expressions.",
+    counts: { cards: 147, eventual: 294, delta: "+3 this run" },
+    grid: { ok: true, label: "On grid" },
+    flushNote: "next publish flushes to <b>255</b> (+10)",
+    foot: "<b>How open and pending relate:</b> every pending <span class='mono'>E</span> counts down by however many brand-new cards land in C30 each run — tiers that reach zero drain together in that run. The dotted «?» fillers after each tier render that distance, not a literal queue of specific future cards.",
+    segments() {
+      const units = [];
+      for (const o of c30Shipped()) {
+        const b = buildFor(C30_BUILDS, units.length + 1);
+        units.push({ cls: "shipped", deck: "C30", card: o.card, letter: o.letter, build: b[1], when: b[2] });
+      }
+      // staged: 8 occurrences short of the next multiple of 5 (245 → 255)
+      const staged = [[229, "A"], [218, "E"], [230, "A"], [219, "E"], [231, "A"], [220, "E"], [232, "A"], [221, "E"]];
+      for (const [card, letter] of staged) units.push({ cls: "staged", deck: "C30", card, letter });
+      // this run's preview: 3 newly-eligible A occurrences (new cards C30233–235)
+      units.push({ cls: "preview", deck: "C30", card: 233, letter: "A", flushes: true });
+      units.push({ cls: "preview", deck: "C30", card: 234, letter: "A", flushes: true });
+      units.push({ cls: "preview", deck: "C30", card: 235, letter: "A", flushes: false });
+      // open slots to the next multiple of 5 after the preview lands (260)
+      for (let i = 0; i < 4; i++) units.push({ cls: "open", deck: "C30" });
+      // projected pending zone: 14 queued E occurrences in remaining tiers 3..11,
+      // each tier followed by `remaining` not-yet-landed fillers; padded to ×5.
+      const tiers = [[3, [222, 223, 224]], [5, [225, 226]], [6, [227, 228]], [7, [229, 230, 231]], [9, [232, 233]], [11, [234, 235]]];
+      for (const [remaining, cards] of tiers) {
+        for (const card of cards) units.push({ cls: "pending", deck: "C30", card, letter: "E", remaining });
+        for (let i = 0; i < remaining; i++) units.push({ cls: "gap", deck: "C30", remaining });
+      }
+      while (units.length % 5 !== 0) units.push({ cls: "gap", deck: "C30", pad: true });
+      return units;
+    }
+  },
+  {
+    code: "C20", title: "Practice — Grammar, listening, and pronunciation practice.",
+    counts: { cards: 147, eventual: 147, delta: "nothing this run" },
+    grid: { ok: false, label: "Stalled — 6 d" },
+    flushNote: "held — <b style='color:var(--warn)'>2</b> short of 50",
+    foot: "No pending zone for this deck — single-occurrence family, nothing ever waits out an 11-batch spacing gap. Stalled: no new eligible note has landed in 6 days, so the staged pair cannot reach 50.",
+    segments() {
+      const units = [];
+      for (let i = 0; i < 45; i++) {
+        const b = buildFor(C20_BUILDS, i + 1);
+        units.push({ cls: "shipped", deck: "C20", card: 301 + i, letter: i % 9 === 4 ? "N" : "A", build: b[1], when: b[2] });
+      }
+      const staged = [[346, "A"], [347, "N"], [348, "A"]];
+      for (const [card, letter] of staged) units.push({ cls: "staged", deck: "C20", card, letter });
+      for (let i = 0; i < 2; i++) units.push({ cls: "open", deck: "C20" });
+      return units;
+    }
+  }
+];
+
+// ---------------------------------------------------------------- rendering
+const ROW = 40;
+const railsEl = document.getElementById("rails");
+
+function cellTitle(u) {
+  if (u.cls === "open") return "open — not yet minted, counts toward the next flush";
+  if (u.cls === "gap") return u.pad ? "not yet landed — nothing projected into this slot yet"
+    : u.remaining + " more new card" + (u.remaining === 1 ? "" : "s") + " must land in " + u.deck + " before this tier drains";
+  const id = u.deck + u.card;
+  if (u.cls === "shipped") return id + " · " + u.letter + " — shipped in " + u.build;
+  if (u.cls === "staged") return id + " · " + u.letter + " — staged, would flush next publish";
+  if (u.cls === "preview") return id + " · " + u.letter + " — newly eligible this run";
+  return id + " · " + u.letter + " — pending, remaining " + u.remaining;
+}
+
+function renderRail(deck) {
+  const units = deck.segments();
+  deck.units = units;
+  const rows = [];
+  let cells = "";
+  let count = 0, rowStart = 0;
+  const flushRow = () => {
+    if (!count) return;
+    rows.push('<div class="strip-row"><span class="row-no">' + (rowStart + 1) + "–" + (rowStart + count) + "</span>" + cells + "</div>");
+    cells = ""; count = 0;
+  };
+  // where the projected zone begins (first pending/gap cell) — gets a marker
+  const projAt = units.findIndex((u) => u.cls === "pending" || u.cls === "gap");
+  units.forEach((u, i) => {
+    if (i % ROW === 0) { flushRow(); rowStart = i; }
+    else if (i % 5 === 0) cells += '<span class="batch-div"></span>';
+    if (i === projAt && i % ROW !== 0) cells += '<span class="zone-mark">projected</span>';
+    const letter = u.cls === "open" || u.cls === "gap" ? "?" : u.letter;
+    const cardAttr = u.card && u.cls !== "gap" ? ' data-card="' + u.deck + u.card + '"' : "";
+    const dis = u.cls === "gap" ? ' tabindex="-1" aria-hidden="true"' : "";
+    cells += '<button class="u ' + u.cls + '" data-i="' + i + '" data-deck="' + deck.code + '"' + cardAttr + dis +
+      ' title="' + cellTitle(u) + '" aria-label="' + cellTitle(u) + '">' + letter + "</button>";
+    count++;
+  });
+  flushRow();
+
+  const chip = deck.grid.ok
+    ? '<span class="flow-status-chip ok"><span class="sdot"></span>On grid</span>'
+    : '<span class="flow-status-chip stalled"><span class="sdot"></span>' + deck.grid.label + "</span>";
+  const shippedN = units.filter((u) => u.cls === "shipped").length;
+  const delta = deck.counts.delta.startsWith("+")
+    ? '<span class="plus">' + deck.counts.delta + "</span>"
+    : '<span class="quiet">' + deck.counts.delta + "</span>";
+
+  const el = document.createElement("section");
+  el.className = "deck-rail" + (deck.grid.ok ? "" : " stalled");
+  el.innerHTML =
+    '<div class="deck-rail-head">' +
+      '<span class="deck-code">' + deck.code + '</span>' +
+      '<span class="deck-title">' + deck.title + "</span>" +
+      '<span class="deck-counts"><b>' + deck.counts.cards + "</b> cards · <b>" + shippedN + "</b> occ shipped · <b>" +
+        deck.counts.eventual + "</b> eventual · " + delta + "</span>" +
+      chip +
+      '<span class="spacer"></span>' +
+      '<span class="deck-flush-note">' + deck.flushNote + "</span>" +
+    "</div>" +
+    '<div class="strip-scroll"><div class="strip-rows">' + rows.join("") + "</div></div>" +
+    '<div class="rail-foot">' + deck.foot + "</div>";
+  railsEl.appendChild(el);
+}
+DECKS.forEach(renderRail);
+
+// ---------------------------------------------------------------- inspector
+const inspector = document.getElementById("inspector");
+const inspBody = document.getElementById("insp-body");
+let selectedBtn = null;
+
+const STATE_PILL = {
+  shipped: '<span class="pill pill-ok">shipped</span>',
+  staged: '<span class="pill pill-warn">staged</span>',
+  preview: '<span class="pill pill-warn">this run</span>',
+  pending: '<span class="pill pill-neutral">pending</span>',
+  open: '<span class="pill pill-neutral">open</span>'
+};
+
+function statusBlock(u) {
+  if (u.cls === "shipped")
+    return '<div class="insp-status s-shipped">Shipped in <b>' + u.build + "</b> · " + u.when +
+      "<br>In the bundle every device already pulls — immutable, never re-ordered.</div>";
+  if (u.cls === "staged")
+    return '<div class="insp-status s-staged">Staged — <b>would flush next publish</b>.<br>Part of the 10 that complete ' +
+      u.deck + "'s next multiple of 5.</div>";
+  if (u.cls === "preview")
+    return '<div class="insp-status s-preview">Newly eligible <b>this run</b> — not yet committed. ' +
+      (u.flushes ? "Publishing now would mint it and <b>ship it in the same flush</b>."
+                 : "Publishing now would mint it but <b>hold it</b> — short of the next 5.") + "</div>";
+  if (u.cls === "pending")
+    return '<div class="insp-status s-pending">Pending — <b>remaining ' + u.remaining + "</b>. This E side waits out the 11-batch " +
+      "spacing lag: it becomes eligible once " + u.remaining + " more new cards land in " + u.deck + ".</div>";
+  return '<div class="insp-status s-pending">Open slot — not yet minted. The next eligible note fills it and counts toward the flush.</div>';
+}
+
+function openInspector(btn) {
+  const deck = DECKS.find((d) => d.code === btn.dataset.deck);
+  const u = deck.units[Number(btn.dataset.i)];
+  if (u.cls === "gap") return;
+  if (selectedBtn) selectedBtn.classList.remove("selected");
+  selectedBtn = btn; btn.classList.add("selected");
+
+  if (u.cls === "open") {
+    inspBody.innerHTML =
+      '<div class="insp-card-id">' + u.deck + ' <span style="font-size:12px;color:var(--text-faint);font-weight:500;">open slot</span></div>' +
+      statusBlock(u) +
+      '<div class="insp-hint"><kbd>Esc</kbd> closes · <kbd>Tab</kbd> walks the strip</div>';
+  } else {
+    const id = u.deck + u.card;
+    const kinCount = document.querySelectorAll('[data-card="' + id + '"]').length - 1;
+    inspBody.innerHTML =
+      '<div class="insp-card-id">' + id + " " + STATE_PILL[u.cls] + "</div>" +
+      '<div class="insp-note"><span class="lang">note · norsk</span>«' + noteFor(u.deck, u.card) + "»</div>" +
+      '<div class="insp-rows">' +
+        '<div class="insp-row"><span class="k">Side</span><span class="v">' +
+          (u.letter === "E" ? '<span class="pill pill-warn">E</span>' : '<span class="pill pill-ok">' + u.letter + "</span>") + "</span></div>" +
+        '<div class="insp-row"><span class="k">Deck</span><span class="v mono">' + u.deck + "</span></div>" +
+        '<div class="insp-row"><span class="k">Strip position</span><span class="v mono">' + (Number(btn.dataset.i) + 1) + "</span></div>" +
+      "</div>" +
+      statusBlock(u) +
+      '<div class="insp-kin">' + (kinCount > 0
+        ? "<b>" + kinCount + " other occurrence" + (kinCount === 1 ? "" : "s") + "</b> of this card on the strip — highlighted while this cell is hovered or focused."
+        : "This card's other side is not on the strip yet.") + "</div>" +
+      '<div class="insp-hint"><kbd>Esc</kbd> closes · <kbd>Tab</kbd> walks the strip</div>';
+  }
+  inspector.classList.add("openp");
+  inspector.setAttribute("aria-hidden", "false");
+}
+
+function closeInspector() {
+  inspector.classList.remove("openp");
+  inspector.setAttribute("aria-hidden", "true");
+  if (selectedBtn) { selectedBtn.classList.remove("selected"); selectedBtn = null; }
+}
+document.getElementById("insp-close").addEventListener("click", closeInspector);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeInspector(); });
+
+// ------------------------------------------------- kin highlight + delegation
+let kinned = [];
+const setKin = (on, id) => {
+  kinned.forEach((el) => el.classList.remove("kin"));
+  kinned = [];
+  if (on && id) {
+    kinned = [...document.querySelectorAll('[data-card="' + id + '"]')];
+    kinned.forEach((el) => el.classList.add("kin"));
+  }
+};
+railsEl.addEventListener("mouseover", (e) => { const b = e.target.closest(".u"); if (b && b.dataset.card) setKin(true, b.dataset.card); });
+railsEl.addEventListener("mouseout", (e) => { if (e.target.closest(".u")) setKin(false); });
+railsEl.addEventListener("focusin", (e) => { const b = e.target.closest(".u"); if (b && b.dataset.card) setKin(true, b.dataset.card); });
+railsEl.addEventListener("focusout", () => setKin(false));
+railsEl.addEventListener("click", (e) => { const b = e.target.closest(".u"); if (b && !b.classList.contains("gap")) openInspector(b); });
+
+// publish button: mockup stub
+document.getElementById("publish-now").addEventListener("click", function () {
+  this.textContent = "publishing…"; this.disabled = true;
+  setTimeout(() => { this.textContent = "Published b000042 ✓"; }, 900);
+});
+</script>

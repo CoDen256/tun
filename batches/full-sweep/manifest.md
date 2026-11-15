@@ -14,7 +14,7 @@ All other packages are parallel-safe.
 
 | package | status |
 |---|---|
-| Builder UI rehaul & data versioning | pending |
+| Builder UI rehaul & data versioning | designed — changes: `mjolnir/flush-record-atomicity`, `mjolnir/builder-ship-console` |
 | Assembly tab usability | pending |
 | Device sync & userdata storage | pending |
 | Stabbur merging & dict.cc translations | pending |
@@ -25,6 +25,17 @@ All other packages are parallel-safe.
 
 ### Builder UI rehaul & data versioning
 projects: mjolnir
+
+Designed 2026-11-15. Two changes: `flush-record-atomicity` (pre-existing,
+design settled: deferred deletes, commit-before-publish, per-deck recovery
+drain + uniqueness constraints, integrity banner) and `builder-ship-console`
+(new Ship strips page — deck-rails layout locked via mockup; on-device deck
+counts; publish-time restamp with BUILT_AT; single App-version row). No item
+dropped. Deferred to builder judgment (tier 2): exact restamp regex/helper
+shape, strip pagination/virtualization if a deck outgrows rendering, nav
+placement details, timestamp formatting helper. Build order within the
+package: flush-record-atomicity first (builder-ship-console's strip reads
+the tables it constrains).
 
 [REHAUL] builder UI new version. Completely new from the scratch in addition to "forecost and publish". Should have similar concept, but it should be based on the ship strip of occurances.
 [BUG] builder flush-record-atomicity

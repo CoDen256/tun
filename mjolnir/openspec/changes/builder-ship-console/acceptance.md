@@ -41,9 +41,8 @@ published bundle file counts as device-observable for baked constants).
 
 ## D. Ship strips page (item: builder UI rehaul)
 
-NOTE: criteria 8–13 are the layout-independent contract; the layout itself
-is locked by the design.md layout subsection once the operator accepts a
-mockup. Do not build this section while that subsection still says PENDING.
+Layout LOCKED: deck rails, per design.md's layout subsection; the accepted
+mockup `mockups/mockup-deck-rails.html` is the visual contract.
 
 8. A "Ship strips" page is reachable from builder's own UI and from hub's
    Builder nav group; both render the same strips and controls inside their
@@ -73,3 +72,8 @@ mockup. Do not build this section while that subsection still says PENDING.
     forecast and the strip are both visible, the number of cells marked
     as shipping equals what the subsequent real publish actually flushes
     (single-source `alreadyShipped`, task 4.6).
+15. Rails-specific (per the accepted mockup): hovering or focusing an
+    occurrence cell of a card whose other side is on the strip visibly
+    highlights that other cell; occurrence cells are reachable and
+    activatable by keyboard (Tab + Enter opens the inspector, Esc closes
+    it); a stalled deck's rail carries the stalled chip and distinct border.

@@ -30,21 +30,31 @@ flush uses the in-memory `deck.Cards.length` — the new page must use one
 source. Same for `byDeck`'s local-vs-returned `stagedTotal` naming
 collision.
 
-### Layout — PENDING operator click-through (two competing mockups)
+### Layout — LOCKED: Deck rails (operator click-through, 2026-11-15)
 
-The organizing backbone is genuinely open; two clickable mockups were
-produced for the operator to choose between (to be copied into `mockups/`
-once accepted):
+Two competing clickable mockups were produced and clicked through; the
+operator chose **Deck rails**, as-is (no cross-pollinated elements
+requested). The accepted mockup is `mockups/mockup-deck-rails.html` — it is
+the visual contract for task 4.2:
 
-- **Deck rails**: one full-width continuous rail per deck; everything
-  anchors to the rails; inspector on cell click.
-- **Build timeline**: strips cut by publication on a shared build axis,
-  lanes per deck; build-column headers open a build card.
+- one full-width continuous rail per deck (strip in blocks of 5, 40 cells
+  per visual row, carried row numbering, "projected" zone marker);
+- slim sticky header: title, five global totals, active-logic-bundle chip,
+  Publish now + two-line forecast summary;
+- rail header: deck code, title, counts badge
+  (`cards · occ shipped · eventual · delta`), grid-status chip, flush note;
+- occurrence cells are real buttons (keyboard-walkable); click opens the
+  inspector drawer (card id, side pill, note text, state block with
+  shipping build + timestamp / flush expectation / remaining countdown);
+  hover or focus kin-highlights the card's other occurrence on the strip;
+- this-run newly-eligible cells render in the accent "preview" style in
+  would-flush position, pulse suppressed under reduced motion;
+- a rail footer line explains open/pending semantics per deck; stalled
+  decks get the red border + chip treatment.
 
-This subsection is finalized (choice + any cross-pollinated elements) when
-the operator accepts a mockup. **An item without a locked layout cannot be
-built** — the build phase must not start on this capability until this
-section names the chosen mockup.
+The declined alternative (build-timeline: lanes cut by publication) is
+recorded in the session history; its "which build shipped this cell"
+information is served by the rails inspector's shipping-build field.
 
 ## D-SC3: On-device deck descriptions carry live counts (publish-time)
 
