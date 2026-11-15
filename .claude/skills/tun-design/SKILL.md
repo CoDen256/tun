@@ -1,6 +1,6 @@
 ---
 name: tun-design
-description: Design session for ONE package of a tun batch (docs/15-agentic-workflow.md, D161). Use when the operator says "/tun-design batch <slug>, package <name>". Discusses UI and big technical direction with the operator, produces mockups via subagents, and writes the OpenSpec change + falsifiable acceptance criteria to disk as each item is resolved.
+description: Design session for ONE package of a tun batch (docs/15-agentic-workflow.md, D161). Use when the operator says "/tun-design batch <slug>, package <name>". Discusses UI and big technical direction with the operator, produces mockups via subagents, and — only after the operator agrees to lock an item in — writes the OpenSpec change + falsifiable acceptance criteria to disk.
 ---
 
 # tun-design — design session for one package
@@ -20,8 +20,11 @@ Conduct the conversation in the `opsx:explore` stance (read that skill:
 curious, visual, grounded in the codebase, challenge assumptions) — but
 wrapped in this phase's contract: a fixed item list to walk, mandatory
 written outputs, and a defined ending. When items resolve, capture them via
-the `opsx:propose` flow; unlike plain explore mode, capturing is NOT
-optional here.
+the `opsx:propose` flow — but **only after asking the operator and getting
+their agreement**. Never create or extend proposal artifacts unprompted
+mid-conversation; discussion churns, and half-settled captures are noise.
+What is not optional is that every item the operator locks in IS captured
+before the session ends.
 
 The discussion covers **UI and big technical direction only**: what the
 screens look like, what data model / table backs it, pull vs push, what to
@@ -42,10 +45,14 @@ Rules of the conversation:
   session is the last cheap place to catch them; in the build phase they
   become BLOCKED items.
 
-## Write as you go — never batch writes to the end
+## Capture on agreement — never unprompted, never all at the end
 
-The session must be resumable from disk at any moment. As EACH item is
-resolved:
+Capture happens at the operator's pace, not every conversational turn. When
+an item (or a coherent group of items) feels settled, ask — "lock this in
+and capture it?" — and only on a yes do the write. Don't re-ask per
+sub-detail; one agreement covers the item. But don't hoard either: once the
+operator agrees, write immediately, so the session stays resumable from
+disk and nothing agreed lives only in conversation. On each agreed item:
 
 1. Fold it into the package's OpenSpec change (create the change on the first
    resolved item via `opsx:propose`, then extend its artifacts as further

@@ -50,14 +50,17 @@ Opening a batch creates `batches/<slug>/` from the template in
 **Explore + propose, scoped to the package instead of one feature.** A
 discussion between the operator and one agent about **one package only**,
 conducted in the `opsx:explore` stance but under this phase's contract
-(fixed item list, mandatory outputs, defined ending); resolved items are
-captured via `opsx:propose` — capture is not optional here. The agent asks
+(fixed item list, mandatory outputs, defined ending); settled items are
+captured via `opsx:propose` — but only after the agent asks and the
+operator agrees to lock the item in, never unprompted mid-discussion. Once
+agreed, capture is immediate and not optional. The agent asks
 about UI and big technical direction (data model, push vs pull, what to
 drop) — never frameworks or code detail. Subagents produce HTML mockups
 published as Artifacts for the operator to click through.
 
-Non-negotiable outputs, written to disk **as each item is resolved**, not at
-the session's end:
+Non-negotiable outputs, written to disk **as each item is agreed** (on the
+operator's explicit "lock it in", then immediately — not at the session's
+end):
 
 - An OpenSpec change (bare-slug id, D153) in the owning project's `openspec/`
   — proposal, design, specs, tasks, via the normal opsx flow.
