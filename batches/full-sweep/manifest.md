@@ -15,7 +15,7 @@ All other packages are parallel-safe.
 | package | status |
 |---|---|
 | Builder UI rehaul & data versioning | designed — changes: `mjolnir/flush-record-atomicity`, `mjolnir/builder-ship-console` |
-| Assembly tab usability | pending |
+| Assembly tab usability | designed — `mjolnir/openspec/changes/assembly-tab-usability` |
 | Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
 | Stabbur merging & dict.cc translations | pending |
 | Shadow studying mode | pending |
@@ -44,6 +44,25 @@ the tables it constrains).
 
 ### Assembly tab usability
 projects: mjolnir
+status: designed 2026-11-15 — change `assembly-tab-usability` (mjolnir)
+
+Note on item 2: the backlog text says "assembly tab", but the module-number
+search the operator wants is the **Explorer** tab's — the Assemble tab's
+pickers hold 19 items and need no filter. Corrected in session; the Assemble
+tab keeps no search box.
+
+Semantic overlap to watch: this package restructures the `PATCH_REV` /
+`LABEL` / `DATA_VERSION` form fields, while "Builder UI rehaul & data
+versioning" redefines what those numbers mean. No shared files, so the two
+remain build-parallel, but the builder of each should not redefine the
+other's half.
+
+Deferred to the builder's judgement (tier 2, not guesses):
+- the exact wording of the standalone-mode hint when no server can suggest
+  a patch rev
+- where the extractor's output lives and how it is invoked, provided it is
+  re-runnable and fails loudly on a style map it cannot find
+- the visual treatment of the "no audio on this face" indication
 
 [UX] assembly tab: label and patch rev should also be as env vars there, and it should be really preffiled with values, it does not, it say e.g. for logic rev that it is autoincremented to 17, but it doesn't prefill it, and it should suggest it, so the text field with already written value there
 [UX] assembly tab should allow search by module number

@@ -1,0 +1,1415 @@
+<title>Assembly tab + card preview — design mockup</title>
+
+<style>
+  /* ===================================================================
+     PAGE CHROME — themes with the viewer (intro, tab strip, legends,
+     captions). The workbench panes below do NOT; see .wb.
+     =================================================================== */
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --fg-muted: #6f6f78;
+    --fg-faint: #9a9aa3;
+    --line: #e4e4e8;
+    --panel-soft: #f7f7f9;
+    --hover: #f2f3f8;
+    --accent-bg: #eef2ff;
+    --accent-line: #99a0aa;
+    --accent-fg: #33407a;
+    --badge1: #3f6fe0;
+    --badge2: #0f8a6a;
+    --badge3: #b4581f;
+    --badge4: #7a46c4;
+    --warn-bg: #fff6e5; --warn-line: #e3b45f; --warn-fg: #7a5200;
+    --input-bg: #ffffff;
+    --input-line: #c9c9cf;
+    --shadow: 0 1px 2px rgba(16,20,40,.06);
+    --wb-shadow: 0 10px 30px rgba(16,20,40,.10), 0 1px 3px rgba(16,20,40,.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15171b; --fg: #e7e9ee; --fg-muted: #9aa0ad; --fg-faint: #6f7682;
+      --line: #2c3038; --panel-soft: #1f232a; --hover: #22262f;
+      --accent-bg: #222a44; --accent-line: #4b5675; --accent-fg: #c5d0f5;
+      --badge1: #6f95f5; --badge2: #3dbd97; --badge3: #e2924f; --badge4: #b18ae8;
+      --warn-bg: #3a2f14; --warn-line: #7d6327; --warn-fg: #f0cf92;
+      --input-bg: #14171c; --input-line: #3a4049;
+      --shadow: 0 1px 2px rgba(0,0,0,.4);
+      --wb-shadow: 0 10px 34px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff; --fg: #1a1a1a; --fg-muted: #6f6f78; --fg-faint: #9a9aa3;
+    --line: #e4e4e8; --panel-soft: #f7f7f9; --hover: #f2f3f8;
+    --accent-bg: #eef2ff; --accent-line: #99a0aa; --accent-fg: #33407a;
+    --badge1: #3f6fe0; --badge2: #0f8a6a; --badge3: #b4581f; --badge4: #7a46c4;
+    --warn-bg: #fff6e5; --warn-line: #e3b45f; --warn-fg: #7a5200;
+    --input-bg: #ffffff; --input-line: #c9c9cf;
+    --shadow: 0 1px 2px rgba(16,20,40,.06);
+    --wb-shadow: 0 10px 30px rgba(16,20,40,.10), 0 1px 3px rgba(16,20,40,.12);
+  }
+  :root[data-theme="dark"] {
+    --bg: #15171b; --fg: #e7e9ee; --fg-muted: #9aa0ad; --fg-faint: #6f7682;
+    --line: #2c3038; --panel-soft: #1f232a; --hover: #22262f;
+    --accent-bg: #222a44; --accent-line: #4b5675; --accent-fg: #c5d0f5;
+    --badge1: #6f95f5; --badge2: #3dbd97; --badge3: #e2924f; --badge4: #b18ae8;
+    --warn-bg: #3a2f14; --warn-line: #7d6327; --warn-fg: #f0cf92;
+    --input-bg: #14171c; --input-line: #3a4049;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+    --wb-shadow: 0 10px 34px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06);
+  }
+
+  * { box-sizing: border-box; }
+  .mk {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--fg);
+    background: var(--bg);
+    font-size: 14px;
+    line-height: 1.45;
+    padding: 24px 20px 72px;
+    max-width: 1080px;
+    margin: 0 auto;
+    overflow-x: hidden;
+  }
+  .mk h1 { font-size: 19px; margin: 0 0 6px; letter-spacing: -.01em; }
+  .mk h2 { font-size: 15px; margin: 26px 0 10px; }
+  .mk p { margin: 0 0 10px; }
+
+  .intro {
+    color: var(--fg-muted);
+    font-size: 13px;
+    max-width: 74ch;
+    border-left: 3px solid var(--accent-line);
+    padding-left: 12px;
+    margin-bottom: 18px;
+  }
+  .intro strong { color: var(--fg); font-weight: 650; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
+
+  .tabs {
+    display: flex; gap: 4px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 8px; margin-bottom: 18px;
+  }
+  .tab {
+    background: none; border: 1px solid transparent; border-radius: 4px;
+    padding: 6px 12px; cursor: pointer; font-size: 13px;
+    color: var(--fg); font-family: inherit;
+  }
+  .tab:hover { background: var(--hover); }
+  .tab.active {
+    background: var(--accent-bg); border-color: var(--accent-line);
+    color: var(--accent-fg); font-weight: 600;
+  }
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* badges + legends (page chrome) */
+  .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 17px; height: 17px; border-radius: 50%;
+    color: #fff; font-size: 11px; font-weight: 700; line-height: 1;
+    margin-right: 6px; flex: none; vertical-align: 1px;
+  }
+  .b1 { background: var(--badge1); } .b2 { background: var(--badge2); }
+  .b3 { background: var(--badge3); } .b4 { background: var(--badge4); }
+  .legend {
+    margin-top: 24px; border-top: 1px solid var(--line);
+    padding-top: 14px; max-width: 940px;
+  }
+  .legend h3 { margin: 0 0 10px; font-size: 13.5px; }
+  .legend ol { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+  .legend li { display: flex; gap: 2px; font-size: 13px; color: var(--fg-muted); align-items: flex-start; }
+  .legend li .badge { margin-top: 2px; }
+  .legend li b { color: var(--fg); font-weight: 650; }
+  .note { font-size: 11.5px; color: var(--fg-muted); max-width: 78ch; margin-top: 10px; line-height: 1.6; }
+  .note b { color: var(--fg); }
+
+  /* ===================================================================
+     WORKBENCH SURFACE — always light. Every var below is fixed; no
+     media query and no [data-theme] rule touches .wb, so the Assemble
+     and Explorer panes render in the bundle-tool's own light palette
+     whatever the viewer's theme is. Deliberately presented as an
+     embedded surface: inset ring, drop shadow, caption chip.
+     =================================================================== */
+  .wb-wrap { margin-bottom: 4px; }
+  .wb-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em;
+    font-weight: 700; color: var(--fg-faint);
+    margin-bottom: 7px;
+  }
+  .wb-chip::before {
+    content: ""; width: 9px; height: 9px; border-radius: 2px;
+    background: #ffffff; border: 1px solid #c9c9cf;
+  }
+  .wb {
+    color-scheme: light;
+    --fg: #1a1a1a;
+    --fg-muted: #777777;
+    --fg-faint: #999999;
+    --line: #e0e0e6;
+    --line-soft: #eeeeee;
+    --panel: #ffffff;
+    --panel-soft: #f7f7f9;
+    --hover: #f7f7ff;
+    --accent-bg: #eef2ff;
+    --accent-line: #99a0aa;
+    --accent-fg: #33407a;
+    --promoted-bg: #f3f7ff;
+    --promoted-line: #b9c8f0;
+    --err-bg: #ffeeee; --err-line: #f99; --err-fg: #990000;
+    --input-bg: #ffffff;
+    --input-line: #c9c9cf;
+    --pin-bg: #eef5ff; --pin-line: #8fb0ef; --pin-fg: #1d3f86;
+
+    background: #ffffff;
+    color: #1a1a1a;
+    border: 1px solid #d8d8e0;
+    border-radius: 10px;
+    padding: 18px 20px 22px;
+    box-shadow: var(--wb-shadow);
+    max-width: 940px;
+    font-size: 14px;
+  }
+  .wb h3 { font-size: 13.5px; margin: 20px 0 8px; font-weight: 650; color: #1a1a1a; }
+  .wb .dir-caption {
+    font-size: 12px; color: var(--fg-muted); margin-bottom: 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.5;
+  }
+  .wb .field-hint { font-weight: 400; color: var(--fg-muted); font-size: 11px; margin-left: 6px; }
+  .wb .field-hint.block { display: block; margin: 0 0 10px; line-height: 1.6; }
+  .wb button {
+    cursor: pointer; padding: 6px 12px; border-radius: 4px;
+    border: 1px solid var(--input-line); background: var(--input-bg);
+    color: var(--fg); font-family: inherit; font-size: 13px;
+  }
+  .wb button:hover { background: var(--hover); }
+  .wb button:disabled { opacity: .4; cursor: default; }
+  .wb button.small { padding: 2px 8px; font-size: 12px; }
+  .wb button.primary {
+    background: var(--accent-bg); border-color: var(--accent-line);
+    color: var(--accent-fg); font-weight: 600; padding: 9px 18px; font-size: 13.5px;
+  }
+  .wb input, .wb select {
+    padding: 6px; font-size: 13px; font-family: inherit;
+    color: var(--fg); background: var(--input-bg);
+    border: 1px solid var(--input-line); border-radius: 4px;
+    width: 100%; min-width: 0;
+  }
+  .wb input:focus, .wb select:focus { outline: 2px solid var(--accent-line); outline-offset: -1px; }
+
+  /* ---- placeholders ---- */
+  .ph-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .ph-row {
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) minmax(180px, 1.6fr) auto;
+    gap: 12px; align-items: end;
+    padding: 8px; border: 1px solid var(--line-soft); border-radius: 5px;
+  }
+  .ph-row.promoted { background: var(--promoted-bg); border-color: var(--promoted-line); }
+  .ph-row label {
+    display: flex; flex-direction: column; font-size: 11px; font-weight: 600;
+    gap: 4px; color: var(--fg-muted); text-transform: uppercase;
+    letter-spacing: .04em; min-width: 0;
+  }
+  .ph-row input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  .ph-caption { grid-column: 1 / -1; font-size: 11px; color: var(--fg-muted); margin-top: 2px; }
+  .ph-promoted-tag {
+    grid-column: 1 / -1; order: -1; font-size: 10px; text-transform: uppercase;
+    letter-spacing: .07em; color: #3f6fe0; font-weight: 700;
+  }
+  .secret-wrap { display: flex; gap: 6px; align-items: stretch; }
+  .secret-wrap input { flex: 1; }
+  .eye { flex: none; padding: 0 9px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+
+  /* ---- pickers ---- */
+  .assemble-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px; }
+  @media (max-width: 700px) { .assemble-picker { grid-template-columns: 1fr; } }
+  .assemble-picker-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--fg-muted); margin-bottom: 4px;
+  }
+  .assemble-pick-list {
+    list-style: none; padding: 0; margin: 0;
+    min-height: 60px; max-height: 320px; overflow-y: auto;
+  }
+  .assemble-pick-list li {
+    padding: 6px 8px; border: 1px solid var(--line-soft); border-radius: 4px;
+    margin-bottom: 6px; display: flex; align-items: center;
+    justify-content: space-between; gap: 8px; font-size: 13px;
+  }
+  .assemble-pick-list li:hover { background: var(--hover); }
+  .assemble-pick-name {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+  }
+  .assemble-pick-actions { display: flex; gap: 4px; flex: none; }
+  .nomatch { color: var(--fg-faint); font-style: italic; font-size: 12px; padding: 8px; }
+  .gone {
+    display: inline-block; font-size: 11px;
+    border: 1px dashed var(--err-line); color: var(--err-fg); background: var(--err-bg);
+    border-radius: 4px; padding: 5px 9px; margin: 2px 0 14px;
+  }
+
+  /* ---- explorer ---- */
+  .ex-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+  .ex-bar input[type="search"] { flex: 1; min-width: 220px; }
+  .ex-bar select { width: auto; min-width: 170px; }
+  .ex-meta { font-size: 11.5px; color: var(--fg-muted); margin: 8px 0 12px; font-variant-numeric: tabular-nums; }
+  .ex-group { margin-bottom: 16px; }
+  .ex-group-head {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+    font-weight: 700; color: var(--fg-muted); margin-bottom: 6px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .ex-group-head.pinned { color: var(--pin-fg); }
+  .ex-group-head .cnt { font-weight: 500; color: var(--fg-faint); letter-spacing: 0; text-transform: none; }
+  .module-list { list-style: none; padding: 0; margin: 0; }
+  .module-list li {
+    padding: 7px 9px; border: 1px solid var(--line-soft); border-radius: 4px;
+    margin-bottom: 5px; cursor: pointer; display: flex; gap: 10px;
+    font-size: 13px; align-items: baseline; flex-wrap: wrap;
+  }
+  .module-list li:hover { background: var(--hover); }
+  .module-list li.jump {
+    background: var(--pin-bg); border-color: var(--pin-line);
+    box-shadow: inset 3px 0 0 var(--pin-fg);
+    padding: 11px 12px;
+  }
+  .module-list li.jump .mod-id { font-size: 15px; color: var(--pin-fg); }
+  .module-list li.src { align-items: flex-start; }
+  .mod-id { font-family: ui-monospace, Menlo, monospace; font-weight: 700; flex: none; }
+  .mod-class { font-size: 11px; color: #667; background: #f0f1f6; border-radius: 3px; padding: 1px 6px; flex: none; }
+  .mod-size { font-size: 11px; color: var(--fg-faint); flex: none; font-variant-numeric: tabular-nums; }
+  .mod-verbose { font-size: 12px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 120px; }
+  .mod-snippet {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: #555;
+    background: var(--panel-soft); border-radius: 3px; padding: 4px 6px;
+    flex-basis: 100%; overflow-x: auto; white-space: pre;
+  }
+  .mod-snippet mark, .mod-verbose mark { background: #ffe9a8; color: #503c00; border-radius: 2px; padding: 0 1px; }
+  .tag-exact {
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em; font-weight: 800;
+    background: var(--pin-fg); color: #fff; border-radius: 3px; padding: 2px 6px; flex: none;
+  }
+  .ex-empty { color: var(--fg-faint); font-style: italic; font-size: 13px; padding: 18px 8px; }
+
+  /* ===================================================================
+     CARD PREVIEW
+     =================================================================== */
+  .cp-controls {
+    display: flex; gap: 18px; align-items: flex-end; flex-wrap: wrap;
+    padding: 12px 14px; border: 1px solid var(--line);
+    background: var(--panel-soft); border-radius: 6px; margin-bottom: 16px;
+  }
+  .cp-ctl { display: flex; flex-direction: column; gap: 4px; }
+  .cp-ctl > span {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--fg-muted); font-weight: 700;
+  }
+  .cp-ctl select, .cp-ctl button {
+    font-family: inherit; font-size: 13px; padding: 6px 10px;
+    border-radius: 4px; border: 1px solid var(--input-line);
+    background: var(--input-bg); color: var(--fg); cursor: pointer;
+  }
+  .seg { display: flex; gap: 4px; }
+  .seg button.on, .cp-ctl button.on {
+    background: var(--accent-bg); border-color: var(--accent-line);
+    color: var(--accent-fg); font-weight: 600;
+  }
+  .cp-scale {
+    margin-left: auto; font-size: 12px; color: var(--fg-muted);
+    font-family: ui-monospace, Menlo, monospace; text-align: right; line-height: 1.6;
+  }
+
+  .cp-stage { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+  .device-rail { overflow-x: auto; padding: 2px 2px 8px; }
+  .device {
+    border: 1px solid var(--line); border-radius: 26px;
+    padding: 16px 0 20px; background: var(--panel-soft);
+    box-shadow: var(--shadow); transition: width .18s ease;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .device-notch { width: 58px; height: 5px; border-radius: 3px; background: var(--line); margin-bottom: 14px; }
+
+  .card-rail { display: flex; gap: 10px; align-items: flex-start; }
+  .gutter { display: flex; flex-direction: column; flex: none; width: 92px; }
+  .gutter > div {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--fg-faint); text-align: right; padding-top: 3px;
+    border-right: 1px dashed var(--line); padding-right: 8px;
+    display: flex; align-items: flex-start; justify-content: flex-end; gap: 4px;
+  }
+
+  /* --- the ONE card, three thirds --- */
+  .study-card {
+    font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+    background: var(--cardBg);
+    border-style: solid;
+    border-color: var(--borderColor);
+    display: flex; flex-direction: column; align-items: center;
+    overflow: hidden; flex: none;
+    position: relative;
+  }
+  .third {
+    width: 100%;
+    display: flex;
+    position: relative;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .third.t-n { align-items: center; overflow: hidden; }
+  /* align-items:flex-start is load-bearing: under the default `stretch` the .touch
+     child is forced to exactly the third's height, so justify-content:center pushes
+     overflowing content out of reach at BOTH ends and the scroll container has
+     nothing to scroll. Letting .touch size to its own content (floored by its
+     min-height) keeps the centring when the face fits and top-aligns it when it
+     does not. */
+  .third.t-e, .third.t-x { overflow-y: auto; overflow-x: hidden; align-items: flex-start; }
+  .third.t-e::-webkit-scrollbar, .third.t-x::-webkit-scrollbar { width: 4px; }
+  .third.t-e::-webkit-scrollbar-thumb, .third.t-x::-webkit-scrollbar-thumb { background: rgba(128,128,128,.45); border-radius: 2px; }
+  /* textDivider: width 60%, centred, height normalize(1), borderColor */
+  .third-divider {
+    width: 60%;
+    height: var(--dividerH);
+    background: var(--textDivider);
+    flex: none;
+    align-self: center;
+  }
+  .touch {
+    width: 100%; display: flex; flex-direction: column; justify-content: center;
+  }
+  .third:hover .touch { background: rgba(127,127,127,.07); }
+  .third.flash .touch { background: rgba(127,127,127,.20); transition: background .05s; }
+  .play-pop {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    pointer-events: none; opacity: 0;
+  }
+  .play-pop.go { animation: playpop .72s ease-out; }
+  @keyframes playpop {
+    0%   { opacity: 0; transform: scale(.6); }
+    18%  { opacity: 1; transform: scale(1.05); }
+    65%  { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1.5); }
+  }
+  .play-tri {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: rgba(127,127,127,.22);
+    border: 2px solid var(--cardText);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .play-tri::after {
+    content: ""; width: 0; height: 0; margin-left: 4px;
+    border-left: 14px solid var(--cardText);
+    border-top: 9px solid transparent; border-bottom: 9px solid transparent;
+  }
+  .toast {
+    position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+    background: rgba(0,0,0,.78); color: #fff; font-size: 11px;
+    padding: 5px 11px; border-radius: 12px; pointer-events: none;
+    opacity: 0; white-space: nowrap;
+    font-family: system-ui, sans-serif;
+  }
+  .toast.go { animation: toastfade 1.5s ease-out; }
+  @keyframes toastfade {
+    0% { opacity: 0; } 12% { opacity: 1; } 72% { opacity: 1; } 100% { opacity: 0; }
+  }
+
+  /* tag styles, from the bundle's own renderer */
+  .face-body div { color: var(--cardText); font-size: var(--fsBase); font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif; font-weight: 400; }
+  .face-body b { font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif; font-weight: 700; color: var(--headingAccent); }
+  .face-body i { font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif; font-style: italic; text-decoration: underline; }
+  .face-body p { margin-top: 0; margin-bottom: var(--fsP); }
+  .face-body a { color: var(--headingAccent); }
+  .face-body {
+    color: var(--cardText); font-size: var(--fsBase); text-align: center;
+    width: 100%;
+  }
+  /* class styles — the complete extracted map (after the tag rules) */
+  .face-body .lg { font-size: var(--fsLg); }
+  .face-body .arialFont { font-family: Arial, Helvetica, sans-serif; font-size: var(--fsArialBig); }
+  .face-body .arialFontNormal { font-family: Arial, Helvetica, sans-serif; font-size: var(--fsArialNormal); }
+  .face-body .italic { font-style: italic; font-weight: 400; }
+  .face-body .boldItalic { font-style: italic; font-weight: 700; }
+  .face-body .underline { text-decoration: underline; }
+  .face-body .green { color: #5DD8D0; }
+  .face-body .blue { color: var(--headingAccent); }
+  .face-body .darkBlue { color: var(--headingGray); }
+  .face-body .red { color: red; }
+  .face-body .teal { color: #00A4BF; }
+  .face-body .dodgerBlue { color: #0080ff; }
+  .face-body .royalRed { color: #cc0066; }
+  .face-body .blueViolet { color: #8030cf; }
+  .face-body .burntOrange { color: #ff7733; }
+  .face-body .center { text-align: center; font-weight: 600; }
+  .face-body .left { text-align: left; }
+  .face-body .sup { font-size: var(--fsSup); }
+  .face-body .tipOfTheDay { font-weight: 600; color: #fff; font-size: var(--fsTip); }
+  /* supWrap: a real flex ROW with items aligned to the top — that top
+     alignment is what raises the superscript. No <sup>, no vertical-align. */
+  .face-body .supWrap {
+    display: inline-flex; flex-direction: row;
+    align-items: flex-start; justify-content: center;
+    margin-left: var(--supWrapMx); margin-right: var(--supWrapMx);
+  }
+  .face-body .supWrap .sup { font-size: var(--fsSup); line-height: 1; }
+
+  /* ---- editor ---- */
+  .editor {
+    flex: 1; min-width: 320px;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel-soft); padding: 14px;
+  }
+  .ed-banner {
+    background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-fg);
+    border-radius: 5px; padding: 8px 10px; font-size: 11.5px; line-height: 1.55;
+    margin-bottom: 12px;
+  }
+  .ed-banner b { font-weight: 700; }
+  .palette { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+  .palette button {
+    font-size: 11px; padding: 2px 7px; border-radius: 3px;
+    border: 1px solid var(--input-line); background: var(--input-bg);
+    color: var(--fg); cursor: pointer; font-family: ui-monospace, Menlo, monospace;
+  }
+  .palette button:hover { background: var(--accent-bg); border-color: var(--accent-line); }
+  .palette-target { font-size: 10.5px; color: var(--fg-muted); margin-bottom: 8px; }
+  .palette-target b { color: var(--fg); font-family: ui-monospace, Menlo, monospace; }
+  .ed-field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+  .ed-field > span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-muted); font-weight: 700; }
+  .ed-field textarea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px; line-height: 1.5; padding: 7px;
+    border: 1px solid var(--input-line); border-radius: 4px;
+    background: var(--input-bg); color: var(--fg);
+    min-height: 74px; resize: vertical; width: 100%;
+  }
+  .ed-field textarea:focus { outline: 2px solid var(--accent-line); outline-offset: -1px; }
+
+  /* ---- catalogues ---- */
+  .cat-tabs { display: flex; gap: 4px; margin: 6px 0 10px; }
+  .cat-tabs button {
+    font-size: 12px; padding: 5px 11px; border-radius: 4px;
+    border: 1px solid var(--input-line); background: var(--input-bg);
+    color: var(--fg); cursor: pointer; font-family: inherit;
+  }
+  .cat-tabs button.on { background: var(--accent-bg); border-color: var(--accent-line); color: var(--accent-fg); font-weight: 600; }
+  .table-rail { overflow-x: auto; }
+  table.smap { border-collapse: collapse; font-size: 12px; width: 100%; min-width: 660px; }
+  table.smap th, table.smap td {
+    text-align: left; padding: 5px 10px;
+    border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap;
+  }
+  table.smap th {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--fg-muted); position: sticky; top: 0; background: var(--bg);
+  }
+  table.smap td.k { font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+  table.smap td.v { font-family: ui-monospace, Menlo, monospace; color: var(--fg-muted); }
+  table.smap tr:hover td { background: var(--hover); }
+  table.smap tr.grouphead td {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+    font-weight: 700; color: var(--fg-muted); background: var(--panel-soft);
+  }
+  .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 2px; border: 1px solid rgba(128,128,128,.5); margin-right: 6px; vertical-align: -1px; }
+  .sample-chip {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 46px; padding: 2px 8px; border-radius: 4px;
+    border: 1px solid rgba(128,128,128,.4); line-height: 1.35;
+    font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+  }
+  .glyph-cell { font-size: 20px; line-height: 1.1; }
+  .g-pop { font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif; }
+  .g-arial { font-family: Arial, Helvetica, sans-serif; }
+  .cnt-pill {
+    display: inline-block; min-width: 22px; text-align: center;
+    font-size: 10.5px; font-variant-numeric: tabular-nums;
+    background: var(--panel-soft); border: 1px solid var(--line);
+    border-radius: 9px; padding: 0 6px; color: var(--fg-muted);
+  }
+</style>
+
+<div class="mk">
+  <h1>Assemble + Explorer + card preview</h1>
+  <p class="intro">
+    <strong>This is a static mockup for design sign-off, not a working UI.</strong>
+    Nothing submits, assembles or reads from hub. The workbench panes are rendered in the
+    bundle-tool's own <strong>light</strong> palette whatever theme you are viewing this page in —
+    that is deliberate, the workbench is a light app and these panes are meant to read as an
+    embedded screenshot of it. The interactive parts (explorer search, placeholder rows, token
+    reveal, pickers, device width, card theme, tap-to-play, the throwaway HTML editor) all really
+    respond, so the interaction can be judged rather than imagined.
+  </p>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-sec="assemble" role="tab">Assemble tab</button>
+    <button class="tab" data-sec="explorer" role="tab">Explorer tab</button>
+    <button class="tab" data-sec="card" role="tab">Card preview</button>
+  </div>
+
+  <!-- ============== SECTION 1: ASSEMBLE ============== -->
+  <section class="section active" id="sec-assemble">
+    <div class="wb-wrap">
+      <div class="wb-chip">bundle-tool workbench · light theme, always</div>
+      <div class="wb">
+
+        <div class="dir-caption">
+          Assembling against this repo's own base folder: base/smali.mjolnir.merged
+          (base_version 6.0.3). Result is submitted straight to hub's logic bundles —
+          activate it from /mjolnir/ota when ready.
+        </div>
+
+        <div class="gone">
+          <span class="badge b1">1</span>
+          Removed: <s>Label</s> text field and <s>Patch rev (logic version)</s> number field.
+          Both now live as rows in Placeholders — nothing is shown twice.
+        </div>
+
+        <h3 style="margin-top:0"><span class="badge b2">2</span>Placeholders</h3>
+        <span class="field-hint block">
+          <code>__MJOLNIR_&lt;KEY&gt;__</code> is substituted wherever a selected patch or companion
+          bakes it. Every row below arrives already resolved from this server — accept it or override
+          it. Clear a row to fall back to the server's own default
+          (<code>TUN_PUBLIC_BASE</code> / <code>OPERATOR_AUTH_TOKEN</code>). BASE_VERSION is never a
+          row here — it is always read from the base folder's own apktool.yml.
+        </span>
+
+        <div class="ph-rows" id="ph-rows">
+          <div class="ph-row promoted">
+            <div class="ph-promoted-tag">promoted from the removed Patch rev field</div>
+            <label>Key<input type="text" value="PATCH_REV"></label>
+            <label>Value<input type="text" value="17"></label>
+            <button type="button" class="small ph-remove">Remove</button>
+          </div>
+          <div class="ph-row promoted">
+            <div class="ph-promoted-tag">promoted from the removed Label field</div>
+            <label>Key<input type="text" value="LABEL"></label>
+            <label>Value<input type="text" value="6.0.3-patch17"></label>
+            <button type="button" class="small ph-remove">Remove</button>
+          </div>
+          <div class="ph-row">
+            <label>Key<input type="text" value="DATA_VERSION"></label>
+            <label>Value<input type="text" value="247"></label>
+            <button type="button" class="small ph-remove">Remove</button>
+          </div>
+          <div class="ph-row">
+            <label>Key<input type="text" value="BUILD_ID"></label>
+            <label>Value<input type="text" value="" placeholder="(assigned by hub at submit time)"></label>
+            <button type="button" class="small ph-remove">Remove</button>
+          </div>
+          <div class="ph-row">
+            <label>Key<input type="text" value="SYNC_BASE_URL"></label>
+            <label>Value<input type="text" value="https://tun.example.no"></label>
+            <button type="button" class="small ph-remove">Remove</button>
+          </div>
+          <div class="ph-row">
+            <label>Key<input type="text" value="SYNC_TOKEN"></label>
+            <label>Value
+              <span class="secret-wrap">
+                <input id="tok" type="password" value="op_7fQ2…k9Zx">
+                <button type="button" class="eye" id="tok-eye" aria-label="show token">👁 show</button>
+              </span>
+            </label>
+            <button type="button" class="small ph-remove">Remove</button>
+            <div class="ph-caption">prefilled from the server's own OPERATOR_AUTH_TOKEN</div>
+          </div>
+          <div class="ph-row">
+            <label>Key<input type="text" value="AUDIO_BASE_URL"></label>
+            <label>Value<input type="text" value="https://tun.example.no"></label>
+            <button type="button" class="small ph-remove">Remove</button>
+          </div>
+        </div>
+        <button type="button" id="ph-add">+ Add placeholder</button>
+
+        <div class="dir-caption" style="margin:22px 0 6px">Reading patches from: patches/js</div>
+        <h3 style="margin-top:4px">Patches to apply, in order
+          <span class="field-hint">REPLACE-style — modifies an existing module in place</span></h3>
+        <div class="assemble-picker" data-picker="patches">
+          <div><div class="assemble-picker-label">Available</div><ul class="assemble-pick-list" data-role="available"></ul></div>
+          <div><div class="assemble-picker-label">Selected (apply order)</div><ol class="assemble-pick-list" data-role="selected"></ol></div>
+        </div>
+
+        <div class="dir-caption" style="margin-bottom:6px">Reading patch-back pairs from: patches/js</div>
+        <h3 style="margin-top:4px">Patch-back pairs to apply, in order
+          <span class="field-hint">REPLACE-style — module-id addressed (D111)</span></h3>
+        <div class="assemble-picker" data-picker="pairs">
+          <div><div class="assemble-picker-label">Available</div><ul class="assemble-pick-list" data-role="available"></ul></div>
+          <div><div class="assemble-picker-label">Selected (apply order)</div><ol class="assemble-pick-list" data-role="selected"></ol></div>
+        </div>
+
+        <div class="dir-caption" style="margin-bottom:6px">Reading companions from: patches/js</div>
+        <h3 style="margin-top:4px">Companions to append, in order
+          <span class="field-hint">APPEND-style — new top-level code, no existing module touched</span></h3>
+        <div class="assemble-picker" data-picker="companions">
+          <div><div class="assemble-picker-label">Available</div><ul class="assemble-pick-list" data-role="available"></ul></div>
+          <div><div class="assemble-picker-label">Selected (apply order)</div><ol class="assemble-pick-list" data-role="selected"></ol></div>
+        </div>
+
+        <button type="button" class="primary" style="margin-top:12px">Assemble &amp; submit logic bundle</button>
+      </div>
+    </div>
+
+    <div class="legend">
+      <h3>What changed on the Assemble tab</h3>
+      <ol>
+        <li><span class="badge b1">1</span><div><b>No value is shown twice.</b> The dedicated
+          <i>Label</i> text field and the <i>Patch rev (logic version)</i> number field are deleted.
+          Today LABEL exists both as a top field and as a placeholder row, and the two can disagree;
+          after this the Placeholders list is the single home for every baked value, and what the
+          operator reads is exactly what gets substituted.</div></li>
+        <li><span class="badge b2">2</span><div><b>Placeholders arrive resolved, not blank.</b>
+          Instead of empty boxes beside grey hint text that merely <i>mentions</i> the default, every
+          row carries the real value the server would use: the next patch rev, the generated label,
+          the current data version, the public base URLs, and the operator token itself (masked, with
+          a reveal). BUILD_ID stays blank on purpose — hub assigns it at submit time. PATCH_REV and
+          LABEL sit first and are tinted, so it reads that they were promoted into this list rather
+          than quietly lost.</div></li>
+      </ol>
+      <p class="note">
+        The earlier draft put a search/filter box above the three pickers. That has been
+        <b>removed</b> — the tab has seven patches, seven pairs and five companions, and filtering
+        was solving a problem that belongs to the Explorer tab. The pickers are plain unfiltered
+        lists again; add&nbsp;→ / remove / ▲ / ▼ work as before.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============== SECTION 2: EXPLORER ============== -->
+  <section class="section" id="sec-explorer">
+    <div class="wb-wrap">
+      <div class="wb-chip">bundle-tool workbench · light theme, always</div>
+      <div class="wb">
+        <div class="dir-caption">
+          Session: base/smali.mjolnir.merged · 35 142 modules indexed
+        </div>
+
+        <h3 style="margin-top:0"><span class="badge b3">3</span>Explorer</h3>
+        <span class="field-hint block">
+          One box. A numeric query is treated as a module id <i>first</i> and as source text
+          <i>second</i>; anything else is a plain source search, exactly as today.
+        </span>
+
+        <div class="ex-bar">
+          <input id="ex-q" type="search" placeholder="module id or source text, e.g. 2110" autocomplete="off">
+          <select id="ex-sort">
+            <option value="id">Sort by id</option>
+            <option value="size">Sort by size</option>
+            <option value="classification">Sort by classification</option>
+            <option value="verboseName">Sort by verboseName</option>
+          </select>
+        </div>
+        <div class="ex-meta" id="ex-meta"></div>
+        <div id="ex-results"></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <h3>What changed on the Explorer tab</h3>
+      <ol>
+        <li><span class="badge b3">3</span><div><b>Typing a module number finds the module.</b>
+          Today <code>runExplorerSearch</code> (<code>src/ui-assets/app.js:280</code>) sends the
+          query straight to the server-side full-text <i>source</i> search
+          (<code>/api/sessions/&lt;id&gt;/search?q=</code>) and renders whatever comes back as
+          <code>mod-id</code> + <code>mod-snippet</code>. So typing <code>2110</code> returns every
+          module whose <i>source</i> happens to mention 2110 — i.e. every <code>require()</code> call
+          site — and never module 2110 itself. A grep over source text structurally cannot find a
+          module by its own number, because a module's id does not appear in its own body.
+          <br>The fix keeps one box and no mode toggle: when the query is numeric, the results gain a
+          pinned top group — a prominent <i>Go to module N</i> jump row tagged <i>exact id</i>, then
+          an <i>ids containing N</i> group (21100, 12110…) if any — and only then the existing
+          <i>source mentions N</i> group with its snippets, under a heading that says plainly that
+          these are source hits. A non-numeric query shows only that one source group, exactly as
+          today: no empty id groups to scroll past.
+          <br>Try <code>2110</code> (all three groups), <code>2</code> (id groups plus source hits),
+          <code>subscription</code> (source hits only), <code>zzz</code> (muted empty state).</div></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ============== SECTION 3: CARD PREVIEW ============== -->
+  <section class="section" id="sec-card">
+    <p class="intro" style="border-color: var(--badge4)">
+      <span class="badge b4">4</span>
+      <strong>One card, three thirds — not three boxes.</strong> Geometry, theme values and the class
+      map are taken from the bundle's own study-card component and style maps, not hand-transcribed
+      into hub's CSS: card <code>width normalize(342)</code>, <code>borderRadius normalize(20)</code>,
+      <code>borderWidth normalize(1)</code>, thirds at <code>.28C / .28C / .44C</code> separated by a
+      <code>textDivider</code> hairline, N a plain non-scrolling touchable and E/X wrapped in
+      ScrollViews with <code>paddingVertical normalize(16)</code>. Every size is driven by the
+      bundle's own <code>normalize(t) = round(t × width / 375)</code>.
+    </p>
+
+    <div class="cp-controls">
+      <label class="cp-ctl">
+        <span>Simulated device</span>
+        <select id="cp-width">
+          <option value="360x800">360 × 800 — compact phone</option>
+          <option value="375x812" selected>375 × 812 — reference (×1.00)</option>
+          <option value="412x915">412 × 915 — large phone</option>
+          <option value="768x1024">768 × 1024 — tablet (×0.70 factor)</option>
+        </select>
+      </label>
+      <div class="cp-ctl">
+        <span>App theme (independent of this page)</span>
+        <div class="seg" id="cp-theme">
+          <button type="button" data-t="dark" class="on">Dark</button>
+          <button type="button" data-t="light">Light</button>
+        </div>
+      </div>
+      <div class="cp-ctl">
+        <span>Throwaway editor</span>
+        <button type="button" id="ed-toggle">Edit HTML</button>
+      </div>
+      <div class="cp-scale" id="cp-scale"></div>
+    </div>
+
+    <div class="cp-stage">
+      <div class="device-rail">
+        <div class="device" id="cp-device">
+          <div class="device-notch"></div>
+          <div class="card-rail">
+            <div class="gutter" id="cp-gutter">
+              <div id="g-n"><span>Front (N)</span></div>
+              <div id="g-e"><span>Back (E)</span><span id="g-e-spk">🔊</span></div>
+              <div id="g-x"><span>Extra (X)</span></div>
+            </div>
+            <div class="study-card" id="cp-card">
+              <div class="third t-n" data-face="N">
+                <div class="touch"><div class="face-body" id="face-N"></div></div>
+                <div class="play-pop"><div class="play-tri"></div></div>
+                <div class="toast">no audio on this face</div>
+              </div>
+              <div class="third-divider"></div>
+              <div class="third t-e" data-face="E">
+                <div class="touch"><div class="face-body" id="face-E"></div></div>
+                <div class="play-pop"><div class="play-tri"></div></div>
+                <div class="toast">no audio on this face</div>
+              </div>
+              <div class="third-divider"></div>
+              <div class="third t-x" data-face="X">
+                <div class="touch"><div class="face-body" id="face-X"></div></div>
+                <div class="play-pop"><div class="play-tri"></div></div>
+                <div class="toast">no audio on this face</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="editor" id="cp-editor" style="display:none">
+        <div class="ed-banner">
+          <b>Throwaway scratch editor.</b> Edits are not saved anywhere, are never sent to the
+          builder, and vanish on reload. Nothing typed here reaches a bundle, a patch or hub.
+        </div>
+        <div class="palette" id="palette"></div>
+        <div class="palette-target">inserting into <b id="pal-target">N</b> — click a textarea to retarget</div>
+        <label class="ed-field"><span>Front (N)</span><textarea id="ed-N" spellcheck="false"></textarea></label>
+        <label class="ed-field"><span>Back (E)</span><textarea id="ed-E" spellcheck="false"></textarea></label>
+        <label class="ed-field"><span>Extra (X)</span><textarea id="ed-X" spellcheck="false"></textarea></label>
+        <button type="button" id="ed-reset" style="font-size:12px;padding:5px 11px;border-radius:4px;border:1px solid var(--input-line);background:var(--input-bg);color:var(--fg);cursor:pointer;font-family:inherit">Reset to minted card</button>
+        <p class="note" style="margin-top:10px">
+          <b>What this is for:</b> find out what is wrong with a minted card here — a class that does
+          nothing, a missing <code>arialFontNormal</code> around an IPA run, a third that overflows —
+          then go fix it in the builder. The editor itself never writes anything.
+        </p>
+      </div>
+    </div>
+
+    <p class="note" id="geom-note"></p>
+    <p class="note">
+      <b>Tap, don't scrub.</b> There is no player panel, because the app has none: all three thirds
+      are tappable (<code>onPress Z('N'|'E'|'X')</code>) and only the face named by the card's
+      <code>A</code> field actually carries audio. Hover any third to see it is tappable; tap
+      <b>Back (E)</b> for the play affordance; tap N or X for the "no audio on this face" toast. The
+      speaker glyph lives on the outside gutter label only — nothing is overlaid on the card, because
+      nothing is overlaid on the device.
+    </p>
+    <p class="note">
+      <b>Fonts.</b> Faces use <code>'Poppins', ui-sans-serif, system-ui</code>, and
+      <code>arialFont</code>/<code>arialFontNormal</code> switch to Arial. That switch is deliberate
+      in the app: Poppins has no IPA glyphs, so IPA runs are rendered in the bundled
+      <code>arial.ttf</code>. Hub will serve both <code>arial.ttf</code> and the Poppins family
+      locally rather than falling back — in this mockup you are seeing your system's substitutes.
+    </p>
+
+    <h2>Generated reference</h2>
+    <div class="cat-tabs" id="cat-tabs">
+      <button type="button" data-cat="classes" class="on">Class &amp; tag map</button>
+      <button type="button" data-cat="symbols">Symbol catalogue</button>
+    </div>
+
+    <div id="cat-classes">
+      <div class="table-rail">
+        <table class="smap">
+          <thead><tr><th>Selector</th><th>Kind</th><th>Resolves to</th><th>Sample</th></tr></thead>
+          <tbody id="smap-body"></tbody>
+        </table>
+      </div>
+      <p class="note">
+        Generated from the bundle's own theme and class-style maps, not typed by hand — which is the
+        point: when the app adds a class it shows up here instead of silently rendering unstyled.
+        <code>supWrap</code>, <code>arialFont</code> and <code>arialFontNormal</code> are the three
+        hub is missing today. Values in <code>px</code> are <code>normalize()</code> outputs at the
+        selected width; colours marked <i>theme</i> follow the app-theme toggle.
+      </p>
+      <p class="note" id="theme-note"></p>
+    </div>
+
+    <div id="cat-symbols" style="display:none">
+      <div class="table-rail">
+        <table class="smap">
+          <thead><tr><th>Entity</th><th>Glyph</th><th>Unicode name</th><th>Poppins</th><th>Arial</th><th>Occurrences</th></tr></thead>
+          <tbody id="sym-body"></tbody>
+        </table>
+      </div>
+      <p class="note">
+        Generated from the stock bundle's own card content, so this catalogue is the symbols that
+        <b>actually occur</b>, not a guess at what might. Ordered by frequency. Compare the two font
+        columns: wherever the Poppins column falls back or boxes, the content needs
+        <code>arialFont</code>/<code>arialFontNormal</code> around it. The Norwegian letters at the
+        bottom render in Poppins and need no font switch.
+      </p>
+    </div>
+
+    <div class="legend">
+      <h3>What changed on the card preview</h3>
+      <ol>
+        <li><span class="badge b4">4</span><div><b>It is now the device's card, not three boxes.</b>
+          One frame, three thirds, real dividers, real per-third scrolling (E and X scroll, N clips —
+          the X face is deliberately long enough to prove it), gutter labels outside the frame so the
+          device rendering stays clean. Tap-to-play replaces the audio element. The class map gained
+          the three selectors hub is missing (<code>supWrap</code>, <code>arialFont</code>,
+          <code>arialFontNormal</code>), with <code>supWrap</code> implemented as the real top-aligned
+          flex row rather than faked with <code>&lt;sup&gt;</code>. A symbol catalogue sits beside the
+          class map, and a throwaway HTML editor lets the operator poke at a minted card's markup to
+          find what is wrong with it before going to fix it in the builder.</div></li>
+      </ol>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  /* ---------------- top-level sections ---------------- */
+  var tabs = document.querySelectorAll('.mk > .tabs .tab');
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      tabs.forEach(function (x) { x.classList.remove('active'); });
+      t.classList.add('active');
+      document.querySelectorAll('.mk > .section').forEach(function (s) { s.classList.remove('active'); });
+      document.getElementById('sec-' + t.dataset.sec).classList.add('active');
+    });
+  });
+
+  /* ================= SECTION 1: ASSEMBLE ================= */
+  document.getElementById('ph-rows').addEventListener('click', function (e) {
+    var btn = e.target.closest('.ph-remove');
+    if (btn) btn.closest('.ph-row').remove();
+  });
+  document.getElementById('ph-add').addEventListener('click', function () {
+    var row = document.createElement('div');
+    row.className = 'ph-row';
+    row.innerHTML =
+      '<label>Key<input type="text" placeholder="e.g. LABEL"></label>' +
+      '<label>Value<input type="text"></label>' +
+      '<button type="button" class="small ph-remove">Remove</button>';
+    document.getElementById('ph-rows').appendChild(row);
+    row.querySelector('input').focus();
+  });
+  var tok = document.getElementById('tok'), eye = document.getElementById('tok-eye');
+  eye.addEventListener('click', function () {
+    var shown = tok.type === 'text';
+    tok.type = shown ? 'password' : 'text';
+    eye.textContent = shown ? '👁 show' : '🙈 hide';
+  });
+
+  var PATCHES = ['1440-audio-link-playback', '2080-progress-sync-shim', '2110-decks-logic',
+    '2119-subscription', '2176-my-account-build-id', '953-store-setup', '968-subscription'];
+  var COMPANIONS = ['audio-prefetch-companion', 'boot-ok-companion', 'config-rotate',
+    'ota-debug-report', 'progress-sync-manual-companion'];
+  var pick = {
+    patches:    { all: PATCHES.slice(),    selected: [] },
+    pairs:      { all: PATCHES.slice(),    selected: [] },
+    companions: { all: COMPANIONS.slice(), selected: ['boot-ok-companion'] }
+  };
+  function renderPicker(key) {
+    var st = pick[key];
+    var root = document.querySelector('[data-picker="' + key + '"]');
+    var availEl = root.querySelector('[data-role="available"]');
+    var selEl = root.querySelector('[data-role="selected"]');
+    availEl.innerHTML = ''; selEl.innerHTML = '';
+    var available = st.all.filter(function (n) { return st.selected.indexOf(n) === -1; });
+    if (!available.length) { availEl.innerHTML = '<div class="nomatch">none</div>'; }
+    available.forEach(function (name) {
+      var li = document.createElement('li');
+      li.innerHTML = '<span class="assemble-pick-name">' + esc(name) + '</span>' +
+        '<span class="assemble-pick-actions"><button type="button" class="small" data-add="' + name + '">add →</button></span>';
+      availEl.appendChild(li);
+    });
+    if (!st.selected.length) { selEl.innerHTML = '<div class="nomatch">none</div>'; }
+    st.selected.forEach(function (name, idx) {
+      var li = document.createElement('li');
+      li.innerHTML = '<span class="assemble-pick-name">' + (idx + 1) + '. ' + esc(name) + '</span>' +
+        '<span class="assemble-pick-actions">' +
+        '<button type="button" class="small" data-up="' + name + '"' + (idx === 0 ? ' disabled' : '') + '>▲</button>' +
+        '<button type="button" class="small" data-down="' + name + '"' + (idx === st.selected.length - 1 ? ' disabled' : '') + '>▼</button>' +
+        '<button type="button" class="small" data-remove="' + name + '">remove</button></span>';
+      selEl.appendChild(li);
+    });
+  }
+  document.querySelectorAll('[data-picker]').forEach(function (root) {
+    var key = root.dataset.picker;
+    root.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      var st = pick[key], d = b.dataset, i, t;
+      if (d.add) st.selected = st.selected.concat([d.add]);
+      else if (d.remove) st.selected = st.selected.filter(function (n) { return n !== d.remove; });
+      else if (d.up) { i = st.selected.indexOf(d.up); if (i > 0) { t = st.selected[i - 1]; st.selected[i - 1] = st.selected[i]; st.selected[i] = t; } }
+      else if (d.down) { i = st.selected.indexOf(d.down); if (i !== -1 && i < st.selected.length - 1) { t = st.selected[i + 1]; st.selected[i + 1] = st.selected[i]; st.selected[i] = t; } }
+      else return;
+      renderPicker(key);
+    });
+    renderPicker(key);
+  });
+
+  /* ================= SECTION 2: EXPLORER ================= */
+  var MODULES = [
+    { id: 8,     classification: 'util',            size: 1842,  verboseName: 'metro/asyncRequire',            src: 'module.exports=function(e){return r(2110)(e)}' },
+    { id: 211,   classification: 'util',            size: 3310,  verboseName: 'lib/normalize',                 src: 'export function normalize(t){return Math.round(t*width/375)}' },
+    { id: 953,   classification: 'redux-slice',     size: 12094, verboseName: 'store/configureStore',          src: 'const decks=r(2110);const sub=r(2119);// store-setup for subscription state' },
+    { id: 968,   classification: 'saga',            size: 8471,  verboseName: 'sagas/subscriptionSaga',        src: 'yield takeLatest(SUBSCRIPTION_CHECK, r(2119).check)' },
+    { id: 1003,  classification: 'api-client',      size: 5220,  verboseName: 'api/httpClient',                src: 'const base=cfg.SYNC_BASE_URL;// no module ids referenced here' },
+    { id: 1440,  classification: 'react-component', size: 15733, verboseName: 'components/AudioLinkPlayback',   src: 'const decks=require(2110);playClip(card.A)' },
+    { id: 2080,  classification: 'util',            size: 4410,  verboseName: 'sync/progressShim',             src: 'r(2110).markSeen(id);r(12110).flush()' },
+    { id: 2110,  classification: 'redux-slice',     size: 28806, verboseName: 'decks/decksLogic',              src: 'export const selectDeck=...;// the decks logic itself' },
+    { id: 2111,  classification: 'react-component', size: 9902,  verboseName: 'components/DeckRow',            src: 'import {selectDeck} from r(2110)' },
+    { id: 2119,  classification: 'redux-slice',     size: 11250, verboseName: 'subscription/subscriptionSlice', src: 'const initialState={subscription:null,tier:"free"}' },
+    { id: 2176,  classification: 'react-component', size: 7340,  verboseName: 'screens/MyAccount',             src: 'const buildId=__MJOLNIR_BUILD_ID__;const sub=r(2119)' },
+    { id: 3042,  classification: 'navigator',       size: 6618,  verboseName: 'navigation/StudyStack',         src: 'Stack.Screen({component:r(21100).StudyCard})' },
+    { id: 12110, classification: 'util',            size: 2904,  verboseName: 'sync/queueFlush',               src: '// drains the queue written by 2080' },
+    { id: 21100, classification: 'react-component', size: 31117, verboseName: 'components/StudyCard',          src: 'const card={width:normalize(342),borderRadius:normalize(20)};// subscription gate' }
+  ];
+  var exQ = '', exSort = 'id';
+  var exResults = document.getElementById('ex-results');
+  var exMeta = document.getElementById('ex-meta');
+
+  function sorted(list) {
+    return list.slice().sort(function (a, b) {
+      if (exSort === 'id' || exSort === 'size') return a[exSort] - b[exSort];
+      return String(a[exSort]).localeCompare(String(b[exSort]));
+    });
+  }
+  function hilite(text, q) {
+    if (!q) return esc(text);
+    var i = text.toLowerCase().indexOf(q.toLowerCase());
+    if (i === -1) return esc(text);
+    return esc(text.slice(0, i)) + '<mark>' + esc(text.slice(i, i + q.length)) + '</mark>' + esc(text.slice(i + q.length));
+  }
+  function snippetOf(src, q) {
+    var i = src.toLowerCase().indexOf(q.toLowerCase());
+    if (i === -1) return esc(src.slice(0, 90));
+    var s = Math.max(0, i - 34), e = Math.min(src.length, i + q.length + 46);
+    return (s > 0 ? '…' : '') + hilite(src.slice(s, e), q) + (e < src.length ? '…' : '');
+  }
+  function rowHtml(m, opts) {
+    opts = opts || {};
+    return '<li class="' + (opts.jump ? 'jump' : '') + '">' +
+      (opts.jump ? '<span class="tag-exact">exact id</span>' : '') +
+      '<span class="mod-id">' + (opts.q ? hilite(String(m.id), opts.q) : m.id) + '</span>' +
+      '<span class="mod-class">' + esc(m.classification) + '</span>' +
+      '<span class="mod-size">' + m.size.toLocaleString('en-US') + ' B</span>' +
+      '<span class="mod-verbose">' + esc(m.verboseName) + '</span>' +
+      '</li>';
+  }
+  function srcRowHtml(m, q) {
+    return '<li class="src">' +
+      '<span class="mod-id">' + m.id + '</span>' +
+      '<span class="mod-class">' + esc(m.classification) + '</span>' +
+      '<span class="mod-verbose">' + esc(m.verboseName) + '</span>' +
+      '<span class="mod-snippet">' + snippetOf(m.src, q) + '</span>' +
+      '</li>';
+  }
+  function group(title, bodyHtml, cls, count) {
+    return '<div class="ex-group"><div class="ex-group-head ' + (cls || '') + '">' + title +
+      (count !== undefined ? ' <span class="cnt">' + count + '</span>' : '') +
+      '</div><ul class="module-list">' + bodyHtml + '</ul></div>';
+  }
+
+  function renderExplorer() {
+    var q = exQ.trim();
+    if (!q) {
+      var all = sorted(MODULES);
+      exMeta.textContent = MODULES.length + ' modules · sorted by ' + exSort;
+      exResults.innerHTML = '<ul class="module-list">' + all.map(function (m) { return rowHtml(m); }).join('') + '</ul>';
+      return;
+    }
+    var numeric = /^\d+$/.test(q);
+    var html = '', parts = [];
+
+    if (numeric) {
+      var exact = MODULES.filter(function (m) { return String(m.id) === q; });
+      var contains = MODULES.filter(function (m) {
+        return String(m.id) !== q && String(m.id).indexOf(q) !== -1;
+      });
+      if (exact.length) {
+        html += group('Go to module ' + esc(q), exact.map(function (m) { return rowHtml(m, { jump: true }); }).join(''), 'pinned');
+        parts.push('1 exact id');
+      }
+      if (contains.length) {
+        html += group('ids containing ' + esc(q),
+          sorted(contains).map(function (m) { return rowHtml(m, { q: q }); }).join(''), 'pinned', contains.length);
+        parts.push(contains.length + ' id' + (contains.length === 1 ? '' : 's') + ' containing');
+      }
+    }
+
+    var srcHits = sorted(MODULES.filter(function (m) {
+      return m.src.toLowerCase().indexOf(q.toLowerCase()) !== -1;
+    }));
+    if (srcHits.length) {
+      html += group('source mentions “' + esc(q) + '” — full-text hits in module bodies, not ids',
+        srcHits.map(function (m) { return srcRowHtml(m, q); }).join(''), '', srcHits.length);
+      parts.push(srcHits.length + ' source hit' + (srcHits.length === 1 ? '' : 's'));
+    }
+
+    if (!html) {
+      exResults.innerHTML = '<div class="ex-empty">No module with that id, and no module whose source mentions “' + esc(q) + '”.</div>';
+      exMeta.textContent = 'nothing found';
+      return;
+    }
+    exResults.innerHTML = html;
+    exMeta.textContent = parts.join(' · ') + (numeric ? '' : ' · non-numeric query, id groups not applicable');
+  }
+  document.getElementById('ex-q').addEventListener('input', function (e) { exQ = e.target.value; renderExplorer(); });
+  document.getElementById('ex-sort').addEventListener('change', function (e) { exSort = e.target.value; renderExplorer(); });
+  renderExplorer();
+
+  /* ================= SECTION 3: CARD PREVIEW ================= */
+  var THEMES = {
+    dark: {
+      cardText: '#fff', studyCardHeading: '#737B95', headingAccent: '#3F8CFF',
+      headingGray: '#7C8296', green: '#5DD8D0', textAccent: '#56DCDD',
+      borderColor: '#7C8296', cardBg: '#1B1D21', bgSource: 'archivedBackground / navigationRoot (mapped)'
+    },
+    light: {
+      cardText: '#16215B', studyCardHeading: '#ACB1C0', headingAccent: '#246BFD',
+      headingGray: '#16215B', green: '#5DD8D0', textAccent: '#56DCDD',
+      borderColor: '#DADFF2', cardBg: '#FAFAFA', bgSource: 'cardBackground (direct)'
+    }
+  };
+  var cardTheme = 'dark';
+  var deviceWidth = 375;
+  var deviceHeight = 812;
+  // normalize(t) = round(t * width/375 * (isTablet ? 0.7 : 1)) — verified in the bundle.
+  function isTablet() { return deviceWidth >= 600; }
+  function nz(t) { return Math.round(t * deviceWidth / 375 * (isTablet() ? 0.7 : 1)); }
+  // C = screenHeight - (iOS inset; 0 on Android) - normalize(200) — verified in the bundle.
+  function cardHeight() { return deviceHeight - nz(200); }
+
+  var MINTED = {
+    N: '<div class="center"><b>fastsatt</b></div>\n<div class="teal">verb</div>',
+    E: '<div class="center">determined, fixed</div>\n<div class="italic">av myndighetene</div>',
+    X: '<div class="supWrap">k<div class="sup">j</div>(:)</div>\n' +
+       '<div class="center"><div class="left">This is the soft [<span class="arialFontNormal"> k </span>], pronounced in the front part of the mouth, hence the superscript [<span class="arialFontNormal"> j </span>].</div></div>\n' +
+       '<div class="left">Prisen er <b>fastsatt</b> <span class="royalRed">av</span> departementet.<p></p><span class="sup">1</span> <span class="green">formal register</span></div>'
+  };
+  var faces = { N: MINTED.N, E: MINTED.E, X: MINTED.X };
+  var AUDIO_FACE = 'E';
+
+  var card = document.getElementById('cp-card');
+  var device = document.getElementById('cp-device');
+
+  function applyGeometry() {
+    var th = THEMES[cardTheme];
+    var C = cardHeight();
+    var w = nz(342);
+    var bw = Math.max(1, nz(1));
+    var br = nz(20);
+    var pv = nz(16);
+
+    card.style.setProperty('--cardText', th.cardText);
+    card.style.setProperty('--cardBg', th.cardBg);
+    card.style.setProperty('--borderColor', th.borderColor);
+    card.style.setProperty('--textDivider', th.borderColor);
+    card.style.setProperty('--studyCardHeading', th.studyCardHeading);
+    card.style.setProperty('--headingAccent', th.headingAccent);
+    card.style.setProperty('--headingGray', th.headingGray);
+    card.style.setProperty('--textAccent', th.textAccent);
+    card.style.setProperty('--fsBase', nz(16) + 'px');
+    card.style.setProperty('--fsLg', nz(28) + 'px');
+    card.style.setProperty('--fsArialBig', nz(28) + 'px');
+    card.style.setProperty('--fsArialNormal', nz(18) + 'px');
+    card.style.setProperty('--fsSup', nz(11) + 'px');
+    card.style.setProperty('--fsTip', nz(20) + 'px');
+    card.style.setProperty('--fsP', nz(6) + 'px');
+    card.style.setProperty('--supWrapMx', nz(4) + 'px');
+
+    card.style.width = w + 'px';
+    card.style.height = C + 'px';
+    card.style.borderWidth = bw + 'px';
+    card.style.borderRadius = br + 'px';
+
+    var hN = Math.round(.28 * C), hE = Math.round(.28 * C), hX = C - hN - hE - 2;
+    var map = [['N', hN, false], ['E', hE, true], ['X', hX, true]];
+    map.forEach(function (m) {
+      var el = card.querySelector('.third[data-face="' + m[0] + '"]');
+      el.style.height = m[1] + 'px';
+      if (m[2]) {
+        el.style.paddingTop = pv + 'px';
+        el.style.paddingBottom = pv + 'px';
+      } else {
+        el.style.paddingTop = '0'; el.style.paddingBottom = '0';
+      }
+      var touch = el.querySelector('.touch');
+      touch.style.paddingLeft = pv + 'px';
+      touch.style.paddingRight = pv + 'px';
+      touch.style.minHeight = m[2] ? (m[1] - nz(32)) + 'px' : m[1] + 'px';
+    });
+
+    document.getElementById('g-n').style.height = hN + 'px';
+    document.getElementById('g-e').style.height = (hE + 1) + 'px';
+    document.getElementById('g-x').style.height = (hX + 1) + 'px';
+    document.getElementById('g-e-spk').style.display = AUDIO_FACE === 'E' ? '' : 'none';
+
+    device.style.width = deviceWidth + 'px';
+    device.style.minWidth = (w + 92 + 10 + 24) + 'px';
+
+    document.getElementById('cp-scale').innerHTML =
+      deviceWidth + '×' + deviceHeight + ' · ×' + (deviceWidth / 375 * (isTablet() ? 0.7 : 1)).toFixed(3) + '<br>' +
+      'card ' + w + '×' + C + ' · thirds ' + hN + '/' + hE + '/' + hX;
+
+    document.getElementById('geom-note').innerHTML =
+      '<b>Card height is derived, not chosen.</b> The bundle computes ' +
+      '<code>C = screenHeight − (iOS inset; 0 on Android) − normalize(200)</code>, so the card ' +
+      'scales with the device screen. Here: <b>' + deviceHeight + ' − normalize(200) = ' +
+      deviceHeight + ' − ' + nz(200) + ' = ' + C + 'px</b>, giving thirds of <b>' + hN + ' / ' + hE +
+      ' / ' + hX + 'px</b> (.28 / .28 / .44). The inner touch target of each scrollable third is ' +
+      'that height minus <code>normalize(32)</code> = <b>' + nz(32) + 'px</b>.' +
+      (isTablet() ? ' This preset is a tablet, so <code>normalize()</code> carries the bundle\'s own ' +
+        '<b>×0.70</b> factor — which is why the text is proportionally smaller than the frame.' : '');
+
+    document.getElementById('theme-note').innerHTML =
+      '<b>One caveat on the ' + cardTheme + ' theme.</b> ' + (cardTheme === 'dark'
+        ? 'The dark theme has <b>no <code>cardBackground</code> key</b>. <code>#1B1D21</code> is ' +
+          'this project\'s documented mapping from <code>archivedBackground</code> / ' +
+          '<code>navigationRoot</code> — the one value here that is a mapping rather than a direct ' +
+          'extraction. Everything else (cardText #fff, studyCardHeading #737B95, headingAccent ' +
+          '#3F8CFF, headingGray #7C8296, green #5DD8D0, textAccent #56DCDD, borderColor #7C8296) ' +
+          'is read straight out of the bundle.'
+        : 'The light theme does have its own <code>cardBackground</code> (<code>#FAFAFA</code>), so ' +
+          'every value shown here — cardText #16215B, studyCardHeading #ACB1C0, headingAccent ' +
+          '#246BFD, headingGray #16215B, green #5DD8D0, textAccent #56DCDD, borderColor #DADFF2 — ' +
+          'is a direct extraction with no mapping step.');
+  }
+
+  function renderFaces() {
+    ['N', 'E', 'X'].forEach(function (k) {
+      document.getElementById('face-' + k).innerHTML = faces[k];
+    });
+  }
+
+  /* tap to play */
+  card.querySelectorAll('.third').forEach(function (el) {
+    el.addEventListener('click', function () {
+      var f = el.dataset.face;
+      el.classList.add('flash');
+      setTimeout(function () { el.classList.remove('flash'); }, 130);
+      var pop = el.querySelector('.play-pop'), toast = el.querySelector('.toast');
+      if (f === AUDIO_FACE) {
+        pop.classList.remove('go'); void pop.offsetWidth; pop.classList.add('go');
+      } else {
+        toast.classList.remove('go'); void toast.offsetWidth; toast.classList.add('go');
+      }
+    });
+  });
+
+  /* editor */
+  var editor = document.getElementById('cp-editor');
+  var edToggle = document.getElementById('ed-toggle');
+  var palTarget = 'N';
+  edToggle.addEventListener('click', function () {
+    var on = editor.style.display === 'none';
+    editor.style.display = on ? '' : 'none';
+    edToggle.classList.toggle('on', on);
+    edToggle.textContent = on ? 'Hide editor' : 'Edit HTML';
+    if (on) syncTextareas();
+  });
+  function syncTextareas() {
+    ['N', 'E', 'X'].forEach(function (k) { document.getElementById('ed-' + k).value = faces[k]; });
+  }
+  ['N', 'E', 'X'].forEach(function (k) {
+    var ta = document.getElementById('ed-' + k);
+    ta.addEventListener('input', function () { faces[k] = ta.value; renderFaces(); });
+    ta.addEventListener('focus', function () {
+      palTarget = k; document.getElementById('pal-target').textContent = k;
+    });
+  });
+  document.getElementById('ed-reset').addEventListener('click', function () {
+    faces = { N: MINTED.N, E: MINTED.E, X: MINTED.X };
+    syncTextareas(); renderFaces();
+  });
+
+  var SNIPPETS = [
+    ['center', '<div class="center">TEXT</div>'],
+    ['left', '<div class="left">TEXT</div>'],
+    ['b', '<b>TEXT</b>'],
+    ['i', '<i>TEXT</i>'],
+    ['teal', '<span class="teal">TEXT</span>'],
+    ['red', '<span class="red">TEXT</span>'],
+    ['green', '<span class="green">TEXT</span>'],
+    ['blue', '<span class="blue">TEXT</span>'],
+    ['dodgerBlue', '<span class="dodgerBlue">TEXT</span>'],
+    ['royalRed', '<span class="royalRed">TEXT</span>'],
+    ['blueViolet', '<span class="blueViolet">TEXT</span>'],
+    ['burntOrange', '<span class="burntOrange">TEXT</span>'],
+    ['lg', '<span class="lg">TEXT</span>'],
+    ['arialFontNormal', '<span class="arialFontNormal"> TEXT </span>'],
+    ['supWrap+sup', '<div class="supWrap">TEXT<div class="sup">j</div>(:)</div>'],
+    ['p', '<p></p>']
+  ];
+  var pal = document.getElementById('palette');
+  SNIPPETS.forEach(function (s) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.textContent = s[0]; b.title = s[1];
+    b.addEventListener('click', function () {
+      var ta = document.getElementById('ed-' + palTarget);
+      var start = ta.selectionStart, end = ta.selectionEnd;
+      var sel = ta.value.slice(start, end);
+      var text = sel ? s[1].replace('TEXT', sel) : s[1];
+      ta.setRangeText(text, start, end, 'end');
+      var ph = text.indexOf('TEXT');
+      if (!sel && ph !== -1) ta.setSelectionRange(start + ph, start + ph + 4);
+      ta.focus();
+      faces[palTarget] = ta.value;
+      renderFaces();
+    });
+    pal.appendChild(b);
+  });
+
+  /* class / tag map table */
+  var CLASS_MAP = [
+    { sel: 'div (base)', kind: 'tag', val: function () { return 'Poppins-Regular · ' + nz(16) + 'px · cardText'; }, sample: function (th) { return '<span style="font-size:' + Math.min(nz(16), 20) + 'px;color:' + th.cardText + '">Aa</span>'; } },
+    { sel: 'b', kind: 'tag', val: function (th) { return 'Poppins-Bold · headingAccent ' + th.headingAccent; }, sample: function (th) { return '<b style="color:' + th.headingAccent + '">Aa</b>'; } },
+    { sel: 'i', kind: 'tag', val: function () { return 'Poppins-Regular · italic + underline'; }, sample: function (th) { return '<i style="text-decoration:underline;color:' + th.cardText + '">Aa</i>'; } },
+    { sel: 'p', kind: 'tag', val: function () { return 'margin-top 0 · margin-bottom ' + nz(6) + 'px'; }, sample: function () { return '—'; } },
+    { sel: 'a', kind: 'tag', val: function (th) { return 'headingAccent ' + th.headingAccent; }, sample: function (th) { return '<span style="color:' + th.headingAccent + ';text-decoration:underline">Aa</span>'; } },
+    { sel: '.lg', kind: 'class', val: function () { return nz(28) + 'px'; }, sample: function (th) { return '<span style="font-size:' + Math.min(nz(28), 26) + 'px;color:' + th.cardText + '">Aa</span>'; } },
+    { sel: '.arialFont', kind: 'class · missing in hub', val: function () { return 'Arial · ' + nz(28) + 'px'; }, sample: function (th) { return '<span style="font-family:Arial;font-size:' + Math.min(nz(28), 26) + 'px;color:' + th.cardText + '">&#643;&#593;</span>'; } },
+    { sel: '.arialFontNormal', kind: 'class · missing in hub', val: function () { return 'Arial · ' + nz(18) + 'px'; }, sample: function (th) { return '<span style="font-family:Arial;font-size:' + Math.min(nz(18), 22) + 'px;color:' + th.cardText + '">&#643;&#593;</span>'; } },
+    { sel: '.supWrap', kind: 'class · missing in hub', val: function () { return 'flex row · align-items flex-start · justify center · marginH ' + nz(4) + 'px'; }, sample: function (th) { return '<span style="display:inline-flex;align-items:flex-start;color:' + th.cardText + '">k<span style="font-size:' + nz(11) + 'px;line-height:1">j</span>(:)</span>'; } },
+    { sel: '.italic', kind: 'class', val: function () { return 'Poppins-Italic'; }, sample: function (th) { return '<span style="font-style:italic;color:' + th.cardText + '">Aa</span>'; } },
+    { sel: '.boldItalic', kind: 'class', val: function () { return 'Poppins-BoldItalic'; }, sample: function (th) { return '<span style="font-style:italic;font-weight:700;color:' + th.cardText + '">Aa</span>'; } },
+    { sel: '.underline', kind: 'class', val: function () { return 'text-decoration: underline'; }, sample: function (th) { return '<span style="text-decoration:underline;color:' + th.cardText + '">Aa</span>'; } },
+    { sel: '.green', kind: 'class', val: function () { return '#5DD8D0'; }, sample: function () { return '<span style="color:#5DD8D0">Aa</span>'; } },
+    { sel: '.blue', kind: 'class', val: function (th) { return 'headingAccent ' + th.headingAccent; }, sample: function (th) { return '<span style="color:' + th.headingAccent + '">Aa</span>'; } },
+    { sel: '.darkBlue', kind: 'class', val: function (th) { return 'headingGray ' + th.headingGray; }, sample: function (th) { return '<span style="color:' + th.headingGray + '">Aa</span>'; } },
+    { sel: '.red', kind: 'class', val: function () { return 'red'; }, sample: function () { return '<span style="color:red">Aa</span>'; } },
+    { sel: '.teal', kind: 'class', val: function () { return '#00A4BF'; }, sample: function () { return '<span style="color:#00A4BF">Aa</span>'; } },
+    { sel: '.dodgerBlue', kind: 'class', val: function () { return '#0080ff'; }, sample: function () { return '<span style="color:#0080ff">Aa</span>'; } },
+    { sel: '.royalRed', kind: 'class', val: function () { return '#cc0066'; }, sample: function () { return '<span style="color:#cc0066">Aa</span>'; } },
+    { sel: '.blueViolet', kind: 'class', val: function () { return '#8030cf'; }, sample: function () { return '<span style="color:#8030cf">Aa</span>'; } },
+    { sel: '.burntOrange', kind: 'class', val: function () { return '#ff7733'; }, sample: function () { return '<span style="color:#ff7733">Aa</span>'; } },
+    { sel: '.center', kind: 'class', val: function () { return 'text-align center · Poppins-SemiBold'; }, sample: function (th) { return '<span style="font-weight:600;color:' + th.cardText + '">Aa</span>'; } },
+    { sel: '.left', kind: 'class', val: function () { return 'text-align left'; }, sample: function () { return '—'; } },
+    { sel: '.sup', kind: 'class', val: function () { return nz(11) + 'px'; }, sample: function (th) { return '<span style="font-size:' + nz(11) + 'px;color:' + th.cardText + '">Aa</span>'; } },
+    { sel: '.tipOfTheDay', kind: 'class', val: function () { return 'Poppins-SemiBold · #fff · ' + nz(20) + 'px'; }, sample: function () { return '<span style="font-weight:600;color:#fff;background:#1B1D21;padding:0 4px;border-radius:3px">Aa</span>'; } }
+  ];
+  function hexOf(s) { var m = s.match(/#[0-9A-Fa-f]{3,8}/); if (m) return m[0]; return /(^|\s)red(\s|$)/.test(s) ? 'red' : null; }
+  function renderClassTable() {
+    var th = THEMES[cardTheme];
+    var body = document.getElementById('smap-body');
+    body.innerHTML = '';
+    CLASS_MAP.forEach(function (row) {
+      var v = row.val(th), hex = hexOf(v);
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="k">' + row.sel + '</td>' +
+        '<td style="color:var(--fg-muted)">' + row.kind + '</td>' +
+        '<td class="v">' + (hex ? '<span class="swatch" style="background:' + hex + '"></span>' : '') + v + '</td>' +
+        '<td><span class="sample-chip" style="background:' + th.cardBg + '">' + row.sample(th) + '</span></td>';
+      body.appendChild(tr);
+    });
+  }
+
+  /* symbol catalogue */
+  var SYMBOLS = [
+    [642, 'LATIN SMALL LETTER S WITH HOOK', 15],
+    [618, 'LATIN LETTER SMALL CAPITAL I', 13],
+    [720, 'MODIFIER LETTER TRIANGULAR COLON', 11],
+    [649, 'LATIN SMALL LETTER U BAR', 11],
+    [593, 'LATIN SMALL LETTER ALPHA', 11],
+    [230, 'LATIN SMALL LETTER AE', 10],
+    [619, 'LATIN SMALL LETTER L WITH MIDDLE TILDE', 9],
+    [596, 'LATIN SMALL LETTER OPEN O', 9],
+    [231, 'LATIN SMALL LETTER C WITH CEDILLA', 8],
+    [655, 'LATIN LETTER SMALL CAPITAL Y', 7],
+    [650, 'LATIN SMALL LETTER UPSILON', 7],
+    [651, 'LATIN SMALL LETTER V WITH HOOK', 6],
+    [638, 'LATIN SMALL LETTER R WITH FISHHOOK', 6],
+    [643, 'LATIN SMALL LETTER ESH', 4],
+    [331, 'LATIN SMALL LETTER ENG', 4],
+    [809, 'COMBINING VERTICAL LINE BELOW', 3],
+    [627, 'LATIN SMALL LETTER N WITH RETROFLEX HOOK', 3],
+    [601, 'LATIN SMALL LETTER SCHWA', 3],
+    [339, 'LATIN SMALL LIGATURE OE', 3],
+    [621, 'LATIN SMALL LETTER L WITH RETROFLEX HOOK', 2],
+    [8943, 'MIDLINE HORIZONTAL ELLIPSIS', 1]
+  ];
+  var NORWEGIAN = [
+    [230, 'LATIN SMALL LETTER AE'], [248, 'LATIN SMALL LETTER O WITH STROKE'],
+    [229, 'LATIN SMALL LETTER A WITH RING ABOVE'], [198, 'LATIN CAPITAL LETTER AE'],
+    [216, 'LATIN CAPITAL LETTER O WITH STROKE'], [197, 'LATIN CAPITAL LETTER A WITH RING ABOVE']
+  ];
+  function symRow(code, name, count, note) {
+    var g = '&#' + code + ';';
+    var display = code === 809 ? '&#9676;' + g : g; // dotted circle carrier for the combining mark
+    return '<tr>' +
+      '<td class="k">&amp;#' + code + ';</td>' +
+      '<td class="glyph-cell">' + display + '</td>' +
+      '<td style="white-space:normal">' + name + '</td>' +
+      '<td class="glyph-cell g-pop">' + display + '</td>' +
+      '<td class="glyph-cell g-arial">' + display + '</td>' +
+      '<td>' + (count !== null ? '<span class="cnt-pill">' + count + '</span>' : note) + '</td>' +
+      '</tr>';
+  }
+  function renderSymbolTable() {
+    var body = document.getElementById('sym-body');
+    var html = '<tr class="grouphead"><td colspan="6">IPA and phonetic marks — need arialFont / arialFontNormal</td></tr>';
+    SYMBOLS.forEach(function (s) { html += symRow(s[0], s[1], s[2], null); });
+    html += '<tr class="grouphead"><td colspan="6">Norwegian letters — render in Poppins, no font switch needed</td></tr>';
+    NORWEGIAN.forEach(function (s) { html += symRow(s[0], s[1], null, '<span style="color:var(--fg-faint)">no switch</span>'); });
+    body.innerHTML = html;
+  }
+
+  document.getElementById('cat-tabs').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    this.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
+    document.getElementById('cat-classes').style.display = b.dataset.cat === 'classes' ? '' : 'none';
+    document.getElementById('cat-symbols').style.display = b.dataset.cat === 'symbols' ? '' : 'none';
+  });
+
+  document.getElementById('cp-width').addEventListener('change', function (e) {
+    var parts = e.target.value.split('x');
+    deviceWidth = parseInt(parts[0], 10); deviceHeight = parseInt(parts[1], 10);
+    applyGeometry(); renderClassTable();
+  });
+  document.getElementById('cp-theme').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    cardTheme = b.dataset.t;
+    this.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
+    applyGeometry(); renderClassTable();
+  });
+
+  renderFaces();
+  applyGeometry();
+  renderClassTable();
+  renderSymbolTable();
+  syncTextareas();
+})();
+</script>
