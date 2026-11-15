@@ -96,8 +96,15 @@ device-facing response byte for byte.
 ### Stabbur merging & dict.cc translations
 projects: stabbur, smia
 
+[ux] triage should be possible to do for any filter (only those missing audio, only those matching some query text, only those having PoS this and status this)
+[ux] notes list going out of bounds, make status and audio much smaller. Make pagination.
+[ux] convenient phone portrait display for stabbur
+[ux] search by text in audio of stabbur to attach to a different note.
+[ux] stabbur similar notes i should be able to go to that note
+[ux] ipa should be additive when i say "use"
 [ux] stabbur ignore variety field do something, can't se anything there
-[ux] merging removes everything not saved,also mergingg should add context add translation, not replace them.
+[bug] smia dict_cc can't parse "do"  (en/et do | doen/doet | doer/do | doene/doa)
+[ux] merging removes everything not saved even if i didn't tell to merge those fields, should not remove,also merging should add context add translation always, not replace them. it should replace the audio and ipa if said so, inflections should be merged as tranlsations and context 
 [REHAUL] rethink dictcc parsing and stabbur displaying of translations. also dict_cc audios not everyone is present and stabbur when asking dict_cc should filter by PoS, because he picks the wrong PoS sometimes
 [UX] smia filmot link for multiword should search them in a quotes: https://filmot.com/search/%22fastsatt%20av%22/1?lang=no&hideDeleted=1&gridView=1&
 
