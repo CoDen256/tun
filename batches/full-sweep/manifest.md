@@ -19,7 +19,7 @@ All other packages are parallel-safe.
 | Device sync & userdata storage | pending |
 | Stabbur merging & dict.cc translations | pending |
 | Shadow studying mode | pending |
-| Calst/pygmalion audio consolidation | pending |
+| Calst/pygmalion audio consolidation | designed (smia: `calst-audio-union`) |
 
 ## Packages
 
@@ -62,6 +62,13 @@ projects: smia
 
 [IDEA] explore smia/providers/calst, we need to download all the audio files from the manifest, check whether pygmalion has exactly the same stuff 
 but is a subset of calst, combine them into one or extend pygmalion tts from all those 
+
+Designed 2026-11-15 → smia change `calst-audio-union`. Subset question answered during design: neither corpus
+contains the other (868/1,176 pygmalion files overlap; calst adds 7,573 Oslo_Normal files / 3,211 new words).
+Operator decisions: one combined provider under the existing `pygmalion` id; download and commit all files
+(~52 MB); /tts capped at 2 takes per (word, dialect) — presentation-only, all data imported. No UI, so no
+mockups. Deferred to builder (tier 2): take-numbering mechanics, existing-file recognition in the downloader,
+manifest provenance field details.
 
 ## Dropped / deferred
 
