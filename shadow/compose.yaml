@@ -69,14 +69,38 @@ services:
       # /app/libs) keeps the one spelling `pyservice.bootstrap` working in the
       # container and in a native venv (PYTHONPATH=../libs from here).
       PYTHONPATH: /libs
+      # Where the Opus masters and the chapter-chunk cache live, inside the
+      # named volume below. Used by exactly one project, so it is typed here
+      # and nowhere else (D151); audio.py's default matches for a native run.
+      SHADOW_AUDIO_DIR: /data/audio
     volumes:
-      # The ONLY mount, and it is read-only shared code. No audio volume,
-      # deliberately (zone-isolation task 3.4): shadow stores no audio at
-      # all — the shadowing page decodes the file in the browser and sends
-      # only segment boundaries (see db/models.py). phonexa's audio tree
-      # holds vowel samples, which shadow neither reads nor writes. One
-      # owner of the audio tree, one backup path.
+      # Read-only shared code. One relative import must resolve both in the
+      # repo and in the container.
       - ../libs:/libs:ro
+      # THE AUDIO VOLUME. This comment used to read "The ONLY mount, and it
+      # is read-only shared code. No audio volume, deliberately
+      # (zone-isolation task 3.4): shadow stores no audio at all". That was
+      # true until 2026-11-15 and is now REVERSED, deliberately and by the
+      # operator (shadow-studying-mode; see the new ADR row in
+      # docs/07-decisions.md and the annotation on D147).
+      #
+      # WHY the reversal: studying moved to the phone, and a browser that
+      # has to hold a multi-hour file locally cannot serve a phone — no File
+      # System Access API, no resume, no shared place in the book.
+      #
+      # WHY IT IS SAFE: what was originally reverted was server-side
+      # DECODING PER REQUEST. This volume holds ONE mono Opus master per
+      # book, transcoded once on upload, plus a derivable chapter-chunk
+      # cache cut by stream copy. Nothing is decoded per request and nothing
+      # is stored per sentence.
+      #
+      # WHAT IS STILL TRUE: the learner's recordings are never written here
+      # (no endpoint accepts them), phonexa's audio tree is still phonexa's
+      # alone, and THIS VOLUME IS DELIBERATELY NOT IN THE BACKUP SET —
+      # masters are multi-GB and re-uploadable, while the irreplaceable
+      # things (configs, boundaries, progress, cursor, transcripts) are rows
+      # in the `shadow` database, which backup/ already dumps.
+      - shadow_audio:/data/audio
     healthcheck:
       # Serving is not ready (zone-isolation). /ping still exists and still
       # returns 200 unconditionally — which is why it is NOT the probe: it
@@ -92,3 +116,10 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+# shadow's own data store, new with shadow-studying-mode. Named (not a bind)
+# so it is Docker's to manage, and NOT added to backup/'s mirror set — see
+# the long note on the mount above for why that is the right call and not an
+# oversight.
+volumes:
+  shadow_audio:
