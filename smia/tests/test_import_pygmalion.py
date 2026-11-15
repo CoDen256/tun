@@ -143,12 +143,17 @@ def test_bootstrap_runs_the_import_against_the_committed_manifest_only_when_empt
 
 
 def test_real_committed_corpus_imports_cleanly():
-    """The fetched corpus itself: every `ok` row's file exists and hashes right."""
+    """The fetched corpus itself: every `ok` row's file exists and hashes right.
+
+    `skipped == 1` is the one known exception (calst-audio-union
+    DECISIONS-MADE.md): the upstream server answers HTTP 200 with a
+    permanently empty body for one calst-sourced URL, so that single
+    manifest row can never reach `status: "ok"`."""
     counts = import_pygmalion.run("providers/pygmalion/audio/manifest.jsonl")
-    assert counts["mismatched"] == 0 and counts["skipped"] == 0
-    assert counts["imported"] == 1176
+    assert counts["mismatched"] == 0 and counts["skipped"] == 1
+    assert counts["imported"] == 5791
     with get_sessionmaker()() as db:
-        assert db.query(PygmalionAudio).count() == 1176
+        assert db.query(PygmalionAudio).count() == 5791
         assert {r.dialect for r in db.query(PygmalionAudio).all()} == {
             "Oslo", "Bergen", "Stavanger", "Trondheim", "Elverum", "Sandnessjøen", "Malm"
         }
