@@ -71,6 +71,53 @@ test("substantiv: article+sg_indef, sg_def, pl_def, pl_indef each on their own l
   assert.equal(project(note).N, '<div class="center">et hus<br>huset<br>husene<br>hus</div>');
 });
 
+// The indefinite article is stripped from the text before the inflection's
+// own article is prepended, so a note written either way yields one headword.
+// These assert the HEADWORD LINE only - deliberately, via `includes`, because
+// the full-render assertion above also trips on two unrelated pre-existing
+// bugs (an empty supWrap prefix, and pl_indef/pl_def emitted in the opposite
+// order). Coupling this behaviour to those would make it unfixable in
+// isolation.
+for (const [text, article, headword] of [
+  ["hus", "et", "et hus"],        // bare noun: the old code dropped the only
+  ["et hus", "et", "et hus"],     // word and rendered the article alone
+  ["en bil", "en", "en bil"],
+  ["ei jente", "ei", "ei jente"],
+  ["en stor bil", "en", "en stor bil"],  // only the article goes, not a modifier
+]) {
+  test(`substantiv headword: ${JSON.stringify(text)} + article ${JSON.stringify(article)} -> ${JSON.stringify(headword)}`, () => {
+    const note = fixtureNote({
+      type: "word",
+      pos: "substantiv",
+      text,
+      transcription: "",
+      inflections: { article, sg_indef: text, sg_def: "x", pl_indef: "y", pl_def: "z" },
+    });
+    assert.ok(
+      project(note).N.includes(`>${headword}<br>`),
+      `headword ${JSON.stringify(headword)} not found in ${project(note).N}`,
+    );
+  });
+}
+
+// A word that merely STARTS with en/ei/et is not an article. Without the
+// `(\s+|$)` anchor these would be mangled into "kel", "ter", "re".
+for (const word of ["enkel", "etter", "eiendom"]) {
+  test(`substantiv headword: ${JSON.stringify(word)} is not treated as an article`, () => {
+    const note = fixtureNote({
+      type: "word",
+      pos: "substantiv",
+      text: word,
+      transcription: "",
+      inflections: { article: "en", sg_indef: word, sg_def: "x", pl_indef: "y", pl_def: "z" },
+    });
+    assert.ok(
+      project(note).N.includes(`>en ${word}<br>`),
+      `expected "en ${word}" intact, got ${project(note).N}`,
+    );
+  });
+}
+
 test("adjektiv: positiv, nøytrum+flertall, komparativ+superlativ, each on their own line", () => {
   const note = fixtureNote({
     type: "word",

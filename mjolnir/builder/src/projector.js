@@ -12,8 +12,21 @@ function ensurePrefix(prefix, str) {
   return str.startsWith(prefix) ? str : prefix + str;
 }
 
-function dropFirstWord(str) {
-  return str.trimStart().replace(/^\S+\s*/, "");
+// Strip a Norwegian indefinite article, and ONLY that.
+//
+// Called once, to build a `substantiv` headword as
+// `article + dropIndefiniteArticle(text)`. The previous version dropped
+// whatever the first word happened to be, which is right for "en bil" ->
+// "bil" and silently destructive for a bare noun: "bil" -> "", so the
+// headword rendered as the article alone ("en") with the noun gone. Stabbur
+// notes carry both shapes, so both have to work.
+//
+// `(\s+|$)` is what keeps this honest - it anchors on a WORD, so "enkel",
+// "etter" and "eire" are untouched even though they start with these two
+// letters. Leading whitespace is trimmed first because note text is operator
+// input, not a normalised field.
+function dropIndefiniteArticle(str) {
+  return str.trimStart().replace(/^(en|ei|et)(\s+|$)/i, "");
 }
 
 
@@ -21,7 +34,7 @@ function wordInflectionLines(text, pos, inflections) {
   if (!inflections) return null;
   if (pos === "substantiv") {
     const { article, sg_indef, sg_def, pl_def, pl_indef } = inflections;
-    const headword = [article, dropFirstWord(text)].filter(Boolean).join(" ");
+    const headword = [article, dropIndefiniteArticle(text)].filter(Boolean).join(" ");
     return [headword, sg_def, pl_indef, pl_def].filter(Boolean);
   }
   if (pos === "adjektiv") {
