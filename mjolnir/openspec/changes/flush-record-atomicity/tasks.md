@@ -19,20 +19,17 @@
 
 ## 2. Settle the design
 
-- [ ] 2.1 Resolve the FK ordering problem in `design.md`:
-      `occurrence_shipments.build_id` references `publications.build_id`, so
-      shipments cannot be written before `writePublication`, yet the flush
-      that consumes them must happen before the bundle is built. Decide
-      between deferring the deletes, a single transaction covering
-      publication + shipments + deletes, or an intermediate claimed state.
-- [ ] 2.2 Decide how the chosen shape interacts with `pipeline.js`'s
-      current `pool`-per-query style — a transaction needs a single checked-out
-      client threaded through `flushDeck`, `flushShippable`,
-      `drainPendingOccurrences` and `recordShipments`.
-- [ ] 2.3 Confirm the guarantee holds for `SIGKILL`, not just thrown errors.
-      If the chosen design only cleans up in a `catch`, say so explicitly and
-      justify it — a compensating-cleanup design does not satisfy the
-      requirement as written.
+- [x] 2.1 Resolve the FK ordering problem in `design.md` — settled as
+      deferred deletes: selection at flush time, consumption applied in one
+      transaction with `writePublication` + `recordShipments` (D-FA1), which
+      COMMITs before `publish()` touches the OTA dir (D-FA2).
+- [x] 2.2 Decide how the chosen shape interacts with `pipeline.js`'s
+      current `pool`-per-query style — settled: only the final
+      consume-and-record span needs a single checked-out client; flush/drain
+      become read-only plan computation and stay pool-per-query (D-FA1).
+- [x] 2.3 Confirm the guarantee holds for `SIGKILL`, not just thrown errors —
+      it does: consumption is a single COMMIT, so a kill at any point either
+      consumed nothing or recorded everything (D-FA2's window analysis).
 
 ## 3. Implement
 
@@ -49,6 +46,21 @@
 - [ ] 4.1 Record the incident and the fix in `tun/docs/07-decisions.md` —
       the 2026-11-09 18:59:50 run, the 13 lost `E` occurrences
       (C30049–C30061), and the backup-derived repair.
-- [ ] 4.2 Consider a consistency check the operator console can run on
-      demand: cards with a shipped occurrence but no queued/staged/shipped
-      `E`, which is exactly the signature of this loss.
+- [ ] 4.2 Implement the integrity check (D-FA4, settled yes): every owed
+      occurrence in exactly one of shipped/staged/pending, no duplicate
+      `(card, letter)`, no shipped `E` with an unshipped own `A`. Surface it
+      as a banner on the builder page(s) that renders only when anomalies
+      exist, listing offending card ids.
+
+## 5. The D86 recovery-drain defect (D-FA3)
+
+- [ ] 5.1 Accumulate D86-recovered cards per deck and call `drainThenQueue`
+      once per deck after that deck's recovery staging completes — never per
+      card. Verify a card's `E` can no longer stage ahead of its own `A`.
+- [ ] 5.2 Migration: de-duplicate defensively, then add unique indexes on
+      `(card_id, letter)` for `staged_occurrences`, `pending_occurrences`
+      and `occurrence_shipments`.
+- [ ] 5.3 Regression test reproducing the b000040 fingerprint (many cards
+      recovered into a deck with a non-empty queue): assert no duplicate
+      shipments, no re-queued already-shipped `E`, and shipment order `A`
+      before `E` for every recovered card.

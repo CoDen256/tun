@@ -43,3 +43,44 @@ card are lost permanently.
 - **WHEN** the run fails before `recordShipments`
 - **THEN** that row SHALL still be queued at its pre-run `remaining` value,
   so the next run drains it again rather than dropping the occurrence
+
+#### Scenario: a crash between record and publish loses nothing and reuses no id
+- **GIVEN** a run whose consumption transaction has committed (publication
+  row, shipment rows, deletes) but whose `publish()` never ran
+- **WHEN** the next publish runs
+- **THEN** it SHALL use a fresh buildId (never the committed one with
+  different bytes), and its bundle SHALL contain every occurrence the
+  committed shipment rows recorded, because `replay` rebuilds from
+  `occurrence_shipments`
+
+## ADDED Requirements
+
+### Requirement: An occurrence ships exactly once, A before E
+The pipeline SHALL enforce uniqueness of `(card_id, letter)` across each of
+`staged_occurrences`, `pending_occurrences` and `occurrence_shipments` with
+database constraints, and the D86 recovery path SHALL drain the pending
+queue at most once per deck per run, after that deck's recovered `A`
+occurrences are staged.
+
+#### Scenario: mass recovery into a deck with a non-empty queue
+- **GIVEN** a deck recovering many cards via D86 while `pending_occurrences`
+  holds queued `E` rows
+- **WHEN** the run completes
+- **THEN** no `(card_id, letter)` SHALL appear twice in
+  `occurrence_shipments` or `staged_occurrences`
+- **AND** no already-drained `E` SHALL be re-queued
+- **AND** for every recovered card with both letters, its `A` SHALL precede
+  its `E` in shipment order
+
+### Requirement: Occurrence-ledger integrity is operator-visible
+The console SHALL surface an integrity check: every owed occurrence of every
+minted card exists in exactly one of shipped/staged/pending, with no
+duplicate `(card, letter)` and no shipped `E` whose own `A` is unshipped. A
+banner listing offending card ids SHALL render when and only when anomalies
+exist.
+
+#### Scenario: a duplicate row becomes visible
+- **GIVEN** a duplicate staged row inserted directly via SQL
+- **WHEN** the operator opens the builder page
+- **THEN** an integrity banner SHALL name that card id
+- **AND** removing the row SHALL make the banner disappear on reload
