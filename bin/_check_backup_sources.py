@@ -31,6 +31,7 @@ notes. Exit 0 always — the caller decides severity, exactly as
 _check_services.py does.
 """
 import pathlib
+import subprocess
 import re
 import sys
 
@@ -65,14 +66,33 @@ paths = sorted(set(re.findall(r'"(providers/[^"]+)"', text)))
 
 problems = []
 notes = []
+def is_tracked(path):
+    """Is this path committed to git? (not just sitting on disk)"""
+    try:
+        return subprocess.run(
+            ["git", "ls-files", "--error-unmatch", str(path)],
+            cwd=str(ROOT), capture_output=True, check=False,
+        ).returncode == 0
+    except OSError:
+        return False
+
+
 for rel in paths:
     # One entry is a glob (`providers/dict/*.txt` — dict.cc's dump filenames
     # are download tokens, not stable names, so bootstrap.py matches on each
     # file's own header line). "At least one match" is the right test there.
+    # TRACKED, not merely present on this filesystem. The claim under test is
+    # "the table is rebuildable from what the repository carries" - so a
+    # gitignored local download does not satisfy it, and treating it as if it
+    # did makes this check answer differently per machine. Found live: these
+    # archives sit untracked on the dev box, so the check reported them
+    # "now present" here while production genuinely cannot re-import the 9M
+    # rows they feed. A backup-policy check that is machine-dependent is worse
+    # than no check.
     if "*" in rel:
-        exists = any(PROVIDERS.glob(rel))
+        exists = any(is_tracked(m) for m in PROVIDERS.glob(rel))
     else:
-        exists = (PROVIDERS / rel).exists()
+        exists = is_tracked(PROVIDERS / rel)
     if exists and rel in ACKNOWLEDGED_MISSING:
         # Good news that invalidates a written claim. A note, not a failure:
         # adding a provider archive is a legitimate operator action and must

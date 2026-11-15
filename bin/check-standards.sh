@@ -194,7 +194,13 @@ if [ -n "$hits" ]; then bad "D153: dated ACTIVE change ids (openspec --change re
 else ok "D153: every ACTIVE change id is a bare slug (archives keep dated names by decision)"; fi
 
 # --- D152: no CI ------------------------------------------------------------
-hits=$(find . -path ./.git -prune -o -path '*/.github/workflows/*' -type f -print 2>/dev/null)
+# `node_modules` is pruned, not filtered after the fact. Third-party packages
+# ship their OWN `.github/workflows/` (fastq, color-parse and color-rgba all
+# do), so a plain scan turns red the moment anyone runs `npm install` in a
+# submodule - reporting a D152 violation that is not this repository's CI and
+# that no edit here can remove. D152 is about OUR pipelines.
+hits=$(find . -path ./.git -prune -o -name node_modules -prune \
+        -o -path '*/.github/workflows/*' -type f -print 2>/dev/null)
 if [ -n "$hits" ]; then bad "D152: a CI workflow exists:"; note "$hits"
 else ok "D152: no CI workflow"; fi
 
