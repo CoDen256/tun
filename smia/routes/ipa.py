@@ -28,6 +28,8 @@ from __future__ import annotations
 from flask import jsonify, request
 
 from cache import ProviderLookupError, fetch_by_id, input_hash, resource_id, run_lookup
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
 from db.models import LookupCache
 from db.session import session_scope
 from norwegian import query_variants, tokenize
@@ -66,11 +68,19 @@ def _post():
         except ProviderLookupError as exc:
             return jsonify({"error": str(exc)}), 502
 
-        row = db.get(LookupCache, rid)
-        if row is None:
-            db.add(LookupCache(id=rid, kind="ipa", provider=provider, input_hash=ihash, payload=result))
-        else:
-            row.payload = result
+        # Same upsert as cache.py, for the same reason: check-then-insert is a
+        # race, and two concurrent identical lookups made one of them 500 on
+        # `lookup_cache_pkey`. This route carries its OWN copy of the write
+        # (it predates cache.py's shared path), so fixing cache.py alone left
+        # /ipa still racing.
+        db.execute(
+            pg_insert(LookupCache.__table__)
+            .values(id=rid, kind="ipa", provider=provider, input_hash=ihash, payload=result)
+            .on_conflict_do_update(
+                index_elements=[LookupCache.__table__.c.id],
+                set_={"payload": result},
+            )
+        )
         db.commit()
 
         response = jsonify(result)

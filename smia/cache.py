@@ -11,6 +11,8 @@ from __future__ import annotations
 import hashlib
 import json
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
 import health
 from db.models import LookupCache
 from registry import registry
@@ -62,12 +64,26 @@ def run_lookup(db, kind: str, requested_provider: str | None, input_dict: dict, 
     health.record_success(db, kind, provider)
     payload = {"provider": provider, **result}
 
-    row = db.get(LookupCache, rid)
-    if row is None:
-        row = LookupCache(id=rid, kind=kind, provider=provider, input_hash=ihash, payload=payload)
-        db.add(row)
-    else:
-        row.payload = payload
+    # UPSERT, not check-then-insert. The previous shape was
+    # `db.get(...)` -> `db.add(...)`, which is a race with a loud failure
+    # mode: two concurrent identical lookups both miss the cache, both call
+    # the provider, and both insert. One commits, the other hits
+    # `lookup_cache_pkey` and raises IntegrityError -> HTTP 500.
+    #
+    # Found live from the browser extension (2026-11-15): the first hover on
+    # a word 500'd and the next one worked, because by then the row the
+    # losing request collided with was serving as a cache hit. "Fails once,
+    # then fine" is the signature.
+    #
+    # ON CONFLICT DO UPDATE also keeps force_refresh working: the row is
+    # replaced rather than skipped, which `DO NOTHING` would not do.
+    stmt = pg_insert(LookupCache.__table__).values(
+        id=rid, kind=kind, provider=provider, input_hash=ihash, payload=payload
+    ).on_conflict_do_update(
+        index_elements=[LookupCache.__table__.c.id],
+        set_={"payload": payload},
+    )
+    db.execute(stmt)
     db.commit()
 
     return payload, rid, False

@@ -13,34 +13,60 @@ import datetime
 
 from sqlalchemy import text
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
 from db.models import ProviderHealth
 
 
 def record_request(db, kind: str, provider: str) -> None:
-    row = db.query(ProviderHealth).filter_by(kind=kind, provider=provider).first()
-    if row is None:
-        row = ProviderHealth(kind=kind, provider=provider, requests_count=0, success_count=0, failure_count=0)
-        db.add(row)
-        db.flush()
-    row.requests_count += 1
+    # UPSERT, not query-then-insert. `uq_provider_health_kind_provider` makes
+    # the old shape a race with a 500 at the end of it, and this runs on EVERY
+    # lookup rather than only on a cache miss - so it is the more exposed of
+    # the two paths that had this bug. Counting is done in SQL
+    # (`requests_count + 1`) so two concurrent requests cannot both read the
+    # same value and write the same increment.
+    db.execute(
+        pg_insert(ProviderHealth.__table__)
+        .values(kind=kind, provider=provider, requests_count=1, success_count=0, failure_count=0)
+        .on_conflict_do_update(
+            constraint="uq_provider_health_kind_provider",
+            set_={"requests_count": ProviderHealth.__table__.c.requests_count + 1},
+        )
+    )
     db.commit()
 
 
 def record_success(db, kind: str, provider: str) -> None:
-    row = db.query(ProviderHealth).filter_by(kind=kind, provider=provider).first()
-    if row is not None:
-        row.success_count += 1
-        row.last_success_at = datetime.datetime.now(datetime.timezone.utc)
-        db.commit()
+    # Atomic increment. Read-modify-write lost counts under concurrency: two
+    # requests both read N and both write N+1.
+    db.execute(
+        ProviderHealth.__table__.update()
+        .where(
+            (ProviderHealth.__table__.c.kind == kind)
+            & (ProviderHealth.__table__.c.provider == provider)
+        )
+        .values(
+            success_count=ProviderHealth.__table__.c.success_count + 1,
+            last_success_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+    )
+    db.commit()
 
 
 def record_failure(db, kind: str, provider: str, message: str) -> None:
-    row = db.query(ProviderHealth).filter_by(kind=kind, provider=provider).first()
-    if row is not None:
-        row.failure_count += 1
-        row.last_failure_at = datetime.datetime.now(datetime.timezone.utc)
-        row.last_failure_message = message
-        db.commit()
+    db.execute(
+        ProviderHealth.__table__.update()
+        .where(
+            (ProviderHealth.__table__.c.kind == kind)
+            & (ProviderHealth.__table__.c.provider == provider)
+        )
+        .values(
+            failure_count=ProviderHealth.__table__.c.failure_count + 1,
+            last_failure_at=datetime.datetime.now(datetime.timezone.utc),
+            last_failure_message=message,
+        )
+    )
+    db.commit()
 
 
 def get_all(db) -> list[dict]:
