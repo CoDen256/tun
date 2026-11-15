@@ -9,11 +9,17 @@ cp .env.example .env          # optional: only AUDIO_BACKEND lives here
 docker compose up -d
 ```
 
-Starts Postgres 17 (`phonexa-postgres`) + the Flask app (`phonexa-backend`, `formanter.py`)
-on `127.0.0.1:5050`. The container applies pending Alembic migrations (`alembic upgrade
-head`) before it starts the server, so a fresh volume gets its schema with no manual step.
-Visit `http://localhost:5050`. The app, the database (`127.0.0.1:5432`) and Adminer are
+Starts the Flask app (`phonexa-backend`, `formanter.py`) on `127.0.0.1:5050`
+plus the shared cluster (`postgres`, `include:`d from `../postgres/`, its own
+loopback port `127.0.0.1:5439` — the per-project `phonexa-postgres` instance
+is gone, D155). The service binds its port immediately and runs Alembic in
+the background with retry (serve-before-migrate, D157), so a fresh volume
+gets its schema with no manual step and a database outage degrades pages
+instead of preventing boot. Visit `http://localhost:5050`. Everything is
 bound to loopback only.
+
+Standalone runs want the root env for the shared values:
+`docker compose --env-file ../.env up -d`.
 
 **No network to create.** One repository is one Compose project is one default network, so
 the `tun-shared` external network and the one-time `docker network create tun-shared` step
@@ -21,32 +27,32 @@ this file used to document (D98/D104) are gone — every service reaches every o
 service key, with nothing to set up. *(Corrected 2026-11-13, D150: the instruction was real
 while phonexa was its own repo; following it now creates an unused network.)*
 
-**Where configuration lives (D151).** `PHONEXA_POSTGRES_PASSWORD` is **not** in
-`phonexa/.env` any more: the backup service reads it too, so it lives in the
-**repository-root** `.env` and is typed nowhere else. It still defaults to `phonexa`, which
-is the literal the existing `phonexa_postgres_data` volume was initialised with — so
-standalone `docker compose up` here works with no root `.env` at all. `phonexa/.env` holds
-only phonexa-local values (`AUDIO_BACKEND`); `DATABASE_URL` and `SMIA_BASE_URL` are derived
-in `compose.yaml` and typed nowhere.
+**Where configuration lives (D151).** The database credential is the one
+cluster key, `POSTGRES_PASSWORD` in the **repository-root** `.env`, from
+which phonexa's role password is derived in compose
+(~~`PHONEXA_POSTGRES_PASSWORD`~~ is a retired name — it belonged to the
+per-project instance D155 removed, along with its `phonexa` default).
+`phonexa/.env` holds only phonexa-local values (`AUDIO_BACKEND`);
+`DATABASE_URL` is derived in `compose.yaml` and typed nowhere.
 
 **Host ports come from `compose.override.yaml`**, which Compose auto-loads only when you run
 from inside this directory. The unified stack publishes nothing but the gateway.
 
 - **Adminer** (dev only): `docker compose --profile dev up -d` → `http://localhost:8081`
-  (server `phonexa-postgres`). In the unified stack the shared Adminer replaces it.
+  (server `postgres`). In the unified stack the shared Adminer replaces it.
 - **Part of the Tun stack:** the repository-root `compose.yaml` `include:`s this file.
   Service and volume names are `phonexa-`-prefixed so they don't collide with the other
-  projects'; mjolnir's Caddy reaches `phonexa-backend` by service name on the project's
-  default network.
-- **Local volume note (PG 16 → 17):** the database moved to Postgres 17 on a *new* volume,
-  `phonexa_postgres_data`, which starts empty. An older local `phonexa_pgdata` volume (PG 16)
-  is left untouched and is no longer used — a 17 image cannot start on it. Audio keeps
-  using `phonexa_audio_data`, the same volume as before.
-- **Speech-to-text** for Shadowing's transcription comes from smia — see
-  `SMIA_BASE_URL`/`SMIA_AUTH_TOKEN` in `compose.yaml`. Neither is in any `.env.example`
-  any more (D151): the address is derived from smia's service key, and the token is shared
-  with smia so it lives in the repository-root `.env`. YouTube extraction needs `yt-dlp` +
-  `ffmpeg`, both in the Docker image.
+  projects'; the gateway (`grind/`) reaches `phonexa-backend` by service name on the
+  project's default network and gates `/phonexa/` with the operator credential.
+- **Audio volume:** `phonexa_audio_data`, the same volume as always, in the backup set
+  (D147). *(The per-project database volumes this bullet used to track —
+  `phonexa_postgres_data` and the older PG-16 `phonexa_pgdata` — are gone with the
+  consolidation; the data lives in the shared cluster's `phonexa` database now.)*
+- **Shadowing moved to `shadow/`** (zone-isolation): the practice page, its media,
+  segments, transcription — and the YouTube extraction (`yt-dlp` + `ffmpeg`) — are
+  `shadow-backend`'s now, at `/shadow/`. The sections below describing `shadow.html`
+  and its Settings entries are kept as the record of what was built, but the pages
+  they describe are served by shadow.
 
 ## Description
 

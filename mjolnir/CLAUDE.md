@@ -3,16 +3,22 @@
 ## mjolnir — part of the Tun ecosystem
 
 This directory owns **everything that knows the Mjølnir bundle format or talks
-to the device**: the bundle tool, the JS patch set, the native patch source, the
-APK rebuild pipeline, the builder, and the device-facing hub.
+to the device**: the bundle tool, the JS patch set, the native patch source,
+the APK rebuild pipeline, and the three services — the operator console
+(compose key `mjolnir-hub`), `mjolnir-builder`, and `mjolnir-sync` (the
+device-plane progress sync, split out of hub by D158). The gateway is NOT
+here any more — it moved to `grind/` (`unified-auth` §1); the OTA
+publish/verify scripts stay in `mjolnir/bin/`.
 
-Since **D150** mjolnir is not its own repository: it is the `mjolnir/` directory
-of the one `tun` repo. Sibling *directories* of the same repo — not sibling
-checkouts — are `docs/` (deployment + ecosystem docs), `stabbur/` (learning
-content), `smia/` (linguistics), `phonexa/` (phonetics lab),
-and `backup/` (the git-backup service). `hover-translate` is an EXTERNAL
-client in its own repository, not a directory here (D154).
-The root `CLAUDE.md` carries the ecosystem rules and the service standard.
+Since **D150** mjolnir is not its own repository: it is the `mjolnir/`
+directory of the one `tun` repo. Sibling *directories* of the same repo — not
+sibling checkouts — are `docs/` (ecosystem docs), `grind/` (the gateway),
+`stabbur/` (learning content), `smia/` (linguistics), `phonexa/` (phonetics
+lab), `shadow/` (shadowing), `postgres/` (the shared cluster), `libs/`
+(shared code), and `backup/` (the git-backup service). `hover-translate` is
+an EXTERNAL client in its own repository (D154), checked out at the repo root
+as a pinned submodule. The root `CLAUDE.md` carries the ecosystem rules and
+the service standard.
 
 **Cross-repo design, decisions, pitfalls and the roadmap live in
 `docs/` (at the repo root) — start at `README.md`, then `07-decisions.md`.**

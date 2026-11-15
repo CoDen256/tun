@@ -276,7 +276,7 @@ Rotation is one step **for the operator plane** and a device operation
 |---|---|
 | all seven operator zones | new password takes effect on the next gateway restart. Nothing else to edit — no hash, no per-service `.env` |
 | your browser | re-prompts. There is no logout button by design |
-| **the phone's progress sync** | **BREAKS, silently, until a new bundle is published.** |
+| **the phone's progress sync** | unaffected **if `SYNC_TOKEN` is pinned in `.env`** (7.1, the UPDATE above); with it unset, the fallback moves with the rotation and sync **BREAKS, silently** |
 
 **The hazard, stated plainly.** The device's `SYNC_TOKEN` is not merely
 *equal to* `OPERATOR_AUTH_TOKEN` — it is **baked into the JS bundle** at
@@ -287,9 +287,15 @@ and token only, and no JS-side reader for `config.json` exists. So:
 
 > **Rotating `OPERATOR_AUTH_TOKEN` requires assembling and publishing a NEW
 > OTA BUNDLE carrying the new token, and confirming the handset took it.
-> A `config.json` push does NOT fix it.** (P48; `unified-auth` 7.1 would give
-> the device its own value and end this coupling — it is optional, device-
-> coordinated, and not done.)
+> A `config.json` push does NOT fix it.** (P48.)
+>
+> *(Corrected 2026-11-14 — `unified-auth` 7.1 is DONE: the sync gate reads
+> its own `SYNC_TOKEN`, so the bold sentence above now applies to changing
+> the DEVICE's credential, not to rotating the operator password. See the
+> UPDATE above. The one precondition: `SYNC_TOKEN` must be pinned in `.env`
+> to the value the handset carries before the operator value moves —
+> otherwise the compose-level fallback to `OPERATOR_AUTH_TOKEN` moves the
+> gate with it, and the hazard below is live again.)*
 
 There is no error message for getting this wrong. The gateway answers the
 device's sync with a `302` and the phone's progress silently stops being
@@ -588,13 +594,20 @@ part-way (verified: `ERROR: relation "settings" already exists`, `psql` exit
 already applied.
 
 ```sh
-# target must be empty — recreate the database if it is not
-docker compose exec phonexa-postgres \
-    psql -U phonexa -d postgres -c 'DROP DATABASE phonexa' -c 'CREATE DATABASE phonexa'
-# load schema + data + alembic_version in one pass
-docker compose exec -T phonexa-postgres \
+# target must be empty — recreate the database if it is not. DROP/CREATE need
+# the cluster admin (the phonexa role owns only its own database's objects);
+# postgres-init re-grants on the next boot, or re-run its bootstrap by hand.
+docker compose exec postgres \
+    psql -U tunadmin -d postgres -c 'DROP DATABASE phonexa' -c 'CREATE DATABASE phonexa OWNER phonexa'
+# load schema + data + alembic_version in one pass, AS THE SERVICE ROLE (P42:
+# restoring as the superuser leaves objects it owns, and the service then
+# fails on migration after connecting fine)
+docker compose exec -T postgres \
     psql -v ON_ERROR_STOP=1 -U phonexa phonexa < phonexa.sql
 ```
+
+*(These commands addressed `phonexa-postgres` until the consolidation; the
+cluster service is `postgres` now, and the admin role is `tunadmin`.)*
 
 `ON_ERROR_STOP=1` is not optional: without it `psql` reports success while
 having skipped every failed statement. Afterwards `alembic upgrade head` is a

@@ -111,16 +111,18 @@ circumstance.
   into the repository it is pushing to
 
 ### Requirement: The backup service connects to each database over the network, not by entering its container
-The system SHALL connect to `mjolnir-postgres` and `stabbur-postgres` as a
-separate service on the same network, authenticating with each database's
-existing password, rather than executing commands inside either
-database's own container.
+The system SHALL connect to the database server as a separate service on the
+same network, authenticating with each covered database's role password,
+rather than executing commands inside the database's own container.
+*(Written against the per-project instances `mjolnir-postgres` and
+`stabbur-postgres`; since D155 the server is the one shared `postgres`
+cluster and the role passwords are derived from `POSTGRES_PASSWORD` — the
+network-not-exec obligation is unchanged.)*
 
 #### Scenario: Dumping a database
-- **WHEN** the backup service dumps `mjolnir-postgres` or
-  `stabbur-postgres`
+- **WHEN** the backup service dumps a covered database
 - **THEN** it does so via a network connection authenticated with that
-  database's existing password, not via `docker exec`
+  database's role password, not via `docker exec`
 
 ### Requirement: The backup service does not have access to the Docker socket
 The system SHALL NOT mount the Docker socket into the backup service's

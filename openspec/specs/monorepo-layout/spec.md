@@ -84,7 +84,7 @@ service's compose key, its network hostname and its URL prefix are derivable
 from the project name rather than being independently chosen.
 
 A project's services are `<project>-<role>` (`stabbur-backend`,
-`stabbur-postgres`); its URL prefix is `/<project>/`. The compose key and the
+`mjolnir-sync`); its URL prefix is `/<project>/`. The compose key and the
 network hostname are always the same string. The prefix and the database name
 are deliberately NOT required to equal it: `/stabbur/` is served by
 `stabbur-backend`, and mjolnir's database is historically named `postgres`.

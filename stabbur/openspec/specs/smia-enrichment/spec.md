@@ -23,8 +23,9 @@ the generic proxy.
 - **WHEN** the browser calls the stabbur enrichment endpoint for a given kind
   (e.g. `ipa`) with a provider and the kind's input fields
 - **THEN** stabbur forwards the equivalent request to smia's `POST /<kind>`
-  with its own `SMIA_AUTH_TOKEN`, and returns smia's response body to the
-  browser unchanged
+  with its own service credential (`INTERNAL_TOKEN` since `unified-auth` 4.6;
+  written as `SMIA_AUTH_TOKEN`, now a retired name), and returns smia's
+  response body to the browser unchanged
 
 #### Scenario: Operator requests example sentences
 - **WHEN** the browser calls the stabbur enrichment endpoint for `examples`

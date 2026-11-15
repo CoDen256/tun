@@ -26,9 +26,9 @@
 > `compose.yaml`/`caddy/Caddyfile` layout (D84 — which moved the deployable
 > stack here from `tun`; previously verified 2026-10-20 under the old
 > `tun`-owned layout). D150 has since made `tun` the one repository again,
-> but these files did not move: the gateway and the OTA pipeline still live
-> here and the root `compose.yaml` only `include:`s them. Re-run
-> `bin/ota-verify.sh` after any Caddy change.
+> and `unified-auth` §1 then moved the gateway to `grind/` with every device
+> response byte-compared before and after; the OTA *scripts* stay in
+> `mjolnir/bin/`. Re-run `bin/ota-verify.sh` after any Caddy change.
 >
 > **The DNS record must stay grey-clouded (DNS only), never proxied (D57).**
 > A CDN in the body path re-encodes responses and breaks D49's sha256
@@ -40,15 +40,18 @@ stack. **Correction to this file's original claim** that the stack is
 "defined entirely in this repo (D84, superseding D75/D81)" and that `tun`
 "ships no deployable artifacts at all": D150 merged the six repositories into
 `tun`, which owns the root `compose.yaml`, the shared Adminer and the `backup`
-service. mjolnir still owns the **only** Caddy and the whole device-facing
-path; it is no longer the whole deployment.
+service. mjolnir owns the bundle pipeline and the device-facing *content*;
+the gateway that serves it is `grind/`'s (a second correction — "mjolnir
+still owns the only Caddy" was true until `unified-auth` §1).
 
-**Every device-facing path is a static file (D55)**, served by Caddy
-directly off disk — `hub`/`builder` never sit in front of the bundle or
-audio blobs. `docker compose up -d` at the repository root brings up the whole
-ecosystem; mjolnir's share of it is `caddy`, `mjolnir-postgres`, and
-`mjolnir-hub`'s/`mjolnir-builder`'s own HTTP servers (the operator console,
-`hub-builder-operator-console`). No profiles — one command.
+**Every device-facing path is a static file (D55)**, served by the gateway
+directly off disk — `hub`/`builder` never sit in front of the bundle or audio
+blobs; device progress sync is `mjolnir-sync`, its own process (D158).
+`docker compose up -d` at the repository root brings up the whole ecosystem;
+mjolnir's share of it is `mjolnir-hub` (the operator console),
+`mjolnir-builder` and `mjolnir-sync`, all on the shared `postgres` cluster's
+`mjolnir` database (D155 — `mjolnir-postgres` is gone). No profiles — one
+command.
 
 **No node on the VPS host itself.** `hub` and `builder` each ship their own
 `Dockerfile` (node:22-alpine), bind-mounting this checkout so `git pull` +
@@ -71,7 +74,7 @@ What mjolnir needs from the configuration, all of it in the **root** `.env`
 | `TUN_SITE_ADDRESS` | Caddy's site block. Bare hostname ⇒ automatic HTTPS; `:8080` for local plain HTTP |
 | `TUN_PUBLIC_BASE` | the browser-facing base hub builds links from |
 | `OTA_TOKEN` | the device plane's bearer token on `/ota/*` |
-| `MJOLNIR_POSTGRES_PASSWORD` | **renamed** from this file's old `POSTGRES_PASSWORD` — one key per database (see the data hazard in root §3), required, no default |
+| `POSTGRES_PASSWORD` | the ONE cluster key (D155); mjolnir's role password is derived from it in compose. ~~`MJOLNIR_POSTGRES_PASSWORD`~~ is a **retired name** — it belonged to the per-project instance the consolidation removed (root `DEPLOY.md` §3) |
 | `OPERATOR_AUTH_TOKEN` | ~~hub's and builder's own login (D-H6)~~ — **superseded by D159/D160.** hub and builder have no login of their own any more; this is the single operator-plane credential, enforced by `basic_auth` in the gateway (`grind/`) for all seven operator zones. hub and builder only check the gateway's `X-Tun-Operator` marker. Still required: see root `DEPLOY.md` §4, including the rotation hazard |
 | `INTERNAL_TOKEN` | builder's and hub's outbound calls into stabbur's API. ~~`STABBUR_AUTH_TOKEN`~~ is a **retired name** (D159) |
 
@@ -297,9 +300,10 @@ tun/                   the one clone (root compose.yaml, root .env, docs/)
 
 Two things, and the second is the one that gets forgotten:
 
-1. The **root** `.env` (and `mjolnir/.env`, if you set the phonexa hash) —
-   losing `OTA_TOKEN` means a device running the baked-in bootstrap token can
-   no longer fetch. Keep it somewhere outside the VPS.
+1. The **root** `.env` — losing `OTA_TOKEN` means a device running the
+   baked-in bootstrap token can no longer fetch. Keep it somewhere outside
+   the VPS. (`mjolnir/.env` holds nothing worth backing up; the phonexa hash
+   it used to carry was deleted by `unified-auth` 3.2/3.3.)
 2. `data/` — blobs are content-addressed, so `rsync -a` is naturally
    incremental and never rewrites an existing file.
 
@@ -309,7 +313,8 @@ from the repository root — holds the TLS certificates. Losing it is survivable
 (Caddy re-issues) but counts against Let's Encrypt rate limits, so avoid
 `docker compose down -v`.
 
-3. `pg_dump` of the `mjolnir-postgres` service's `postgres` database — this is
+3. `pg_dump` of the shared cluster's `mjolnir` database (the per-project
+   `mjolnir-postgres` instance is gone — D155) — this is
    hub's and builder's entire ledger (decks, card_slots, card_content,
    publications, logic_bundles, pending_occurrences, occurrence_shipments,
    builder_config, **userdata, userdata_history** — progress-sync-shim's
@@ -327,9 +332,10 @@ script + `cron` entry) automates all three — plus the equivalent for
 `stabbur`'s and `phonexa`'s own Postgres and file stores, which had no backup
 story of any kind before it — as one more service in the root
 `compose.yaml`: `docker compose up` and nothing else, no host-level step.
-It reads mjolnir's password as `MJOLNIR_POSTGRES_PASSWORD` from the root
-`.env`. smia is **not** backed up yet; that comes with the planned
-`postgres-consolidation`. See `../DEPLOY.md` §7, `../backup/entrypoint.sh`
+It derives every role password from the one `POSTGRES_PASSWORD` (D155;
+`MJOLNIR_POSTGRES_PASSWORD` is a retired name). smia is **deliberately not
+backed up** (operator decision 2026-11-14 — caches and imported corpora
+only). See `../DEPLOY.md` §7, `../backup/entrypoint.sh`
 and `../openspec/changes/archive/2026-11-04-compose-backup-service/design.md`
 for the full reasoning (notably: no encryption, by informed choice — the data is
 personal learning content, not credentials; no Docker socket mount —
@@ -344,10 +350,10 @@ connects over the network with a real password instead).
   the catch-all 404 instead of reaching the new route).
 - Caddy serves `data/` **read-only**. Publishing writes from the host, so a
   compromised Caddy cannot alter what the device fetches.
-- `mjolnir-postgres` is deliberately not published to the host at all (no
-  `compose.override.yaml` here, unlike stabbur/smia/phonexa); only sibling
-  containers reach it — now by service name on the one default network, with
-  no network configuration (D150).
+- The database (the shared `postgres` cluster since D155) publishes only a
+  loopback port, from `postgres/compose.override.yaml` (`127.0.0.1:5439`);
+  services reach it by name on the one default network, with no network
+  configuration (D150).
 - `mjolnir-hub`/`mjolnir-builder` bind-mount **this directory** (not the
   repository root) at `/app`, rather than copying it in — a
   `git pull` plus `docker compose restart mjolnir-hub mjolnir-builder` picks

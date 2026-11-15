@@ -15,7 +15,7 @@ The system SHALL transcribe a Shadowing sentence's audio by calling smia's speec
 - **THEN** they contain no speech-recognition model or its runtime (no `faster-whisper`)
 
 ### Requirement: smia credentials stay server-side
-The smia address and bearer token SHALL be configured only through the backend's environment (`SMIA_BASE_URL`, `SMIA_AUTH_TOKEN`) and SHALL NOT be sent to, stored by, or readable from the browser.
+The smia address and bearer token SHALL be configured only through the backend's environment and SHALL NOT be sent to, stored by, or readable from the browser. *(Written as `SMIA_BASE_URL`/`SMIA_AUTH_TOKEN`; since `unified-auth` 4.6 the credential is `INTERNAL_TOKEN` and the address is derived in compose — and since zone-isolation the backend serving this capability is `shadow-backend`, not phonexa.)*
 
 #### Scenario: Inspecting browser-visible state
 - **WHEN** a page, API response or stored setting visible to the browser is inspected
@@ -40,7 +40,7 @@ When transcription cannot be completed the system SHALL return a descriptive err
 - **THEN** the transcription request fails with a "smia not reachable" message and Shadowing otherwise keeps working
 
 #### Scenario: Not configured
-- **WHEN** `SMIA_AUTH_TOKEN` is unset on the backend
+- **WHEN** the internal token (`INTERNAL_TOKEN`; was `SMIA_AUTH_TOKEN`) is unset on the backend
 - **THEN** transcription fails with a message saying transcription is not configured
 
 #### Scenario: Provider error
