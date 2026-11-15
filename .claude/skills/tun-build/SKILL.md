@@ -1,13 +1,18 @@
 ---
 name: tun-build
-description: Build orchestrator for ONE designed package of a tun batch (docs/15-agentic-workflow.md, D161). Use when the operator says "/tun-build batch <slug>, package <name>". Drives subagents through apply → test → review → fix → sync → archive with no operator involvement, then appends to the batch's OPERATOR-CHECKLIST.md and DECISIONS-MADE.md.
+description: Build orchestrator for ONE designed package of a tun batch (docs/15-agentic-workflow.md, D161). Use when the operator says "/tun-build batch <slug>, package <name>". Drives subagents through apply → test → review → fix → archive (which subsumes the spec sync) with no operator involvement, then appends to the batch's OPERATOR-CHECKLIST.md and DECISIONS-MADE.md.
 ---
 
 # tun-build — build orchestrator for one package
 
-You orchestrate the complete implementation of exactly one designed package.
-The operator has already made every design decision; you will not ask them
-anything. Your inputs, read in this order:
+You orchestrate the complete implementation of exactly one designed package:
+**apply + test + review + archive, scoped to the whole package instead of
+one feature.** The opsx skills are your pipeline steps — `opsx:apply` to
+implement, `opsx:archive` to close (it subsumes the spec sync) — with the
+test and review stages, which opsx does not provide, in between. The
+operator has already made every design decision; you will not ask them
+anything, and where an opsx skill would normally prompt the user, YOU answer
+as the orchestrator. Your inputs, read in this order:
 
 1. `docs/15-agentic-workflow.md` — the workflow and the decision policy
 2. `batches/<slug>/manifest.md` — your package's change id(s), dependency
@@ -69,7 +74,10 @@ operator mid-build; blocked items are surfaced once, at the end.
 ### 5. Close
 Only when every non-blocked criterion is PASS and review findings are
 resolved:
-1. `opsx:sync`, then `opsx:archive`. Commit after each.
+1. `opsx:archive` for each of the package's changes, answering its sync
+   prompt with "sync now" yourself (archive runs the delta-spec sync; never
+   archive without syncing, and no separate `opsx:sync` step is needed).
+   Commit after each archive.
 2. Append the package's section to `batches/<slug>/OPERATOR-CHECKLIST.md`:
    - deploy notes beyond standard pull/build/restart, if any
    - **every one-time migration as runnable steps** — if the change touched

@@ -15,7 +15,7 @@ Quick Log ──► /tun-triage ──► /tun-design (per package, fresh sessio
                                    │  writes change folders + acceptance criteria
                                    ▼
                               /tun-build (per package, fresh session, one agent)
-                                   │  apply → test → review → sync → archive
+                                   │  apply → test → review → archive(+sync)
                                    ▼
                               OPERATOR-CHECKLIST.md ──► operator deploys & tests live
                                                               │
@@ -47,10 +47,14 @@ Opening a batch creates `batches/<slug>/` from the template in
 
 ## Phase 2 — Design (`/tun-design <batch> <package>`), one fresh session per package
 
-A discussion between the operator and one agent about **one package only**.
-The agent asks about UI and big technical direction (data model, push vs pull,
-what to drop) — never frameworks or code detail. Subagents produce HTML
-mockups published as Artifacts for the operator to click through.
+**Explore + propose, scoped to the package instead of one feature.** A
+discussion between the operator and one agent about **one package only**,
+conducted in the `opsx:explore` stance but under this phase's contract
+(fixed item list, mandatory outputs, defined ending); resolved items are
+captured via `opsx:propose` — capture is not optional here. The agent asks
+about UI and big technical direction (data model, push vs pull, what to
+drop) — never frameworks or code detail. Subagents produce HTML mockups
+published as Artifacts for the operator to click through.
 
 Non-negotiable outputs, written to disk **as each item is resolved**, not at
 the session's end:
@@ -85,9 +89,10 @@ change folder, then drives subagents through:
    the third failure the item is marked `BLOCKED` in the manifest with a
    one-line reason, and the orchestrator moves on. Blocked items are surfaced
    to the operator at the end, never mid-flight.
-5. **Close** — `opsx:sync` + `opsx:archive`, append to the batch's
-   `OPERATOR-CHECKLIST.md` and `DECISIONS-MADE.md`, set the manifest row to
-   `archived`.
+5. **Close** — `opsx:archive` per change, the orchestrator answering its
+   sync prompt with "sync now" (archive subsumes the delta-spec sync; never
+   archive without syncing). Append to the batch's `OPERATOR-CHECKLIST.md`
+   and `DECISIONS-MADE.md`, set the manifest row to `archived`.
 
 ### The decision policy (what the orchestrator does when something was not decided)
 

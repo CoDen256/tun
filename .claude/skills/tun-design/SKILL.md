@@ -15,10 +15,18 @@ order, before saying anything to the operator:
 
 ## What this session is
 
-A structured conversation with the operator about **UI and big technical
-direction only**: what the screens look like, what data model / table backs
-it, pull vs push, what to drop. Never frameworks, code structure, or
-implementation detail — that is the build orchestrator's problem.
+**Explore + propose, scoped to the whole package instead of one feature.**
+Conduct the conversation in the `opsx:explore` stance (read that skill:
+curious, visual, grounded in the codebase, challenge assumptions) — but
+wrapped in this phase's contract: a fixed item list to walk, mandatory
+written outputs, and a defined ending. When items resolve, capture them via
+the `opsx:propose` flow; unlike plain explore mode, capturing is NOT
+optional here.
+
+The discussion covers **UI and big technical direction only**: what the
+screens look like, what data model / table backs it, pull vs push, what to
+drop. Never frameworks, code structure, or implementation detail — that is
+the build orchestrator's problem.
 
 Rules of the conversation:
 - Work item by item through the package. Use AskUserQuestion for genuine
@@ -40,7 +48,8 @@ The session must be resumable from disk at any moment. As EACH item is
 resolved:
 
 1. Fold it into the package's OpenSpec change (create the change on the first
-   resolved item, via the opsx flow; bare-slug id, D153). Placement: a
+   resolved item via `opsx:propose`, then extend its artifacts as further
+   items resolve; bare-slug id, D153). Placement: a
    single-project package's change lives in that project's `openspec/`; a
    package spanning projects gets one change per touched project, or one
    root-`openspec/` change if the work is genuinely cross-cutting rather
