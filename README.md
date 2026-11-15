@@ -8,7 +8,7 @@ spaced-repetition card with real audio in a modded Mjølnir app — with every
 step in between inspectable and editable by one operator.
 
 Since **D150** this is a monorepo: the six former repositories (`mjolnir`,
-`stabbur`, `smia`, `phonexa` and `tun` itself) are merged
+`stabbur`, `smia`, `phonexa`, `backup` and `tun` itself) are merged
 here as top-level directories, with all history reachable — no SHA was
 rewritten, and every former head commit is an ancestor of `HEAD`.
 
@@ -34,17 +34,22 @@ Each directory owns its own `compose.yaml`, which the root `compose.yaml`
 |---|---|
 | `docs/` | cross-project design: decisions (ADRs), pitfalls, open questions, roadmap, the frozen OTA contract |
 | `openspec/` | ecosystem-level OpenSpec changes (each project has its own too) |
-| `mjolnir/` | everything that knows the Mjølnir bundle format or talks to the device: bundle tool, JS + native patches, APK pipeline, builder, hub, `docs/findings.md` — plus the gateway (`caddy/Caddyfile`) and the OTA scripts |
+| `grind/` | the gateway: TLS, path routing, the one operator `basic_auth` gate, the status page, and the off-disk device plane (`/ota/*`, `/blob/*`, `/audio-manifest/*`) |
+| `mjolnir/` | everything that knows the Mjølnir bundle format or talks to the device: bundle tool, JS + native patches, APK pipeline, builder, console (hub), device sync, `docs/findings.md`, and the OTA scripts (`mjolnir/bin/`) |
 | `stabbur/` | learning content: captures, notes, enrichment, triage UI, audio blobs |
 | `smia/` | linguistics providers: inflect / ipa / tts / stt / translate |
 | `phonexa/` | phonetics lab: vowels, consonants, formants, live speech |
-| `backup/` | the git-backup service: a `pg_dump` per covered database (mjolnir, stabbur, phonexa — smia not yet) plus blob and audio mirrors |
-| `bin/` | `check-standards.sh`, the mechanical enforcement of D150–D153 |
+| `shadow/` | shadowing: media, segments, transcription (split out of phonexa) |
+| `postgres/` | the one shared Postgres 17 cluster: five databases, five roles (D155/D156) |
+| `libs/` | code shared across projects: auth, prefix handling, layout, bootstrap |
+| `backup/` | the git-backup service: a `pg_dump` per covered database (mjolnir, stabbur, phonexa, shadow — smia deliberately excluded, see `DEPLOY.md` §7) plus blob and audio mirrors |
+| `bin/` | `check-standards.sh` and the device-plane probes, the mechanical enforcement of D150–D153 |
+| `batches/` | the agentic batch workflow's per-batch artifacts (D161, `docs/15-agentic-workflow.md`) |
 
-`grind/` (the gateway, once Caddy moves out of `mjolnir/`), `shadow/`,
-`postgres/` (one shared cluster) and `libs/` (shared code) are **planned, not
-present** — they arrive with the `zone-isolation`,
-`postgres-consolidation` and `unified-auth` changes.
+Two **git submodules** sit beside them: `hover-translate/` (the capture
+extension — still an external client in its own repository, D154; the
+submodule is just a pinned checkout) and `tun-backup/` (the backup DATA repo;
+its pinned SHA is stale by design, the backup service commits to it daily).
 
 ## Deploying
 
@@ -53,6 +58,7 @@ layout and no network to create by hand any more: one repository is one
 Compose project is one default network.
 
 ```sh
+git clone --recurse-submodules <url> tun && cd tun
 cp .env.example .env     # then fill it in
 docker compose up -d
 ```
@@ -81,6 +87,9 @@ patch is built, signed, installed and **proven on device** — `asset` →
 [`docs/12-p2-results.md`](docs/12-p2-results.md) records exactly what was
 tested and what is still unproven.
 
-**From here, every change to the app is a file on the server.** P4's pipeline
-(`builder` + notes) is built and archived but not yet deployed;
+**The monorepo restructure is done and in production** (cutover 2026-11-14):
+one repo, one compose project, one Postgres cluster, one operator credential.
+[`docs/14-restructure-handoff.md`](docs/14-restructure-handoff.md) is the
+closed record. Day-to-day work now flows through the batch workflow (D161,
+[`docs/15-agentic-workflow.md`](docs/15-agentic-workflow.md));
 [`docs/10-roadmap.md`](docs/10-roadmap.md) holds what to do next.

@@ -8,9 +8,10 @@ directory here. One clone, one `docker compose up`, one Claude Code session.
 **Start at `docs/README.md`. Read `docs/07-decisions.md` before proposing
 anything — do not re-derive settled decisions.**
 
-**On the `monorepo` branch, read `docs/14-restructure-handoff.md` first.** The
-restructure is mid-flight across four OpenSpec changes; that file holds the
-state, the operator decisions already taken, and the ordered next step.
+**The monorepo restructure is DONE and deployed** — the cutover to production
+ran 2026-11-14 and all four restructure changes are archived.
+`docs/14-restructure-handoff.md` is the closed historical record of it (and of
+pitfalls P41–P68, which are still live lessons).
 
 | directory | owns |
 |---|---|
@@ -25,16 +26,14 @@ state, the operator decisions already taken, and the ordered next step.
 | `backup/` | the git-backup service |
 | `libs/` | code shared across projects: auth, prefix handling, layout, bootstrap |
 
-`hover-translate` is **not** in this repository (D154). It is a fork, a
-standalone browser extension, and never deployed — it lives in its own repo
-and reaches `smia` and `stabbur` across origins like any external client.
-Every reference to it inside `smia`, `stabbur` and `mjolnir` is still correct.
+`hover-translate` stays an **external client** of the ecosystem (D154): its
+own repository, a standalone browser extension, never deployed by this stack,
+reaching `smia` and `stabbur` across origins. Since 2026-11-15 it is checked
+out here as a **git submodule** (a pinned pointer, which does not reverse
+D154), alongside `tun-backup/` (the backup DATA repo, `ignore = all` because
+the backup service commits to it daily — a stale pinned SHA there is normal).
 
 Mjølnir app internals live in `mjolnir/docs/findings.md`, not in `docs/`.
-
-`grind/`, `shadow/`, `postgres/` and `libs/` all exist now. The operator-plane
-half of `unified-auth` (one credential, `basic_auth` in the gateway, one auth
-check per service) is still open — see `docs/14-restructure-handoff.md` §5.
 
 ## The three zones — never blur them
 
@@ -45,12 +44,14 @@ check per service) is still open — see `docs/14-restructure-handoff.md` §5.
    here.** Not the token, not a header, not a cache directive. If a task seems
    to require it, the task is wrong. OTA is served off disk by the gateway and
    depends on no service and no database.
-2. **Operator plane** — everything a human opens in a browser. One credential,
-   enforced in the gateway.
+2. **Operator plane** — everything a human opens in a browser. One credential
+   (`operator` / `OPERATOR_AUTH_TOKEN`), enforced as `basic_auth` in the
+   gateway across all seven zones; behind it every service runs the one
+   shared check from `libs/` (D159, D160).
 3. **Internal** — service-to-service calls, which never pass through the
-   gateway. Today they carry `STABBUR_AUTH_TOKEN` / `SMIA_AUTH_TOKEN` (two
-   values, both in the root `.env`); `unified-auth` collapses them into one
-   `INTERNAL_TOKEN` — planned, not yet done.
+   gateway. One value, `INTERNAL_TOKEN` in the root `.env` (`unified-auth`
+   4.6); `STABBUR_AUTH_TOKEN` and `SMIA_AUTH_TOKEN` are retired names that
+   `bin/check-standards.sh` fails on.
 
 ## Standards (D151, D152) — these are enforced, not aspirational
 
@@ -71,14 +72,14 @@ check per service) is still open — see `docs/14-restructure-handoff.md` §5.
   file of the directory it runs in, which is what makes
   `cd smia && docker compose up` publish ports while the root stack publishes
   none.
-- One test layout per language (`pytest.ini` + `tests/`). One Postgres major
-  version *as the target*: smia is still deliberately on `postgres:16` and the
-  four databases are still four separate instances — `postgres-consolidation`
-  collapses them, which is also the only point a shared password can take
-  effect. Serving before migrating (shared `libs/`, so a database outage
-  degrades pages instead of preventing boot) is `zone-isolation`'s and
-  `unified-auth`'s work: planned, not yet done. Today each project runs its own
-  migrations on boot.
+- One test layout per language (`pytest.ini` + `tests/`). **One Postgres 17
+  cluster** (`postgres/`, D155/D156): five databases, five roles, every role
+  password derived from the single `POSTGRES_PASSWORD`. Every service
+  **serves before it migrates** (D157) — a database outage degrades pages
+  instead of preventing boot. *(Until 2026-11-14 this bullet read "four
+  separate instances, smia on 16, consolidation planned" — that world is
+  gone, and the four pre-cutover volumes were retired the same day after the
+  daily backup was restore-verified; the off-host dumps are the rollback now.)*
 - **No CI.** Deliberately (D152). Do not add a workflow.
 - Each project owns its `compose.yaml`; the root `include:`s them. Every
   project must stay runnable standalone.

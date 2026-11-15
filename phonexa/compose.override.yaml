@@ -22,11 +22,6 @@
 #
 # Loopback only, always: never a public interface.
 services:
-  phonexa-postgres:
-    ports:
-      # For the native nix-shell app connecting in during local dev.
-      - "127.0.0.1:5432:5432"
-
   phonexa-backend:
     ports:
       - "127.0.0.1:5050:5050"

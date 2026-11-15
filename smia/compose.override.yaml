@@ -22,11 +22,6 @@
 # Loopback only, always: never a public interface. (Both mappings bound
 # 0.0.0.0 before the merge.)
 services:
-  smia-postgres:
-    ports:
-      # For a native venv or psql connecting in during local dev.
-      - "127.0.0.1:5433:5432"
-
   smia-backend:
     ports:
       - "127.0.0.1:5055:5055"

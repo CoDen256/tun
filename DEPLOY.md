@@ -44,17 +44,23 @@ postgres client.
 
 ```
 tun/                     ← the only clone
-  compose.yaml           include:s all four deployed projects + adminer + backup
+  compose.yaml           include:s every deployed project + adminer + backup
   .env                   every value used by more than one project (gitignored)
   .dockerignore           derived from the real COPY lines; 31 MB of build context
   bin/check-standards.sh  the D150-D153 standards check
   docs/                  the ecosystem design docs and the ADR log
   openspec/              ecosystem-level changes
-  mjolnir/     gateway (Caddy), hub, builder, the OTA data dir, its own DEPLOY.md
+  grind/       the gateway (Caddy): TLS, routing, the operator gate, the OTA data dir
+  mjolnir/     console (hub), builder, device sync, the OTA scripts, its own DEPLOY.md
   stabbur/     learning content: notes, captures, blobs
   smia/        linguistics services + the tracked providers/ lookup data
   phonexa/     the phonetics lab
+  shadow/      shadowing (split out of phonexa)
+  postgres/    the one Postgres 17 cluster: five databases, five roles (D155/D156)
+  libs/        shared code: auth, prefix handling, layout, bootstrap
   backup/      the backup service's image
+  batches/     the agentic batch workflow's artifacts (D161)
+  hover-translate/, tun-backup/   git submodules — pinned pointers, not deployed
 ```
 
 `docker compose` is run **from this root** for a real deploy. Each project's
@@ -67,8 +73,8 @@ tun/                     ← the only clone
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker "$USER"          # log out and back in
 
-# 2. One clone
-git clone <your-remote>/tun.git && cd tun
+# 2. One clone (submodules optional — nothing deployed lives in one)
+git clone --recurse-submodules <your-remote>/tun.git && cd tun
 
 # 3. One config file
 cp .env.example .env
@@ -152,11 +158,18 @@ docker compose exec postgres psql -U tunadmin -d postgres -c '\l'
 
 ### 3b. The old per-instance passwords — ONLY for reading pre-cutover volumes
 
+> **The pre-cutover volumes are GONE** (postgres-consolidation 6.7,
+> 2026-11-14): retired on operator instruction after the consolidated cluster
+> had served production, four gzip-verified dumps existed off-host, and the
+> current daily backup had been restored and compared per table. The rollback
+> path is now the dumps, not a volume. This subsection stays because the
+> passwords below are what any **copy of those volumes** (or a restore of a
+> pre-cutover dump into its original layout) still carries.
+
 Before consolidation there were four instances and four keys
 (`MJOLNIR_POSTGRES_PASSWORD` required; `STABBUR_`/`SMIA_`/`PHONEXA_` each
-defaulting to the project name). Those volumes are **retained deliberately**
-as the rollback that does not involve the dumps, and each still has its
-original password baked in.
+defaulting to the project name). Each volume had its original password baked
+in.
 
 **Do not collapse those four into one value when connecting to them. This is
 the single most dangerous mistake available in this file.** Postgres applies `POSTGRES_PASSWORD`
@@ -183,13 +196,10 @@ created with something else.
 On a **genuinely fresh** host (no volumes at all) any values work, because
 every data directory is initialised on first boot.
 
-The collapse into one `POSTGRES_PASSWORD` belongs to the planned
-`postgres-consolidation` change — **not done** — which dump/restores into a
-fresh cluster. That is the only point at which a new password can take effect.
-Attempting it here is a silent outage. (smia is also deliberately still on
-`postgres:16` while the other three are on `postgres:17-alpine`; the upgrade
-is that same change's job, and bumping the image alone leaves the server
-refusing to start against the PG16 data directory.)
+*(A paragraph here used to say the collapse into one `POSTGRES_PASSWORD` was
+"planned, not done" and that smia was still on `postgres:16`. Both were true
+until the 2026-11-14 cutover; §3a above is the live state now, and this note
+exists only so the old claim cannot be read back in from an old diff.)*
 
 The other root `.env` values, briefly:
 
@@ -309,16 +319,17 @@ docker compose ps
 docker compose logs -f caddy
 ```
 
-Twelve services: `caddy`, `mjolnir-postgres`, `mjolnir-hub`,
-`mjolnir-builder`, `stabbur-postgres`, `stabbur-backend`, `smia-postgres`,
-`smia-backend`, `phonexa-postgres`, `phonexa-backend`, `adminer`, `backup`.
+Twelve services: `caddy`, `postgres` (+ the one-shot `postgres-init`,
+D156), `mjolnir-hub`, `mjolnir-builder`, `mjolnir-sync`, `stabbur-backend`,
+`smia-backend`, `phonexa-backend`, `shadow-backend`, `adminer`, `backup`.
 The only publicly published ports in this mode are the gateway's 80, 443 and
-443/udp, plus Adminer on **loopback** 8082. Nothing else publishes anything.
+443/udp, plus Adminer on **loopback** 8082 and the cluster on loopback 5439.
+Nothing else publishes anything.
 
 ### One service and its dependencies
 
 ```sh
-docker compose up -d stabbur-backend     # starts stabbur-postgres too
+docker compose up -d stabbur-backend     # starts the cluster + its init too
 docker compose restart mjolnir-hub mjolnir-builder
 docker compose logs -f smia-backend
 ```
@@ -349,16 +360,22 @@ still read for its own values either way.
 
 | standalone command | published on loopback |
 |---|---|
-| `cd stabbur && docker compose --env-file ../.env up` | `5056` backend, `5434` postgres |
-| `cd smia && docker compose --env-file ../.env up` | `5055` backend, `5433` postgres |
-| `cd phonexa && docker compose --env-file ../.env up` | `5050` backend, `5432` postgres |
+| `cd stabbur && docker compose --env-file ../.env up` | `5056` backend |
+| `cd smia && docker compose --env-file ../.env up` | `5055` backend |
+| `cd phonexa && docker compose --env-file ../.env up` | `5050` backend |
+| `cd shadow && docker compose --env-file ../.env up` | `5051` backend |
 | `cd mjolnir && docker compose --env-file ../.env up` | nothing extra — but it does publish 80/443, so don't run it beside the root stack |
+
+Every project `include:`s `postgres/compose.yaml`, whose own override
+publishes the cluster on `127.0.0.1:5439` — the one database port there is
+(the per-project `543x` postgres mappings this table used to list died with
+the per-project instances, D155).
 
 Standalone mode is for development. Do not run two of these at once against
 the same volumes, and never run a project standalone on the production host
-while the root stack is up: both reference the *same named volumes*
-(`stabbur_stabbur-pg-data-17`, `phonexa_postgres_data`, …), so a second
-Postgres would attach to a data directory another server already holds.
+while the root stack is up: they reference the *same named volumes*
+(`tun_postgres_cluster`, `phonexa_audio_data`, …), so a second Postgres would
+attach to a data directory another server already holds.
 
 ### Standards check
 
@@ -440,17 +457,21 @@ A human never sends this value.
 
 `http://127.0.0.1:8082` (loopback only — reach it over an SSH tunnel:
 `ssh -L 8082:127.0.0.1:8082 <host>`) or `https://<host>/adminer/` through the
-gateway. One instance for all four databases; point its login screen at one of
+gateway. One instance, one server (`postgres` — the shared cluster, D155);
+log in as a service role with its derived password
+`<POSTGRES_PASSWORD>_<db>`:
 
 | server | user | database |
 |---|---|---|
-| `mjolnir-postgres` | `mjolnir` | `postgres` |
-| `stabbur-postgres` | `stabbur` | `stabbur` |
-| `smia-postgres` | `smia` | `smia` |
-| `phonexa-postgres` | `phonexa` | `phonexa` |
+| `postgres` | `mjolnir` | `mjolnir` |
+| `postgres` | `stabbur` | `stabbur` |
+| `postgres` | `smia` | `smia` |
+| `postgres` | `phonexa` | `phonexa` |
+| `postgres` | `shadow` | `shadow` |
 
-with that database's password from §3. phonexa's own development Adminer is
-behind a `dev` profile and does not start here.
+Each role sees only its own database — the same isolation the services get.
+phonexa's own development Adminer is behind a `dev` profile and does not
+start here.
 
 **`/adminer/` is gated now.** It used to be the one route with no auth at all
 — a database-admin tool on the public origin behind nothing. `unified-auth`
@@ -488,7 +509,7 @@ bash mjolnir/bin/ota-verify.sh    # must print 15 passed, 0 failed, 1 SKIPPED
 unfixable parts of the device contract still hold (above all D49: the sha256
 is identical with and without transport gzip). Re-run it after **any** Caddy
 change. Caddy does not hot-reload — a `git pull` that touches
-`mjolnir/caddy/Caddyfile` needs
+`grind/caddy/Caddyfile` needs
 `docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile` or
 `docker compose restart caddy`.
 
@@ -584,7 +605,15 @@ audio volume at the same relative paths — a plain file copy, not automated.
 
 ---
 
-## 8. Production cutover runbook
+## 8. Production cutover runbook — EXECUTED 2026-11-14, kept as history
+
+> **This runbook ran.** Production is the monorepo stack; the five restructure
+> changes are archived and `docs/14-restructure-handoff.md` §9–§10 record what
+> was proven. Everything below is preserved verbatim because it names the
+> retained pre-cutover volumes (§8.0b's table is still the map to them), the
+> rollback caveats, and the measured facts a future migration will want — but
+> **do not execute it again**. Present-tense claims below ("planned, not
+> done", "smia is on 16", branch names) describe the pre-cutover world.
 
 **This section is for the operator and cannot be executed from this
 repository.** `monorepo-merge`'s execution scope is deliberately repo-only:
