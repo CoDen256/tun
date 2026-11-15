@@ -20,7 +20,7 @@ All other packages are parallel-safe.
 | package | status |
 |---|---|
 | Builder UI rehaul & data versioning | designed (mjolnir: `builder-ship-strips`, `flush-record-atomicity`) |
-| Assembly tab usability | building — `mjolnir/openspec/changes/assembly-tab-usability` |
+| Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` |
 | Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
 | Stabbur merging & dict.cc translations | pending |
 | Shadow studying mode | pending |
