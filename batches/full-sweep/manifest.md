@@ -19,7 +19,7 @@ All other packages are parallel-safe.
 | Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
 | Stabbur merging & dict.cc translations | pending |
 | Shadow studying mode | pending |
-| Calst/pygmalion audio consolidation | designed (smia: `calst-audio-union`) |
+| Calst/pygmalion audio consolidation | building (smia: `calst-audio-union`) |
 
 ## Packages
 
