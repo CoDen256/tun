@@ -16,7 +16,7 @@ All other packages are parallel-safe.
 |---|---|
 | Builder UI rehaul & data versioning | designed — changes: `mjolnir/flush-record-atomicity`, `mjolnir/builder-ship-console` |
 | Assembly tab usability | pending |
-| Device sync & userdata storage | pending |
+| Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
 | Stabbur merging & dict.cc translations | pending |
 | Shadow studying mode | pending |
 | Calst/pygmalion audio consolidation | designed (smia: `calst-audio-union`) |
@@ -54,6 +54,44 @@ projects: mjolnir, backup
 
 [IDEA] sync i should track what bundle and when each bundle was pulled and display it in the ui, if that's not difficult.
 [BUG] the mjolnir syncing of devices is nice, but i think the tun-backup gonna explode from the syncing of the deckstats. i think we have to have one mutable userdata per user and use git to track changes instead of saving the new userdata everytime.
+
+Designed 2026-11-15 → two root `openspec/` changes, independently shippable.
+
+**`ota-pull-tracking`** (grind + mjolnir). The explosion was measured first, and so was
+the device-tracking dead end: `device_state` already existed and was dropped in
+`015_drop_device_state.sql` because nothing on the device ever reported. So pulls are
+observed AT THE GATEWAY — a second named Caddy logger scoped to `/ota/bundle/*`, ingested
+into a durable `ota_pulls` table deduped on `(at, build_id, remote_ip)` so the record
+survives log rotation. No JS patch, no publish, no device work, no byte of the
+device-facing response changed. Operator decisions: bundle downloads only (not
+`current.json` polls, not `/blob/*`, not `/audio-manifest/*`); **Option A**, a dedicated
+Device → Pulls page, over a panel on the account-scoped Sync page.
+
+**`userdata-history-offload`** (backup + mjolnir). Measured: `userdata_history` is
+30.9 MB of a 32 MB `mjolnir.sql` — 73 rows at ~424 KB each, a full copy of the account
+document per PATCH, re-committed to git daily. Operator decisions: exclude its DATA from
+the dump; the **backup service** exports one mutable, key-sorted, pretty-printed
+`userdata/<uid>.json` per account so git's own history becomes the version history (NOT
+`mjolnir-sync`, which would put a write in the device-plane path); 30-day retention on the
+table, swept by hub, which **amends D-S5**. The archive must exist and be verified before
+the exclusion lands — getting that order wrong opens a window where nothing holds the
+history.
+
+Verified live during design, not assumed (caddy:2-alpine v2.11.7) — two silent traps,
+recorded in `ota-pull-tracking/design.md`: the **last-declared** named logger becomes the
+site default, so the wrong order sends every request in all seven zones to the OTA pull
+log while stdout goes dark; and `default` is a reserved logger name that exits 1 after
+printing what looks like a successful boot.
+
+Deferred to the builder (tier 2): Caddy `roll_size`/`roll_keep`/`roll_keep_for` values;
+the exact serializer for the JSON export (`jq -S --indent 2` is the obvious one — any
+serializer with sorted keys and stable output qualifies); ingest cooldown length; the
+retention sweep's trigger point inside hub; how `_check_backup_sources.py` spells its new
+"recovered from the backup repo's own export" category.
+
+Nothing here touches the device plane: no change under `mjolnir/sync/`, `mjolnir/patches/`
+or the APK, and both changes carry an explicit acceptance criterion diffing a real
+device-facing response byte for byte.
 
 ### Stabbur merging & dict.cc translations
 projects: stabbur, smia
