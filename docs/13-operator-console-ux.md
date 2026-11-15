@@ -53,7 +53,8 @@ tun/                 ← the ONLY thing ever `git pull`ed + `docker compose up`'
   `/phonexa/*`, `/mjolnir`, `/builder` and `/adminer` are live routes, not the
   unused placeholders this session found (D119, D147, D149). It stays in
   `mjolnir/` only because moving it is the `zone-isolation` change's job,
-  which relocates it to `grind/`.
+  which relocates it to `grind/`. *(Done 2026-11-14, by `unified-auth` §1
+  rather than `zone-isolation`: the gateway is `grind/caddy/Caddyfile` now.)*
 - **Consistent naming**: every compose file is named `compose.yaml` (the
   modern canonical name). Done — `stabbur/docker-compose.yml` and, last,
   `smia/compose.yml` were both renamed.
@@ -68,6 +69,10 @@ tun/                 ← the ONLY thing ever `git pull`ed + `docker compose up`'
   Adminer sits behind a `dev` profile so this stays the only one that runs
   (D147). There are still four Postgres instances — one shared cluster of four
   databases is the planned `postgres-consolidation` change, not done.
+  *(Both halves corrected 2026-11-14: `/adminer/*` is gated by the same
+  `basic_auth` as every operator zone — `unified-auth` 3.1 closed what was an
+  openly reachable database tool — and the four instances are ONE Postgres 17
+  cluster of five databases, D155.)*
 
 ### What "no shell commands" actually requires
 

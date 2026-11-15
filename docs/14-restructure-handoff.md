@@ -1,15 +1,21 @@
-# The monorepo restructure — session handoff
+# The monorepo restructure — session handoff (CLOSED 2026-11-14)
 
-**Written 2026-11-13.** Everything below lives on the **unpushed `monorepo`
-branch**. `master` still has the pre-merge layout. Nothing has been pushed to
-any remote.
+> **This handoff is closed.** The cutover ran 2026-11-14 (§9), all five
+> OpenSpec changes are archived (§10), the `monorepo` branch was merged to
+> `master`, and the pre-cutover volumes §3 and §9 call "retained" were
+> retired later that same day after gated verification (§10, "6.7"). Read it
+> as the historical record of the restructure; the pitfalls (P41–P68) and the
+> "rules that exist because they were violated" (§7) are still live lessons.
+> Sections below speak in the present tense of their writing moment.
+
+**Written 2026-11-13.** Everything below lived on the then-unpushed
+`monorepo` branch.
 
 Read this with `07-decisions.md` (D150–D160) and `08-pitfalls.md` (P41–P50).
 Those are authoritative; this file is the map.
 
-**Updated 2026-11-14**, when `unified-auth` sections 1–5 and 8 landed. The
-state below is current; where a paragraph describes how things stood before
-that, it says so.
+**Updated 2026-11-14**, when `unified-auth` sections 1–5 and 8 landed, and
+again when §9 (the cutover) and §10 (the close) were appended.
 
 ---
 

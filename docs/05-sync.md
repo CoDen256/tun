@@ -64,6 +64,12 @@ locally). No identity, no accounts.
 
 ## Server side
 
+These routes are served by **`mjolnir-sync`** — its own process, split out of
+the console (hub) by D158, gated at the gateway on the device's `Bearer`
+token in its own `handle` block (`unified-auth` §2). The tables below keep
+the `hub.` names because the schema predates the split; both services read
+the same database.
+
 ```
 GET   /mjolnir/userdata/{deviceId}      → the same document shape as userData/{uid}
 PATCH /mjolnir/userdata/{deviceId}      → field-merge

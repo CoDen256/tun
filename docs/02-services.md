@@ -19,8 +19,12 @@ exactly.
 | `stabbur/` | captures, notes, enrichment orchestration, triage UI, audio blobs | smia |
 | `smia/` | `/inflect` `/ipa` `/tts` `/stt` `/translate`, provider chains, and its UI at the prefix root `/smia/` (D46's `/ui` is superseded — D159) | nothing |
 | `phonexa/` | phonetics lab; deployed as part of the unified stack at the authenticated `/phonexa/` path (D147/D149) | smia (optional), stabbur (optional import) |
-| *(external)* `hover-translate` | capture client (fork, Chrome-only, private/unpublished — D144). **Its own repository, not a project here — D154.** Never deployed | stabbur, smia |
-| `backup/` | the git-backup service (D-C1..D-C5): a `pg_dump` per covered database plus the blob and audio mirrors | mjolnir / stabbur / phonexa databases (not smia yet) |
+| `shadow/` | shadowing: media, segments, transcription — split out of phonexa by `zone-isolation` | smia (transcription), phonexa (ingest, both optional-degrading) |
+| `grind/` | the gateway: TLS, path routing, the operator `basic_auth` gate, the status page, the off-disk device plane. Moved out of `mjolnir/` by `unified-auth` §1 | — |
+| `postgres/` | the one Postgres 17 cluster: five databases, five roles, bootstrap idempotent on every boot (D155/D156) | — |
+| `libs/` | shared code: the one operator-auth check (D159), prefix handling, layout, serve-before-migrate bootstrap (D157) | — |
+| *(external)* `hover-translate` | capture client (fork, Chrome-only, private/unpublished — D144). **Its own repository, not a project here — D154** (checked out as a pinned submodule since 2026-11-15). Never deployed | stabbur, smia |
+| `backup/` | the git-backup service (D-C1..D-C5): a `pg_dump` per covered database (mjolnir, stabbur, phonexa, shadow — smia deliberately excluded, operator decision 2026-11-14: its tables are caches and imported corpora) plus the blob and audio mirrors | the cluster |
 
 `mjolnir` is **self-contained for everything Mjølnir**: bundle format knowledge,
 the JS patch set, the native patch source, the APK rebuild pipeline, the builder
@@ -31,10 +35,9 @@ boundary it protected is a directory boundary now, and it still holds.)*
 `findings.md` lives in `mjolnir/docs/`. Cross-project design (this directory)
 lives in `docs/`, which is also the "where do I start" entry point.
 
-`grind/` (the gateway, once Caddy moves out of `mjolnir/`), `shadow/`,
-`postgres/` (one shared cluster) and `libs/` (shared auth, prefix handling,
-layout, bootstrap) are **planned, not present**: they arrive with the
-`zone-isolation`, `postgres-consolidation` and `unified-auth` changes.
+*(A paragraph here used to list `grind/`, `shadow/`, `postgres/` and `libs/`
+as "planned, not present". All four exist and are in production since the
+2026-11-14 cutover; they are rows in the table above now.)*
 
 ## Dependency graph
 
@@ -183,8 +186,9 @@ One Contabo VPS: **8 GB RAM, 100 GB disk** (comfortably above the 4 GB floor).
 **One repository, one Compose project, one deploy (D150).** A deploy is one
 `git pull` and one `docker compose up` at the repository root. The root
 `compose.yaml` defines only the shared Adminer and the backup service; it
-`include:`s each project's own `compose.yaml` (`mjolnir`, `stabbur`, `smia`,
-`phonexa`), and every one of those stays fully usable standalone
+`include:`s each project's own `compose.yaml` (`grind`, `mjolnir`, `stabbur`,
+`smia`, `phonexa`, `shadow` — each of which in turn `include:`s the shared
+`postgres/`), and every one of those stays fully usable standalone
 (`cd stabbur && docker compose up`).
 
 `include:` is what survived; the apparatus around it is what went. The
@@ -198,11 +202,13 @@ D150 retired the whole mechanism). One repository is one Compose project is
 one default network, so every service resolves every other by name with no
 configuration and no setup step.
 
-**The gateway still lives in `mjolnir/`** — `mjolnir/caddy/Caddyfile` is the
-only Caddy config and `mjolnir/bin/ota-publish.sh`/`ota-verify.sh` the only
-OTA scripts, and nothing about them is duplicated at the root. D84's *reason*
-for that (one repo owns the whole deployable stack) is superseded, but the
-files stay where they are until `zone-isolation` moves them to `grind/`.
+**The gateway lives in `grind/`** (`grind/caddy/Caddyfile`, moved out of
+`mjolnir/` by `unified-auth` §1 with every device response byte-compared
+before and after). The OTA scripts stay in `mjolnir/bin/` —
+`ota-publish.sh`/`ota-verify.sh` are about the bundle pipeline, not the
+gateway. *(This paragraph said "still lives in `mjolnir/` until
+`zone-isolation` moves it" — that move happened, under `unified-auth` rather
+than `zone-isolation`.)*
 
 **Host ports.** The unified stack publishes **only** the gateway (80/443) plus
 a loopback-only Adminer on `127.0.0.1:8082`. Every other port mapping lives in
@@ -211,54 +217,54 @@ primary compose file of the directory it is invoked in — so
 `cd smia && docker compose up` publishes loopback ports for native
 development while the unified stack publishes nothing at all (D152).
 
-Twelve services, all deployed today:
+Twelve services, all deployed today (post-cutover, 2026-11-14):
 
 ```
-caddy             TLS, path routing, and STATIC serving of bundles, blobs and
-                  the audio manifest straight off disk — no application
-                  process in the path of those bytes (D55). The only service
-                  that publishes a public port
-mjolnir-postgres  hub + builder database
-mjolnir-hub       device-facing (/ota, /mjolnir/userdata, heartbeat)
-                  + operator UI: publish history (reads `publications`) (D80)
-mjolnir-builder   worker + operator UI: live forecast (dry-run deck assignment
-                  against stabbur's current ready+audio'd notes) and the
-                  manual "publish now" button (D78, D80)
-stabbur-postgres  stabbur database
+caddy             TLS, path routing, the operator basic_auth gate, and STATIC
+                  serving of bundles, blobs and the audio manifest straight
+                  off disk — no application process in the path of those
+                  bytes (D55). grind/'s service; the only one that publishes
+                  a public port
+postgres          ONE Postgres 17 cluster (D155): five databases, five roles,
+                  each role's password derived from POSTGRES_PASSWORD
+postgres-init     the one-shot idempotent bootstrap (D156): databases, roles,
+                  grants on every boot, never /docker-entrypoint-initdb.d
+mjolnir-hub       the operator console: publish history, cards browser,
+                  device insights (D80). No device traffic any more
+mjolnir-sync      DEVICE PLANE: /mjolnir/userdata/* progress sync, its own
+                  process split out of hub (D158)
+mjolnir-builder   worker + operator UI: live forecast and the manual
+                  "publish now" button (D78, D80)
 stabbur-backend   web + API, reached at /stabbur/ (its UI is that same path)
-smia-postgres     smia database — deliberately still postgres:16
 smia-backend      web + API, reached at /smia/ (its UI is that same path)
-phonexa-postgres  phonexa database (PG 17); its data volume and the audio
-                  volume are both in the backup set (D147)
 phonexa-backend   web + API (/stream and js/realtime.js frame pipeline
                   FROZEN — its base-URL constants are not, D149), reached at
-                  /phonexa/ behind Caddy basic_auth (D147/D149)
-adminer           ONE database browser for all four Postgres instances, via
-                  Adminer's native server picker (D-T3) — not one per
-                  database. Loopback only, 127.0.0.1:8082
+                  /phonexa/ (D147/D149)
+shadow-backend    shadowing, split out of phonexa (zone-isolation), at
+                  /shadow/
+adminer           ONE database browser for the one cluster (D-T3): log in as
+                  a service role, which sees only its own database. Loopback
+                  only, 127.0.0.1:8082, and gated at /adminer/
 backup            git-backup: one `pg_dump` per covered database inside a
-                  single all-or-nothing transaction — mjolnir, stabbur and
-                  phonexa — plus the stabbur blob and phonexa audio mirrors.
-                  smia is NOT in the backup set yet; adding it (minus its
-                  rebuildable lookup-cache tables) is decided but belongs to
-                  postgres-consolidation
+                  single all-or-nothing set — mjolnir, stabbur, phonexa,
+                  shadow — plus the stabbur blob and phonexa audio mirrors.
+                  smia is DELIBERATELY not dumped (operator decision,
+                  2026-11-14): caches and imported corpora only — which
+                  makes smia/providers/ the thing to keep safe (DEPLOY.md §7)
 ```
 
-**Four separate Postgres instances, one per project.** Collapsing them into a
-single cluster of four databases is `postgres-consolidation` — planned, not
-done. Each instance's password is its own root-`.env` key
-(`MJOLNIR_`/`STABBUR_`/`SMIA_`/`PHONEXA_POSTGRES_PASSWORD`) and they are
-deliberately *not* collapsed into one: Postgres applies a password only when
-it initialises a fresh data directory, so the existing volumes still carry the
-literals they were created with.
+**One Postgres 17 cluster, five databases** (D155/D156) — the four separate
+per-project instances this section used to describe were consolidated at the
+2026-11-14 cutover, their four password keys retired (`bin/check-standards.sh`
+fails on them), and the pre-cutover volumes retired after the daily backup was
+restore-verified. D42's logical separation is unchanged: separate databases,
+separate roles, no cross-service foreign keys.
 
-Service keys are not renamed in this layout beyond the project prefixes:
-`mjolnir-hub` keeps its key here, and becomes `mjolnir-workbench` only in
-`zone-isolation`, which has to move the key and the gateway's `/mjolnir`
-upstream together.
+Service keys are not renamed beyond the project prefixes: `mjolnir-hub` keeps
+its key, and becomes `mjolnir-workbench` only in a change that moves the key
+and the gateway's `/mjolnir` upstream together (deferred).
 
-Rough RAM: each postgres 256–512 MB (four of them until
-`postgres-consolidation`) · phonexa 300–500 MB · stabbur ~150 MB ·
+Rough RAM: the cluster 512 MB–1 GB · phonexa 300–500 MB · stabbur ~150 MB ·
 smia ~100 MB · hub ~80 MB · builder 500 MB–1 GB while assembling · caddy ~20 MB.
 Disk: ordbank import ~1 GB, audio blobs 1–5 GB over years, kept bundles ~6 MB × 10.
 

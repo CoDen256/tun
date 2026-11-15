@@ -44,7 +44,7 @@ and editable by you.
 | `10-roadmap.md` | Phases, ordering, what to do first | Deciding what to work on |
 | `12-p2-results.md` | what P2 built, tested and proved on device; bugs found; what is still unproven |
 | `11-ota-contract.md` | **The frozen native contract** — wire format, on-device layout, validity, watchdog, escape hatch | Before writing any native patch code |
-| `14-restructure-handoff.md` | **the monorepo restructure: state, decisions, what is left** | Picking this work up, or starting any session on the `monorepo` branch |
+| `14-restructure-handoff.md` | **the monorepo restructure — CLOSED 2026-11-14**: the decisions, the cutover record, and pitfalls P41–P68 | Historical reference; the pitfalls are still live lessons |
 | `13-operator-console-ux.md` | Deployment unification (`include:`, one adminer), the operator UI direction for stabbur/hub/builder, the batches-are-occurrences-not-cards correction | Building any operator-facing UI, or the deploy/compose setup |
 | `15-agentic-workflow.md` | **The batch workflow (D161)**: triage → per-package design → per-package build in separate sessions; what archiving means; the decision policy | Any session invoked as `/tun-design` or `/tun-build`, or touching `batches/` or `BACKLOG.md` |
 
@@ -71,16 +71,19 @@ together from one `docker compose up` at the root.
 | `backup/` | the git-backup service |
 | `libs/` | code shared across projects (auth, prefix handling, layout, bootstrap) |
 
-`hover-translate` is deliberately **not** here (D154): a fork, standalone, and
-never deployed, so it stays its own repository and talks to `smia` and
-`stabbur` from outside. It is still one of the ecosystem's modules in
-`01-vision-and-scope.md` — just not one of this repository's projects.
+`hover-translate` is deliberately **not** a project here (D154): a fork,
+standalone, and never deployed, so it stays its own repository and talks to
+`smia` and `stabbur` from outside. It is still one of the ecosystem's modules
+in `01-vision-and-scope.md`. Since 2026-11-15 it is checked out at the root as
+a **git submodule** (a pinned pointer — D154 is amended, not reversed),
+alongside `tun-backup/`, the backup data repo.
 
 One clone, no sibling checkouts. The APK build workspace at
 `/home/coden/rev/mjolnir/` is still disposable scratch, not part of this repo.
 
-`grind/`, `shadow/`, `postgres/` and `libs/` **all exist now** — they arrived
-with `postgres-consolidation`, `zone-isolation` and `unified-auth`.
+`grind/`, `shadow/`, `postgres/` and `libs/` all arrived with
+`postgres-consolidation`, `zone-isolation` and `unified-auth` — archived and
+in production since 2026-11-14.
 
 ## Status
 
@@ -94,6 +97,8 @@ record; `mjolnir`'s `p2-native-ota` change is archived.
 landed. `10-roadmap.md` → "Right now" is the authority on current state; this
 is a summary of it, and when the two disagree the roadmap wins.)*
 
-**In flight now:** the monorepo restructure — `monorepo-merge` (this layout),
-then `postgres-consolidation`, `zone-isolation` and `unified-auth`. See
-D150–D153.
+**The monorepo restructure is DONE and in production** (cutover 2026-11-14,
+all five changes archived — see `14-restructure-handoff.md` §9–§10): one
+compose project, one Postgres 17 cluster (D155), three zones with one
+operator credential (D159/D160). Day-to-day work flows through the batch
+workflow (D161, `15-agentic-workflow.md`).

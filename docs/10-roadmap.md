@@ -180,17 +180,26 @@ note, D141/D142) and hover-translate's `smia-translation-and-stabbur-capture`
 
 ## Right now
 
-**The monorepo restructure is in flight on the unpushed `monorepo` branch.**
-Read `14-restructure-handoff.md` first — it holds the full state, every
-operator decision already made, and the ordered next steps. In short:
-`monorepo-merge` 40/45, `postgres-consolidation` 35/38, `zone-isolation`
-35/37, `unified-auth` 6/37. Next action is `unified-auth` section 2, which is
-a gate: the device's sync token is still the operator token, so
-`/mjolnir/userdata/*` must be gated at the gateway on the current value and
-replayed against the captured baseline BEFORE the operator plane changes.
-Everything still open elsewhere needs either the VPS or the phone.
+**The monorepo restructure is DONE** — cutover to production 2026-11-14, all
+five OpenSpec changes archived, `14-restructure-handoff.md` closed (§9–§10
+record what was proven). One repo, one compose project, one Postgres 17
+cluster, three zones, one operator credential.
 
-The pre-restructure state of this section follows.
+Work now flows through the **batch workflow** (D161,
+`15-agentic-workflow.md`): `BACKLOG.md` → `/tun-triage` → per-package
+`/tun-design` → per-package `/tun-build`. The next step is whatever the open
+batch's `manifest.md` says, or triaging the backlog if none is open.
+
+Standing follow-ups from the restructure, none blocking
+(`14-restructure-handoff.md` §10): the device still carries the weak literal
+sync token (fixing it needs an assemble-and-publish); the operator password
+is rotatable but not yet rotated; two smia provider archives are absent from
+the repo, so ~9M live corpus rows are not re-importable from a clone (the
+pre-cutover dump is the one historical copy — do not delete it).
+
+*(Until 2026-11-15 this section said the restructure was in flight on an
+unpushed `monorepo` branch. The pre-restructure state of this section
+follows.)*
 ## Right now
 
 **P1–P3 are all done.** The server is live, the native OTA patch is live and
