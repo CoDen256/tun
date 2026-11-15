@@ -3,133 +3,259 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shadowing Practice — IPA Vowel Chart</title>
-  <link rel="stylesheet" href="css/index.css">
-  <link rel="stylesheet" href="css/shadow.css">
+  <title>shadow — studying mode</title>
+  <!-- studio.css is the whole look of this page (the accepted mockup).
+       css/index.css and css/shadow.css are NOT loaded here any more: they
+       belong to settings.html, which still uses them. -->
+  <link rel="stylesheet" href="css/studio.css">
 </head>
 <body>
 
-<header>
-  <h1>Shadowing Practice</h1>
-  <p>Open audio → it's split into chapters &amp; sentences → listen, repeat, compare</p>
-  <a href="__PHONEXA_PREFIX__/index.html" class="editor-link">← Vowel Chart</a>
-  <a href="__PHONEXA_PREFIX__/editor.html" class="editor-link">✎ Edit languages</a>
-  <a href="settings.html" class="editor-link">⚙ Settings</a>
-  <span id="userPicker" class="user-picker"></span>
-</header>
-
-<div class="shadow-wrap">
-
-  <div class="dropzone" id="dropzone">
-    <div class="dropzone-icon">🎧</div>
-    <div>Click to choose an audio file, or drag one here</div>
-    <div class="dropzone-hint">Audio is never uploaded — it's decoded locally in your browser. Re-opening the exact same file (even renamed) resumes your sentence/chapter split and progress, recognized by a small content fingerprint.</div>
-    <input type="file" id="audioFile" accept="audio/*" style="display:none">
+<!-- =============== the ONE navigation (task 8.1) ===============
+     There is deliberately no second, per-book tab row on any screen. -->
+<nav class="nav" aria-label="main">
+  <span class="nav-brand"><span class="mark"></span>shadow</span>
+  <div class="nav-links" id="navLinks" role="tablist">
+    <button type="button" role="tab" data-go="library" aria-selected="true">Library</button>
+    <button type="button" role="tab" data-go="explore" aria-selected="false">Explore</button>
+    <button type="button" role="tab" data-go="study" aria-selected="false">Study</button>
+    <button type="button" role="tab" data-go="prepare" aria-selected="false">Prepare</button>
   </div>
-  <div class="open-file-row">
-    <button class="sent-btn" id="openFileBtn" type="button">📂 Open file (remembers access — Chrome/Edge)</button>
-  </div>
+  <span class="spacer"></span>
+  <span class="nav-aside">
+    <span id="userPicker" class="user-picker"></span>
+    <button class="ghost-btn" id="themeBtn" type="button" title="light / dark">◐</button>
+    <a class="ghost-btn" href="settings.html">⚙</a>
+  </span>
+</nav>
 
-  <div id="youtubePicker" style="margin-top:10px">
-    <div style="text-align:center;font-size:.68rem;color:var(--muted);margin-bottom:6px">— or paste a YouTube URL —</div>
-    <input type="text" id="ytUrlInput" placeholder="https://www.youtube.com/watch?v=…"
-      style="width:100%;box-sizing:border-box;background:#1a2e48;border:1px solid #2e4560;border-radius:6px;color:#d8e8f4;font-size:.78rem;padding:6px 9px;margin-bottom:6px">
-    <div style="text-align:center">
-      <button class="sent-btn primary" id="ytExtractBtn" type="button">Extract audio</button>
+<div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
+<!-- =============== 1. LIBRARY =============== -->
+<section class="screen on" id="s-library">
+  <div class="wrap">
+    <h1>Lydbøker</h1>
+    <p class="sub">One stored file per book — mono Opus, split into ranges, never into clips.</p>
+
+    <div class="books" id="bookList"></div>
+
+    <div class="uploader">
+      <button class="drop" id="dropZone" type="button">
+        <b>Add audiobook</b>
+        <small>Drop an m4b / mp3 / flac / wav here, or click to choose. It is transcoded once to mono Opus; the original is discarded.</small>
+      </button>
+      <input type="file" id="fileInput" accept="audio/*,.m4b" style="display:none">
+      <div class="row-actions" style="margin-top:.7rem;align-items:center">
+        <input type="text" id="ytUrl" placeholder="…or paste a YouTube URL" style="flex:1 1 240px">
+        <button class="mini" id="ytBtn" type="button">Extract audio</button>
+      </div>
+      <div class="upl hidden" id="uplBox">
+        <div class="upl-top">
+          <span class="nm" id="uplName"></span>
+          <span class="by num" id="uplBytes"></span>
+        </div>
+        <div class="bar"><i id="uplBar" style="width:0%"></i></div>
+        <div class="row-actions">
+          <span class="quiet num" id="uplState" style="font-size:.82rem"></span>
+          <button class="mini" id="uplCancel" type="button">Cancel</button>
+        </div>
+      </div>
     </div>
   </div>
+</section>
 
-  <div class="cache-section">
-    <div class="cache-section-title">Remembered files</div>
-    <div class="cache-list" id="recentFilesList"></div>
-  </div>
-
-  <div class="progress-wrap" id="progressWrap" style="display:none">
-    <span class="mini-spinner"></span>
-    <span class="progress-label" id="progressLabel"></span>
-    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
-    <span class="progress-pct" id="progressPct">0%</span>
-  </div>
-  <div id="uploadStatus"></div>
-
-  <div class="cache-section">
-    <div class="cache-section-title">Your progress (by file)</div>
-    <div class="cache-list" id="mediaList"></div>
-  </div>
-
-  <div class="file-info" id="fileInfo" style="display:none">
-    <span>📄 <b id="fileName"></b></span>
-    <span id="fileDuration"></span>
-    <button class="sent-btn" id="deleteMediaBtn" type="button">🗑 Delete this upload's progress</button>
-  </div>
-
-  <div class="transcribe-status" id="transcribeStatusRow" style="display:none">
-    <span class="cache-badge" id="transcribeBadge"></span>
-    <label class="transcribe-lang-label">Language
-      <select id="transcribeLanguage">
-        <option value="">Auto-detect</option>
-        <option value="en">English</option>
-        <option value="de">German</option>
-        <option value="fr">French</option>
-        <option value="es">Spanish</option>
-        <option value="it">Italian</option>
-        <option value="pt">Portuguese</option>
-        <option value="nl">Dutch</option>
-        <option value="no">Norwegian</option>
-        <option value="sv">Swedish</option>
-        <option value="da">Danish</option>
-        <option value="fi">Finnish</option>
-        <option value="pl">Polish</option>
-        <option value="ru">Russian</option>
-        <option value="uk">Ukrainian</option>
-        <option value="tr">Turkish</option>
-        <option value="ar">Arabic</option>
-        <option value="zh">Chinese</option>
-        <option value="ja">Japanese</option>
-        <option value="ko">Korean</option>
-        <option value="__other">Other (type code)…</option>
-      </select>
-      <input type="text" id="transcribeLanguageOther" placeholder="ISO 639-1, e.g. sv" style="display:none">
-    </label>
-    <label class="trim-toggle"><input type="checkbox" id="trimSilenceToggle" checked> ✂ Ignore silence at start of my recordings</label>
-  </div>
-
-  <div class="range-wrap" id="rangeWrap" style="display:none">
-    <div class="range-title">Select the time range to load &amp; practice</div>
-    <div class="range-row">
-      <label>Start <input type="text" id="rangeStart" class="range-text" value="0:00"></label>
-      <input type="range" id="rangeStartSlider" min="0" max="100" value="0">
-      <label>End <input type="text" id="rangeEnd" class="range-text" value="0:00"></label>
-      <input type="range" id="rangeEndSlider" min="0" max="100" value="100">
+<!-- =============== 2. EXPLORE =============== -->
+<section class="screen" id="s-explore">
+  <div class="wrap">
+    <div class="eyebrow" id="exBook"></div>
+    <div class="exhead">
+      <h1 style="font-size:1.45rem;margin:0">Explore</h1>
+      <span class="quiet num" id="exTotals"></span>
     </div>
-    <div class="range-presets">
-      <button class="sent-btn" data-preset="120" type="button">First 2 min</button>
-      <button class="sent-btn" data-preset="600" type="button">First 10 min</button>
-      <button class="sent-btn" data-preset="full" type="button">Whole file</button>
-      <span class="range-dur" id="rangeDurLabel"></span>
-      <button class="sent-btn primary" id="loadSliceBtn" type="button">▶ Load this range</button>
+    <p class="exhint">
+      Tap <b>▶</b> to hear one sentence · tap the <b>number</b> to study from there ·
+      click a sentence then <b>shift-click</b> another for a range — on touch, tap one,
+      then <b>“select to…”</b>, then tap the end.
+    </p>
+    <div id="exChapters"></div>
+  </div>
+
+  <div class="selbar hidden" id="selbar">
+    <span class="cnt num" id="selCount">0 selected</span>
+    <button class="mini" id="selExtend" type="button">⇥ select to…</button>
+    <button class="mini go" id="selDone" type="button">✓ Mark done</button>
+    <button class="mini" id="selUndone" type="button">↺ Mark not done</button>
+    <button class="mini" id="selClear" type="button">✕ Clear</button>
+  </div>
+</section>
+
+<!-- =============== 3. STUDY ===============
+     ONE screen. Below 620px the primaries become the phone cluster and the
+     tray collapses into the ⋯ sheet whose trigger sits in the top bar. -->
+<section class="screen" id="s-study">
+  <div class="topbar">
+    <span class="t-book" id="stBook"></span>
+    <span class="t-ch" id="stChapter"></span>
+    <button class="m-more-pill js-more" type="button">⋯ more</button>
+    <span class="t-count num">sentence <b id="stIdx">–</b> / <span id="stTotal">–</span></span>
+    <button class="ctl-s js-exit" type="button">✕ exit<span class="kbd">Esc</span></button>
+    <div class="t-progress bar"><i id="stProg" style="width:0%"></i></div>
+  </div>
+
+  <div class="stage">
+    <div class="sentbox js-sentbox">
+      <div class="wave-wrap js-wavewrap">
+        <div class="js-wave"></div>
+        <div class="playhead js-playhead"></div>
+      </div>
+      <div class="sent-meta num">
+        <span><b class="js-dur">–</b> long</span>
+        <span>at <b class="js-at">–</b> in the book</span>
+        <span class="js-state">idle</span>
+      </div>
+      <div class="sent-text js-sent-text"></div>
+    </div>
+
+    <div class="ticks js-ticks" aria-label="sentences in this chapter"></div>
+
+    <div class="controls">
+      <button class="ctl primary js-play" type="button"><span class="gl">▶</span><span class="lbl">Play</span><span class="kbd">space</span></button>
+      <button class="ctl rec js-rec" type="button"><span class="gl">●</span><span class="lbl">Record</span><span class="kbd">R</span></button>
+      <button class="ctl js-cmp" type="button"><span class="gl">⇄</span><span class="lbl">Compare</span><span class="kbd">C</span></button>
+      <button class="ctl primary js-done" type="button"><span class="gl">✓</span><span class="lbl">Done &amp; next</span><span class="kbd">↵</span></button>
+    </div>
+
+    <div class="controls-2">
+      <button class="ctl-s js-prev" type="button">← prev<span class="kbd">←</span></button>
+      <button class="ctl-s js-next" type="button">→ next<span class="kbd">→</span></button>
+      <button class="ctl-s js-split" type="button">✂ split here<span class="kbd">X</span></button>
+      <button class="ctl-s js-merge" type="button">⇢⇠ merge with next<span class="kbd">M</span></button>
+      <button class="ctl-s js-tr" type="button">📝 transcribe<span class="kbd">T</span></button>
+      <button class="ctl-s js-fl" type="button">🔬 Formant Lab<span class="kbd">F</span></button>
+      <button class="ctl-s js-jump" type="button">⤓ first unfinished<span class="kbd">U</span></button>
+      <button class="ctl-s js-help" type="button">? shortcuts<span class="kbd">?</span></button>
+    </div>
+
+    <div class="recbar hidden js-recbar">
+      <span class="recdot"></span>
+      <span class="rectime num js-rectime">0.0 s</span>
+      <span class="meter js-meter"></span>
+      <span class="rechint">R to stop · the take lives in memory for this session only</span>
+    </div>
+
+    <div class="panel hidden js-cmp-panel">
+      <div class="panel-head">
+        <span>Compare — pitch contour</span>
+        <button class="x js-close-cmp" type="button">✕</button>
+      </div>
+      <svg class="contour js-contour" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div class="legend">
+        <span><i style="background:var(--ref)"></i>reference (book)</span>
+        <span><i style="background:var(--usr)"></i>your take <span class="quiet">· not stored</span></span>
+      </div>
+    </div>
+
+    <div class="panel hidden js-tr-panel">
+      <div class="panel-head">
+        <span>Transcript</span><span class="provenance">smia</span>
+        <button class="x js-close-tr" type="button">✕</button>
+      </div>
+      <div class="transcript js-tr-text"></div>
+    </div>
+
+    <div class="panel hidden js-fl-panel">
+      <div class="panel-head">
+        <span>Formant Lab</span><span class="provenance">phonexa</span>
+        <button class="x js-close-fl" type="button">✕</button>
+      </div>
+      <div class="quiet js-fl-text"></div>
+    </div>
+
+    <div class="ephemeral">Recordings are never uploaded. Closing this tab discards them.</div>
+  </div>
+
+  <div class="m-scrim js-scrim"></div>
+  <div class="m-sheet js-sheet">
+    <div class="grab"></div>
+    <button class="item js-split" type="button">✂ <span>Split here</span><span class="tag">at the playhead</span></button>
+    <button class="item js-merge" type="button">⇢⇠ <span>Merge with next</span><span class="tag">joins 2 → 1</span></button>
+    <button class="item js-tr" type="button">📝 <span>Transcribe</span><span class="tag">smia</span></button>
+    <button class="item js-fl" type="button">🔬 <span>Formant Lab</span><span class="tag">phonexa</span></button>
+    <button class="item js-jump" type="button">⤓ <span>First unfinished</span><span class="tag">U</span></button>
+    <button class="item js-help" type="button">? <span>Shortcuts</span></button>
+    <button class="item" data-go="explore" type="button">☰ <span>Explore the book</span></button>
+    <button class="item" data-go="library" type="button">✕ <span>Exit to library</span></button>
+  </div>
+</section>
+
+<!-- =============== 4. PREPARE =============== -->
+<section class="screen" id="s-prepare">
+  <div class="wrap">
+    <div class="eyebrow" id="prBook"></div>
+    <h1 style="font-size:1.45rem">Prepare / split</h1>
+    <p class="sub">Server-side silence analysis. Produces ranges only — no clips are cut or stored.</p>
+
+    <div class="carry">
+      <span>↻</span>
+      <span><b>Progress carries across configs.</b> Done-ness is stored as completed
+      <b>time ranges on the book</b>; a sentence is done when its whole span is covered —
+      so a fresh config starts with sentences already ticked.</span>
+    </div>
+
+    <div id="cfgList"></div>
+
+    <div class="row-actions" style="margin-bottom:.4rem">
+      <button class="mini go" id="newCfgBtn" type="button">+ New split config…</button>
+    </div>
+
+    <div class="card hidden" id="newCfgPanel">
+      <div class="params">
+        <div class="param">
+          <label>Sentence silence <b><span id="p1">400</span> ms</b></label>
+          <input type="range" min="100" max="1200" step="20" value="400" id="r1">
+        </div>
+        <div class="param">
+          <label>Chapter silence <b><span id="p2">2500</span> ms</b></label>
+          <input type="range" min="1200" max="15000" step="100" value="2500" id="r2">
+        </div>
+      </div>
+      <div class="row-actions" style="margin-top:1.1rem;align-items:center">
+        <input type="text" id="newCfgName" value="Nytt oppsett" aria-label="config name">
+        <button class="mini go" id="analyseBtn" type="button">Create &amp; analyse</button>
+        <button class="mini" id="newCfgCancel" type="button">Cancel</button>
+      </div>
+    </div>
+
+    <div class="prep-sec">
+      <div class="eyebrow" style="margin-bottom:.5rem">Sentences in <span id="activeCfgName">—</span></div>
+      <div class="card" id="prepChapters"></div>
+      <p class="quiet" style="font-size:.84rem">A chapter's audio is fetched once when you open it
+      here, then every row's waveform and ▶ comes out of that one chunk.</p>
     </div>
   </div>
+</section>
 
-  <div class="params-row" id="segmentParamsRow" style="display:none">
-    <span>Sentence pause (ms):</span>
-    <input type="range" id="sentenceSlider" min="150" max="600" step="10" value="300">
-    <span id="sentenceVal">300 ms</span>
-    <span>Chapter pause (ms):</span>
-    <input type="range" id="chapterSlider" min="1500" max="15000" step="100" value="4000">
-    <span id="chapterVal">4000 ms</span>
-    <button class="sent-btn primary" id="splitParamsBtn" type="button">✂ Split into chapters &amp; sentences</button>
-  </div>
-
-  <div class="sentence-list-wrap" id="sentenceListWrap" style="display:none">
-    <div class="sentence-list-header">
-      <span><b id="sentCount">0</b> sentences in <b id="chapterCount">0</b> chapters</span>
-      <span>▶ reference · 🐌 slow · ● record · ⇄ compare · 🎵 pitch · 📝 transcribe · 🔬 Formant Lab · ✓ done</span>
-      <button class="sent-btn" id="resplitBtn" type="button">↺ Re-split (discards manual edits/progress)</button>
+<!-- =============== shortcut overlay =============== -->
+<div class="overlay hidden" id="kover">
+  <div class="sheet">
+    <h3>Keyboard</h3>
+    <div class="klist">
+      <div><span>Play the sentence</span><span class="kbd">space</span></div>
+      <div><span>Record / stop</span><span class="kbd">R</span></div>
+      <div><span>Compare — reference then your take</span><span class="kbd">C</span></div>
+      <div><span>Done &amp; next</span><span class="kbd">↵</span></div>
+      <div><span>Previous sentence</span><span class="kbd">←</span></div>
+      <div><span>Next without marking</span><span class="kbd">→</span></div>
+      <div><span>Split here (at the playhead)</span><span class="kbd">X</span></div>
+      <div><span>Merge with next</span><span class="kbd">M</span></div>
+      <div><span>Transcribe (smia)</span><span class="kbd">T</span></div>
+      <div><span>Formant Lab (phonexa, book audio)</span><span class="kbd">F</span></div>
+      <div><span>Jump to first unfinished</span><span class="kbd">U</span></div>
+      <div><span>Close panel / exit</span><span class="kbd">Esc</span></div>
+      <div><span>This panel</span><span class="kbd">?</span></div>
     </div>
-    <div id="chapterList"></div>
+    <div class="row-actions" style="margin-top:1.2rem"><button class="mini" id="koverClose" type="button">Close</button></div>
   </div>
-
 </div>
 
 <!-- Two prefixes, injected by app.py's _serve_page.
@@ -137,11 +263,10 @@
                       '/shadow' behind the gateway, empty standalone). Every
                       data call goes here: API_BASE.
      PHONEXA_PREFIX — where phonexa is mounted IN THE BROWSER. Used only for
-                      links a human follows (Vowel Chart, Edit languages, the
-                      Formant Lab handoff). Data never goes here: shadow's
-                      backend proxies profiles/settings/Praat itself, so an
-                      XHR never has to cross the gateway's per-prefix auth
-                      boundary. See phonexa_client.py.
+                      links a human follows (the Formant Lab handoff). Data
+                      never goes here: shadow's backend proxies profiles,
+                      settings and Praat itself, so an XHR never has to cross
+                      the gateway's per-prefix auth boundary.
      Must precede every js/ tag: API_BASE is read at load time. -->
 <script>
   window.SHADOW_PREFIX = "__SHADOW_PREFIX__";
@@ -150,9 +275,13 @@
   var PHONEXA_BASE = window.PHONEXA_PREFIX || '';
 </script>
 <script src="js/user.js"></script>
-<script src="js/audio.js"></script>
-<script src="js/vad.js"></script>
-<script src="js/spectro.js"></script>
-<script src="js/shadow.js"></script>
+<script src="js/api.js"></script>
+<script src="js/waveform.js"></script>
+<script src="js/chapteraudio.js"></script>
+<script src="js/library.js"></script>
+<script src="js/explore.js"></script>
+<script src="js/study.js"></script>
+<script src="js/prepare.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

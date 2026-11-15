@@ -19,9 +19,11 @@ WHAT MOVED AND WHY EACH PIECE IS HERE
   page and the shadowing settings page ever called them.
 * `/api/v1/youtube-extract` — shells out to yt-dlp, streams the WAV back,
   writes nothing. Stateless: VERIFIED. Its comment in phonexa called it
-  "Formant Lab ingest-mode entry point", but the only caller in the whole
-  tree is js/shadow.js (Formant Lab's own ingest takes a file/blob, never a
-  URL) — the stale comment is corrected here. Moving it also moves the two
+  "Formant Lab ingest-mode entry point", but its only caller has always been
+  the shadowing page (Formant Lab's own ingest takes a file/blob, never a
+  URL) — the stale comment is corrected here. Since shadow-studying-mode the
+  caller is js/library.js, which feeds the extracted WAV into the same
+  chunked upload a dropped file uses; js/shadow.js itself is gone. Moving it also moves the two
   hang-prone subprocesses (yt-dlp, ffmpeg) out of the service that holds the
   vowel chart, which was half the point of the split.
 * the shadowing pages — shadow.html and settings.html. settings.html is
@@ -29,9 +31,13 @@ WHAT MOVED AND WHY EACH PIECE IS HERE
   list, nothing about vowels.
 
 WHAT SHADOW NEEDS FROM PHONEXA — see phonexa_client.py's docstring for the
-whole finding. Short version: NOT audio storage (there is no audio to
-store, shadow mounts no volume), but profiles, settings and /analyze-praat,
-proxied server-side so the browser only ever talks to /shadow/*.
+whole finding. Short version: NOT audio storage — but note that the
+parenthetical this line used to carry, "there is no audio to store, shadow
+mounts no volume", stopped being true with shadow-studying-mode: shadow now
+keeps ONE mono Opus master per book in its own volume (audio.py,
+shadowing.py). What shadow still needs from phonexa is profiles, settings
+and /analyze-praat, proxied server-side so the browser only ever talks to
+/shadow/*.
 
 SERVE-BEFORE-MIGRATE. This module defines the app and nothing else; the
 container runs it through scripts/bootstrap.py, which binds the port first
@@ -343,9 +349,10 @@ def analyze_praat():
 # untrusted user input reaching a shell-adjacent tool.
 #
 # Moved here from phonexa, where its comment claimed it was Formant Lab's
-# ingest entry point. It was not: js/shadow.js is the only caller anywhere in
-# the tree (verified by grep across every html/js file), which is why this
-# endpoint could move without touching Formant Lab at all.
+# ingest entry point. It was not: the shadowing page is the only caller
+# anywhere in the tree (verified by grep across every html/js file), which is
+# why this endpoint could move without touching Formant Lab at all. That
+# caller is js/library.js since shadow-studying-mode replaced js/shadow.js.
 # ══════════════════════════════════════════════════════════════════════════════
 
 YOUTUBE_MAX_DURATION_SEC = 2 * 60 * 60  # ~2h cap — same unbounded-decode risk Shadowing hit, avoided up front

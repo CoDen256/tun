@@ -87,23 +87,55 @@ const UserLib = (() => {
     newOpt.textContent = '+ New profile…';
     select.appendChild(newOpt);
 
+    // DIVERGENCE from the phonexa copy, deliberate and the only one:
+    // creating a profile used to call prompt() and report failures with
+    // alert(). shadow may not open a browser modal anywhere (an automated
+    // browser hangs on one forever — shadow-studying-mode task 8.4), so the
+    // same flow is an inline field. Behaviour is otherwise identical.
+    const inline = document.createElement('span');
+    inline.className = 'user-picker-new';
+    inline.style.display = 'none';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.placeholder = 'new profile name';
+    nameInput.className = 'user-picker-select';
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    okBtn.textContent = 'Create';
+    okBtn.className = 'ghost-btn';
+    const noBtn = document.createElement('button');
+    noBtn.type = 'button';
+    noBtn.textContent = 'Cancel';
+    noBtn.className = 'ghost-btn';
+    const err = document.createElement('span');
+    err.style.cssText = 'font-size:.78rem';
+    inline.appendChild(nameInput); inline.appendChild(okBtn); inline.appendChild(noBtn); inline.appendChild(err);
+
+    const closeInline = () => { inline.style.display = 'none'; err.textContent = ''; select.value = String(currentId); };
+    noBtn.addEventListener('click', closeInline);
+    okBtn.addEventListener('click', async () => {
+      const name = nameInput.value.trim();
+      if (!name) { err.textContent = 'a name is required'; return; }
+      try {
+        const user = await createUser(name);
+        setCurrentUserId(user.id);
+        mountPicker(el); // re-render with the new profile selected
+      } catch (e) {
+        err.textContent = e.message;
+      }
+    });
+
     select.addEventListener('change', async () => {
       if (select.value === '__new__') {
-        const name = (prompt('New profile name:') || '').trim();
-        if (!name) { select.value = String(currentId); return; }
-        try {
-          const user = await createUser(name);
-          setCurrentUserId(user.id);
-          mountPicker(el); // re-render with the new profile selected
-        } catch (e) {
-          alert(e.message);
-          select.value = String(currentId);
-        }
+        inline.style.display = 'inline-flex';
+        nameInput.value = '';
+        nameInput.focus();
         return;
       }
       setCurrentUserId(parseInt(select.value, 10));
     });
     el.appendChild(select);
+    el.appendChild(inline);
   }
 
   return { getCurrentUserId, mountPicker };

@@ -28,7 +28,7 @@ land before any UI reads progress**, and it must be verified before the old
       copy**; cache it; serve it with the sentence ranges it contains.
 - [x] 2.2 Invalidate or key the cache so a changed chapter boundary cannot
       serve a stale chunk.
-- [ ] 2.3 Client fetches the chunk on entering a chapter, prefetches in the
+- [x] 2.3 Client fetches the chunk on entering a chapter, prefetches in the
       background, and plays sentence ranges by seeking within it.
       *(Server half done: `GET /chapters/<id>/manifest` gives every sentence
       an `offsetMs` inside the chunk returned by `GET /chapters/<id>/chunk`,
@@ -64,52 +64,52 @@ land before any UI reads progress**, and it must be verified before the old
 
 ## 5. Study screen
 
-- [ ] 5.1 Single-sentence surface: waveform, chapter, position, chapter
+- [x] 5.1 Single-sentence surface: waveform, chapter, position, chapter
       tick strip.
-- [ ] 5.2 Primary controls — play, record, compare, done&next — with keys
+- [x] 5.2 Primary controls — play, record, compare, done&next — with keys
       `Space` `R` `C` `Enter` and visible key badges.
-- [ ] 5.3 Secondary tray — prev/next (`←` `→`), transcribe (`T`), Formant
+- [x] 5.3 Secondary tray — prev/next (`←` `→`), transcribe (`T`), Formant
       Lab (`F`), split here (`X`), merge with next (`M`), jump to first
       unfinished (`U`), leave (`Esc`), overlay (`?`).
-- [ ] 5.4 Compare: reference then take, plus overlaid pitch contours with a
+- [x] 5.4 Compare: reference then take, plus overlaid pitch contours with a
       legend.
-- [ ] 5.5 Recording stays in memory; nothing is uploaded; the UI never
+- [x] 5.5 Recording stays in memory; nothing is uploaded; the UI never
       implies a take persists.
-- [ ] 5.6 Transcribe through the existing `/transcribe` smia proxy, one
+- [x] 5.6 Transcribe through the existing `/transcribe` smia proxy, one
       sentence, persisted on that sentence, labelled.
-- [ ] 5.7 Formant Lab handoff sends the **book's** sentence audio.
-- [ ] 5.8 **Remove** slow playback (0.7×) and its `S` binding entirely.
-- [ ] 5.9 Phone layout: record/play/compare plus a full-width done bar in
+- [x] 5.7 Formant Lab handoff sends the **book's** sentence audio.
+- [x] 5.8 **Remove** slow playback (0.7×) and its `S` binding entirely.
+- [x] 5.9 Phone layout: record/play/compare plus a full-width done bar in
       the lower half; the `⋯` disclosure at the top.
 
 ## 6. Explore screen
 
-- [ ] 6.1 Collapsible chapters with done counts and progress.
-- [ ] 6.2 Dense sentence grid: number, done state, duration, ▶ preview.
-- [ ] 6.3 Range selection (first then last; shift-click on desktop, tap-tap
+- [x] 6.1 Collapsible chapters with done counts and progress.
+- [x] 6.2 Dense sentence grid: number, done state, duration, ▶ preview.
+- [x] 6.3 Range selection (first then last; shift-click on desktop, tap-tap
       on touch) and a whole-chapter selection control on the header.
-- [ ] 6.4 Selection bar: count, mark done, mark not done, clear — writing
+- [x] 6.4 Selection bar: count, mark done, mark not done, clear — writing
       through the time-range record.
-- [ ] 6.5 Clicking a sentence opens Study positioned on it.
+- [x] 6.5 Clicking a sentence opens Study positioned on it.
 
 ## 7. Prepare screen
 
-- [ ] 7.1 Split-config manager per task 3.3, with in-page confirms only.
-- [ ] 7.2 Per-sentence waveform and ▶ preview on every row.
-- [ ] 7.3 Inline split scrubber (click sets the position, then confirm) and
+- [x] 7.1 Split-config manager per task 3.3, with in-page confirms only.
+- [x] 7.2 Per-sentence waveform and ▶ preview on every row.
+- [x] 7.3 Inline split scrubber (click sets the position, then confirm) and
       merge-with-next.
-- [ ] 7.4 A one-line explainer that progress carries across configs by time
+- [x] 7.4 A one-line explainer that progress carries across configs by time
       coverage.
 
 ## 8. Library, navigation and removals
 
-- [ ] 8.1 One navigation — Library, Explore, Study, Prepare. No second tab
+- [x] 8.1 One navigation — Library, Explore, Study, Prepare. No second tab
       row anywhere.
-- [ ] 8.2 Library rows: duration, chapters, progress, cursor as "Chapter N
+- [x] 8.2 Library rows: duration, chapters, progress, cursor as "Chapter N
       · sentence M of K"; upload drop zone; determinate analysing state.
-- [ ] 8.3 **Remove** the upload time-range selector and the client-side
+- [x] 8.3 **Remove** the upload time-range selector and the client-side
       decode/segmentation path it served.
-- [ ] 8.4 No browser `alert` / `confirm` / `prompt` anywhere in shadow.
+- [x] 8.4 No browser `alert` / `confirm` / `prompt` anywhere in shadow.
 
 ## 9. Documentation and standards
 
