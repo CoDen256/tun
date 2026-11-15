@@ -45,7 +45,14 @@ test("grammar projection uses a placeholder when no grammarRuleLookup is given, 
   assert.match(withLookup.X, /Present tense/);
 });
 
-test("translations: one per line, lang code bold+teal (the stock bundle's own emphasis classes), no field-name prefix", () => {
+// The expectation here USED to assert `<b class="bold teal">en</b>: house`.
+// The projector emits the translation text alone — no language code, no
+// emphasis span, no prefix of any kind (`translationsHtml`:
+// `note.translations.map((t) => t.text)`). Corrected to the real contract on
+// operator direction: the code is authoritative, the expectation was stale.
+// The lang code is deliberately absent — a card shows what the word means,
+// not which dictionary it came from.
+test("translations: one per line, text only — no lang code, no field-name prefix", () => {
   const note = fixtureNote({
     type: "word",
     translations: [
@@ -56,11 +63,16 @@ test("translations: one per line, lang code bold+teal (the stock bundle's own em
   const card = project(note);
   assert.equal(
     card.E,
-    '<div class="center"><b class="bold teal">en</b>: house<br><b class="bold teal">de</b>: Haus</div>'
+    '<div class="center">house<br>Haus</div>'
   );
 });
 
-test("substantiv: article+sg_indef, sg_def, pl_def, pl_indef each on their own line, no labels", () => {
+// Line order is headword, sg_def, **pl_indef, pl_def** — the expectation had
+// the last two the other way round. Corrected to the code on operator
+// direction. For "hus" that reads: et hus / huset / hus / husene, i.e.
+// indefinite then definite within each number, which is the same progression
+// the singular pair already follows.
+test("substantiv: article+sg_indef, sg_def, pl_indef, pl_def each on their own line, no labels", () => {
   const note = fixtureNote({
     type: "word",
     pos: "substantiv",
@@ -68,7 +80,7 @@ test("substantiv: article+sg_indef, sg_def, pl_def, pl_indef each on their own l
     transcription: "",
     inflections: { article: "et", sg_indef: "hus", sg_def: "huset", pl_indef: "hus", pl_def: "husene" },
   });
-  assert.equal(project(note).N, '<div class="center">et hus<br>huset<br>husene<br>hus</div>');
+  assert.equal(project(note).N, '<div class="center">et hus<br>huset<br>hus<br>husene</div>');
 });
 
 // The indefinite article is stripped from the text before the inflection's
@@ -145,7 +157,13 @@ test("adverb: just the form, no label", () => {
   assert.equal(project(note).N, '<div class="center">fort</div>');
 });
 
-test("transcription still trails as its own line, after the inflection layout", () => {
+// The transcription LEADS, wrapped in `supWrap`, and is bracketed by
+// `transcriptionHtml` as `[&ensp; … ]`. It does not trail as a bare line —
+// the old name and expectation both said it did. Corrected to the code on
+// operator direction. (`wordHeadlineHtml` now omits the wrapper entirely
+// when there is no transcription, which is a separate fix; the case with one
+// is this test.)
+test("transcription leads as its own supWrap line, before the inflection layout", () => {
   const note = fixtureNote({
     type: "word",
     pos: "substantiv",
@@ -153,7 +171,10 @@ test("transcription still trails as its own line, after the inflection layout", 
     transcription: "hʉːs",
     inflections: { article: "et", sg_indef: "hus", sg_def: "huset", pl_indef: "hus", pl_def: "husene" },
   });
-  assert.equal(project(note).N, '<div class="center">et hus<br>huset<br>husene<br>hus<br>hʉːs</div>');
+  assert.equal(
+    project(note).N,
+    '<div class="center"><div class="supWrap">[&ensp; hʉːs ]</div><br>et hus<br>huset<br>hus<br>husene</div>',
+  );
 });
 
 test("a POS with no defined inflection layout (or empty inflections) falls back to the bare text", () => {
