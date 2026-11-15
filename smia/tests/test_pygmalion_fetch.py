@@ -143,7 +143,8 @@ def test_calst_rows_extend_pygmalion_takes_never_renumbering():
     known = {fpa.BASE_URL + "Oslo_Normal_A.mp3", fpa.BASE_URL + "Oslo_Normal_B.mp3"}
     takes = {("led", "Oslo"): 2}
     doc = _calst_doc([_calst_entry("led", [_calst_sound("Oslo_Normal_C.mp3"), _calst_sound("Oslo_Normal_D.mp3")])])
-    rows = fpa.build_calst_inventory(doc, known, takes)
+    rows, skipped = fpa.build_calst_inventory(doc, known, takes)
+    assert skipped == []
     assert [(r["take"], r["path"]) for r in rows] == [
         (2, "Oslo/Oslo_Normal_C.mp3"),
         (3, "Oslo/Oslo_Normal_D.mp3"),
@@ -151,10 +152,22 @@ def test_calst_rows_extend_pygmalion_takes_never_renumbering():
     assert all(r["origin"] == "calst" and r["dialect"] == "Oslo" for r in rows)
 
 
+def test_calst_takes_shared_across_case_variants_of_the_same_word():
+    # Regression: "I" and "i" are different literal words but casefold to the
+    # same import-time identity; if each got its own take-0, they'd collide
+    # into one DB row at import and one recording would silently vanish.
+    doc = _calst_doc([
+        _calst_entry("I", [_calst_sound("Oslo_Normal_A.mp3")]),
+        _calst_entry("i", [_calst_sound("Oslo_Normal_B.mp3")]),
+    ])
+    rows, _ = fpa.build_calst_inventory(doc, set(), {})
+    assert [(r["word"], r["take"]) for r in rows] == [("I", 0), ("i", 1)]
+
+
 def test_calst_duplicate_basename_of_a_pygmalion_row_yields_no_row():
     known = {fpa.BASE_URL + "Oslo_Normal_A.mp3"}
     doc = _calst_doc([_calst_entry("led", [_calst_sound("Oslo_Normal_A.mp3")])])
-    rows = fpa.build_calst_inventory(doc, known, {})
+    rows, _ = fpa.build_calst_inventory(doc, known, {})
     assert rows == []
 
 
@@ -163,26 +176,27 @@ def test_calst_duplicate_within_itself_yields_one_row():
         [_calst_entry("led", [_calst_sound("Oslo_Normal_A.mp3")])],
         [_calst_entry("led", [_calst_sound("Oslo_Normal_A.mp3")])],
     )
-    rows = fpa.build_calst_inventory(doc, set(), {})
+    rows, _ = fpa.build_calst_inventory(doc, set(), {})
     assert len(rows) == 1
 
 
 def test_calst_dialect_parsed_from_filename():
     doc = _calst_doc([_calst_entry("A", [_calst_sound("Oslo_Normal_X.mp3")])])
-    rows = fpa.build_calst_inventory(doc, set(), {})
+    rows, _ = fpa.build_calst_inventory(doc, set(), {})
     assert rows[0]["dialect"] == "Oslo" and rows[0]["path"] == "Oslo/Oslo_Normal_X.mp3"
 
 
 def test_calst_phrases_and_letters_kept_verbatim():
     doc = _calst_doc([_calst_entry("A", [_calst_sound("Oslo_Normal_X.mp3")])])
-    rows = fpa.build_calst_inventory(doc, set(), {})
+    rows, _ = fpa.build_calst_inventory(doc, set(), {})
     assert rows[0]["word"] == "A"
 
 
-def test_calst_unmatched_filename_is_skipped():
+def test_calst_unmatched_filename_is_skipped_and_reported():
     doc = _calst_doc([_calst_entry("led", [{"url": "/sfiles/Norwegian/Other/nope.mp3", "speed": "Normal"}])])
-    rows = fpa.build_calst_inventory(doc, set(), {})
+    rows, skipped = fpa.build_calst_inventory(doc, set(), {})
     assert rows == []
+    assert len(skipped) == 1 and skipped[0]["word"] == "led" and "nope.mp3" in skipped[0]["path"]
 
 
 # ─────────────────────────── surplus marking ───────────────────────────
@@ -215,6 +229,12 @@ def test_slow_does_not_consume_an_importable_slot():
 def test_mark_surplus_is_idempotent_and_recomputes():
     rows = [_row("led", "Oslo", t) for t in range(3)]
     rows[0]["surplus"] = True  # stale marking from a previous policy
+    fpa.mark_surplus(rows)
+    assert [r.get("surplus", False) for r in rows] == [False, False, True]
+
+
+def test_surplus_grouping_is_casefolded_like_import_identity():
+    rows = [_row("I", "Oslo", 0), _row("i", "Oslo", 1), _row("i", "Oslo", 2)]
     fpa.mark_surplus(rows)
     assert [r.get("surplus", False) for r in rows] == [False, False, True]
 

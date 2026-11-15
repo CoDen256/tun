@@ -66,8 +66,9 @@ class _ProgressReporter:
         self._n = 0
         self._live = None
         self._task = None
-        if Console is not None and Console().is_terminal:
-            self._console = Console()
+        console = Console() if Console is not None else None
+        if console is not None and console.is_terminal:
+            self._console = console
             self._progress = Progress(
                 TextColumn("[bold]import_pygmalion"),
                 BarColumn(),

@@ -142,6 +142,10 @@ def build_inventory(documents) -> tuple[list[dict], list[dict]]:
     so manifest diffs stay stable."""
     rows: dict[str, dict] = {}
     skipped: list[dict] = []
+    # Keyed casefolded: import's primary key is (word.casefold(), dialect, take),
+    # so two literal spellings that casefold the same (e.g. the letters "I"/"i")
+    # must share one take sequence here, or they'd collide on the same take at
+    # import time and one would silently vanish as "existing".
     takes: dict[tuple[str, str], int] = {}
 
     for doc in documents:
@@ -173,8 +177,9 @@ def build_inventory(documents) -> tuple[list[dict], list[dict]]:
                                 }
                             )
                         continue
-                    take = takes.get((word, dialect), 0)
-                    takes[(word, dialect)] = take + 1
+                    takes_key = (word.casefold(), dialect)
+                    take = takes.get(takes_key, 0)
+                    takes[takes_key] = take + 1
                     rows[url] = {
                         "word": word,
                         "dialect": dialect,
@@ -205,8 +210,13 @@ def iter_wordlists(obj):
             yield from iter_wordlists(v)
 
 
-def build_calst_inventory(doc, known_urls: set[str], takes: dict[tuple[str, str], int]) -> list[dict]:
-    """New manifest rows sourced from the calst crawl manifest.
+def build_calst_inventory(
+    doc, known_urls: set[str], takes: dict[tuple[str, str], int]
+) -> tuple[list[dict], list[dict]]:
+    """New manifest rows sourced from the calst crawl manifest, plus any sound
+    entries it could not map to a dialect/speed (reported like pygmalion's own
+    unmapped-path skips, for the same reason: silence there would hide a
+    change in the server's naming convention).
 
     `known_urls` must already contain every URL from the pygmalion extraction
     (and is mutated as calst rows are added, so a sound repeated across calst
@@ -215,7 +225,7 @@ def build_calst_inventory(doc, known_urls: set[str], takes: dict[tuple[str, str]
     continue the existing sequence and never renumber it. Both pygmalion and
     calst extraction are purely source-derived, so re-running this with
     freshly-seeded `known_urls`/`takes` reproduces identical rows."""
-    rows = []
+    rows, skipped = [], []
     for wordlist in iter_wordlists(doc):
         for entry in wordlist:
             word = entry.get("text")
@@ -226,14 +236,19 @@ def build_calst_inventory(doc, known_urls: set[str], takes: dict[tuple[str, str]
                 basename = str(sound.get("url", "")).rsplit("/", 1)[-1]
                 m = _CALST_BASENAME.match(basename)
                 if not m:
+                    skipped.append({
+                        "word": word, "dialect": "?", "path": sound.get("url", ""),
+                        "reason": "unrecognized calst filename",
+                    })
                     continue
                 dialect = m.group(1)
                 url = BASE_URL + basename
                 if url in known_urls:
                     continue  # already a pygmalion row, or a calst dup within this run
                 known_urls.add(url)
-                take = takes.get((word, dialect), 0)
-                takes[(word, dialect)] = take + 1
+                takes_key = (word.casefold(), dialect)
+                take = takes.get(takes_key, 0)
+                takes[takes_key] = take + 1
                 rows.append({
                     "word": word,
                     "dialect": dialect,
@@ -245,7 +260,7 @@ def build_calst_inventory(doc, known_urls: set[str], takes: dict[tuple[str, str]
                     "origin": "calst",
                 })
     rows.sort(key=lambda r: (r["dialect"], r["word"], r["take"]))
-    return rows
+    return rows, skipped
 
 
 def mark_surplus(rows: list[dict]) -> None:
@@ -253,10 +268,13 @@ def mark_surplus(rows: list[dict]) -> None:
     any recording whose filename speed component is not `Normal`, and any
     `Normal` recording beyond the first `MAX_NORMAL_TAKES` within its
     `(word, dialect)` in take order. Deterministic — callers recompute this
-    from scratch on every extraction, so re-running never drifts."""
+    from scratch on every extraction, so re-running never drifts. Grouped
+    casefolded, matching import's primary key, so e.g. the letters "I" and
+    "i" count against the same two-take budget rather than each getting
+    their own (which is also how their takes were numbered)."""
     groups: dict[tuple[str, str], list[dict]] = {}
     for row in rows:
-        groups.setdefault((row["word"], row["dialect"]), []).append(row)
+        groups.setdefault((row["word"].casefold(), row["dialect"]), []).append(row)
         row.pop("surplus", None)
     for group in groups.values():
         normal_seen = 0
@@ -748,9 +766,10 @@ def cmd_extract(args, console: Console) -> int:
         known_urls = {r["url"] for r in rows}
         takes: dict[tuple[str, str], int] = {}
         for r in rows:
-            key = (r["word"], r["dialect"])
+            key = (r["word"].casefold(), r["dialect"])
             takes[key] = max(takes.get(key, 0), r["take"] + 1)
-        calst_rows = build_calst_inventory(calst_doc, known_urls, takes)
+        calst_rows, calst_skipped = build_calst_inventory(calst_doc, known_urls, takes)
+        skipped += calst_skipped
         rows = sorted(rows + calst_rows, key=lambda r: (r["dialect"], r["word"], r["take"]))
 
     mark_surplus(rows)
