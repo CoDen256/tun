@@ -1,19 +1,27 @@
 """
 scripts/fetch_pygmalion_audio.py — fetch the NTNU Pygmalion / LearnNoW
 pronunciation recordings referenced by `providers/pygmalion/{vowels,
-consonants}.json` into `providers/pygmalion/audio/`, with a manifest that
-records which word / dialect / URL every file came from (the data half of the
-`pygmalion` /tts provider).
+consonants}.json`, plus the CALST crawl's wider word coverage
+(`providers/calst/calst_manifest.json`), into `providers/pygmalion/audio/`,
+with a manifest that records which word / dialect / URL every file came
+from (the data half of the `pygmalion` /tts provider).
 
 Two steps, deliberately separate:
 
-  extract   offline, pure. Walks both JSON files, maps every Windows path
-            (`C:\\CalstFiles\\…\\Words_MP3\\<name>.mp3`) to its remote URL and
-            writes `audio/manifest.jsonl`. Re-running keeps download progress.
+  extract   offline, pure. Walks both pygmalion JSON files, maps every
+            Windows path (`C:\\CalstFiles\\…\\Words_MP3\\<name>.mp3`) to its
+            remote URL, then walks the calst manifest's wordLists for any
+            `.mp3` basename not already covered, numbering its takes after
+            the pygmalion ones (never renumbering). Stamps `surplus: true` on
+            every row the import must skip (non-Normal speed, or more than 2
+            Normal takes per word/dialect). Writes `audio/manifest.jsonl`.
+            Re-running keeps download progress and recomputes the surplus
+            marking deterministically.
   download  network. Fetches every manifest row not yet done, politely
             (one connection, 0.5–1 s jitter, Retry-After, backoff), and can be
             interrupted and resumed at any point: the manifest *is* the
-            resume state, files land via `.part` + atomic rename.
+            resume state, files land via `.part` + atomic rename. Surplus
+            rows are downloaded like any other — only import skips them.
 
 Run:
   python -m scripts.fetch_pygmalion_audio extract
@@ -74,7 +82,9 @@ DEFAULT_SOURCES = [
     _REPO_ROOT / "providers" / "pygmalion" / "vowels.json",
     _REPO_ROOT / "providers" / "pygmalion" / "consonants.json",
 ]
+DEFAULT_CALST_SOURCE = _REPO_ROOT / "providers" / "calst" / "calst_manifest.json"
 MANIFEST_NAME = "manifest.jsonl"
+MAX_NORMAL_TAKES = 2
 
 MAX_ATTEMPTS = 5
 BACKOFF_CAP_S = 60.0
@@ -88,7 +98,13 @@ CHUNK = 16 * 1024
 # (bolig) entries do not and are skipped.
 _MP3_PATH = re.compile(r"^.*[\\/]Words_MP3[\\/]([^\\/]+\.mp3)$", re.IGNORECASE)
 
-_FIELD_ORDER = ("word", "dialect", "take", "translation", "url", "path", "status", "bytes", "sha256")
+# calst basenames follow the same server convention: `<Dialect>_<Speed>_<id>.mp3`.
+_CALST_BASENAME = re.compile(r"^([A-Za-z]+)_(Normal|Slow)_[^.]+\.mp3$", re.IGNORECASE)
+_SPEED_IN_PATH = re.compile(r"_(Normal|Slow)_", re.IGNORECASE)
+
+_FIELD_ORDER = (
+    "word", "dialect", "take", "translation", "url", "path", "status", "surplus", "origin", "bytes", "sha256",
+)
 DONE, PENDING, MISSING, FAILED = "ok", "pending", "missing", "failed"
 
 
@@ -170,6 +186,89 @@ def build_inventory(documents) -> tuple[list[dict], list[dict]]:
                     }
     ordered = sorted(rows.values(), key=lambda r: (r["dialect"], r["word"], r["take"]))
     return ordered, skipped
+
+
+# ─────────────────────────── calst extraction ───────────────────────────
+
+def iter_wordlists(obj):
+    """Yield every `wordList` array in the calst manifest, at any nesting
+    depth — deliberately not hard-coded to exercises → types → LAC/LAS/LAW →
+    variables → VocabExerciseData."""
+    if isinstance(obj, dict):
+        wordlist = obj.get("wordList")
+        if isinstance(wordlist, list):
+            yield wordlist
+        for v in obj.values():
+            yield from iter_wordlists(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from iter_wordlists(v)
+
+
+def build_calst_inventory(doc, known_urls: set[str], takes: dict[tuple[str, str], int]) -> list[dict]:
+    """New manifest rows sourced from the calst crawl manifest.
+
+    `known_urls` must already contain every URL from the pygmalion extraction
+    (and is mutated as calst rows are added, so a sound repeated across calst
+    exercises yields one row too). `takes` must already hold the pygmalion
+    take count per `(word, dialect)` (mutated the same way) so calst takes
+    continue the existing sequence and never renumber it. Both pygmalion and
+    calst extraction are purely source-derived, so re-running this with
+    freshly-seeded `known_urls`/`takes` reproduces identical rows."""
+    rows = []
+    for wordlist in iter_wordlists(doc):
+        for entry in wordlist:
+            word = entry.get("text")
+            if not word:
+                continue
+            translation = entry.get("translation")
+            for sound in entry.get("sounds") or []:
+                basename = str(sound.get("url", "")).rsplit("/", 1)[-1]
+                m = _CALST_BASENAME.match(basename)
+                if not m:
+                    continue
+                dialect = m.group(1)
+                url = BASE_URL + basename
+                if url in known_urls:
+                    continue  # already a pygmalion row, or a calst dup within this run
+                known_urls.add(url)
+                take = takes.get((word, dialect), 0)
+                takes[(word, dialect)] = take + 1
+                rows.append({
+                    "word": word,
+                    "dialect": dialect,
+                    "take": take,
+                    "translation": [translation] if translation else [],
+                    "url": url,
+                    "path": f"{dialect_slug(dialect)}/{basename}",
+                    "status": PENDING,
+                    "origin": "calst",
+                })
+    rows.sort(key=lambda r: (r["dialect"], r["word"], r["take"]))
+    return rows
+
+
+def mark_surplus(rows: list[dict]) -> None:
+    """Stamps `surplus: true` (in place) on every row the import must skip:
+    any recording whose filename speed component is not `Normal`, and any
+    `Normal` recording beyond the first `MAX_NORMAL_TAKES` within its
+    `(word, dialect)` in take order. Deterministic — callers recompute this
+    from scratch on every extraction, so re-running never drifts."""
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for row in rows:
+        groups.setdefault((row["word"], row["dialect"]), []).append(row)
+        row.pop("surplus", None)
+    for group in groups.values():
+        normal_seen = 0
+        for row in sorted(group, key=lambda r: r["take"]):
+            m = _SPEED_IN_PATH.search(Path(row["path"]).name)
+            speed = m.group(1).title() if m else "Normal"
+            if speed != "Normal":
+                row["surplus"] = True
+                continue
+            normal_seen += 1
+            if normal_seen > MAX_NORMAL_TAKES:
+                row["surplus"] = True
 
 
 def merge_manifest(new_rows: list[dict], old_rows: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -633,6 +732,29 @@ def cmd_extract(args, console: Console) -> int:
             return 2
 
     rows, skipped = build_inventory(documents)
+
+    calst_doc = None
+    if args.calst_source is not None:
+        try:
+            with open(args.calst_source, encoding="utf-8") as f:
+                calst_doc = json.load(f)
+        except FileNotFoundError:
+            if args.calst_source != DEFAULT_CALST_SOURCE:
+                console.print(f"[red]calst source not found:[/red] {args.calst_source}")
+                return 2
+
+    calst_rows = []
+    if calst_doc is not None:
+        known_urls = {r["url"] for r in rows}
+        takes: dict[tuple[str, str], int] = {}
+        for r in rows:
+            key = (r["word"], r["dialect"])
+            takes[key] = max(takes.get(key, 0), r["take"] + 1)
+        calst_rows = build_calst_inventory(calst_doc, known_urls, takes)
+        rows = sorted(rows + calst_rows, key=lambda r: (r["dialect"], r["word"], r["take"]))
+
+    mark_surplus(rows)
+
     manifest = args.audio_dir / MANIFEST_NAME
     merged, dropped = merge_manifest(rows, load_manifest(manifest))
     save_manifest(manifest, merged)
@@ -650,9 +772,15 @@ def cmd_extract(args, console: Console) -> int:
 
     for s in skipped:
         console.print(f"[yellow]skipped[/yellow] «{s['word']}» ({s['dialect']}): {s['reason']} — {s['path']}", highlight=False)
+    if calst_rows:
+        console.print(f"calst: {len(calst_rows)} new row(s) from {args.calst_source}")
+    surplus_n = sum(bool(r.get("surplus")) for r in rows)
     if dropped:
         console.print(f"[yellow]{len(dropped)} manifest row(s) no longer in the source were kept[/yellow]")
-    console.print(f"wrote {manifest} ({len(merged)} rows; {sum(r['status'] == DONE for r in merged)} already ok)")
+    console.print(
+        f"wrote {manifest} ({len(merged)} rows; {sum(r['status'] == DONE for r in merged)} already ok; "
+        f"{surplus_n} surplus)"
+    )
     return 0
 
 
@@ -702,6 +830,8 @@ def build_parser() -> argparse.ArgumentParser:
     ex = sub.add_parser("extract", help="build/refresh manifest.jsonl from the source JSON (offline)")
     common(ex)
     ex.add_argument("--source", type=Path, action="append", help="source JSON (repeatable; default vowels+consonants)")
+    ex.add_argument("--calst-source", type=Path, default=DEFAULT_CALST_SOURCE, help="calst crawl manifest JSON")
+    ex.add_argument("--no-calst", dest="calst_source", action="store_const", const=None, help="skip the calst source")
 
     dl = sub.add_parser("download", help="fetch every manifest row not yet done (resumable)")
     common(dl)

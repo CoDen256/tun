@@ -112,6 +112,113 @@ def test_manifest_roundtrip_is_jsonl_and_atomic(tmp_path):
     assert not (tmp_path / "m.jsonl.tmp").exists()
 
 
+# ─────────────────────────── calst extraction ───────────────────────────
+
+def _calst_sound(basename: str, speed: str = "Normal") -> dict:
+    return {"url": f"/sfiles/Norwegian/Words_MP3/{basename}", "sex": "Male", "speed": speed, "asrPhoneme": ""}
+
+
+def _calst_entry(text: str, sounds: list[dict], translation: str = "x") -> dict:
+    return {"wordID": 1, "text": text, "translation": translation, "sounds": sounds}
+
+
+def _calst_doc(*wordlists: list[dict]) -> dict:
+    # mimics the real nesting: exercises[].types.LAC.variables.VocabExerciseData[].wordList
+    return {
+        "exercises": [
+            {
+                "types": {
+                    "LAC": {
+                        "variables": {
+                            "VocabExerciseData": [{"wordList": wl} for wl in wordlists]
+                        }
+                    }
+                }
+            }
+        ]
+    }
+
+
+def test_calst_rows_extend_pygmalion_takes_never_renumbering():
+    known = {fpa.BASE_URL + "Oslo_Normal_A.mp3", fpa.BASE_URL + "Oslo_Normal_B.mp3"}
+    takes = {("led", "Oslo"): 2}
+    doc = _calst_doc([_calst_entry("led", [_calst_sound("Oslo_Normal_C.mp3"), _calst_sound("Oslo_Normal_D.mp3")])])
+    rows = fpa.build_calst_inventory(doc, known, takes)
+    assert [(r["take"], r["path"]) for r in rows] == [
+        (2, "Oslo/Oslo_Normal_C.mp3"),
+        (3, "Oslo/Oslo_Normal_D.mp3"),
+    ]
+    assert all(r["origin"] == "calst" and r["dialect"] == "Oslo" for r in rows)
+
+
+def test_calst_duplicate_basename_of_a_pygmalion_row_yields_no_row():
+    known = {fpa.BASE_URL + "Oslo_Normal_A.mp3"}
+    doc = _calst_doc([_calst_entry("led", [_calst_sound("Oslo_Normal_A.mp3")])])
+    rows = fpa.build_calst_inventory(doc, known, {})
+    assert rows == []
+
+
+def test_calst_duplicate_within_itself_yields_one_row():
+    doc = _calst_doc(
+        [_calst_entry("led", [_calst_sound("Oslo_Normal_A.mp3")])],
+        [_calst_entry("led", [_calst_sound("Oslo_Normal_A.mp3")])],
+    )
+    rows = fpa.build_calst_inventory(doc, set(), {})
+    assert len(rows) == 1
+
+
+def test_calst_dialect_parsed_from_filename():
+    doc = _calst_doc([_calst_entry("A", [_calst_sound("Oslo_Normal_X.mp3")])])
+    rows = fpa.build_calst_inventory(doc, set(), {})
+    assert rows[0]["dialect"] == "Oslo" and rows[0]["path"] == "Oslo/Oslo_Normal_X.mp3"
+
+
+def test_calst_phrases_and_letters_kept_verbatim():
+    doc = _calst_doc([_calst_entry("A", [_calst_sound("Oslo_Normal_X.mp3")])])
+    rows = fpa.build_calst_inventory(doc, set(), {})
+    assert rows[0]["word"] == "A"
+
+
+def test_calst_unmatched_filename_is_skipped():
+    doc = _calst_doc([_calst_entry("led", [{"url": "/sfiles/Norwegian/Other/nope.mp3", "speed": "Normal"}])])
+    rows = fpa.build_calst_inventory(doc, set(), {})
+    assert rows == []
+
+
+# ─────────────────────────── surplus marking ───────────────────────────
+
+def _row(word, dialect, take, speed="Normal"):
+    return {
+        "word": word, "dialect": dialect, "take": take, "translation": [], "status": "pending",
+        "url": fpa.BASE_URL + f"{dialect}_{speed}_{take}.mp3", "path": f"{dialect}/{dialect}_{speed}_{take}.mp3",
+    }
+
+
+def test_slow_recordings_are_always_surplus():
+    rows = [_row("led", "Oslo", 0, "Slow")]
+    fpa.mark_surplus(rows)
+    assert rows[0]["surplus"] is True
+
+
+def test_only_first_two_normal_takes_are_importable():
+    rows = [_row("led", "Oslo", t) for t in range(4)]
+    fpa.mark_surplus(rows)
+    assert [r.get("surplus", False) for r in rows] == [False, False, True, True]
+
+
+def test_slow_does_not_consume_an_importable_slot():
+    rows = [_row("led", "Oslo", 0), _row("led", "Oslo", 1, "Slow"), _row("led", "Oslo", 2)]
+    fpa.mark_surplus(rows)
+    assert [r.get("surplus", False) for r in rows] == [False, True, False]
+
+
+def test_mark_surplus_is_idempotent_and_recomputes():
+    rows = [_row("led", "Oslo", t) for t in range(3)]
+    rows[0]["surplus"] = True  # stale marking from a previous policy
+    fpa.mark_surplus(rows)
+    assert [r.get("surplus", False) for r in rows] == [False, False, True]
+
+
 # ─────────────────────────── download harness ───────────────────────────
 
 class FakeResp:

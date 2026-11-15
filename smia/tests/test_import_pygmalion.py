@@ -67,7 +67,7 @@ def test_imports_mapping_and_stores_bytes_in_the_audio_cache(tmp_path):
         ("led", "Sandnessjøen", 0, b"BBB", {}),
     ])
     counts = import_pygmalion.run(m)
-    assert counts == {"imported": 2, "existing": 0, "skipped": 0, "mismatched": 0}
+    assert counts == {"imported": 2, "existing": 0, "surplus": 0, "skipped": 0, "mismatched": 0}
 
     rows = _mapping_rows()
     assert [(w, d, t) for w, d, t, _ in rows] == [("led", "Oslo", 0), ("led", "Sandnessjøen", 0)]  # word casefolded, dialect verbatim
@@ -105,9 +105,30 @@ def test_hash_mismatch_is_skipped_and_stores_nothing(tmp_path):
         assert db.query(TtsAudio).count() == 0  # the bad bytes never entered the cache
 
 
+def test_surplus_rows_never_reach_the_table(tmp_path):
+    m = _corpus(tmp_path, [
+        ("led", "Oslo", 0, b"AAA", {}),
+        ("led", "Oslo", 1, b"BBB", {}),
+        ("led", "Oslo", 2, b"CCC", {"surplus": True}),
+        ("led", "Oslo", 3, b"DDD", {"surplus": True}),
+    ])
+    counts = import_pygmalion.run(m)
+    assert counts["imported"] == 2 and counts["surplus"] == 2
+    assert [t for _, _, t, _ in _mapping_rows()] == [0, 1]
+
+
 def test_absent_manifest_raises_filenotfound_for_bootstrap_to_warn_about(tmp_path):
     with pytest.raises(FileNotFoundError):
         import_pygmalion.run(str(tmp_path / "nope.jsonl"))
+
+
+def test_plain_fallback_runs_without_rich(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(import_pygmalion, "Console", None)
+    m = _corpus(tmp_path, [("led", "Oslo", 0, b"AAA", {})])
+    counts = import_pygmalion.run(m)
+    assert counts["imported"] == 1
+    err = capsys.readouterr().err
+    assert "imported" in err and "\x1b" not in err  # no rich control sequences
 
 
 def test_bootstrap_runs_the_import_against_the_committed_manifest_only_when_empty():
