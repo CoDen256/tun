@@ -1,9 +1,7 @@
 ## Purpose
 
 `POST /examples` looks up Norwegian example sentences/phrases for a word, following the `lookup-cache` contract. Fills stabbur's note-editor `context_text`/X-field gap: a short, ranked list of candidates showing a word used in context, with no translation (that's `/translations`' concern). Backed by two dictionary providers (`ordbokene`, `kaikki` — examples filed under a lemma, returned in source order) and two corpus providers (`tatoeba`, `leipzig` — naturally-occurring sentences found via inflected-form expansion and ranked for length/completeness).
-
 ## Requirements
-
 ### Requirement: Example lookup returns a short ranked candidate list
 `POST /examples` SHALL accept `{text, lang, provider, limit?}` (`lang` defaults to `nb`; only Norwegian Bokmål is supported) and return `{provider, candidates: [{text, source?, sense?}]}`, following the `lookup-cache` contract and calling only the named provider.
 
@@ -178,3 +176,21 @@ Dictionary providers SHALL NOT apply this ranking, returning their examples in s
 #### Scenario: kaikki translations are discarded
 - **WHEN** a kaikki example carries a translation field
 - **THEN** the candidate contains only the Norwegian text
+
+### Requirement: lexin examples provider
+`/examples` SHALL be backed additionally by `lexin`, a dictionary provider: a live call against LEXIN's findwords API (lexin.oslomet.no) returning the example sentences a lexicographer filed under each returned entry, in the order LEXIN returns them, with no ranking. Each candidate SHALL be `{text, sense?}` where `sense` is that entry's definition, omitted when the entry has none; an entry without a definition still contributes its examples. Entries LEXIN returns because they merely contain the query SHALL NOT be filtered out. Identical `(text, sense)` pairs SHALL be collapsed, `limit` SHALL default to 3, and no candidate SHALL carry a translation. Only `lang=nb` is supported; any other `lang` SHALL return no candidates.
+
+A lookup LEXIN refuses (an error body in an otherwise successful HTTP response) SHALL be a provider failure, never an empty `candidates` array.
+
+#### Scenario: Examples carry the entry's definition as sense
+- **WHEN** `provider=lexin` is used for `avlyse`
+- **THEN** a candidate has `text` `konserten ble avlyst` and `sense` `innstille, stanse, stoppe, skrinlegge`
+
+#### Scenario: Source order is preserved
+- **WHEN** `provider=lexin` returns examples from several entries
+- **THEN** the candidates appear in LEXIN's response order, not re-ranked
+
+#### Scenario: Upstream refusal is a failure
+- **WHEN** LEXIN answers with `{"err": "Access denied", "error_exist": true}`
+- **THEN** the lookup fails as a provider error and is not cached as an empty answer
+

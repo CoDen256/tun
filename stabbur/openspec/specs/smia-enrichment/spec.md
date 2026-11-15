@@ -7,15 +7,17 @@ Defines how stabbur's note editor obtains provider-sourced suggestions
 lookup server-side, never exposes smia's credential or address to the
 browser, passes failures through unchanged, and takes ownership of any
 audio the operator chooses to use.
-
 ## Requirements
-
 ### Requirement: Enrichment lookups are proxied to smia, never called directly from the browser
 The system SHALL provide stabbur backend endpoints that forward `ipa`,
-`translations`, `inflections`, and `tts` lookups to smia on the operator's
-behalf, attaching smia's own auth token server-side, so the browser never
-holds or sends a smia credential and smia's network address is never exposed
-to the client.
+`translations`, `inflections`, `tts`, and `examples` lookups to smia on the
+operator's behalf, attaching smia's own auth token server-side, so the
+browser never holds or sends a smia credential and smia's network address
+is never exposed to the client.
+
+The system SHALL proxy exactly those kinds for which a note has a
+corresponding field. A kind with no note field SHALL NOT be exposed through
+the generic proxy.
 
 #### Scenario: Operator requests a suggestion
 - **WHEN** the browser calls the stabbur enrichment endpoint for a given kind
@@ -23,6 +25,12 @@ to the client.
 - **THEN** stabbur forwards the equivalent request to smia's `POST /<kind>`
   with its own `SMIA_AUTH_TOKEN`, and returns smia's response body to the
   browser unchanged
+
+#### Scenario: Operator requests example sentences
+- **WHEN** the browser calls the stabbur enrichment endpoint for `examples`
+  with a provider and the query text
+- **THEN** stabbur forwards it to smia's `POST /examples` and returns the
+  response body unchanged, exactly as for any other proxied kind
 
 #### Scenario: Browser never sees smia's token or address
 - **WHEN** inspecting any request the note editor makes while suggesting
@@ -42,8 +50,26 @@ render per-kind suggestion rows without talking to smia directly.
 
 ### Requirement: A lookup failure is surfaced as-is, with no retry or fallback
 The system SHALL pass through a provider's failure (no entry found, provider
-error, or unavailable) to the client exactly as smia reported it, and SHALL
-NOT automatically retry the same kind against a different provider.
+error, or unavailable) to the client exactly as smia reported it, and the
+proxy SHALL NOT automatically retry the same kind against a different
+provider. A single lookup yields a single provider's answer, and that
+answer — including its failure — reaches the operator as itself.
+
+This prohibition applies to the proxy's handling of a lookup. It does NOT
+prohibit the operator from consulting several providers in an order they
+configured themselves, provided that:
+
+- the sequence is initiated by an explicit operator action, not by the
+  proxy reacting to a failure;
+- each provider is consulted through an ordinary, individually
+  pass-through lookup; and
+- the provider whose answer was used is identified to the operator, so no
+  value ever appears without the operator being able to see where it came
+  from.
+
+The distinction is between the proxy silently substituting one provider's
+answer for another's, which remains forbidden, and the operator running
+down their own list with every step visible, which is permitted.
 
 #### Scenario: Provider has no entry for the requested input
 - **WHEN** smia responds that the named provider found nothing for the given
@@ -57,6 +83,18 @@ NOT automatically retry the same kind against a different provider.
 - **THEN** stabbur responds with an error listing the currently available
   providers for that kind, mirroring smia's own unknown-provider /
   provider-required error shape
+
+#### Scenario: An operator-configured order is walked
+- **WHEN** the operator triggers an action that consults their configured
+  providers for a kind in order until one answers
+- **THEN** each provider is consulted by its own ordinary lookup, each
+  response is passed through unchanged, and the provider that supplied the
+  value used is identified
+
+#### Scenario: The proxy still does not substitute on its own
+- **WHEN** a single lookup for one named provider fails
+- **THEN** stabbur returns that failure and does not consult the next
+  provider in the operator's order on its own initiative
 
 ### Requirement: Using a TTS candidate stores real stabbur-owned audio
 The system SHALL, when an operator selects a `/tts` candidate to use for a
@@ -97,3 +135,30 @@ own `stt-api` contract.
 - **WHEN** the stt-enrichment endpoint is called with a sha256 that has no
   corresponding stored blob
 - **THEN** the request fails with a client error, and no call is made to smia
+
+### Requirement: An operator-initiated cache bypass is forwarded to the enrichment service
+The system SHALL forward a cache-bypass flag to the enrichment service when,
+and only when, the client supplies one on an enrichment request, so that a
+lookup the operator explicitly asked to re-run consults the provider again
+rather than returning the service's cached answer.
+
+The system SHALL NOT originate this flag on its own. Deciding to bypass a
+cache is the operator's action, relayed by the proxy; the proxy remains a
+pass-through and does not acquire a caching policy of its own.
+
+#### Scenario: Client requests a forced re-run
+- **WHEN** the browser sends an enrichment request carrying the cache-bypass
+  flag
+- **THEN** stabbur forwards it to the enrichment service alongside the
+  request's other fields, and returns the resulting response unchanged
+
+#### Scenario: Ordinary lookup is unaffected
+- **WHEN** the browser sends an enrichment request without the flag
+- **THEN** stabbur forwards the request without it, and a cached answer is
+  returned as normal
+
+#### Scenario: The proxy never forces on its own
+- **WHEN** stabbur proxies any enrichment request the client did not mark
+  for re-run
+- **THEN** no cache-bypass flag is added by stabbur
+

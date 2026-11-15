@@ -5,9 +5,7 @@
 TBD — defines the data model for notes: permanent ids with tombstoning,
 language-agnostic fields, flexible translations, the draft/ready status
 model, and the structures for inflections and shared grammar rules.
-
 ## Requirements
-
 ### Requirement: Notes carry a permanent id, even when removed
 The system SHALL assign each note a permanent id at creation that is never
 reused, and SHALL preserve that id as a tombstone if the note is ever removed
@@ -113,7 +111,9 @@ data.
 The system SHALL require `capture_id` to be present when `origin=capture`,
 SHALL require `import_ref` to be present when `origin=import`, and SHALL
 require both to be absent when `origin=manual`, enforced at the storage
-layer rather than by convention.
+layer rather than by convention. The system SHALL additionally enforce that
+a present `capture_id` references an existing capture, so a captured origin
+is referentially backed and not merely non-null.
 
 #### Scenario: Claiming an imported origin without a reference
 - **WHEN** a note is written with `origin=import` and no `import_ref`
@@ -127,6 +127,16 @@ layer rather than by convention.
 - **WHEN** a note is written with `origin=manual` and either a `capture_id`
   or an `import_ref`
 - **THEN** the write is rejected
+
+#### Scenario: Referencing a capture that does not exist
+- **WHEN** a note is written with `origin=capture` and a `capture_id` that
+  matches no stored capture
+- **THEN** the write is rejected by the storage layer
+
+#### Scenario: Removing a capture a note still references
+- **WHEN** a capture is deleted while a note still references it
+- **THEN** the deletion is rejected, so a live note's provenance cannot be
+  destroyed from underneath it
 
 ### Requirement: Imported notes record which external source they came from
 The system SHALL store `import_ref` as a structured value identifying the
@@ -165,3 +175,4 @@ to be edited freely.
 - **THEN** the request is accepted
 </content>
 </invoke>
+

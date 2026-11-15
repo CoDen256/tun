@@ -6,9 +6,7 @@ TBD — defines the operator-facing note editing surface: in-editor audio
 playback/trim/replace, a raw-JSON view of the stored record alongside the
 structured form, and PoS-driven inflection field prefill when creating a
 word note.
-
 ## Requirements
-
 ### Requirement: Audio can be listened to, trimmed, and replaced from the editor
 The system SHALL provide in-editor audio playback, a trim control that sets
 `audio_sel_ms`, and a way to replace a note's `audio_blob` with a newly
@@ -46,21 +44,6 @@ generic field for the operator to shape by hand.
 - **THEN** the infinitiv/presens/preteritum/perfektum fields appear, empty
   and ready to fill, with no other PoS's fields shown
 
-### Requirement: A verb note's lemma can be derived from its text
-The system SHALL show a "From text" action next to the Lemma field whenever
-the note's part of speech is `verb`, which sets `lemma` to the current
-`text` value with any leading Norwegian infinitive marker (`"å "`) removed.
-This action SHALL NOT be shown for any other part of speech.
-
-#### Scenario: Deriving a verb's lemma
-- **WHEN** the operator has `text = "å spise"` and `pos = verb`, and clicks
-  "From text" next to the Lemma field
-- **THEN** `lemma` is set to `"spise"`
-
-#### Scenario: Action hidden for non-verb parts of speech
-- **WHEN** the note's part of speech is anything other than `verb`
-- **THEN** no "From text" action is shown next to the Lemma field
-
 ### Requirement: Transcription, translations, and audio fields offer provider-sourced suggestions
 The system SHALL provide a combined suggest control next to the
 transcription field, the translations list, and the audio panel — a toggle
@@ -73,7 +56,10 @@ one action. For a TTS provider that has no automatable lookup and instead
 returns a link to its own site for a human to check by hand, the audio panel
 SHALL show that link and accept a pasted-back result (a direct audio URL, or
 a YouTube URL with a timecode) instead of reporting it as a plain lookup
-failure.
+failure. The audio query SHALL additionally strip a leading bare indefinite
+article or infinitive marker (`en`/`et`/`ei`/`å`) before querying, the same
+transform the examples query already applies — one shared derivation, not
+two independently-maintained ones.
 
 A transcription provider's answer SHALL be read according to the `mode`
 discriminator on its response, which has two arms: a whole-phrase answer
@@ -158,6 +144,12 @@ whole-phrase answer, so an older enrichment service remains readable.
   task 6.3 for the full history); only the Forvo scenario above is currently
   confirmed working
 
+#### Scenario: A note's derived query still carries its leading article when suggesting audio
+- **WHEN** the operator opens the audio suggest control on a note whose
+  derived query (its `lemma`, or `text` with no lemma set) begins with a
+  bare `en`, `et`, `ei`, or `å` token
+- **THEN** that leading token is stripped before any TTS provider is queried
+
 ### Requirement: An assembled phrase transcription is offered only when the provider supplies one, and is never fabricated
 The system SHALL offer an assembled whole-phrase transcription only when
 the enrichment service itself supplies one, and SHALL NOT concatenate a
@@ -205,13 +197,18 @@ suggestion panel or pressing a per-provider retry control.
 
 ### Requirement: Each provider row's query is independently editable and retriable
 The system SHALL default every provider's query within a panel to that
-panel's shared query field (`lemma || text`), but SHALL let the operator
-reveal and edit a per-provider override to re-fire just that row — so a
-provider with no entry for the shared query can be retried against a
-different input without affecting other providers' rows. The per-provider
-override input SHALL be hidden by default, revealed only via an explicit
-per-row action, so the common case (every provider sharing one query) has no
-extra visible controls.
+panel's shared query field, but SHALL let the operator reveal and edit a
+per-provider override to re-fire just that row — so a provider with no
+entry for the shared query can be retried against a different input without
+affecting other providers' rows. The per-provider override input SHALL be
+hidden by default, revealed only via an explicit per-row action, so the
+common case (every provider sharing one query) has no extra visible
+controls.
+
+When revealed, the override SHALL be prefilled with the panel's shared
+query by default, so that adjusting the shared query for one provider does
+not require retyping it. The system SHALL allow this to be configured to
+open empty instead.
 
 #### Scenario: Retrying a provider with a different input
 - **WHEN** a provider's row shows no result for the shared query, the
@@ -219,38 +216,70 @@ extra visible controls.
 - **THEN** only that provider is re-queried with the edited input; other
   providers' rows and results are unaffected
 
-#### Scenario: Override starts empty, not copied from the shared query
-- **WHEN** the operator reveals a provider row's override input
-- **THEN** that input starts empty (with a placeholder), not prefilled with
-  the shared query's current value, so it reads unambiguously as a different
-  input rather than a copy
+#### Scenario: Override opens prefilled by default
+- **WHEN** the operator reveals a provider row's override with the default
+  configuration
+- **THEN** it contains the panel's current shared query, ready to be
+  adjusted
+
+#### Scenario: Override configured to open empty
+- **WHEN** the operator has configured overrides to open empty and reveals
+  a provider row's override
+- **THEN** it is empty with a placeholder, reading as a different input
+  rather than a copy
 
 #### Scenario: Collapsing an override falls back to the shared query
 - **WHEN** a provider row's override is revealed, then the operator
   collapses it again without having retried
 - **THEN** that row's next retry uses the panel's shared query value, not a
-  stale override
+  stale override — regardless of what the override had been prefilled with
 
 ### Requirement: Translation suggestions are grouped by target language
 The system SHALL group translation suggestions by target language, showing
-English and German by default, and SHALL let the operator add further target
-languages to the same panel.
+the operator's configured default target languages, and SHALL let the
+operator add further target languages to the same panel.
+
+When the operator uses a candidate for a language that already has a
+translation on the note, the system SHALL follow the operator's configured
+merge mode: either extending the existing translation for that language
+with the new candidate, separated by a slash, or adding a separate
+translation row for that language.
+
+Changing the merge mode SHALL affect only subsequent actions. It SHALL NOT
+rewrite translations already stored on any note.
 
 #### Scenario: Opening the translations suggestion panel
 - **WHEN** the operator clicks "Suggest translations"
-- **THEN** the panel shows an English group and a German group, each listing
-  every configured translation provider's result for that target language
+- **THEN** the panel shows one group per configured default target
+  language, each listing every configured translation provider's result for
+  that language
 
 #### Scenario: Adding a target language
 - **WHEN** the operator enters a language code and adds it to the panel
 - **THEN** a new group appears for that language with the same providers
   queried against it, without affecting the existing language groups
 
-#### Scenario: Using a translation
-- **WHEN** the operator clicks "Use" on a candidate within a language group
-- **THEN** a new translation row is added to the note's translations list,
-  tagged with that group's language, leaving any other language's chosen
-  translation untouched
+#### Scenario: Using the first translation for a language
+- **WHEN** the operator uses a candidate for a language the note has no
+  translation for yet
+- **THEN** a translation row is added for that language, regardless of
+  merge mode
+
+#### Scenario: Using a second translation while appending
+- **WHEN** the note already has an English translation, the merge mode is
+  to append, and the operator uses a second English candidate
+- **THEN** that language's existing translation is extended with the new
+  candidate separated by a slash, and no second English row is added
+
+#### Scenario: Using a second translation while keeping rows separate
+- **WHEN** the note already has an English translation, the merge mode is
+  to keep rows separate, and the operator uses a second English candidate
+- **THEN** a second English translation row is added, leaving the first
+  unchanged
+
+#### Scenario: Other languages are unaffected
+- **WHEN** the operator uses a candidate within one language group
+- **THEN** any other language's chosen translation is left untouched
 
 ### Requirement: Noun inflection fields are grouped by article, singular, and plural
 The system SHALL render a `substantiv` note's inflection fields as three
@@ -281,11 +310,15 @@ panel showing each configured provider's full paradigm as its own table,
 with each form individually copyable, and SHALL additionally let the
 operator fill a form directly into its matching inflection field on the
 note with one click, when that field exists for the note's current part of
-speech. A paradigm's forms SHALL be ordered the same way the note's own
-inflection fields are ordered, regardless of what order a provider's
-response happens to list them in. The system SHALL NOT auto-fill the note's
-inflection fields from a lookup on its own — every fill remains an explicit,
-per-field operator action.
+speech. The system SHALL additionally offer a single action per candidate
+that applies the whole paradigm — setting the note's part of speech when the
+note has none, then filling every form that has a matching field — so that a
+paradigm is usable on a note whose part of speech is not yet set. That
+action SHALL NOT change a part of speech the note already carries. A
+paradigm's forms SHALL be ordered the same way the note's own inflection
+fields are ordered, regardless of what order a provider's response happens
+to list them in. The system SHALL NOT auto-fill the note's inflection fields
+from a lookup on its own — every fill remains an explicit operator action.
 
 #### Scenario: Looking up inflections
 - **WHEN** the operator opens the inflections suggest control
@@ -306,6 +339,25 @@ per-field operator action.
   inflection field for that paradigm key
 - **THEN** that field on the note form is set to the provider's value
   immediately, without affecting any other inflection field
+
+#### Scenario: Applying a whole paradigm to a note with no part of speech
+- **WHEN** the operator applies a provider's whole candidate on a note that
+  has no part of speech, and the provider reported one
+- **THEN** the note's part of speech is set to the reported value, its
+  inflection fields for that part of speech become available, and every
+  reported form with a matching field is filled
+
+#### Scenario: Applying a whole paradigm never overrides an existing part of speech
+- **WHEN** the operator applies a provider's whole candidate on a note that
+  already has a part of speech
+- **THEN** the note's part of speech is left exactly as it was, and only the
+  forms with matching fields are filled
+
+#### Scenario: A provider reporting no part of speech
+- **WHEN** the operator applies a whole candidate whose provider reported no
+  part of speech, on a note that has none
+- **THEN** no part of speech is invented, and no inflection field is filled,
+  because none exists to fill
 
 #### Scenario: Fill is unavailable for a non-matching field
 - **WHEN** a provider's paradigm includes a key that has no corresponding
@@ -389,3 +441,244 @@ SHALL NOT appear on the new-note form or on a note with no stored audio.
   note's `text` field already has a non-empty value
 - **THEN** the operator is asked to confirm before the existing value is
   overwritten
+
+### Requirement: Each suggestion kind draws its query from one named field
+The system SHALL source each suggestion kind's default query from exactly
+one of the note's fields, with no fallback between fields: inflection
+lookups SHALL use `lemma`, and transcription, translation, and audio
+lookups SHALL use `text`.
+
+The system SHALL NOT apply any further transformation to the chosen field's
+value before sending it — in particular it SHALL NOT strip a leading
+Norwegian article or infinitive marker, which is the enrichment service's
+concern where it applies at all.
+
+#### Scenario: Inflections use the lemma
+- **WHEN** a `type=word` note has `text = "legge til"` and `lemma = "legge"`,
+  and the operator opens the inflections suggest control
+- **THEN** the query shown and used is `"legge"`
+
+#### Scenario: Transcription, translations, and audio use the text
+- **WHEN** that same note's transcription, translations, or audio suggest
+  control is opened
+- **THEN** the query shown and used is `"legge til"`, not the lemma
+
+#### Scenario: An empty field is not substituted
+- **WHEN** a kind's source field is empty
+- **THEN** the query is empty, and the system does not silently fall back to
+  a different field
+
+### Requirement: A word note's lemma follows its text until the operator edits it
+The system SHALL keep a word note's `lemma` synchronised with the first
+whitespace-separated token of its `text` as the operator types, without
+requiring any explicit action. Once the operator edits `lemma` directly,
+the system SHALL stop synchronising it for that note and SHALL preserve the
+operator's value. Loading a different note SHALL clear that state, so the
+next note begins synchronised again.
+
+#### Scenario: Typing a multi-word text
+- **WHEN** the operator types `"legge til"` into `text` on a word note whose
+  lemma they have not edited
+- **THEN** `lemma` reads `"legge"`
+
+#### Scenario: The operator overrides the lemma
+- **WHEN** the operator edits `lemma` by hand and then continues editing
+  `text`
+- **THEN** `lemma` keeps the operator's value and is no longer changed by
+  `text`
+
+#### Scenario: A new note starts synchronised again
+- **WHEN** the operator has overridden `lemma` on one note and then loads or
+  begins a different note
+- **THEN** that note's `lemma` synchronises from its own `text` as normal
+
+### Requirement: The new-note form is cleared between notes
+The system SHALL clear the new-note form completely once a note has been
+created from it, and whenever the operator returns to it — every field, every
+suggest control's query and edited-state, any audio chosen from a suggestion
+but not yet saved, and any selected upload file.
+
+#### Scenario: Creating a second note after a first
+- **WHEN** the operator saves a new note and then returns to the new-note
+  form
+- **THEN** every field is empty, with none of the previous note's values
+  present
+
+#### Scenario: Pending suggested audio does not carry over
+- **WHEN** the operator used a TTS suggestion on the new-note form, saved
+  the note, and returned to the form
+- **THEN** no audio is pending attachment to the next note
+
+### Requirement: Suggestion panels do not outlive the note they were opened for
+The system SHALL collapse every suggestion panel and discard its rendered
+contents whenever a different note is loaded into a form, so that no panel
+ever displays candidates looked up for a different note.
+
+#### Scenario: Opening a second note after suggesting on a first
+- **WHEN** the operator opens suggestion panels on one note and then
+  navigates to another
+- **THEN** every panel on the newly loaded note is collapsed, and reopening
+  one performs a fresh lookup rather than showing the previous note's
+  candidates
+
+#### Scenario: Panels start closed on the new-note form
+- **WHEN** the operator begins a new note
+- **THEN** every suggestion panel is closed and empty
+
+### Requirement: Every provider in a panel can be re-run from a visible control
+The system SHALL provide a visible control on each suggest control that
+re-queries every provider in that panel with the control's current query,
+without the operator having to collapse and reopen the panel. The panel
+SHALL remain open across the re-run.
+
+#### Scenario: Re-running after editing the shared query
+- **WHEN** the operator edits a suggest control's query and activates its
+  re-run control
+- **THEN** every provider in that panel is queried again with the edited
+  value and the panel stays open throughout
+
+### Requirement: An explicitly re-run lookup bypasses the cached answer
+The system SHALL request a fresh provider lookup, bypassing the enrichment
+service's cached result, when the operator explicitly re-runs a panel or
+retries a single provider row. Opening a panel for the first time SHALL NOT
+bypass the cache.
+
+Without this, re-running an unchanged query would return the cached answer
+and appear to the operator to have done nothing.
+
+#### Scenario: Re-running an unchanged query
+- **WHEN** the operator activates a panel's re-run control without changing
+  the query
+- **THEN** the providers are consulted again rather than the previous
+  answers being redisplayed from cache
+
+#### Scenario: Opening a panel normally
+- **WHEN** the operator opens a suggestion panel for the first time on a
+  note
+- **THEN** a cached answer is acceptable and no cache bypass is requested
+
+### Requirement: The context field offers provider-sourced example sentences
+The system SHALL provide a combined suggest control for the note's context
+field — the same toggle, live editable shared query, and per-provider rows
+used by the other suggestion kinds — querying with the note's `text` and
+opening a panel listing one row per configured examples provider, each with
+its candidate sentences and an action writing a chosen sentence into the
+context field.
+
+Candidates SHALL be presented as Norwegian sentences only. The system SHALL
+NOT pair an example with a translation or present one as a translation
+candidate, since example lookup answers how a word is used in Norwegian and
+translation is a separate kind.
+
+#### Scenario: Suggesting a context sentence
+- **WHEN** the operator opens the context field's suggest control
+- **THEN** a panel opens showing one row per configured examples provider,
+  each listing that provider's candidate sentences with an action that
+  writes a chosen one into the context field
+
+#### Scenario: The query comes from the note's text
+- **WHEN** the operator opens the context field's suggest control on a note
+  with `text = "legge til"`
+- **THEN** the query shown and used is `"legge til"`
+
+#### Scenario: A provider with no examples
+- **WHEN** a configured provider has no example for the queried word
+- **THEN** that provider's row reports an empty result rather than an
+  error, and the other providers' rows are unaffected
+
+#### Scenario: Examples are not translated
+- **WHEN** any example candidate is shown
+- **THEN** no translation of it is displayed or requested
+
+### Requirement: An example candidate shows the provenance its provider reports
+The system SHALL display, for each example candidate, the sense it
+illustrates and the sub-source it came from, where the provider reports
+them, so the operator can distinguish a lexicographer's example filed under
+a definition from a naturally-occurring sentence found in a corpus.
+
+Both are optional, and a provider omits either where it has nothing
+meaningful to report. The system SHALL show each only when present, and
+SHALL NOT substitute a placeholder for an absent one — an example with no
+sense is a complete answer, not missing data.
+
+#### Scenario: A dictionary provider's candidate
+- **WHEN** a provider returns an example filed under a particular
+  definition and reports that sense
+- **THEN** the candidate is shown with the sense it illustrates
+
+#### Scenario: A corpus provider's candidate
+- **WHEN** a provider returns a sentence drawn from one of its datasets and
+  reports which
+- **THEN** the candidate is shown with that sub-source named
+
+#### Scenario: A provider reports neither
+- **WHEN** a provider returns a candidate with no sense and no sub-source
+- **THEN** only the sentence is shown, with no placeholder or empty label
+  in place of the missing fields
+
+### Requirement: The number of example candidates requested is an operator control
+The system SHALL request a defined number of example candidates per
+provider, defaulting to the enrichment service's own default, and SHALL let
+the operator ask for more when the default set is unusable.
+
+Because the requested count forms part of the lookup's cache identity,
+asking for a different count SHALL be treated as a new lookup rather than
+an expansion of the previous one.
+
+#### Scenario: Default request
+- **WHEN** the operator opens the context suggest control without changing
+  the count
+- **THEN** each provider is queried for the service's default number of
+  candidates
+
+#### Scenario: Asking for more
+- **WHEN** the operator raises the requested count and re-runs
+- **THEN** each provider is queried again for that many candidates, as a
+  fresh lookup
+
+### Requirement: The part-of-speech field offers provider-sourced suggestions
+The system SHALL provide a suggest control next to the note's part-of-speech
+field, following the same combined toggle + live editable shared query
+pattern used by the transcription, translations, audio and inflections
+controls, defaulting its query to the note's `lemma` and falling back to
+`text`. Applying a suggested part of speech SHALL replace whatever value the
+field currently holds.
+
+#### Scenario: Suggesting a part of speech for a note that has none
+- **WHEN** the operator opens the part-of-speech suggest control on a note
+  with no part of speech, and the provider reports one
+- **THEN** the reported value is offered, and applying it sets the note's
+  part of speech
+
+#### Scenario: Explicitly replacing an existing part of speech
+- **WHEN** the note already has a part of speech, and the operator opens the
+  part-of-speech suggest control and applies a different reported value
+- **THEN** the note's part of speech is replaced with the applied value
+
+#### Scenario: The provider's answer disagrees with the note
+- **WHEN** the provider reports a part of speech different from the one the
+  note already carries
+- **THEN** both are shown, so the operator sees the disagreement before
+  choosing
+
+#### Scenario: No lookup without an explicit action
+- **WHEN** the operator edits the note's `text` or `lemma`
+- **THEN** no part-of-speech lookup is fired until the operator opens the
+  control or presses a retry
+
+### Requirement: A reported word class outside the supported set is shown but not offered
+The system SHALL display a provider's reported word class even when it has
+no equivalent among the parts of speech the system supports, and SHALL NOT
+offer to apply a value outside that set.
+
+#### Scenario: A pronoun or determiner
+- **WHEN** the provider reports a word class that the system has no
+  equivalent for
+- **THEN** the reported class is shown as the provider's own answer, with no
+  action offered to apply it
+
+#### Scenario: A word class with a direct equivalent
+- **WHEN** the provider reports a word class that maps onto one of the
+  supported parts of speech
+- **THEN** the mapped value is offered for applying
+
