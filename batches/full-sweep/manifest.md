@@ -23,7 +23,7 @@ All other packages are parallel-safe.
 | Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` |
 | Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
 | Stabbur merging & dict.cc translations | pending |
-| Shadow studying mode | designed (shadow: `shadow-studying-mode`) |
+| Shadow studying mode | building (shadow: `shadow-studying-mode`) |
 | Calst/pygmalion audio consolidation | archived (smia: `2026-11-15-calst-audio-union`) |
 
 ## Packages
