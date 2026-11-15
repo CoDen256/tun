@@ -38,8 +38,14 @@ function wordInflectionLines(text, pos, inflections) {
     return [headword, sg_def, pl_indef, pl_def].filter(Boolean);
   }
   if (pos === "adjektiv") {
-    const { positiv, noytrum, flertall, komparativ, superlativ } = inflections;
-    const neuterPlural = [noytrum, flertall].filter(Boolean).join(" ");
+    // `nøytrum` with the ø — that is the key stabbur actually stores. The
+    // destructure read `noytrum`, which is always undefined, so
+    // `filter(Boolean)` dropped it and every adjective card lost its neuter
+    // form silently: "stor / store / større størst" instead of
+    // "stor / stort store / større størst". Nothing errored, the line was
+    // just one word short.
+    const { positiv, nøytrum, flertall, komparativ, superlativ } = inflections;
+    const neuterPlural = [nøytrum, flertall].filter(Boolean).join(" ");
     const comparative = [komparativ, superlativ].filter(Boolean).join(" ");
     return [text, neuterPlural, comparative].filter(Boolean);
   }
@@ -60,7 +66,13 @@ function wordInflectionLines(text, pos, inflections) {
 function wordHeadlineHtml(note) {
   const lines = wordInflectionLines(note.text, note.pos, note.inflections);
   const body = lines && lines.length > 0 ? lines.join("<br>") : note.text;
-  return`<div class="supWrap">${transcriptionHtml(note)}</div><br>${body}`;
+  // Emit the transcription wrapper ONLY when there is a transcription. It was
+  // unconditional, so a note with none rendered
+  // `<div class="supWrap"></div><br>` — an empty div plus a line break, i.e. a
+  // blank first line on the card, on every word note without a transcription.
+  // Nothing errored; the card was just pushed down by one empty row.
+  const sup = transcriptionHtml(note);
+  return sup ? `<div class="supWrap">${sup}</div><br>${body}` : body;
 }
 
 // `grammarRuleLookup(id) => { title, html } | undefined` — optional. stabbur's
