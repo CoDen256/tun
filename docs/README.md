@@ -46,6 +46,7 @@ and editable by you.
 | `11-ota-contract.md` | **The frozen native contract** — wire format, on-device layout, validity, watchdog, escape hatch | Before writing any native patch code |
 | `14-restructure-handoff.md` | **the monorepo restructure: state, decisions, what is left** | Picking this work up, or starting any session on the `monorepo` branch |
 | `13-operator-console-ux.md` | Deployment unification (`include:`, one adminer), the operator UI direction for stabbur/hub/builder, the batches-are-occurrences-not-cards correction | Building any operator-facing UI, or the deploy/compose setup |
+| `15-agentic-workflow.md` | **The batch workflow (D161)**: triage → per-package design → per-package build in separate sessions; what archiving means; the decision policy | Any session invoked as `/tun-design` or `/tun-build`, or touching `batches/` or `BACKLOG.md` |
 
 Mjølnir app internals (reverse-engineering findings) live in the **mjolnir**
 repo as `docs/findings.md` — that is the authority on how the stock app behaves.

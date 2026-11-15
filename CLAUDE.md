@@ -94,6 +94,18 @@ check per service) is still open — see `docs/14-restructure-handoff.md` §5.
   slugs, never dated** (D153) — the CLI's `--change` flag rejects any name not
   starting with a letter.
 
+## The batch workflow (D161)
+
+Backlog items flow through `docs/15-agentic-workflow.md`: `/tun-triage`
+groups `BACKLOG.md` verbatim into dependency-based packages (isolated from
+each other, possibly spanning projects) and opens a batch under
+`batches/<slug>/`; `/tun-design` (fresh
+session per package) settles UI + architecture with the operator and writes
+acceptance criteria; `/tun-build` (fresh session per package) implements,
+tests, reviews and archives with no operator involvement. Archived ≠
+operator-accepted — the batch's `OPERATOR-CHECKLIST.md` carries what the
+operator tests live, and live findings return as new backlog items.
+
 ## OpenSpec / Opsx Workflow Rules
 
 - **Post-Operation Commit:** Always create a Git commit after running any `opsx` operation.

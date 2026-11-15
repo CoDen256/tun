@@ -1,9 +1,10 @@
 # System-Wide Master Backlog
 
 ## Quick Log (Manual Dump)
+[bug] update all the docs, bring every readme/deploy/claude/ docs md up to date and sync them, ideally find a way to document it once, not in multiple projects. also archive all the opsx changes
 
 ## Triage & Planned Packages
-> Managed by System Overseer AI. Last triaged 2026-11-12.
+> Last triaged 2026-11-12.
 
 ### mjolnir
 
