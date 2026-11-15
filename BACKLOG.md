@@ -11,7 +11,6 @@ projects: mjolnir
 
 [REHAUL] builder UI new version. Completely new from the scratch in addition to "forecost and publish". Should have similar concept, but it should be based on the ship strip of occurances.
 [BUG] builder flush-record-atomicity
-[UX] card preview should be better reflecting the actuall css used in mjolnir so that i don't need to publish and view it in the app to see how it looks like, we need to use exactly the design in mjolnir to render the cards
 [ux] builder should have number of cards/occurances in the descriptions of decks. 
 [REHAUL] builder should add the time of build and it should be displayed in the app version. Rethink the logic and data versionning
 
@@ -20,6 +19,8 @@ projects: mjolnir
 
 [UX] assembly tab: label and patch rev should also be as env vars there, and it should be really preffiled with values, it does not, it say e.g. for logic rev that it is autoincremented to 17, but it doesn't prefill it, and it should suggest it, so the text field with already written value there
 [UX] assembly tab should allow search by module number
+[UX] card preview should be better reflecting the actuall css used in mjolnir so that i don't need to publish and view it in the app to see how it looks like, we need to use exactly the design in mjolnir to render the cards
+
 
 ### Device sync & userdata storage
 projects: mjolnir, backup
@@ -35,11 +36,8 @@ projects: stabbur
 [ux] stabbur ignore variety field do something, can't se anything there
 [ux] merging removes everything not saved,also mergingg should add context add translation, not replace them.
 [REHAUL] rethink dictcc parsing and stabbur displaying of translations. also dict_cc audios not everyone is present and stabbur when asking dict_cc should filter by PoS, because he picks the wrong PoS sometimes
-
-### Smia filmot multiword link
-projects: smia
-
 [UX] smia filmot link for multiword should search them in a quotes: https://filmot.com/search/%22fastsatt%20av%22/1?lang=no&hideDeleted=1&gridView=1&
+
 
 ### Shadow studying mode
 projects: shadow

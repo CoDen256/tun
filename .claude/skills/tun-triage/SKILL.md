@@ -28,7 +28,17 @@ happens later, in `/tun-design`, not here.
 ## Packages are dependency groups, not project folders
 
 Group items by **what must change together**, not by which directory they
-live in:
+live in. **Infer the relationships from evidence, not from wording**: use
+everything at your disposal — `docs/README.md`, `docs/07-decisions.md`, the
+project docs, and the code itself — to find out which service actually owns
+a behavior, what data flow an item really pulls on, and which items
+therefore belong to the same package or depend on another one. An item's
+phrasing often names the project where the *symptom* shows, not where the
+change lands (a stabbur UI complaint may be smia work). Reading code to
+place an item correctly is in scope; rewording the item because of what you
+learned is not — the verbatim rule above always wins, and what you inferred
+goes into the package name, the `projects:` line, and the dependency lines,
+never into the item's text.
 
 - Items that pull on the same feature or data flow belong in one package even
   when they span projects — e.g. a stabbur UI item whose real work is a smia
