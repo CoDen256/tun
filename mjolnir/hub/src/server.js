@@ -17,6 +17,13 @@ import {
 import { findBakedBaseVersion, findBakedPatchRev } from "../../tool/src/otaPublish.js";
 import { list as listLogicBundles } from "./logicBundles.js";
 import { cardsList, stripHtml, getCardSlot } from "./cards.js";
+import {
+  cardPreviewStyleBlock,
+  cardPreviewControlsHtml,
+  cardPreviewClientScript,
+  cardPreviewInlineHtml as cardPreviewInlineHtmlImpl,
+} from "./cardPreview.js";
+import { getCardPreviewData, CARD_PREVIEW_FONTS } from "./cardPreviewStyle.js";
 import { DECK_ALLOCATION, listDecks, updateDeckDescription } from "./decks.js";
 import { renderShell, escapeHtml } from "./layout.js";
 import { requireAuth } from "../../../libs/jsservice/auth.js";
@@ -88,6 +95,12 @@ const DB_BACKED = [
 
 function isDatabaseBacked(pathname) {
   if (DB_BACKED.includes(pathname)) return true;
+  // assembly-tab-usability item 3: the preview's font files are FILE-backed
+  // (served straight out of base/'s own assets/fonts/, like
+  // /mjolnir/workbench and /mjolnir/ota above) — carved out of the
+  // /mjolnir/cards/ prefix rule below before it can mis-gate them during a
+  // database outage.
+  if (pathname.startsWith("/mjolnir/cards/fonts/")) return false;
   // /mjolnir/cards/<id>/audio reads card_content.
   if (pathname.startsWith("/mjolnir/cards/")) return true;
   return false;
@@ -329,64 +342,42 @@ function occurrenceBadge(side) {
   return `<span class="pill pill-warn">${escapeHtml(side.letter)} · ${side.remaining} to go</span>`;
 }
 
-// card-preview: a visual preview of a card's N/E/X faces, styled from the
-// real stock app's own extracted DARK-theme colors/fonts (not the light
-// theme — the operator specifically wants the device's actual dark look,
-// `base/smali.mjolnir.merged/assets/index.android.bundle`'s own theme/
-// class-style map, dark variant). Rendered inline under the card's own row
-// in the Cards table (expand/collapse, one open at a time, D109) rather
-// than a separate page — Poppins falls back to the browser's default
-// sans-serif when unavailable; close enough for "does this look right,"
-// not pixel-perfect (an explicit non-goal).
-const CARD_PREVIEW_STYLE = `
-.card-preview-inline { padding: 14px 4px 18px; }
-.card-preview-faces { display: flex; flex-direction: column; gap: 12px; max-width: 380px; }
-.card-preview-face-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); margin-bottom: 6px; }
-.card-preview-face {
-  font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif;
-  color: #fff;
-  background: #1B1D21;
-  text-align: center;
-  border: 2px solid #fff;
-  border-radius: 14px;
-  padding: 18px 16px;
-  min-height: 70px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 8px;
-}
-.card-preview-face b { font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif; font-weight: 700; color: #3F8CFF; }
-.card-preview-face .teal { color: #00A4BF; }
-.card-preview-face .red { color: red; }
-.card-preview-face .green { color: #5DD8D0; }
-.card-preview-face .left { text-align: left; }
-.card-preview-face i, .card-preview-face .italic { font-style: italic; }
-.card-preview-face:empty::after { content: "(empty)"; color: #666; font-style: italic; }
-.card-preview-audio-badge { margin-top: 2px; font-size: 18px; opacity: .55; }
-.card-preview-face-wrap audio { width: 100%; margin-top: 6px; }
-`;
+// card-preview (assembly-tab-usability item 3): the inline preview under a
+// card's own row in the Cards table (expand/collapse, one open at a time,
+// D109) is now built from `hub/src/cardPreview.js` + `cardPreviewStyle.js`
+// — one real card split into thirds, styled/sized from values TASK 3.1's
+// extractor pulled out of the stock bundle itself, not hand-transcribed.
+// See those files' own headers for why. `CARD_PREVIEW_STYLE`/
+// `cardPreviewInlineHtml` below are thin wrappers kept here so
+// `renderCardsPage` doesn't need to know the preview changed shape.
+const CARD_PREVIEW_STYLE = cardPreviewStyleBlock();
 
-function cardPreviewFaceHtml(letter, html, audioLetter, hasAudioFile, cardId) {
-  const isAudioFace = letter === audioLetter;
-  const audioHtml = !isAudioFace
-    ? ""
-    : hasAudioFile
-      ? `<audio controls src="/mjolnir/cards/${encodeURIComponent(cardId)}/audio"></audio>`
-      : `<div class="card-preview-audio-badge" title="this face carries the card's audio, but no clip is on disk">🔊</div>`;
-  return `<div class="card-preview-face-wrap">
-    <div class="card-preview-face-label">${letter === "N" ? "Front (N)" : letter === "E" ? "Back (E)" : "Extra (X)"}${isAudioFace ? " · 🔊" : ""}</div>
-    <div class="card-preview-face">${html || ""}</div>
-    ${audioHtml}
-  </div>`;
+function cardPreviewInlineHtml(cardId, content, hasAudioFile, previewData) {
+  if (previewData.error) {
+    return `<div class="cp-root"><div class="gone" style="display:inline-block;border:1px dashed #f99;color:#900;background:#fee;border-radius:4px;padding:8px 10px;">
+      Card preview unavailable: the bundle style extractor failed — <code>${escapeHtml(previewData.error.message)}</code>.
+      Fix the extractor (<code>tool/src/extractCardStyle.js</code>) before trusting any preview; refusing to show a
+      partial/guessed-at rendering.
+    </div></div>`;
+  }
+  return cardPreviewInlineHtmlImpl(cardId, content, hasAudioFile, previewData.style, previewData.symbols);
 }
 
-function cardPreviewInlineHtml(cardId, content, hasAudioFile) {
-  const faces = ["N", "E", "X"].map((letter) => cardPreviewFaceHtml(letter, content[letter], content.A, hasAudioFile, cardId)).join("\n");
-  return `<div class="card-preview-inline"><div class="card-preview-faces">${faces}</div></div>`;
-}
+function renderCardsPage(cards, { search, deckCode, statusFilter }, stabburUiBase, dataDir, baseFolderDir) {
+  // assembly-tab-usability item 3: extracted once per page render (the
+  // module-level cache in cardPreviewStyle.js makes repeat renders free
+  // while `base/` is unchanged). A failed extraction does NOT crash the
+  // whole Cards page — every row's preview shows the loud error banner
+  // from `cardPreviewInlineHtml` instead, so Cards itself keeps serving
+  // (D157's "serve before migrate" spirit applied to a read failure, not
+  // just a DB one).
+  let previewData;
+  try {
+    previewData = getCardPreviewData(baseFolderDir);
+  } catch (err) {
+    previewData = { error: err };
+  }
 
-function renderCardsPage(cards, { search, deckCode, statusFilter }, stabburUiBase, dataDir) {
   const byDeck = new Map();
   for (const card of cards) {
     if (!byDeck.has(card.deckCode)) byDeck.set(card.deckCode, []);
@@ -409,7 +400,7 @@ function renderCardsPage(cards, { search, deckCode, statusFilter }, stabburUiBas
                 ? "<td></td>"
                 : "";
           const hasAudioFile = !!(c.audioSha256 && fs.existsSync(path.join(dataDir, "blob", c.audioSha256)));
-          const previewHtml = cardPreviewInlineHtml(c.id, { N: c.N, E: c.E, X: c.X, A: c.A }, hasAudioFile);
+          const previewHtml = cardPreviewInlineHtml(c.id, { N: c.N, E: c.E, X: c.X, A: c.A }, hasAudioFile, previewData);
           return `<tr>
             <td class="mono">${escapeHtml(c.id)}</td>
             <td class="wrap">${escapeHtml(stripHtml(c.N))}</td>
@@ -456,6 +447,7 @@ function renderCardsPage(cards, { search, deckCode, statusFilter }, stabburUiBas
   </select>
   <button type="submit">Filter</button>
 </form>
+${cardPreviewControlsHtml()}
 ${panels || `<div class="panel panel-pad">no cards match this filter</div>`}
 <script>
 // D109: at most one preview open at a time — opening another closes
@@ -468,9 +460,18 @@ document.querySelectorAll('.card-preview-toggle').forEach((btn) => {
     const isOpen = row.style.display !== 'none';
     document.querySelectorAll('.card-preview-row').forEach((r) => { r.style.display = 'none'; });
     row.style.display = isOpen ? 'none' : 'table-row';
+    // assembly-tab-usability item 3: (re-)apply the current simulated
+    // device/theme to whichever preview just opened, so a row opened
+    // after the operator already changed the controls reflects them
+    // immediately instead of the 375×812/dark defaults.
+    if (!isOpen && window.cpApplyRoot) {
+      const root = row.querySelector('.cp-root');
+      if (root) window.cpApplyRoot(root);
+    }
   });
 });
-</script>`,
+</script>
+<script>${cardPreviewClientScript()}</script>`,
   });
 }
 
@@ -1314,11 +1315,16 @@ export function createServer(pool, config, boot) {
         const statusFilter = url.searchParams.get("status") || "";
         const cards = await cardsList(pool, { search, deckCode, statusFilter });
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        return res.end(renderCardsPage(cards, { search, deckCode, statusFilter }, config.stabburUiBase, config.dataDir));
+        return res.end(
+          renderCardsPage(cards, { search, deckCode, statusFilter }, config.stabburUiBase, config.dataDir, config.baseFolderDir)
+        );
       }
 
-      // card-preview's audio stream — the inline preview's <audio> element
-      // src, unchanged by the move from a standalone page to an inline panel.
+      // card-preview's audio stream. assembly-tab-usability item 3: no
+      // longer a static <audio> element's src — the preview now taps a
+      // face, which constructs `new Audio(...)` in JS and calls `.play()`
+      // on it (never inserted into the DOM), so this route's response is
+      // identical but nothing here renders an <audio> tag any more.
       if (req.method === "GET" && url.pathname.startsWith("/mjolnir/cards/") && url.pathname.endsWith("/audio")) {
         const cardId = decodeURIComponent(url.pathname.slice("/mjolnir/cards/".length, -"/audio".length));
         const slot = await getCardSlot(pool, cardId);
@@ -1329,6 +1335,36 @@ export function createServer(pool, config, boot) {
         }
         const bytes = fs.readFileSync(blobPath);
         res.writeHead(200, { "Content-Type": "audio/mpeg", "Content-Length": bytes.length });
+        return res.end(bytes);
+      }
+
+      // assembly-tab-usability item 3 (task 3.3): the preview's real fonts
+      // — Poppins (several weights) and `arial.ttf`, the same files the
+      // stock app bundles (`base/.../assets/fonts/`) — served here rather
+      // than falling back to a browser's system sans, since the whole
+      // point of `arialFont`/`arialFontNormal` is that Poppins lacks IPA
+      // glyphs. An explicit allowlist (`CARD_PREVIEW_FONTS`), not a path
+      // param, so this route can never be made to read anything else out
+      // of `base/` (D04 — read-only input, reading is fine, an open path
+      // is not).
+      if (req.method === "GET" && url.pathname.startsWith("/mjolnir/cards/fonts/")) {
+        const requested = decodeURIComponent(url.pathname.slice("/mjolnir/cards/fonts/".length));
+        const font = CARD_PREVIEW_FONTS.find((f) => f.file === requested);
+        if (!font) {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          return res.end("unknown font");
+        }
+        const fontPath = path.join(config.baseFolderDir, "assets", "fonts", font.file);
+        if (!fs.existsSync(fontPath)) {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          return res.end(`font not found in base folder: ${font.file}`);
+        }
+        const bytes = fs.readFileSync(fontPath);
+        res.writeHead(200, {
+          "Content-Type": "font/ttf",
+          "Content-Length": bytes.length,
+          "Cache-Control": "public, max-age=86400",
+        });
         return res.end(bytes);
       }
 
