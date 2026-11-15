@@ -121,10 +121,12 @@ but is a subset of calst, combine them into one or extend pygmalion tts from all
 
 Designed 2026-11-15 → smia change `calst-audio-union`. Subset question answered during design: neither corpus
 contains the other (868/1,176 pygmalion files overlap; calst adds 7,573 Oslo_Normal files / 3,211 new words).
-Operator decisions: one combined provider under the existing `pygmalion` id; download and commit all files
-(~52 MB); /tts capped at 2 takes per (word, dialect) — presentation-only, all data imported. No UI, so no
+Operator decisions (revised same day): one combined provider under the existing `pygmalion` id; download and
+commit all files (~52 MB full archive); Slow recordings excluded entirely; import only the first 2 Normal
+takes per (word, dialect) — skipped rows marked `surplus: true` in the manifest as the durable record; import
+is an operator-run script with live progress (plain fallback for bootstrap). Adapter unchanged. No UI, so no
 mockups. Deferred to builder (tier 2): take-numbering mechanics, existing-file recognition in the downloader,
-manifest provenance field details.
+progress-display details.
 
 ## Dropped / deferred
 
