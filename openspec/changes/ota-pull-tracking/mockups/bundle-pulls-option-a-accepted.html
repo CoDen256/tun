@@ -1,0 +1,814 @@
+<title>Bundle pulls — placement mockup (A / B)</title>
+
+<style>
+/* ------------------------------------------------------------------
+   Variables, verbatim from libs/jsservice/layout.js STYLE.
+   Dark is the :root default; light arrives via prefers-color-scheme.
+   The two :root[data-theme=…] blocks below repeat both sets so an
+   explicit theme choice wins in either direction.
+   ------------------------------------------------------------------ */
+:root {
+  --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
+  --border: #2a3039; --border-soft: #232832;
+  --text: #e8e6e1; --text-dim: #8b94a3; --text-faint: #566073;
+  --accent: #c6703f; --accent-soft: #c6703f26; --accent-text: #f2b688;
+  --ok: #5bab7e; --ok-soft: #5bab7e1f;
+  --warn: #d4a73d; --warn-soft: #d4a73d1f;
+  --err: #d1453f; --err-soft: #d1453f1f;
+  --radius: 6px;
+  --sans: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f3ef; --bg-elevated: #ffffff; --bg-sunken: #ebe7e0;
+    --border: #e2ddd3; --border-soft: #ece8e0;
+    --text: #221f1a; --text-dim: #6b6660; --text-faint: #9a948a;
+    --accent: #b35a2d; --accent-soft: #b35a2d14; --accent-text: #8a431c;
+    --ok: #2f8a5c; --ok-soft: #2f8a5c14;
+    --warn: #a87c1f; --warn-soft: #a87c1f14;
+    --err: #b23a34; --err-soft: #b23a3414;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f5f3ef; --bg-elevated: #ffffff; --bg-sunken: #ebe7e0;
+  --border: #e2ddd3; --border-soft: #ece8e0;
+  --text: #221f1a; --text-dim: #6b6660; --text-faint: #9a948a;
+  --accent: #b35a2d; --accent-soft: #b35a2d14; --accent-text: #8a431c;
+  --ok: #2f8a5c; --ok-soft: #2f8a5c14;
+  --warn: #a87c1f; --warn-soft: #a87c1f14;
+  --err: #b23a34; --err-soft: #b23a3414;
+}
+:root[data-theme="dark"] {
+  --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
+  --border: #2a3039; --border-soft: #232832;
+  --text: #e8e6e1; --text-dim: #8b94a3; --text-faint: #566073;
+  --accent: #c6703f; --accent-soft: #c6703f26; --accent-text: #f2b688;
+  --ok: #5bab7e; --ok-soft: #5bab7e1f;
+  --warn: #d4a73d; --warn-soft: #d4a73d1f;
+  --err: #d1453f; --err-soft: #d1453f1f;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; max-width: 100%; overflow-x: hidden; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { text-wrap: balance; font-weight: 650; margin: 0; }
+code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+a { color: var(--accent-text); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.top-bar { display: flex; align-items: center; gap: 14px; padding: 10px 20px; background: var(--bg-sunken); border-bottom: 1px solid var(--border); font-size: 13px; }
+.top-bar strong { font-weight: 700; }
+.top-bar nav { margin-left: auto; display: flex; gap: 14px; flex-wrap: wrap; }
+.top-bar nav a { color: var(--text-dim); text-decoration: none; }
+.top-bar nav a:hover { color: var(--text); }
+.top-bar nav a.zone-current { color: var(--accent-text); font-weight: 650; }
+.top-bar nav a.zone-current::before { content: "● "; font-size: 9px; vertical-align: 2px; }
+.top-bar .zone-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 2px; }
+
+.shell { display: flex; }
+.rail { width: 192px; flex: none; border-right: 1px solid var(--border); padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; }
+.rail-group-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint); padding: 12px 10px 6px; }
+.rail-group-label:first-child { padding-top: 2px; }
+.rail a { padding: 7px 10px; border-radius: var(--radius); font-size: 13px; color: var(--text-dim); text-decoration: none; display: block; }
+.rail a:hover { background: var(--bg-elevated); color: var(--text); }
+.rail a.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+
+.content { flex: 1; min-width: 0; padding: 24px 28px 48px; }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.page-head h2 { font-size: 18px; }
+.page-sub { color: var(--text-dim); font-size: 13px; margin-top: 3px; }
+
+button, .btn { font: inherit; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+button:hover { border-color: var(--text-faint); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #1a0d05; }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--text-dim); padding: 7px 9px; }
+.btn-ghost:hover { background: var(--bg-elevated); color: var(--text); border-color: transparent; }
+
+.panel { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; }
+.panel + .panel { margin-top: 16px; }
+.panel-pad { padding: 18px 20px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border-soft); gap: 16px; }
+.panel-head h3 { font-size: 13.5px; }
+
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+select, input[type="text"], input[type="search"] { font: inherit; font-size: 13px; background: var(--bg-sunken); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; }
+.search-input { min-width: 220px; }
+
+.table-wrap { overflow-x: auto; max-width: 100%; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 9px 14px; white-space: nowrap; }
+thead th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); font-weight: 600; border-bottom: 1px solid var(--border); }
+tbody tr { border-bottom: 1px solid var(--border-soft); }
+tbody tr:last-child { border-bottom: none; }
+td.wrap { white-space: normal; }
+td.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+td.dim { color: var(--text-dim); }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 2px 9px 3px; border-radius: 99px; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill-ok { background: var(--ok-soft); color: var(--ok); }
+.pill-warn { background: var(--warn-soft); color: var(--warn); }
+.pill-err { background: var(--err-soft); color: var(--err); }
+.pill-neutral { background: var(--border-soft); color: var(--text-dim); }
+
+.inline-note { font-size: 12.5px; color: var(--text-faint); margin-top: 6px; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; color: var(--text-faint); }
+
+.timeline { display: flex; flex-direction: column; }
+.tl-row { display: grid; grid-template-columns: 90px 20px 1fr; gap: 10px; padding: 8px 0; }
+.tl-time { font-family: var(--mono); font-size: 12px; color: var(--text-faint); padding-top: 2px; }
+.tl-rail { display: flex; justify-content: center; }
+.tl-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); margin-top: 5px; }
+.tl-dot.ok { background: var(--ok); }
+.tl-dot.warn { background: var(--warn); }
+.tl-dot.err { background: var(--err); }
+.tl-title { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tl-detail { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; display: flex; gap: 14px; flex-wrap: wrap; }
+
+/* ---- DEVICE_PAGE_STYLE (mjolnir/hub/src/server.js), the classes reused here ---- */
+.identity-bar { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; padding: 14px 16px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 16px; }
+.identity-bar .field select { font-family: var(--mono); min-width: 230px; }
+.identity-bar .hint { align-self: center; font-size: 12px; color: var(--text-faint); margin-left: auto; max-width: 260px; }
+.snap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px 24px; }
+.snap-item .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); font-weight: 600; }
+.snap-item .value { font-size: 16px; font-weight: 650; margin-top: 4px; font-family: var(--mono); }
+.snap-item .value.prose { font-family: var(--sans); font-weight: 600; font-size: 14px; }
+.snap-item .sub { font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
+.chip { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; font-family: var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--border-soft); color: var(--text-dim); }
+.pill-accent { background: var(--accent-soft); color: var(--accent-text); }
+details.json-toggle summary { cursor: pointer; font-size: 12.5px; color: var(--text-dim); padding: 4px 0; list-style: none; }
+details.json-toggle summary::-webkit-details-marker { display: none; }
+details.json-toggle summary::before { content: "▸"; display: inline-block; margin-right: 6px; color: var(--text-faint); }
+.pager { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.pager-readout { font-size: 12px; color: var(--text-faint); margin-right: auto; }
+
+/* ---- the build cell: mono buildId primary, swappable human label secondary ---- */
+.build-id { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 650; }
+.build-label { font-size: 11.5px; color: var(--text-faint); margin-top: 1px; }
+.build-label .sep { opacity: .55; }
+
+/* ---- mockup harness only — not part of the real page ---- */
+.mock-bar {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--bg-sunken); border-bottom: 1px solid var(--border);
+  padding: 8px 20px; font-size: 12.5px; color: var(--text-dim);
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+.mock-bar strong { color: var(--text); font-weight: 700; }
+.mock-band {
+  padding: 18px 20px 16px; background: var(--accent-soft);
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.mock-band h1 { font-size: 15px; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-text); }
+.mock-band p { margin: 6px 0 0; font-size: 13px; color: var(--text-dim); max-width: 72ch; }
+.mock-band code { font-size: 12px; }
+</style>
+
+<div class="mock-bar">
+  <strong>Mockup — two placements.</strong> A and B below.
+  <span style="margin-left:auto;">static render · no live data · mjølnir · hub</span>
+</div>
+
+<!-- ================================================================= -->
+<!-- OPTION A                                                           -->
+<!-- ================================================================= -->
+<div class="mock-band">
+  <h1>Option A — dedicated page, new rail item</h1>
+  <p>Device → <strong>Pulls</strong> at <code>/mjolnir/device/pulls</code>. Stat tiles, the full per-build table including builds that were never pulled, and a reverse-chronological pull log. Costs one more item in the Device rail group.</p>
+</div>
+
+<div class="top-bar">
+  <strong>mjølnir · hub</strong>
+  <nav>
+    <a href="#" class="zone-current">workbench</a>
+    <a href="#">builder</a>
+    <a href="#">stabbur</a>
+    <a href="#">smia</a>
+    <a href="#">phonexa</a>
+    <a href="#">shadow</a>
+    <a href="#">adminer</a>
+  </nav>
+</div>
+<div class="shell">
+  <div class="rail">
+    <div class="rail-group-label">Content</div>
+    <a href="#">Cards</a>
+    <div class="rail-group-label">OTA</div>
+    <a href="#">Logic bundles</a>
+    <a href="#">Publish history</a>
+    <div class="rail-group-label">Builder</div>
+    <a href="#">Forecast &amp; publish</a>
+    <a href="#">Schedule</a>
+    <a href="#">Run log</a>
+    <a href="#">Decks</a>
+    <div class="rail-group-label">Device</div>
+    <a href="#">Sync</a>
+    <a href="#">Insights</a>
+    <a href="#" class="active">Pulls</a>
+    <div class="rail-group-label">Tools</div>
+    <a href="#">Catalogue</a>
+    <a href="#">Bundle workbench</a>
+  </div>
+
+  <div class="content">
+    <div class="page-head">
+      <div>
+        <h2>Bundle pulls</h2>
+        <div class="page-sub">Observed at the gateway when a bundle was downloaded. A download is not an activation, and the gateway sees an IP, not a device.</div>
+      </div>
+      <a class="btn btn-ghost" href="#">↻ Refresh</a>
+    </div>
+
+    <div class="panel panel-pad" style="margin-bottom:16px;">
+      <div class="snap-grid">
+        <div class="snap-item">
+          <div class="label">Latest pull</div>
+          <div class="value prose">yesterday</div>
+          <div class="sub">2026-11-14 09:47 · b000258</div>
+        </div>
+        <div class="snap-item">
+          <div class="label">Build currently published</div>
+          <div class="value">b000259</div>
+          <div class="sub">published 1h ago · not pulled yet</div>
+        </div>
+        <div class="snap-item">
+          <div class="label">Distinct builds ever pulled</div>
+          <div class="value">8</div>
+          <div class="sub">of 10 published</div>
+        </div>
+        <div class="snap-item">
+          <div class="label">Pulls in the last 30 days</div>
+          <div class="value">14</div>
+          <div class="sub">13 completed · 1 aborted</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>Per build</h3>
+          <div class="page-sub">One row per published build, most recent publish first. A pull means the bundle was downloaded — not that the device booted it.</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Build</th><th>Published</th><th>First pulled</th><th>Last pulled</th><th class="num">Pulls</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>
+                <div class="build-id">b000259</div>
+                <div class="build-label">base 6.0.3 <span class="sep">·</span> logic 14 <span class="sep">·</span> data 247</div>
+              </td>
+              <td class="mono dim">2026-11-15</td>
+              <td class="dim">—</td>
+              <td class="dim">—</td>
+              <td class="num"><span class="pill pill-neutral">never pulled</span></td>
+            </tr>
+            <tr>
+              <td>
+                <div class="build-id">b000258</div>
+                <div class="build-label">base 6.0.3 <span class="sep">·</span> logic 14 <span class="sep">·</span> data 246</div>
+              </td>
+              <td class="mono dim">2026-11-14</td>
+              <td class="mono dim">2026-11-14 09:46</td>
+              <td class="mono dim">2026-11-14 09:47</td>
+              <td class="num">2</td>
+            </tr>
+            <tr>
+              <td>
+                <div class="build-id">b000257</div>
+                <div class="build-label">base 6.0.3 <span class="sep">·</span> logic 13 <span class="sep">·</span> data 245</div>
+              </td>
+              <td class="mono dim">2026-11-12</td>
+              <td class="mono dim">2026-11-12 20:38</td>
+              <td class="mono dim">2026-11-12 21:06</td>
+              <td class="num">2</td>
+            </tr>
+            <tr>
+              <td>
+                <div class="build-id">b000256</div>
+                <div class="build-label">base 6.0.3 <span class="sep">·</span> logic 13 <span class="sep">·</span> data 244</div>
+              </td>
+              <td class="mono dim">2026-11-11</td>
+              <td class="dim">—</td>
+              <td class="dim">—</td>
+              <td class="num"><span class="pill pill-neutral">never pulled</span></td>
+            </tr>
+            <tr>
+              <td>
+                <div class="build-id">b000255</div>
+                <div class="build-label">base 6.0.3 <span class="sep">·</span> logic 13 <span class="sep">·</span> data 243</div>
+              </td>
+              <td class="mono dim">2026-11-10</td>
+              <td class="mono dim">2026-11-10 10:21</td>
+              <td class="mono dim">2026-11-10 18:55</td>
+              <td class="num">2</td>
+            </tr>
+            <tr>
+              <td>
+                <div class="build-id">b000254</div>
+                <div class="build-label">base 6.0.3 <span class="sep">·</span> logic 12 <span class="sep">·</span> data 242</div>
+              </td>
+              <td class="mono dim">2026-11-08</td>
+              <td class="mono dim">2026-11-09 07:44</td>
+              <td class="mono dim">2026-11-09 07:44</td>
+              <td class="num">1</td>
+            </tr>
+            <tr>
+              <td>
+                <div class="build-id">b000253</div>
+                <div class="build-label">base 6.0.3 <span class="sep">·</span> logic 12 <span class="sep">·</span> data 241</div>
+              </td>
+              <td class="mono dim">2026-11-07</td>
+              <td class="mono dim">2026-11-07 12:30</td>
+              <td class="mono dim">2026-11-08 19:02</td>
+              <td class="num">2</td>
+            </tr>
+            <tr>
+              <td>
+                <div class="build-id">b000252</div>
+                <div class="build-label">base 6.0.2 <span class="sep">·</span> logic 12 <span class="sep">·</span> data 240</div>
+              </td>
+              <td class="mono dim">2026-11-05</td>
+              <td class="mono dim">2026-11-05 13:02</td>
+              <td class="mono dim">2026-11-06 08:15</td>
+              <td class="num">2</td>
+            </tr>
+            <tr>
+              <td>
+                <div class="build-id">b000251</div>
+                <div class="build-label">base 6.0.2 <span class="sep">·</span> logic 11 <span class="sep">·</span> data 239</div>
+              </td>
+              <td class="mono dim">2026-11-04</td>
+              <td class="mono dim">2026-11-04 17:49</td>
+              <td class="mono dim">2026-11-04 17:49</td>
+              <td class="num">1</td>
+            </tr>
+            <tr>
+              <td>
+                <div class="build-id">b000250</div>
+                <div class="build-label">base 6.0.2 <span class="sep">·</span> logic 11 <span class="sep">·</span> data 238</div>
+              </td>
+              <td class="mono dim">2026-11-02</td>
+              <td class="mono dim">2026-11-02 20:11</td>
+              <td class="mono dim">2026-11-02 20:11</td>
+              <td class="num">1</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-pad" style="padding-top:12px; padding-bottom:14px;">
+        <div class="inline-note">The second line under each build id (<code>base · logic · data</code>) is a display label only and is expected to change — a separate package is reworking versioning and will add a build time to it. The table keys on <code>build_id</code>, which never changes.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>Pull log</h3>
+          <div class="page-sub">Every <code>/ota/bundle/&lt;buildId&gt;.js</code> request the gateway logged, newest first.</div>
+        </div>
+        <span class="chip">14 entries</span>
+      </div>
+      <div class="panel-pad">
+        <div class="timeline">
+
+          <div class="tl-row">
+            <div class="tl-time">yesterday</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000258</span> <span class="pill pill-ok">200</span></div>
+              <div class="tl-detail">
+                <span>2026-11-14 09:47</span>
+                <span class="mono">77.88.209.17</span>
+                <span>6.2 MB</span>
+                <span>base 6.0.3 · logic 14 · data 246</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tl-row">
+            <div class="tl-time">yesterday</div>
+            <div class="tl-rail"><div class="tl-dot warn"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000258</span> <span class="pill pill-warn">200 · aborted</span></div>
+              <div class="tl-detail">
+                <span>2026-11-14 09:46</span>
+                <span class="mono">77.88.209.17</span>
+                <span>1.9 MB of 6.2 MB sent</span>
+                <span>client disconnected</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tl-row">
+            <div class="tl-time">3d ago</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000257</span> <span class="pill pill-ok">200</span></div>
+              <div class="tl-detail">
+                <span>2026-11-12 21:06</span>
+                <span class="mono">212.251.44.90</span>
+                <span>6.1 MB</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tl-row">
+            <div class="tl-time">3d ago</div>
+            <div class="tl-rail"><div class="tl-dot err"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000257-rc</span> <span class="pill pill-err">404</span></div>
+              <div class="tl-detail">
+                <span>2026-11-12 21:04</span>
+                <span class="mono">212.251.44.90</span>
+                <span>0 B</span>
+                <span>no bundle on disk with that build id</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tl-row">
+            <div class="tl-time">3d ago</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000257</span> <span class="pill pill-ok">200</span></div>
+              <div class="tl-detail">
+                <span>2026-11-12 20:38</span>
+                <span class="mono">77.88.209.17</span>
+                <span>6.1 MB</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tl-row">
+            <div class="tl-time">5d ago</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000255</span> <span class="pill pill-ok">200</span></div>
+              <div class="tl-detail">
+                <span>2026-11-10 18:55</span>
+                <span class="mono">77.88.209.17</span>
+                <span>6.1 MB</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tl-row">
+            <div class="tl-time">5d ago</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000255</span> <span class="pill pill-ok">200</span></div>
+              <div class="tl-detail">
+                <span>2026-11-10 10:21</span>
+                <span class="mono">77.88.209.17</span>
+                <span>6.1 MB</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tl-row">
+            <div class="tl-time">6d ago</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000254</span> <span class="pill pill-ok">200</span></div>
+              <div class="tl-detail">
+                <span>2026-11-09 07:44</span>
+                <span class="mono">77.88.209.17</span>
+                <span>6.0 MB</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tl-row">
+            <div class="tl-time">1w ago</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000253</span> <span class="pill pill-ok">200</span></div>
+              <div class="tl-detail">
+                <span>2026-11-08 19:02</span>
+                <span class="mono">77.88.209.17</span>
+                <span>6.0 MB</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tl-row">
+            <div class="tl-time">1w ago</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000253</span> <span class="pill pill-ok">200</span></div>
+              <div class="tl-detail">
+                <span>2026-11-07 12:30</span>
+                <span class="mono">77.88.214.102</span>
+                <span>6.0 MB</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tl-row">
+            <div class="tl-time">1w ago</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000252</span> <span class="pill pill-ok">200</span></div>
+              <div class="tl-detail">
+                <span>2026-11-06 08:15</span>
+                <span class="mono">77.88.214.102</span>
+                <span>5.9 MB</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tl-row">
+            <div class="tl-time">1w ago</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000252</span> <span class="pill pill-ok">200</span></div>
+              <div class="tl-detail">
+                <span>2026-11-05 13:02</span>
+                <span class="mono">77.88.214.102</span>
+                <span>5.9 MB</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tl-row">
+            <div class="tl-time">1w ago</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000251</span> <span class="pill pill-ok">200</span></div>
+              <div class="tl-detail">
+                <span>2026-11-04 17:49</span>
+                <span class="mono">77.88.214.102</span>
+                <span>5.9 MB</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tl-row">
+            <div class="tl-time">2w ago</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title"><span class="mono">b000250</span> <span class="pill pill-ok">200</span></div>
+              <div class="tl-detail">
+                <span>2026-11-02 20:11</span>
+                <span class="mono">77.88.214.102</span>
+                <span>5.8 MB</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="inline-note">Rows are ingested from the gateway's rolling access log and deduplicated on time + path + client IP. Only <code>/ota/bundle/&lt;buildId&gt;.js</code> is tracked — <code>current.json</code> polls, <code>/blob/*</code> and <code>/audio-manifest/*</code> are not. There is no device identity and no account uid on these rows: the OTA token is shared and the gateway sees an IP. Anything that happened before this feature shipped is not in the log and will never appear.</div>
+  </div>
+</div>
+
+<!-- ================================================================= -->
+<!-- OPTION B                                                           -->
+<!-- ================================================================= -->
+<div class="mock-band">
+  <h1>Option B — a panel on the existing Device → Sync page</h1>
+  <p>No new rail item. A compact “Bundle pulls” panel sits between Progress snapshot and Per-card progress on <code>/mjolnir/device</code>. The cost is visible below: everything else on this page is filtered by the account selector at the top, and pull data is not — so the panel has to carry its own disclaimer, and the already-long page grows again.</p>
+</div>
+
+<div class="top-bar">
+  <strong>mjølnir · hub</strong>
+  <nav>
+    <a href="#" class="zone-current">workbench</a>
+    <a href="#">builder</a>
+    <a href="#">stabbur</a>
+    <a href="#">smia</a>
+    <a href="#">phonexa</a>
+    <a href="#">shadow</a>
+    <a href="#">adminer</a>
+  </nav>
+</div>
+<div class="shell">
+  <div class="rail">
+    <div class="rail-group-label">Content</div>
+    <a href="#">Cards</a>
+    <div class="rail-group-label">OTA</div>
+    <a href="#">Logic bundles</a>
+    <a href="#">Publish history</a>
+    <div class="rail-group-label">Builder</div>
+    <a href="#">Forecast &amp; publish</a>
+    <a href="#">Schedule</a>
+    <a href="#">Run log</a>
+    <a href="#">Decks</a>
+    <div class="rail-group-label">Device</div>
+    <a href="#" class="active">Sync</a>
+    <a href="#">Insights</a>
+    <div class="rail-group-label">Tools</div>
+    <a href="#">Catalogue</a>
+    <a href="#">Bundle workbench</a>
+  </div>
+
+  <div class="content">
+    <div class="page-head">
+      <div>
+        <h2>Device sync</h2>
+        <div class="page-sub">Progress reported by the signed-in account, kept as a mirror — this view is read-only.</div>
+      </div>
+      <a class="btn btn-ghost" href="#">↻ Refresh</a>
+    </div>
+
+    <div class="identity-bar">
+      <div class="field">
+        <label>Account (uid)</label>
+        <select><option selected>u_9f3c1a7e42 — only account on record</option></select>
+      </div>
+      <div class="hint">Everything below is scoped to this account.</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div><h3>Progress snapshot</h3><div class="page-sub">From the device's current <code>userdata</code> document.</div></div>
+      </div>
+      <div class="panel-pad">
+        <div class="snap-grid">
+          <div class="snap-item"><div class="label">Completed sessions</div><div class="value">412</div></div>
+          <div class="snap-item"><div class="label">Consistency rate</div><div class="value">0.78</div></div>
+          <div class="snap-item"><div class="label">Cards in progress</div><div class="value">1304</div></div>
+          <div class="snap-item"><div class="label">Cards archived</div><div class="value">287</div></div>
+          <div class="snap-item"><div class="label">Account since</div><div class="value">2026-02-11</div></div>
+          <div class="snap-item"><div class="label">Last completed session</div><div class="value prose">6h ago</div></div>
+        </div>
+        <details class="json-toggle" style="margin-top:16px;"><summary>raw doc</summary></details>
+      </div>
+    </div>
+
+    <!-- ===== the inserted panel ===== -->
+    <div class="panel" style="border-color: var(--accent);">
+      <div class="panel-head">
+        <div>
+          <h3>Bundle pulls</h3>
+          <div class="page-sub">Observed at the gateway when a bundle was downloaded. A download is not an activation.</div>
+        </div>
+        <a class="btn btn-ghost" href="#">full pull log →</a>
+      </div>
+      <div class="panel-pad" style="padding-bottom:0;">
+        <div class="pill pill-warn" style="margin-bottom:4px;">not filtered by account</div>
+        <div class="inline-note" style="margin-top:0;">The account selector above does not apply to this panel. The OTA token is shared and the gateway records only an IP, so no pull row can be attributed to <span class="mono">u_9f3c1a7e42</span> or to any particular handset.</div>
+      </div>
+      <div class="table-wrap" style="margin-top:12px;">
+        <table>
+          <thead><tr><th>Build</th><th>Published</th><th>First pulled</th><th>Last pulled</th><th class="num">Pulls</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div class="build-id">b000259</div><div class="build-label">base 6.0.3 <span class="sep">·</span> logic 14 <span class="sep">·</span> data 247</div></td>
+              <td class="mono dim">2026-11-15</td>
+              <td class="dim">—</td>
+              <td class="dim">—</td>
+              <td class="num"><span class="pill pill-neutral">never pulled</span></td>
+            </tr>
+            <tr>
+              <td><div class="build-id">b000258</div><div class="build-label">base 6.0.3 <span class="sep">·</span> logic 14 <span class="sep">·</span> data 246</div></td>
+              <td class="mono dim">2026-11-14</td>
+              <td class="mono dim">2026-11-14 09:46</td>
+              <td class="mono dim">2026-11-14 09:47</td>
+              <td class="num">2</td>
+            </tr>
+            <tr>
+              <td><div class="build-id">b000257</div><div class="build-label">base 6.0.3 <span class="sep">·</span> logic 13 <span class="sep">·</span> data 245</div></td>
+              <td class="mono dim">2026-11-12</td>
+              <td class="mono dim">2026-11-12 20:38</td>
+              <td class="mono dim">2026-11-12 21:06</td>
+              <td class="num">2</td>
+            </tr>
+            <tr>
+              <td><div class="build-id">b000256</div><div class="build-label">base 6.0.3 <span class="sep">·</span> logic 13 <span class="sep">·</span> data 244</div></td>
+              <td class="mono dim">2026-11-11</td>
+              <td class="dim">—</td>
+              <td class="dim">—</td>
+              <td class="num"><span class="pill pill-neutral">never pulled</span></td>
+            </tr>
+            <tr>
+              <td><div class="build-id">b000255</div><div class="build-label">base 6.0.3 <span class="sep">·</span> logic 13 <span class="sep">·</span> data 243</div></td>
+              <td class="mono dim">2026-11-10</td>
+              <td class="mono dim">2026-11-10 10:21</td>
+              <td class="mono dim">2026-11-10 18:55</td>
+              <td class="num">2</td>
+            </tr>
+            <tr>
+              <td><div class="build-id">b000254</div><div class="build-label">base 6.0.3 <span class="sep">·</span> logic 12 <span class="sep">·</span> data 242</div></td>
+              <td class="mono dim">2026-11-08</td>
+              <td class="mono dim">2026-11-09 07:44</td>
+              <td class="mono dim">2026-11-09 07:44</td>
+              <td class="num">1</td>
+            </tr>
+            <tr>
+              <td><div class="build-id">b000253</div><div class="build-label">base 6.0.3 <span class="sep">·</span> logic 12 <span class="sep">·</span> data 241</div></td>
+              <td class="mono dim">2026-11-07</td>
+              <td class="mono dim">2026-11-07 12:30</td>
+              <td class="mono dim">2026-11-08 19:02</td>
+              <td class="num">2</td>
+            </tr>
+            <tr>
+              <td><div class="build-id">b000252</div><div class="build-label">base 6.0.2 <span class="sep">·</span> logic 12 <span class="sep">·</span> data 240</div></td>
+              <td class="mono dim">2026-11-05</td>
+              <td class="mono dim">2026-11-05 13:02</td>
+              <td class="mono dim">2026-11-06 08:15</td>
+              <td class="num">2</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-pad" style="padding-top:12px; padding-bottom:14px;">
+        <div class="inline-note">Last 8 published builds. One non-200 request (a 404 on <span class="mono">b000257-rc</span>) is not shown here — it never reaches the per-build table because no such build was ever published, which is exactly the kind of thing the full log would surface.</div>
+      </div>
+    </div>
+    <!-- ===== end inserted panel ===== -->
+
+    <div class="panel">
+      <div class="panel-head">
+        <div><h3>Per-card progress</h3><div class="page-sub">Every occurrence with SRS state, joined against card content — 1591 matching.</div></div>
+      </div>
+      <div class="panel-pad" style="padding-bottom:0;">
+        <div class="toolbar">
+          <input class="search-input" type="search" placeholder="Search card id or content…">
+          <select><option>Deck: all</option></select>
+          <select><option>Side: all</option></select>
+          <select><option>State: all</option></select>
+          <select><option>Flag: all</option></select>
+          <select><option>Sort: device order</option></select>
+          <select><option>asc</option></select>
+          <select><option>50 / page</option></select>
+          <button type="button">Filter</button>
+          <a class="btn-ghost" href="#">Clear</a>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Card</th><th>Content</th><th>Side</th><th>Deck</th><th class="num">Stage</th><th>Status</th><th class="num">Interval</th><th>Next due</th><th class="num">Reschedules</th><th>Flags</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">c_10427</td><td class="wrap">å bestemme seg</td><td><span class="chip">N</span></td><td>Verb · B1</td>
+              <td class="num">6</td><td><span class="pill pill-ok">In rotation</span></td><td class="num">21</td><td class="dim">2026-12-01</td><td class="num">0</td><td></td>
+            </tr>
+            <tr>
+              <td class="mono">c_10428</td><td class="wrap">forsiktig</td><td><span class="chip">E</span></td><td>Adjektiv · A2</td>
+              <td class="num">3</td><td><span class="pill pill-ok">In rotation</span></td><td class="num">6</td><td class="dim">2026-11-18</td><td class="num">1</td><td><span class="chip">tagged</span></td>
+            </tr>
+            <tr>
+              <td class="mono">c_10431</td><td class="wrap">å rekke</td><td><span class="chip">N</span></td><td>Verb · B1</td>
+              <td class="num">1</td><td><span class="pill pill-warn">Parked early</span></td><td class="num">1</td><td class="dim">—</td><td class="num">4</td><td><span class="chip">panic</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-pad" style="padding-top:12px; padding-bottom:14px;">
+        <div class="pager">
+          <span class="pager-readout">1–50 of 1591 · condensed in this mockup</span>
+          <a class="btn-ghost" href="#">‹ prev</a>
+          <a class="btn-ghost" href="#">next ›</a>
+        </div>
+        <div class="inline-note">"Content" is always the card's <strong>N</strong> field (stripped of HTML). "Side" is the stored direction letter (N/E/A), never an actual language.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div><h3>Sync history</h3><div class="page-sub">Every write, append-only — a last-write-wins row alone would not be a backup.</div></div>
+      </div>
+      <div class="panel-pad">
+        <div class="timeline">
+          <div class="tl-row">
+            <div class="tl-time">6h ago</div>
+            <div class="tl-rail"><div class="tl-dot"></div></div>
+            <div>
+              <div class="tl-title">Synced</div>
+              <div class="tl-detail"><span>sessions <span class="mono" style="color:var(--ok);">+3</span></span><span>cards <span class="mono" style="color:var(--text-faint);">±0</span></span></div>
+              <details class="json-toggle" style="margin-top:4px;"><summary>raw doc</summary></details>
+            </div>
+          </div>
+          <div class="tl-row">
+            <div class="tl-time">yesterday</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title">Synced</div>
+              <div class="tl-detail"><span>sessions <span class="mono" style="color:var(--ok);">+5</span></span><span>cards <span class="mono" style="color:var(--ok);">+12</span></span></div>
+              <details class="json-toggle" style="margin-top:4px;"><summary>raw doc</summary></details>
+            </div>
+          </div>
+          <div class="tl-row">
+            <div class="tl-time">3d ago</div>
+            <div class="tl-rail"><div class="tl-dot ok"></div></div>
+            <div>
+              <div class="tl-title">Synced</div>
+              <div class="tl-detail"><span>sessions <span class="mono" style="color:var(--ok);">+2</span></span><span>cards <span class="mono" style="color:var(--text-faint);">±0</span></span></div>
+              <details class="json-toggle" style="margin-top:4px;"><summary>raw doc</summary></details>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="inline-note">Note the shape of the page in this option: an account selector at the top governs three of the four panels, and the odd one out has to say so in its own header. The pull data is also the only thing here that does not come from <code>mjolnir-sync</code> — it comes from the gateway's access log.</div>
+  </div>
+</div>
