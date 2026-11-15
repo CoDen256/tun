@@ -32,11 +32,14 @@ ${cardPreviewFontFaceCss()}
 }
 .cp-root .third { width:100%; display:flex; position:relative; cursor:pointer; -webkit-tap-highlight-color:transparent; }
 .cp-root .third.t-n { align-items:center; overflow:hidden; }
-/* align-items:flex-start is load-bearing here, same reasoning as the
-   mockup: under default 'stretch' the .touch child is forced to the
-   third's full height, so centring pushes an overflowing face's content
-   out of reach at BOTH ends. Letting .touch size to its own content keeps
-   centring when a face fits and top-aligns it when it does not. */
+/* E/X start flex-start (top-aligned) so an overflowing face never gets
+   its top pushed out of the scroll range before JS has measured it; once
+   updateFaceAlignment() runs it switches this to 'center' whenever the
+   face's content actually fits (acceptance #23), and leaves it
+   'flex-start' when it overflows (acceptance #21/#22) -- see the client
+   script below. The .touch child is never stretched to the third's full
+   height (that is what makes align-items:center on the THIRD actually
+   centre a short face instead of a no-op). */
 .cp-root .third.t-e, .cp-root .third.t-x { overflow-y:auto; overflow-x:hidden; align-items:flex-start; }
 .cp-root .third-divider { width:60%; align-self:center; flex:none; background:var(--cp-borderColor); }
 .cp-root .touch { width:100%; display:flex; flex-direction:column; justify-content:center; }
@@ -337,15 +340,17 @@ export function cardPreviewClientScript() {
     root.querySelectorAll('.third').forEach(function (el) {
       var face = el.dataset.face;
       // Centring-not-clipping (design.md): the FACE gets the fixed
-      // height; its .touch child sizes to its own content (CSS
-      // align-items:flex-start above), so a short face still centres
-      // (justify-content:center on .touch) and a long one top-aligns
-      // instead of having its start pushed out of the scroll range.
+      // height; its .touch child never stretches to fill it (CSS
+      // align-items:flex-start/center above only affects the THIRD, not
+      // whether .touch is sized to its own content), so a short face can
+      // be centred as a whole and a long one top-aligned instead of
+      // having its start pushed out of the scroll range.
       el.style.height = Math.round(fracs[face] * C) + 'px';
     });
     root.querySelectorAll('[data-divider]').forEach(function (d) {
       d.style.height = n(style.divider.height) + 'px';
     });
+    updateFaceAlignment(root);
 
     root.querySelectorAll('tr[data-sel] .cp-resolve').forEach(function (cell) {
       var row = cell.closest('tr');
@@ -363,7 +368,7 @@ export function cardPreviewClientScript() {
         if (c.fontSize !== undefined) parts.push(n(c.fontSize) + 'px');
         if (c.marginHorizontal !== undefined) parts.push('±' + n(c.marginHorizontal) + 'px margin, top-aligned row');
         if (c.color) parts.push(c.color);
-        if (sel === 'blue' || sel === 'arialFont' || sel === 'arialFontNormal') { if (sel === 'blue') parts.push(theme.headingAccent); }
+        if (sel === 'blue') parts.push(theme.headingAccent);
         if (sel === 'darkBlue') parts.push(theme.headingGray);
         if (sel === 'green') parts.push(theme.green);
         text = parts.length ? parts.join(', ') : '(no size/color change)';
@@ -379,6 +384,24 @@ export function cardPreviewClientScript() {
 
     var readout = document.getElementById('cp-scale-readout');
     if (readout) readout.textContent = width + '×' + height + (isTablet ? ' (×0.70 tablet factor)' : '') + ' · theme: ' + cpState.theme;
+  }
+
+  // Acceptance #21/#22/#23: E/X are scrollable faces whose content must
+  // centre when it fits and top-align (never clip above) when it
+  // overflows. Which of those applies depends on the actual rendered
+  // content height, which is unknowable from CSS alone (font metrics,
+  // the card's own HTML, the simulated device width all affect it) — so
+  // this measures scrollHeight against the fixed face height set in
+  // applyRoot and flips a single flex property per face. Re-run after
+  // layout-affecting changes: device/theme switches (applyRoot, above)
+  // and throwaway-editor edits (setupEditor, below).
+  function updateFaceAlignment(root) {
+    root.querySelectorAll('.third.t-e, .third.t-x').forEach(function (third) {
+      var touch = third.querySelector('.touch');
+      if (!touch) return;
+      var fits = touch.scrollHeight <= third.clientHeight;
+      third.style.alignItems = fits ? 'center' : 'flex-start';
+    });
   }
 
   function flashEl(el, msg) {
@@ -433,6 +456,7 @@ export function cardPreviewClientScript() {
       });
       ta.addEventListener('input', function () {
         root.querySelector('[data-face-body="' + letter + '"]').innerHTML = ta.value;
+        updateFaceAlignment(root);
       });
     });
     root.querySelectorAll('.cp-pal-btn').forEach(function (btn) {
@@ -452,6 +476,7 @@ export function cardPreviewClientScript() {
         root.querySelector('[data-ed="' + letter + '"]').value = original[letter];
         root.querySelector('[data-face-body="' + letter + '"]').innerHTML = original[letter];
       });
+      updateFaceAlignment(root);
     });
   }
 
