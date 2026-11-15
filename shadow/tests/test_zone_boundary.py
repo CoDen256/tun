@@ -24,28 +24,59 @@ def test_no_cross_service_foreign_key_on_user_id():
     assert "user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)" in models
 
 
-def test_shadow_mounts_no_data_volume():
-    """Shadow stores no audio — it must mount no DATA volume (task 3.4).
+def test_shadow_mounts_exactly_one_audio_volume_and_no_other_zone_s_data():
+    """shadow now stores audio — and exactly one thing, in one place.
 
-    The first version asserted `"    volumes:" not in compose`, which could
-    never pass: shadow legitimately mounts `../libs:/libs:ro` so one relative
-    import resolves in both the repo and the container. A test that forbids
-    the string rather than the thing fails on a correct implementation, which
-    is worse than no test — it trains you to ignore a red suite.
+    THIS TEST WAS INVERTED ON 2026-11-15 (shadow-studying-mode). It used to
+    assert that shadow declared NO named volume at all, because shadow
+    stored no audio. The operator reversed that rule knowingly: the phone
+    cannot study from a file that only exists in a desktop browser. The
+    test is rewritten rather than deleted, because the invariant underneath
+    it never changed — shadow may own ITS OWN audio and nothing else, and
+    it must never reach into another zone's data.
 
-    What actually matters: no NAMED volume (a data store) and no bind mount
-    of phonexa's audio tree. A read-only bind of shared source is neither.
+    (An earlier generation of this test asserted `"    volumes:" not in
+    compose`, which could never pass, since shadow legitimately binds
+    `../libs:/libs:ro`. A test that forbids a string rather than a thing
+    fails on correct code and trains you to ignore a red suite.)
     """
     compose = (ROOT / "compose.yaml").read_text()
-    assert "\nvolumes:" not in compose, "a top-level volumes: block means shadow declares a data store"
-    for forbidden in ("phonexa_audio", "audio-data", "/data/audio"):
+    # Exactly one declared data store, and it is shadow's own.
+    assert "\nvolumes:\n  shadow_audio:" in compose, "shadow must declare its own audio volume"
+    assert compose.count("\nvolumes:") == 1, "shadow declares more than one top-level volumes: block"
+    for forbidden in ("phonexa_audio", "stabbur_", "mjolnir_", "/ota", "/blob"):
         assert forbidden not in compose, f"shadow must not mount {forbidden}"
-    # Every mount it does declare must be read-only shared source.
-    mounts = [l.strip() for l in compose.splitlines() if l.strip().startswith("- ") and ":" in l and "/" in l]
+    # Every bind mount is still read-only shared source; the audio volume is
+    # the only read-write mount.
+    mounts = [l.strip()[2:] for l in compose.splitlines()
+              if l.strip().startswith("- ") and ":" in l and "/" in l
+              and not l.strip().startswith('- "')]
     for m in mounts:
-        if m.startswith("- \"") or m.startswith("- '"):
-            continue  # a published port, not a mount
-        assert m.endswith(":ro"), f"shadow mount is not read-only: {m}"
+        assert m.endswith(":ro") or m == "shadow_audio:/data/audio", \
+            f"unexpected writable mount: {m}"
+
+
+def test_recordings_are_never_persisted():
+    """The one thing this change must not quietly relax.
+
+    shadow stores the AUDIOBOOK. It must never gain a route that accepts
+    the learner's own take for storage — that is what keeps the database
+    dump a complete backup and the audio volume disposable.
+    """
+    import ast
+
+    source = (ROOT / "shadowing.py").read_text()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            body = ast.get_source_segment(source, node) or ""
+            if "request.files" in body:
+                raise AssertionError(
+                    f"shadowing.{node.name} accepts an uploaded FILE — recordings "
+                    "must stay ephemeral and no persistence route may take audio"
+                )
+    # And no route anywhere in the service may be named for taking one.
+    assert "/recordings" not in source and "/takes" not in source
 
 
 def test_shadow_does_not_import_phonexa_models():
