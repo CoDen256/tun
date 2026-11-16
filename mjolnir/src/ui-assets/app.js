@@ -294,8 +294,8 @@ function renderExplorerList() {
     if (isNumeric) {
       const exact = explorerModules.find((m) => String(m.id) === query);
       const containing = explorerModules
-        .filter((m) => String(m.id) !== query && String(m.id).includes(query))
-        .sort((a, b) => a.id - b.id);
+          .filter((m) => String(m.id) !== query && String(m.id).includes(query))
+          .sort((a, b) => a.id - b.id);
 
       if (exact) {
         appendGroupHeading(list, "Exact id match");
@@ -332,8 +332,8 @@ async function runExplorerSearch(query) {
     return;
   }
   explorerSearchResults = await api(
-    "GET",
-    `/api/sessions/${app.activeSessionId}/search?q=${encodeURIComponent(query)}`
+      "GET",
+      `/api/sessions/${app.activeSessionId}/search?q=${encodeURIComponent(query)}`
   );
   renderExplorerList();
 }
@@ -374,18 +374,18 @@ async function toggleExplorerDeobfuscated() {
   if (explorerCurrentModuleId === null) return;
   explorerShowingDeobfuscated = !explorerShowingDeobfuscated;
   el("explorer-toggle-deobfuscated").textContent = explorerShowingDeobfuscated
-    ? "Show raw"
-    : "Show deobfuscated";
+      ? "Show raw"
+      : "Show deobfuscated";
   if (explorerShowingDeobfuscated) {
     const { code } = await api(
-      "GET",
-      `/api/sessions/${app.activeSessionId}/modules/${explorerCurrentModuleId}/deobfuscated`
+        "GET",
+        `/api/sessions/${app.activeSessionId}/modules/${explorerCurrentModuleId}/deobfuscated`
     );
     el("explorer-source").textContent = code;
   } else {
     const detail = await api(
-      "GET",
-      `/api/sessions/${app.activeSessionId}/modules/${explorerCurrentModuleId}`
+        "GET",
+        `/api/sessions/${app.activeSessionId}/modules/${explorerCurrentModuleId}`
     );
     el("explorer-source").textContent = detail.source;
   }
@@ -498,8 +498,8 @@ async function runCompare() {
 
 async function showCompareDiff(aSessionId, bSessionId, aModuleId, bModuleId) {
   const { diff } = await api(
-    "GET",
-    `/api/compare/diff?a=${aSessionId}&b=${bSessionId}&aModuleId=${aModuleId}&bModuleId=${bModuleId}`
+      "GET",
+      `/api/compare/diff?a=${aSessionId}&b=${bSessionId}&aModuleId=${aModuleId}&bModuleId=${bModuleId}`
   );
   const diffEl = el("compare-diff");
   diffEl.classList.remove("hidden");
@@ -553,8 +553,8 @@ async function pollEditorLiveDiff() {
   if (editorCurrentModuleId === null) return;
   try {
     const result = await api(
-      "GET",
-      `/api/sessions/${app.activeSessionId}/modules/${editorCurrentModuleId}/live-diff`
+        "GET",
+        `/api/sessions/${app.activeSessionId}/modules/${editorCurrentModuleId}/live-diff`
     );
     editorLatestBaseline = result.baseline;
     editorLatestCurrent = result.current;
@@ -570,8 +570,8 @@ async function openInEditor() {
   if (editorCurrentModuleId === null) return;
   el("editor-open-error").classList.add("hidden");
   const result = await api(
-    "POST",
-    `/api/sessions/${app.activeSessionId}/modules/${editorCurrentModuleId}/open-in-editor`
+      "POST",
+      `/api/sessions/${app.activeSessionId}/modules/${editorCurrentModuleId}/open-in-editor`
   );
   if (!result.success) {
     el("editor-open-error").textContent = `editor command failed (code ${result.code}): ${result.stderr || "(no output)"}. File path: ${result.path}`;
@@ -744,9 +744,9 @@ async function previewPatchByName(kind, name) {
 async function applyPreviewedPatch() {
   if (patchesPreviewKind === "companion" || !patchesPreviewName || !app.activeSessionId) return;
   const result = await api(
-    "POST",
-    `${previewApiBase(patchesPreviewKind)}/${encodeURIComponent(patchesPreviewName)}/apply`,
-    { sessionId: app.activeSessionId }
+      "POST",
+      `${previewApiBase(patchesPreviewKind)}/${encodeURIComponent(patchesPreviewName)}/apply`,
+      { sessionId: app.activeSessionId }
   );
   const resultEl = el("patches-apply-result");
   resultEl.textContent = `Applied to module ${result.targetModuleId}`;
@@ -825,8 +825,6 @@ function renderAssemblePlaceholders() {
   container.innerHTML = "";
   assemblePlaceholders.forEach((row, idx) => {
     const wrap = document.createElement("div");
-    const promoted = row.key === "PATCH_REV" || row.key === "LABEL";
-    if (promoted) wrap.className = "ph-row-promoted";
 
     const rowEl = document.createElement("div");
     rowEl.className = "field-grid";
@@ -851,13 +849,13 @@ function renderAssemblePlaceholders() {
     valueInput.type = isSecret && !assembleRevealedRows.has(row) ? "password" : "text";
     valueInput.value = row.value;
     valueInput.placeholder =
-      row.key === "BUILD_ID"
-        ? "(assigned by hub at submit time)"
-        : isSecret
-          ? "(default from OPERATOR_AUTH_TOKEN, if configured)"
-          : row.key.endsWith("_URL")
-            ? "(default from TUN_PUBLIC_BASE, if configured)"
-            : "";
+        (row.key === "BUILD_ID" || row.key === "DATA_VERSION")
+            ? "(assigned by hub at submit time)"
+            : isSecret
+                ? "(default from OPERATOR_AUTH_TOKEN, if configured)"
+                : row.key.endsWith("_URL")
+                    ? "(default from TUN_PUBLIC_BASE, if configured)"
+                    : "";
     valueInput.addEventListener("input", () => {
       row.value = valueInput.value;
     });
@@ -893,15 +891,6 @@ function renderAssemblePlaceholders() {
     rowEl.append(keyLabel, valueLabel, removeBtn);
     wrap.appendChild(rowEl);
 
-    if (promoted) {
-      const tag = document.createElement("div");
-      tag.className = "ph-row-caption";
-      tag.textContent =
-        row.key === "PATCH_REV"
-          ? "promoted from the removed Patch rev field"
-          : "promoted from the removed Label field";
-      wrap.insertBefore(tag, rowEl);
-    }
     const caption = assemblePlaceholderCaptions[row.key];
     if (caption) {
       const captionEl = document.createElement("div");
@@ -940,25 +929,25 @@ async function loadAssembleView() {
   assemblePlaceholderCaptions = {};
   if (assembleEmbedded) {
     el("assemble-mode-caption").textContent =
-      `Assembling against this repo's own base folder: ${defaults.baseFolderDir} ` +
-      `(base_version ${defaults.baseVersion}). Result is submitted straight to hub's logic bundles — ` +
-      `activate it from /mjolnir/ota when ready.`;
+        `Assembling against this repo's own base folder: ${defaults.baseFolderDir} ` +
+        `(base_version ${defaults.baseVersion}). Result is submitted straight to hub's logic bundles — ` +
+        `activate it from /mjolnir/ota when ready.`;
     assemblePlaceholderCaptions.PATCH_REV = `suggested next patch_rev from this server — accept or override`;
     assemblePlaceholderCaptions.LABEL = `suggested label, generated from base version + patch rev — accept or override`;
     assemblePlaceholderCaptions.DATA_VERSION = `the most recently published data rev on this server`;
     assemblePlaceholderCaptions.SYNC_BASE_URL = defaults.syncBaseUrl
-      ? "prefilled from this server's own TUN_PUBLIC_BASE"
-      : "not configured on this server (TUN_PUBLIC_BASE unset) — clear to use its own default at assemble time";
+        ? "prefilled from this server's own TUN_PUBLIC_BASE"
+        : "not configured on this server (TUN_PUBLIC_BASE unset) — clear to use its own default at assemble time";
     assemblePlaceholderCaptions.SYNC_TOKEN = defaults.syncToken
-      ? "prefilled from this server's own OPERATOR_AUTH_TOKEN — masked, use the reveal to check it"
-      : "not configured on this server (OPERATOR_AUTH_TOKEN unset)";
+        ? "prefilled from this server's own OPERATOR_AUTH_TOKEN — masked, use the reveal to check it"
+        : "not configured on this server (OPERATOR_AUTH_TOKEN unset)";
     assemblePlaceholderCaptions.AUDIO_BASE_URL = defaults.audioBaseUrl
-      ? "prefilled from this server's own TUN_PUBLIC_BASE"
-      : "not configured on this server (TUN_PUBLIC_BASE unset)";
+        ? "prefilled from this server's own TUN_PUBLIC_BASE"
+        : "not configured on this server (TUN_PUBLIC_BASE unset)";
     assemblePlaceholderCaptions.BUILD_ID = "hub assigns its own build id at submit time — leave blank";
   } else {
     el("assemble-mode-caption").textContent =
-      "Running standalone (no hub reachable) — base folder and output bundle path are required below.";
+        "Running standalone (no hub reachable) — base folder and output bundle path are required below.";
     // tier 2 (assembly-tab-usability item 1, standalone hint wording):
     // chose one shared "no server was reachable" caption on the three
     // version rows over three differently-worded ones, because the reason
@@ -969,13 +958,13 @@ async function loadAssembleView() {
     assemblePlaceholderCaptions.LABEL = noServerHint;
     assemblePlaceholderCaptions.DATA_VERSION = noServerHint;
     assemblePlaceholderCaptions.BUILD_ID =
-      "required if a selected patch/companion bakes __MJOLNIR_BUILD_ID__";
+        "required if a selected patch/companion bakes __MJOLNIR_BUILD_ID__";
     assemblePlaceholderCaptions.SYNC_BASE_URL =
-      "blank = use this process's own TUN_PUBLIC_BASE env var, if set — otherwise required if baked";
+        "blank = use this process's own TUN_PUBLIC_BASE env var, if set — otherwise required if baked";
     assemblePlaceholderCaptions.SYNC_TOKEN =
-      "blank = use this process's own OPERATOR_AUTH_TOKEN env var, if set — otherwise required if baked";
+        "blank = use this process's own OPERATOR_AUTH_TOKEN env var, if set — otherwise required if baked";
     assemblePlaceholderCaptions.AUDIO_BASE_URL =
-      "blank = use this process's own TUN_PUBLIC_BASE env var, if set — otherwise required if baked";
+        "blank = use this process's own TUN_PUBLIC_BASE env var, if set — otherwise required if baked";
   }
   if (!assemblePlaceholdersInitialized) {
     assemblePlaceholdersInitialized = true;
@@ -992,7 +981,6 @@ async function loadAssembleView() {
       };
       fill("PATCH_REV", defaults.nextPatchRev);
       fill("LABEL", defaults.label);
-      fill("DATA_VERSION", defaults.dataRev);
       fill("SYNC_BASE_URL", defaults.syncBaseUrl);
       fill("SYNC_TOKEN", defaults.syncToken);
       fill("AUDIO_BASE_URL", defaults.audioBaseUrl);
@@ -1012,7 +1000,7 @@ async function loadAssembleView() {
   el("assemble-patchback-pairs-dir-caption").textContent = `Reading patch-back pairs from: ${patchbackDir}`;
   assemblePatchbackPairsCache = pairs;
   assemblePatchbackPairsSelected = assemblePatchbackPairsSelected.filter((name) =>
-    pairs.some((p) => p.name === name)
+      pairs.some((p) => p.name === name)
   );
 
   const { companionsDir, companions } = await api("GET", "/api/companions");
@@ -1063,26 +1051,26 @@ function renderOrderedPicker({ cache, selected, availableListEl, selectedListEl,
   });
 
   availableListEl.querySelectorAll("[data-add]").forEach((btn) =>
-    btn.addEventListener("click", () => onChange([...selected, btn.dataset.add]))
+      btn.addEventListener("click", () => onChange([...selected, btn.dataset.add]))
   );
   selectedListEl.querySelectorAll("[data-remove]").forEach((btn) =>
-    btn.addEventListener("click", () => onChange(selected.filter((n) => n !== btn.dataset.remove)))
+      btn.addEventListener("click", () => onChange(selected.filter((n) => n !== btn.dataset.remove)))
   );
   selectedListEl.querySelectorAll("[data-up]").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      const i = selected.indexOf(btn.dataset.up);
-      const next = [...selected];
-      if (i > 0) [next[i - 1], next[i]] = [next[i], next[i - 1]];
-      onChange(next);
-    })
+      btn.addEventListener("click", () => {
+        const i = selected.indexOf(btn.dataset.up);
+        const next = [...selected];
+        if (i > 0) [next[i - 1], next[i]] = [next[i], next[i - 1]];
+        onChange(next);
+      })
   );
   selectedListEl.querySelectorAll("[data-down]").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      const i = selected.indexOf(btn.dataset.down);
-      const next = [...selected];
-      if (i !== -1 && i < next.length - 1) [next[i + 1], next[i]] = [next[i], next[i + 1]];
-      onChange(next);
-    })
+      btn.addEventListener("click", () => {
+        const i = selected.indexOf(btn.dataset.down);
+        const next = [...selected];
+        if (i !== -1 && i < next.length - 1) [next[i + 1], next[i]] = [next[i], next[i + 1]];
+        onChange(next);
+      })
   );
 }
 
@@ -1126,8 +1114,8 @@ async function runAssemble() {
   resultEl.classList.add("hidden");
 
   const companionFiles = assembleCompanionsSelected
-    .map((name) => assembleCompanionsCache.find((c) => c.name === name)?.path)
-    .filter(Boolean);
+      .map((name) => assembleCompanionsCache.find((c) => c.name === name)?.path)
+      .filter(Boolean);
   // generic-placeholder-substitution: a blank row is simply omitted — the
   // server falls back to its own default for SYNC_BASE_URL/SYNC_TOKEN/
   // AUDIO_BASE_URL when the key is absent, same as before.
@@ -1359,7 +1347,7 @@ function renderOccurrences(deck) {
     }
     letterSelect.value = occ.letter;
     letterSelect.addEventListener("change", () =>
-      updateOccurrenceLetter(deck.Name, occ.index, letterSelect.value)
+        updateOccurrenceLetter(deck.Name, occ.index, letterSelect.value)
     );
 
     const previewSpan = document.createElement("span");
@@ -1514,7 +1502,7 @@ async function openCard(id) {
   const card = await deckcardApi("GET", `/cards/${encodeURIComponent(id)}`);
   deckcardState.currentCardId = card.ID;
   const owningDeck =
-    deckcardState.currentDeck && deckcardState.currentDeck.Name === card.DECK_ID ? deckcardState.currentDeck : null;
+      deckcardState.currentDeck && deckcardState.currentDeck.Name === card.DECK_ID ? deckcardState.currentDeck : null;
   el("card-editor-title").textContent = owningDeck ? `${card.ID} — ${owningDeck.Title || ""}` : card.ID;
   el("card-error").classList.add("hidden");
   renderDeckMeta(owningDeck, "card-deck-meta");
