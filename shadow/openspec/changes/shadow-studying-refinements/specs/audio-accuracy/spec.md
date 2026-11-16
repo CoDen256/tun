@@ -1,10 +1,10 @@
 ## ADDED Requirements
 
 ### Requirement: Every audio cut begins at the millisecond requested
-A cut taken from a book's Opus master — a chapter chunk or a single
-sentence — SHALL begin at the requested position and end at the requested
-position, within the tolerance of one decoded frame. A cut SHALL NOT begin
-at an earlier container boundary.
+A cut taken from a book's Opus master SHALL begin at the requested position
+and end at the requested position, within the tolerance of one decoded
+frame — whether it is a chapter chunk or a single sentence. A cut SHALL NOT
+begin at an earlier container boundary.
 
 This supersedes the stream-copy cut, whose input seeking landed on the
 enclosing Ogg page. That inaccuracy produced two user-visible defects: a
