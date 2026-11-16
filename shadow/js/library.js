@@ -95,6 +95,15 @@ const Library = (() => {
           ? 'transcode failed: ' + (b.audioError || 'unknown')
           : 'no stored audio — playback and analysis are unavailable for this book';
         main.appendChild(warn);
+      } else if (b.analysisState === 'failed') {
+        // The automatic analysis after an upload can fail too, and a book
+        // left reading "0 chapters" with no reason given is the stuck-
+        // forever state this row must never show.
+        const warn = document.createElement('div');
+        warn.className = 'book-cursor quiet';
+        warn.textContent = 'analysis failed: ' + (b.analysisError || 'unknown')
+          + ' — adjust the thresholds in Prepare and re-analyse';
+        main.appendChild(warn);
       }
       main.addEventListener('click', () => open(b.id, 'study'));
 
@@ -237,11 +246,10 @@ const Library = (() => {
         paintUpload(upload.sent, upload.size, 'sending…');
       }
       paintUpload(upload.sent, upload.size, 'transcoding to mono Opus…');
-      const done = await Api.completeUpload(upload.id);
-      started.set(done.mediaId, Date.now());
+      await Api.completeUpload(upload.id);
       upload = null;
       showUpload(false);
-      App.toast('Upload complete — transcoding on the server.');
+      App.toast('Upload complete — transcoding, then analysing, on the server.');
       await refresh();
     } catch (e) {
       if (upload && upload.cancelled) return;

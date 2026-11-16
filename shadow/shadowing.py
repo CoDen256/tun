@@ -48,11 +48,13 @@ re-split.
 
 from __future__ import annotations
 
+import datetime
 import io
 import os
 import pathlib
 import tempfile
 import threading
+import time
 import uuid
 
 from flask import Blueprint, jsonify, request, send_file
@@ -146,6 +148,19 @@ def _config_json(c: ShadowingSplitConfig, ranges=()) -> dict:
     }
 
 
+_WORKING_AUDIO = ('uploading', 'transcoding')
+
+
+def _iso_utc(dt) -> str | None:
+    """`updated_at` is a naive UTC timestamp; say so, so the browser does not
+    read it as local time and compute an elapsed of several hours."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.isoformat()
+
+
 def _media_json(m: ShadowingMedia, ranges=(), cursor_ms=None) -> dict:
     active = m.active_config
     sentences = sorted([s for s in (active.segments if active else []) if s.kind == 'sentence'],
@@ -171,6 +186,15 @@ def _media_json(m: ShadowingMedia, ranges=(), cursor_ms=None) -> dict:
         'activeConfigId': active.id if active else None,
         'activeConfigName': active.name if active else None,
         'analysisState': active.analysis_state if active else 'idle',
+        'analysisError': active.analysis_error if active else None,
+        # When the CURRENT operation started, so the page can estimate
+        # against this operation rather than against whenever it first
+        # happened to notice the book. `updated_at` is the honest answer:
+        # the only writes to either row while it is working are the ones
+        # that set the working state, and the next write ends it.
+        'audioStateSince': _iso_utc(m.updated_at) if m.audio_state in _WORKING_AUDIO else None,
+        'analysisSince': (_iso_utc(active.updated_at)
+                          if active is not None and active.analysis_state == 'running' else None),
         'configCount': len(m.configs),
         'chapterCount': sum(1 for s in (active.segments if active else []) if s.kind == 'chapter'),
         'sentenceCount': len(sentences),
@@ -339,12 +363,15 @@ def append_upload_slice(upload_id):
 
 @shadowing_bp.route('/api/v1/shadowing/uploads/<upload_id>/complete', methods=['POST'])
 def complete_upload(upload_id):
-    """The last slice has landed: create the book and transcode ONCE.
+    """The last slice has landed: create the book, transcode ONCE, analyse.
 
     The transcode runs on a background thread so a multi-hour book does not
     hold an HTTP connection open for minutes; the Library polls
     `audioState`. The uploaded original is deleted only after the transcode
-    succeeds (task 1.4).
+    succeeds (task 1.4). The transcode then hands straight over to the
+    book's first analysis with the default thresholds — an upload that
+    needed a trip to Prepare before it had any segmentation was never the
+    designed flow (design.md §8).
     """
     with get_sessionmaker()() as db:
         upload = db.get(ShadowingUpload, upload_id)
@@ -402,7 +429,22 @@ def _transcode_job(upload_id: str, media_id: int) -> None:
             upload = db.get(ShadowingUpload, upload_id)
             if upload is not None:
                 upload.state = 'done'
+            # Upload -> transcode -> ANALYSE, with no operator action: the
+            # designed flow (design.md §8, "a determinate analysing state")
+            # is that a dropped book segments itself. Marking the active
+            # config `running` here, in the same transaction that makes the
+            # audio ready, means the Library never sees a ready book with an
+            # idle config and "0 chapters" — there is no gap to poll into.
+            config = next((c for c in media.configs if c.is_active), None)
+            if config is None:
+                config = next(iter(media.configs), None)
+            if config is not None:
+                config.analysis_state = 'running'
+                config.analysis_error = None
+            config_id = config.id if config is not None else None
             db.commit()
+        if config_id is not None:
+            _start_analysis(config_id)
     except Exception as exc:  # noqa: BLE001 — the reason must reach the page
         with get_sessionmaker()() as db:
             media = db.get(ShadowingMedia, media_id)
