@@ -61,7 +61,7 @@ describe("cardFlow: absolute totals, grid status, and real ship-order reconstruc
     assert.equal(stalled.stalledDays, 0, "just shipped — 0 elapsed days, not null");
   });
 
-  await t.test("shipOrderForDeck reconstructs shipped-then-staged order and clamps open at the next multiple of 5", async () => {
+  await t.test("shipOrderForDeck reconstructs shipped-then-staged order and opens to the next multiple of 5 above shipped+staged", async () => {
     await pool.query("TRUNCATE card_slots, staged_occurrences, occurrence_shipments, publications CASCADE");
     for (let i = 1; i <= 7; i++) {
       const id = `C30${String(i).padStart(3, "0")}`;
@@ -90,8 +90,59 @@ describe("cardFlow: absolute totals, grid status, and real ship-order reconstruc
       order.staged.map((o) => o.cardId),
       ["C30004"]
     );
-    // nextMultipleOf5(3) = 5; open = 5 - (3 + 1) = 1.
+    // D-SS5: measured from shipped + staged — nextMultipleOf5(3 + 1) = 5,
+    // open = 5 - 4 = 1.
     assert.equal(order.open, 1);
     assert.equal(order.shipped[0].noteText, "", "no card_content row — degrades to empty string, never crashes");
+  });
+
+  // builder-ship-strips D-SS5: the two cases the old expression got wrong.
+  await t.test("shipOrderForDeck: staged occurrences that carry the deck past its next multiple of 5", async () => {
+    await pool.query("TRUNCATE card_slots, staged_occurrences, occurrence_shipments, publications CASCADE");
+    for (let i = 1; i <= 254; i++) {
+      const id = `C30${String(i).padStart(3, "0")}`;
+      await pool.query("INSERT INTO card_slots (id, deck_code, card_no, note_id) VALUES ($1, 'C30', $2, $3)", [id, i, `note-${id}`]);
+    }
+    await pool.query(
+      "INSERT INTO publications (build_id, base_version, patch_rev, data_rev, bundle_sha) VALUES ('b3', '1.0', 1, 1, 'sha')"
+    );
+    await recordShipments(
+      pool,
+      Array.from({ length: 245 }, (_, i) => ({ cardId: `C30${String(i + 1).padStart(3, "0")}`, letter: "A" })),
+      "b3"
+    );
+    for (let i = 246; i <= 254; i++) {
+      await stageOccurrence(pool, { deckCode: "C30", cardId: `C30${String(i).padStart(3, "0")}`, letter: "A" });
+    }
+
+    const order = await shipOrderForDeck(pool, "C30");
+    assert.equal(order.shipped.length, 245);
+    assert.equal(order.staged.length, 9);
+    // 245 + 9 = 254; the real target is 255, so exactly ONE slot is open —
+    // the old expression computed 250 - 254 = -4 and clamped it to 0.
+    assert.equal(order.open, 1);
+  });
+
+  await t.test("shipOrderForDeck: a deck on the 5-grid with nothing staged awaits a whole batch", async () => {
+    await pool.query("TRUNCATE card_slots, staged_occurrences, occurrence_shipments, publications CASCADE");
+    for (let i = 1; i <= 5; i++) {
+      const id = `C30${String(i).padStart(3, "0")}`;
+      await pool.query("INSERT INTO card_slots (id, deck_code, card_no, note_id) VALUES ($1, 'C30', $2, $3)", [id, i, `note-${id}`]);
+    }
+    await pool.query(
+      "INSERT INTO publications (build_id, base_version, patch_rev, data_rev, bundle_sha) VALUES ('b4', '1.0', 1, 1, 'sha')"
+    );
+    await recordShipments(
+      pool,
+      Array.from({ length: 5 }, (_, i) => ({ cardId: `C30${String(i + 1).padStart(3, "0")}`, letter: "A" })),
+      "b4"
+    );
+
+    const order = await shipOrderForDeck(pool, "C30");
+    assert.equal(order.staged.length, 0);
+    // SUPERSEDES the old `open === 0` expectation (card-flow-view's spec
+    // scenario, corrected by this change): five more cards are awaited
+    // before anything can ship, and reporting 0 asserted that nothing was.
+    assert.equal(order.open, 5);
   });
 });

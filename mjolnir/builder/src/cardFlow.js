@@ -70,9 +70,17 @@ export async function gridStatusForDeck(pool, deckCode, shippedCount) {
 // A deck's real `Cards[]` order so far: shipped (occurrence_shipments, id
 // ASC) then staged (staged_occurrences, id ASC) — the exact sequence that
 // lands in Cards[] once the open slot(s) fill (design.md's "Resolve real
-// Cards[] order" decision). `open` is clamped at 0; a negative raw value
-// (design.md's Risk 2 — shouldn't happen under correct flush logic) is
-// logged, not thrown, since this is a read-only view.
+// Cards[] order" decision).
+//
+// builder-ship-strips D-SS5: `open` is measured from shipped + staged, not
+// from shipped alone. The old expression (`nextMultipleOf5(shipped) -
+// (shipped + staged)`) measured against a target the deck had ALREADY
+// passed whenever staged carried it beyond — 245 shipped with 9 staged gave
+// `250 - 254 = -4`, clamped to 0, with a `console.error` calling correct
+// data a "data-integrity signal" (the same failure shape as P45/P47: a
+// confident diagnostic pointing at the data while the arithmetic is at
+// fault). Measured from the real total, the value is always 1-5, so the
+// clamp, the negative branch and that diagnostic are all gone.
 export async function shipOrderForDeck(pool, deckCode) {
   const [{ rows: shippedRows }, { rows: stagedRows }] = await Promise.all([
     pool.query(
@@ -97,11 +105,6 @@ export async function shipOrderForDeck(pool, deckCode) {
   const shipped = shippedRows.map(toEntry);
   const staged = stagedRows.map(toEntry);
 
-  const rawOpen = nextMultipleOf5(shipped.length) - (shipped.length + staged.length);
-  if (rawOpen < 0) {
-    console.error(
-      `card-flow: ${deckCode} open-slot count computed negative (shipped=${shipped.length}, staged=${staged.length}) — data-integrity signal, not a crash`
-    );
-  }
-  return { shipped, staged, open: Math.max(0, rawOpen) };
+  const total = shipped.length + staged.length;
+  return { shipped, staged, open: nextMultipleOf5(total) - total };
 }
