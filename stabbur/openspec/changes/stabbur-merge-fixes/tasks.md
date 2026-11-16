@@ -6,21 +6,21 @@ state both loses unsaved edits and alters merge semantics at once.
 
 ## 1. Save-then-merge
 
-- [ ] 1.1 `POST /api/notes/merge` accepts the survivor's field values
+- [x] 1.1 `POST /api/notes/merge` accepts the survivor's field values
       alongside `survivor_id`, `absorbed_ids` and `take`. Absent values
       mean "unchanged", so an older client keeps working.
-- [ ] 1.2 Apply the submitted values to the survivor **before** the takes,
+- [x] 1.2 Apply the submitted values to the survivor **before** the takes,
       inside the existing transaction, subject to the same validation the
       authoring PATCH applies. `origin` and `import_ref` stay immutable.
-- [ ] 1.3 Reject a merge whose submitted values fail validation with the
+- [x] 1.3 Reject a merge whose submitted values fail validation with the
       same error shape the PATCH route returns — never partially apply.
-- [ ] 1.4 `commitSimilarMerge` sends the current form values, from the
+- [x] 1.4 `commitSimilarMerge` sends the current form values, from the
       editor (`e`) and the triage card (`t`) alike.
-- [ ] 1.5 The confirm text states that unsaved edits will be saved first.
-- [ ] 1.6 Show a visible marker above the merge bar while the form is
+- [x] 1.5 The confirm text states that unsaved edits will be saved first.
+- [x] 1.6 Show a visible marker above the merge bar while the form is
       dirty, naming what will be saved.
-- [ ] 1.7 Keep D82's explicit `updated_at` bump.
-- [ ] 1.8 Tests: unsaved edit survives a merge taking nothing; a take of
+- [x] 1.7 Keep D82's explicit `updated_at` bump.
+- [x] 1.8 Tests: unsaved edit survives a merge taking nothing; a take of
       the same field wins over the submitted value; an invalid submitted
       value rolls the whole merge back and the absorbed note still exists.
 

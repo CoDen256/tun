@@ -422,3 +422,185 @@ def test_merge_rejects_absorbing_self(client):
         headers=AUTH,
     )
     assert resp.status_code == 400
+
+
+# ------------------------------------- stabbur-merge-fixes task 1.8 ---
+# Save-then-merge: the request carries the survivor's open form values,
+# which are applied before the takes, in the same transaction.
+
+
+def test_unsaved_form_value_survives_a_merge_that_takes_nothing(client):
+    survivor = _create(client, text="hus", status="draft")
+    absorbed = _create(client, text="hus2", status="draft")
+
+    resp = client.post(
+        "/api/notes/merge",
+        json={
+            "survivor_id": survivor["id"],
+            "absorbed_ids": [absorbed["id"]],
+            "take": {},
+            "survivor_values": {"transcription": "ˈhuːs", "context_text": "Et stort hus."},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.get_json()
+
+    stored = client.get(f"/api/notes/{survivor['id']}", headers=AUTH).get_json()
+    assert stored["transcription"] == "ˈhuːs"
+    assert stored["context_text"] == "Et stort hus."
+
+
+def test_merge_without_survivor_values_leaves_the_stored_row_alone(client):
+    """Absent values mean "unchanged" — an older client keeps working."""
+    survivor = _create(client, text="hus", status="draft", transcription="ˈhuːs")
+    absorbed = _create(client, text="hus2", status="draft")
+
+    resp = client.post(
+        "/api/notes/merge",
+        json={"survivor_id": survivor["id"], "absorbed_ids": [absorbed["id"]], "take": {}},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["transcription"] == "ˈhuːs"
+
+
+def test_a_replacive_take_wins_over_the_submitted_form_value(client):
+    survivor = _create(client, text="hus", status="draft")
+    absorbed = _create(client, text="hus2", status="draft", transcription="ˈhʉːs")
+
+    resp = client.post(
+        "/api/notes/merge",
+        json={
+            "survivor_id": survivor["id"],
+            "absorbed_ids": [absorbed["id"]],
+            "take": {"transcription": absorbed["id"]},
+            "survivor_values": {"transcription": "typed-but-not-saved"},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["transcription"] == "ˈhʉːs"
+
+
+def test_survivor_values_are_saved_even_for_fields_a_take_does_not_touch(client):
+    survivor = _create(client, text="hus", status="draft")
+    absorbed = _create(client, text="hus2", status="draft", transcription="ˈhʉːs")
+
+    resp = client.post(
+        "/api/notes/merge",
+        json={
+            "survivor_id": survivor["id"],
+            "absorbed_ids": [absorbed["id"]],
+            "take": {"transcription": absorbed["id"]},
+            "survivor_values": {"transcription": "typed", "lemma": "hus"},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["transcription"] == "ˈhʉːs"
+    assert body["lemma"] == "hus"
+
+
+def test_invalid_survivor_values_roll_the_whole_merge_back(client):
+    survivor = _create(client, text="hus", status="draft", transcription="ˈhuːs")
+    absorbed = _create(client, text="hus2", status="draft")
+
+    resp = client.post(
+        "/api/notes/merge",
+        json={
+            "survivor_id": survivor["id"],
+            "absorbed_ids": [absorbed["id"]],
+            "take": {},
+            # The editor's required `text` field, cleared.
+            "survivor_values": {"text": "", "transcription": "typed"},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 400
+    assert "text" in resp.get_json()["error"]
+
+    # Nothing partially applied: the survivor is untouched and — crucially,
+    # since a merge hard-deletes — the absorbed note still exists.
+    stored = client.get(f"/api/notes/{survivor['id']}", headers=AUTH).get_json()
+    assert stored["text"] == "hus"
+    assert stored["transcription"] == "ˈhuːs"
+    assert client.get(f"/api/notes/{absorbed['id']}", headers=AUTH).status_code == 200
+
+
+def test_invalid_status_in_survivor_values_is_rejected_like_a_patch(client):
+    survivor = _create(client, text="hus", status="draft")
+    absorbed = _create(client, text="hus2", status="draft")
+
+    resp = client.post(
+        "/api/notes/merge",
+        json={
+            "survivor_id": survivor["id"],
+            "absorbed_ids": [absorbed["id"]],
+            "take": {},
+            "survivor_values": {"status": "published"},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 400
+    patch_resp = client.patch(f"/api/notes/{survivor['id']}", json={"status": "published"}, headers=AUTH)
+    assert resp.get_json()["error"] == patch_resp.get_json()["error"]
+    assert client.get(f"/api/notes/{absorbed['id']}", headers=AUTH).status_code == 200
+
+
+def test_survivor_values_cannot_rewrite_origin_or_import_ref(client):
+    survivor = _create(client, text="hus", status="draft")
+    absorbed = _create(client, text="hus2", status="draft")
+
+    resp = client.post(
+        "/api/notes/merge",
+        json={
+            "survivor_id": survivor["id"],
+            "absorbed_ids": [absorbed["id"]],
+            "take": {},
+            "survivor_values": {"origin": "import", "import_ref": "whatever"},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "origin is immutable once set"
+    assert client.get(f"/api/notes/{absorbed['id']}", headers=AUTH).status_code == 200
+
+
+def test_survivor_values_round_trip_of_the_whole_note_is_accepted(client):
+    """The client sends its form, not a diff — the unchanged `origin` and
+    `import_ref` it already holds must not be read as a rewrite."""
+    survivor = _create(client, text="hus", status="draft")
+    absorbed = _create(client, text="hus2", status="draft")
+
+    resp = client.post(
+        "/api/notes/merge",
+        json={
+            "survivor_id": survivor["id"],
+            "absorbed_ids": [absorbed["id"]],
+            "take": {},
+            "survivor_values": {"origin": "manual", "import_ref": None, "text": "huset"},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["text"] == "huset"
+
+
+def test_merge_with_survivor_values_still_bumps_updated_at(client):
+    survivor = _create(client, text="hus", status="draft")
+    absorbed = _create(client, text="hus2", status="draft")
+    before = client.get(f"/api/notes/{survivor['id']}", headers=AUTH).get_json()["updated_at"]
+
+    resp = client.post(
+        "/api/notes/merge",
+        json={
+            "survivor_id": survivor["id"],
+            "absorbed_ids": [absorbed["id"]],
+            "take": {},
+            "survivor_values": {"text": "hus"},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["updated_at"] != before

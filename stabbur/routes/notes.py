@@ -34,6 +34,28 @@ MERGE_TAKE_FIELDS = (
     "audio_sel_ms",
 )
 
+# stabbur-merge-fixes D1: the fields the merge request may carry as the
+# survivor's current (unsaved) form state. The same set `patch_note` accepts
+# — a merge saves the open form exactly the way Save would, then applies the
+# takes on top. `origin`/`import_ref` are absent on purpose: immutable
+# provenance (design.md D5), enforced below as well.
+MERGE_SURVIVOR_VALUE_FIELDS = (
+    "type",
+    "source_lang",
+    "text",
+    "status",
+    "capture_id",
+    "translations",
+    "transcription",
+    "pos",
+    "lemma",
+    "inflections",
+    "context_text",
+    "audio_blob",
+    "audio_sel_ms",
+    "grammar_rule_id",
+)
+
 SIMILAR_NOTES_SIGNAL_LABELS = {
     "spelling": "spelled alike",
     "morphology": "same word family",
@@ -171,6 +193,43 @@ def _merge_translation_lists(existing: list | None, incoming: list | None, merge
         else:
             merged.append({"lang": lang, "text": text})
     return merged
+
+
+def _validate_survivor_values(values: dict, survivor: Note) -> str | None:
+    """stabbur-merge-fixes tasks 1.2/1.3: the submitted form state is held to
+    exactly the rules `patch_note` applies, and is validated in full before
+    anything is written, so an invalid value can never be partially applied.
+    Returns an error message, or None."""
+    unknown = [f for f in values if f not in MERGE_SURVIVOR_VALUE_FIELDS and f not in ("origin", "import_ref")]
+    if unknown:
+        return f"cannot set field {unknown[0]!r} on the survivor"
+
+    error = _validate_type_and_status(values, survivor.type, survivor.status)
+    if error:
+        return error
+
+    # The identical value is accepted so a round-trip of the whole note
+    # object through the merge request isn't broken by immutability.
+    if "origin" in values and values["origin"] != survivor.origin:
+        return "origin is immutable once set"
+    if "import_ref" in values and values["import_ref"] != survivor.import_ref:
+        return "import_ref is immutable once set"
+
+    missing = [f for f in REQUIRED_CREATE_FIELDS if f in values and not values[f]]
+    if missing:
+        return f"missing required fields: {missing}"
+
+    return None
+
+
+def _apply_survivor_values(survivor: Note, values: dict) -> None:
+    """Writes the submitted form state onto the survivor. Absent fields mean
+    "unchanged" (tasks 1.1), so a client that doesn't send them — an older
+    one, or a merge driven from somewhere without an open form — still gets
+    the previous behaviour of merging the stored row."""
+    for field in MERGE_SURVIVOR_VALUE_FIELDS:
+        if field in values:
+            setattr(survivor, field, values[field])
 
 
 def _serialize_similar_match(note: Note, signals: dict) -> dict:
@@ -575,7 +634,12 @@ def register_notes_routes(app):
         not only in the UI (design D3): every absorbed note must be a
         `draft` — that is the single rule the four status combinations
         (tasks.md 6.5) reduce to, since the survivor's own status is
-        unconstrained."""
+        unconstrained.
+
+        stabbur-merge-fixes: the request also carries `survivor_values`, the
+        open form's current state, which is saved onto the survivor *before*
+        the takes are applied, inside this same transaction — so a merge can
+        never silently discard an edit the operator had not saved."""
         body = request.get_json(silent=True)
         if body is None:
             return jsonify({"error": "JSON body required"}), 400
@@ -583,6 +647,12 @@ def register_notes_routes(app):
         survivor_id = body.get("survivor_id")
         absorbed_ids = body.get("absorbed_ids") or []
         take = body.get("take") or {}
+        # stabbur-merge-fixes D1: the survivor's *currently edited* values,
+        # not the stored row. Omitted entirely by an older client, which
+        # then keeps working exactly as before.
+        survivor_values = body.get("survivor_values")
+        if survivor_values is not None and not isinstance(survivor_values, dict):
+            return jsonify({"error": "survivor_values must be an object"}), 400
 
         if not survivor_id or not absorbed_ids:
             return jsonify({"error": "survivor_id and absorbed_ids are required"}), 400
@@ -615,13 +685,37 @@ def register_notes_routes(app):
                 absorbed_notes.append(absorbed)
             absorbed_by_id = {n.id: n for n in absorbed_notes}
 
+            # Every take's source is resolved before a single value is
+            # written: an unknown source has to be refused without having
+            # already applied the takes that happened to be iterated first
+            # (session_scope commits on return, so an early return out of a
+            # half-applied loop would persist it).
+            resolved_takes = []
             for field, source_id in take.items():
-                if source_id == survivor.id:
-                    source = survivor
-                else:
-                    source = absorbed_by_id.get(source_id)
+                source = survivor if source_id == survivor.id else absorbed_by_id.get(source_id)
                 if source is None:
                     return jsonify({"error": f"take source {source_id} is not part of this merge"}), 400
+                resolved_takes.append((field, source))
+            # An explicitly staged `pos` take is applied last, so it wins
+            # over the one an `inflections` take drags along below rather
+            # than depending on dict order.
+            resolved_takes.sort(key=lambda pair: pair[0] == "pos")
+
+            if survivor_values is not None:
+                error = _validate_survivor_values(survivor_values, survivor)
+                if error:
+                    return jsonify({"error": error}), 400
+
+            # Ordering is load-bearing (design D1): the form's values first,
+            # the takes on top. A take is the operator saying "and also bring
+            # this across", which must win over whatever the form held — and
+            # for the two additive fields it is also what makes the result
+            # correct, since the taken value then appends to the *edited*
+            # value rather than to the stored one.
+            if survivor_values is not None:
+                _apply_survivor_values(survivor, survivor_values)
+
+            for field, source in resolved_takes:
                 value = getattr(source, field)
                 if field == "inflections":
                     # A source note saved before the prefix-stripping fix (or

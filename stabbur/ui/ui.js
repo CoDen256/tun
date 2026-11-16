@@ -847,6 +847,8 @@ const similarNotesState = {
 };
 
 const SIMILAR_FIELD_LABELS = {
+  text: 'text',
+  lemma: 'lemma',
   audio_blob: 'audio',
   transcription: 'IPA',
   inflections: 'inflections',
@@ -854,6 +856,81 @@ const SIMILAR_FIELD_LABELS = {
   translations: 'translations',
   pos: 'part of speech',
 };
+
+// stabbur-merge-fixes D1: a merge now carries the open form's values, so
+// the panel has to be able to read that form and to say which of its fields
+// differ from the stored row — "what merging is about to save".
+function similarSurvivorValues(prefix) {
+  return prefix === 'e' ? readEditForm() : readTriageForm();
+}
+
+function similarStoredNote(prefix) {
+  return prefix === 'e' ? currentNote : currentTriageNote;
+}
+
+// Compared field-by-field through one normaliser, so an empty inflection
+// slot the form always renders, a trailing space, or a blank translation
+// row never reads as an unsaved edit.
+function similarComparableValue(field, value) {
+  if (field === 'inflections') {
+    const entries = Object.entries(value || {})
+      .map(([k, v]) => [k, v === null || v === undefined ? '' : String(v).trim()])
+      .filter(([, v]) => v !== '')
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    return JSON.stringify(entries);
+  }
+  if (field === 'translations') {
+    return JSON.stringify(
+      (value || [])
+        .filter((t) => t && (t.text || '').trim())
+        .map((t) => [t.lang || '', (t.text || '').trim()])
+    );
+  }
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  return JSON.stringify(value);
+}
+
+function similarDirtyFields(prefix) {
+  const stored = similarStoredNote(prefix);
+  if (!stored) return [];
+  const values = similarSurvivorValues(prefix);
+  return Object.keys(values)
+    .filter((field) => similarComparableValue(field, values[field]) !== similarComparableValue(field, stored[field]))
+    .map((field) => SIMILAR_FIELD_LABELS[field] || field.replace(/_/g, ' '));
+}
+
+function updateSimilarDirtyStrip(prefix) {
+  const wrap = document.getElementById(`${prefix}_similar_wrap`);
+  const strip = wrap && wrap.querySelector('.similar-dirty-strip');
+  if (!strip) return;
+  const fields = similarDirtyFields(prefix);
+  if (!fields.length) {
+    strip.style.display = 'none';
+    strip.innerHTML = '';
+    return;
+  }
+  strip.innerHTML =
+    `⚠ Unsaved edits to <b>${fields.map(escapeHtml).join('</b>, <b>')}</b>. ` +
+    'Merging will save them first, then apply the takes on top.';
+  strip.style.display = 'block';
+}
+
+// Wired once, from here rather than from either form's own handlers, so the
+// similar-notes panel owns its own freshness and neither the editor nor the
+// triage card has to know this strip exists.
+let similarDirtyWatchersWired = false;
+function wireSimilarDirtyWatchers() {
+  if (similarDirtyWatchersWired) return;
+  similarDirtyWatchersWired = true;
+  [['noteEditForm', 'e'], ['triageCardWrap', 't']].forEach(([containerId, prefix]) => {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    ['input', 'change'].forEach((evt) => {
+      container.addEventListener(evt, () => updateSimilarDirtyStrip(prefix));
+    });
+  });
+}
 
 async function loadSimilarNotes(prefix, noteId) {
   const wrap = document.getElementById(`${prefix}_similar_wrap`);
@@ -963,9 +1040,10 @@ function renderSimilarNotes(prefix, noteId) {
   }
 
   html += `
+    <div class="similar-dirty-strip" style="display:none;"></div>
     <div class="similar-note-merge-bar" style="display:none;">
       <span class="similar-merge-summary"></span>
-      <button type="button" class="btn-danger similar-merge-btn">Merge selected into this note</button>
+      <button type="button" class="btn-danger similar-merge-btn">Save &amp; merge into this note</button>
     </div>`;
 
   wrap.innerHTML = html;
@@ -987,6 +1065,8 @@ function renderSimilarNotes(prefix, noteId) {
   wrap.querySelector('.similar-merge-btn').addEventListener('click', () => commitSimilarMerge(prefix, noteId));
 
   syncSimilarNoteControls(prefix);
+  wireSimilarDirtyWatchers();
+  updateSimilarDirtyStrip(prefix);
 }
 
 function onSimilarCheckboxChange(prefix, noteId, cb) {
@@ -1081,14 +1161,26 @@ async function commitSimilarMerge(prefix, noteId) {
     const m = state.matches.find((x) => x.id === id);
     return m ? m.text : id;
   });
-  if (!confirm(`Absorb ${names.join(', ')} into this note? ${absorbedIds.length === 1 ? 'That note' : 'Those notes'} will be permanently deleted.`)) {
+  if (!confirm(
+    `Absorb ${names.join(', ')} into this note? ` +
+    `${absorbedIds.length === 1 ? 'That note' : 'Those notes'} will be permanently deleted. ` +
+    'Your unsaved edits to this note will be saved first, then the staged takes applied on top.'
+  )) {
     return;
   }
 
   const { status, body } = await api('/api/notes/merge', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ survivor_id: noteId, absorbed_ids: absorbedIds, take: state.take }),
+    body: JSON.stringify({
+      survivor_id: noteId,
+      absorbed_ids: absorbedIds,
+      take: state.take,
+      // D1: the open form's current values, so the merge saves what the
+      // operator typed instead of silently re-rendering the stored row
+      // over it — and then deleting the only other copy of it.
+      survivor_values: similarSurvivorValues(prefix),
+    }),
   });
   if (status !== 200) {
     alert(`Merge failed: ${(body && body.error) || status}`);
