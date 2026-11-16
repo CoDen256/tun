@@ -21,14 +21,36 @@ const Explore = (() => {
   const selbar = document.getElementById('selbar');
   const selCountEl = document.getElementById('selCount');
   const selExtendBtn = document.getElementById('selExtend');
+  const selModeBtn = document.getElementById('selModeBtn');
+  const hintEl = document.getElementById('exHint');
 
   let sel = new Set();
   let anchor = null;
   let extendArmed = false;
+  // Task 5.2: selection lives behind an explicit mode. With it off a tap
+  // anywhere on a cell opens Study (task 5.1) and can never start a
+  // selection; the chapter-header checkboxes select in EITHER mode.
+  let selectMode = false;
   const openChapters = new Set();
   let busy = false;
 
   function reset() { sel = new Set(); anchor = null; extendArmed = false; openChapters.clear(); }
+
+  function paintSelMode() {
+    if (selModeBtn) {
+      selModeBtn.classList.toggle('on', selectMode);
+      selModeBtn.setAttribute('aria-pressed', String(selectMode));
+      selModeBtn.textContent = selectMode ? '☑ Select mode — on' : '☑ Select mode';
+    }
+    host.classList.toggle('selmode', selectMode);
+    if (hintEl) {
+      hintEl.innerHTML = selectMode
+        ? 'Select mode is <b>on</b> — a tap selects. Shift-click (or <b>“select to…”</b>) takes a range. '
+          + 'Turn it off to open sentences in Study again.'
+        : 'Tap <b>anywhere on a sentence</b> to open it in Study · tap <b>▶</b> to hear it without leaving · '
+          + 'turn on <b>Select mode</b> to tap-to-select instead. Chapter checkboxes always select.';
+    }
+  }
 
   function paintSelbar() {
     selbar.classList.toggle('hidden', sel.size === 0);
@@ -139,15 +161,25 @@ const Explore = (() => {
           const gi = App.globalIndexOf(s.id);
           const cell = document.createElement('div');
           cell.className = 'scell' + (s.done ? ' done' : '') + (sel.has(s.id) ? ' sel' : '');
+          cell.tabIndex = 0;
+          cell.setAttribute('role', 'button');
+          cell.title = 'open this sentence in Study';
           cell.innerHTML =
             '<button class="sprev" type="button" title="preview this sentence">▶</button>'
-            + '<button class="snum" type="button" title="study from here"></button>'
+            + '<span class="snum num"></span>'
             + '<span class="tickmark">✓</span>'
             + `<span class="sdur num">${Fmt.secs(s.durationMs)}</span>`;
           cell.querySelector('.snum').textContent = gi + 1;
+          const activate = (shift) => {
+            if (selectMode) { cellClick(s.id, shift); return; }
+            Study.openAt(s.id);
+          };
           cell.addEventListener('click', (e) => {
-            if (e.target.closest('.sprev') || e.target.closest('.snum')) return;
-            cellClick(s.id, e.shiftKey);
+            if (e.target.closest('.sprev')) return;   // the preview is its own target
+            activate(e.shiftKey);
+          });
+          cell.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(e.shiftKey); }
           });
           cell.querySelector('.sprev').addEventListener('click', (e) => {
             e.stopPropagation();
@@ -156,10 +188,6 @@ const Explore = (() => {
             cell.style.setProperty('--pdur', Math.max(300, s.durationMs) + 'ms');
             Preview.play(s.id, () => cell.classList.remove('playing'));
             setTimeout(() => cell.classList.remove('playing'), s.durationMs + 400);
-          });
-          cell.querySelector('.snum').addEventListener('click', (e) => {
-            e.stopPropagation();
-            Study.openAt(s.id);
           });
           grid.appendChild(cell);
         });
@@ -170,9 +198,18 @@ const Explore = (() => {
     });
 
     paintSelbar();
+    paintSelMode();
   }
 
   function init() {
+    if (selModeBtn) {
+      selModeBtn.addEventListener('click', () => {
+        selectMode = !selectMode;
+        if (!selectMode) extendArmed = false;
+        paintSelMode();
+        paintSelbar();
+      });
+    }
     document.getElementById('selDone').addEventListener('click', () => mark(true));
     document.getElementById('selUndone').addEventListener('click', () => mark(false));
     document.getElementById('selClear').addEventListener('click', () => {

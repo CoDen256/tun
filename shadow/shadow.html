@@ -61,6 +61,24 @@
         </div>
       </div>
     </div>
+
+    <!-- The ONE trim switch (task 2.5). It lives here, on the application's
+         settings surface, and deliberately NOT in the Study control row nor
+         in the phone's ⋯ sheet: it is a preference, not a per-sentence
+         action, and criterion 16 requires exactly one such control. -->
+    <div class="prep-sec">
+      <div class="eyebrow" style="margin-bottom:.5rem">Settings</div>
+      <div class="card">
+        <button class="setrow" id="trimRow" type="button">
+          <span class="copy">
+            <b>Trim silence</b>
+            <small>Play only the spoken part of a sentence, and of your recordings. One switch — it governs both waveforms.</small>
+          </span>
+          <span class="switch" id="trimSwitch" role="switch" aria-checked="true" aria-label="Trim silence"></span>
+        </button>
+        <div class="quiet" style="font-size:.82rem;margin-top:.5rem" id="trimEcho">On — waveforms show the speech-only window.</div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -71,11 +89,11 @@
     <div class="exhead">
       <h1 style="font-size:1.45rem;margin:0">Explore</h1>
       <span class="quiet num" id="exTotals"></span>
+      <button class="mini selmode-btn" id="selModeBtn" type="button" aria-pressed="false" style="margin-left:auto">☑ Select mode</button>
     </div>
-    <p class="exhint">
-      Tap <b>▶</b> to hear one sentence · tap the <b>number</b> to study from there ·
-      click a sentence then <b>shift-click</b> another for a range — on touch, tap one,
-      then <b>“select to…”</b>, then tap the end.
+    <p class="exhint" id="exHint">
+      Tap <b>anywhere on a sentence</b> to open it in Study · tap <b>▶</b> to hear it without leaving ·
+      turn on <b>Select mode</b> to tap-to-select instead. Chapter checkboxes always select.
     </p>
     <div id="exChapters"></div>
   </div>
@@ -94,8 +112,17 @@
      tray collapses into the ⋯ sheet whose trigger sits in the top bar. -->
 <section class="screen" id="s-study">
   <div class="topbar">
+    <!-- the phone's pull-tab: a short downward drag here reveals the nav
+         that is hidden while studying (task 6.1). Desktop never shows it. -->
+    <button class="m-pull js-pull" type="button" aria-label="pull down for navigation">
+      <span class="grabber"></span><span>pull for nav</span>
+    </button>
     <span class="t-book" id="stBook"></span>
-    <span class="t-ch" id="stChapter"></span>
+    <span class="t-ch-wrap">
+      <button class="ch-nav js-chprev" type="button" title="previous chapter (Shift+←)" aria-label="previous chapter">‹</button>
+      <span class="t-ch" id="stChapter"></span>
+      <button class="ch-nav js-chnext" type="button" title="next chapter (Shift+→)" aria-label="next chapter">›</button>
+    </span>
     <button class="m-more-pill js-more" type="button">⋯ more</button>
     <span class="t-count num">sentence <b id="stIdx">–</b> / <span id="stTotal">–</span></span>
     <button class="ctl-s js-exit" type="button">✕ exit<span class="kbd">Esc</span></button>
@@ -104,9 +131,40 @@
 
   <div class="stage">
     <div class="sentbox js-sentbox">
-      <div class="wave-wrap js-wavewrap">
-        <div class="js-wave"></div>
-        <div class="playhead js-playhead"></div>
+      <!-- TWO stacked lanes on ONE time axis (task 3.1). The take lane keeps
+           its height when empty so the controls below never move (3.2), the
+           live recording waveform occupies exactly that box (3.3), and each
+           pitch contour is drawn INSIDE its own lane (3.4) — there is no
+           separate contour panel any more. -->
+      <div class="lanes contours js-lanes">
+        <div class="lanes-head">
+          <span>one time axis · two takes</span>
+          <span class="trim js-trimchip">silence trimmed</span>
+          <span class="sp"></span>
+          <button class="lane-toggle on js-contour-toggle" type="button" aria-pressed="true">pitch contour<span class="kbd">P</span></button>
+        </div>
+
+        <div class="lane lane-ref">
+          <div class="lane-head"><span class="nm">The sentence</span><span class="quiet">audiobook</span></div>
+          <div class="wave-wrap js-wavewrap">
+            <div class="js-wave"></div>
+            <svg class="contour-over js-contour-ref" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <div class="playhead js-playhead"></div>
+          </div>
+        </div>
+
+        <div class="lane lane-usr js-lane-usr">
+          <div class="lane-head">
+            <span class="nm">My take</span><span class="quiet">this session only</span>
+            <span class="live"><span class="recdot"></span><span class="rectime num js-rectime">0.0 s</span></span>
+          </div>
+          <div class="wave-wrap js-userwrap">
+            <div class="js-userwave"></div>
+            <svg class="contour-over js-contour-usr" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <div class="playhead js-userplayhead"></div>
+            <div class="lane-empty js-lane-empty">press <span class="kbd">R</span> to record</div>
+          </div>
+        </div>
       </div>
       <div class="sent-meta num">
         <span><b class="js-dur">–</b> long</span>
@@ -117,6 +175,11 @@
     </div>
 
     <div class="ticks js-ticks" aria-label="sentences in this chapter"></div>
+    <div class="tick-legend">
+      <span><i class="d"></i>done</span>
+      <span><i></i>not done</span>
+      <span><i class="c"></i>this sentence</span>
+    </div>
 
     <div class="controls">
       <button class="ctl primary js-play" type="button"><span class="gl">▶</span><span class="lbl">Play</span><span class="kbd">space</span></button>
@@ -128,31 +191,15 @@
     <div class="controls-2">
       <button class="ctl-s js-prev" type="button">← prev<span class="kbd">←</span></button>
       <button class="ctl-s js-next" type="button">→ next<span class="kbd">→</span></button>
+      <button class="ctl-s js-chprev" type="button">⟨ prev chapter<span class="kbd">⇧←</span></button>
+      <button class="ctl-s js-chnext" type="button">⟩ next chapter<span class="kbd">⇧→</span></button>
       <button class="ctl-s js-split" type="button">✂ split here<span class="kbd">X</span></button>
       <button class="ctl-s js-merge" type="button">⇢⇠ merge with next<span class="kbd">M</span></button>
       <button class="ctl-s js-tr" type="button">📝 transcribe<span class="kbd">T</span></button>
       <button class="ctl-s js-fl" type="button">🔬 Formant Lab<span class="kbd">F</span></button>
       <button class="ctl-s js-jump" type="button">⤓ first unfinished<span class="kbd">U</span></button>
+      <button class="ctl-s js-contour-toggle on" type="button">∿ pitch contour<span class="kbd">P</span></button>
       <button class="ctl-s js-help" type="button">? shortcuts<span class="kbd">?</span></button>
-    </div>
-
-    <div class="recbar hidden js-recbar">
-      <span class="recdot"></span>
-      <span class="rectime num js-rectime">0.0 s</span>
-      <span class="meter js-meter"></span>
-      <span class="rechint">R to stop · the take lives in memory for this session only</span>
-    </div>
-
-    <div class="panel hidden js-cmp-panel">
-      <div class="panel-head">
-        <span>Compare — pitch contour</span>
-        <button class="x js-close-cmp" type="button">✕</button>
-      </div>
-      <svg class="contour js-contour" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"></svg>
-      <div class="legend">
-        <span><i style="background:var(--ref)"></i>reference (book)</span>
-        <span><i style="background:var(--usr)"></i>your take <span class="quiet">· not stored</span></span>
-      </div>
     </div>
 
     <div class="panel hidden js-tr-panel">
@@ -246,6 +293,9 @@
       <div><span>Done &amp; next</span><span class="kbd">↵</span></div>
       <div><span>Previous sentence</span><span class="kbd">←</span></div>
       <div><span>Next without marking</span><span class="kbd">→</span></div>
+      <div><span>Previous chapter</span><span class="kbd">⇧ ←</span></div>
+      <div><span>Next chapter</span><span class="kbd">⇧ →</span></div>
+      <div><span>Show / hide the pitch contours</span><span class="kbd">P</span></div>
       <div><span>Split here (at the playhead)</span><span class="kbd">X</span></div>
       <div><span>Merge with next</span><span class="kbd">M</span></div>
       <div><span>Transcribe (smia)</span><span class="kbd">T</span></div>

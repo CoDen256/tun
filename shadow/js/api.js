@@ -57,7 +57,15 @@ const Api = (() => {
     // ── chapters and segments
     chapterManifest: (segId, userId) => j(`${B()}/chapters/${segId}/manifest?userId=${userId}`),
     chunkUrl: (manifest) => API_BASE + manifest.chunkUrl,
-    segmentAudioUrl: (segId, wav) => `${B()}/segments/${segId}/audio` + (wav ? '?format=wav' : ''),
+    // `trim` asks the server for the SPEECH WINDOW instead of the full
+    // stored span. It is a playback attribute only — nothing that touches
+    // progress ever passes trim.
+    segmentAudioUrl: (segId, wav, trim) => {
+      const qs = [];
+      if (wav) qs.push('format=wav');
+      if (trim) qs.push('trim=1');
+      return `${B()}/segments/${segId}/audio` + (qs.length ? '?' + qs.join('&') : '');
+    },
     patchSegmentText: (segId, text) => j(`${B()}/segments/${segId}`, { method: 'PATCH', ...json({ text }) }),
     splitSegment: (segId, atMs) => j(`${B()}/segments/${segId}/split`, { method: 'POST', ...json({ atMs }) }),
     mergeSegments: (a, b) => j(`${B()}/segments/merge`, { method: 'POST', ...json({ segmentIdA: a, segmentIdB: b }) }),

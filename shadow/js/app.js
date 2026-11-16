@@ -29,6 +29,14 @@ const App = (() => {
     chapters: [],
     byChapter: new Map(),// chapterId -> sentences
     screen: 'library',
+    // ONE preference, default ON, governing BOTH lanes (task 2.5). It is
+    // persisted through the existing settings proxy under `shadowTrimSilence`
+    // — this change needed no new endpoint.
+    trim: true,
+    // `P`'s state. It must survive moving between sentences (task 3.5), so
+    // it lives here and not in Study's per-sentence state; localStorage
+    // carries it across reloads too.
+    contours: localStorage.getItem('shadow.contours') !== '0',
   };
 
   // ── toast, standing in for the alerts this page may not use ────────────
@@ -40,6 +48,51 @@ const App = (() => {
     el.classList.remove('hidden');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => el.classList.add('hidden'), bad ? 7000 : 3500);
+  }
+
+  // ── the trim preference ────────────────────────────────────────────────
+  const TRIM_KEY = 'shadowTrimSilence';
+
+  function paintTrim() {
+    const sw = document.getElementById('trimSwitch');
+    if (sw) sw.setAttribute('aria-checked', String(state.trim));
+    const echo = document.getElementById('trimEcho');
+    if (echo) {
+      echo.textContent = state.trim
+        ? 'On — waveforms show the speech-only window.'
+        : 'Off — waveforms and playback cover the full untrimmed span, silence included.';
+    }
+  }
+
+  /** Change it, repaint the lanes, and persist. Doneness is NOT touched by
+      this: progress is always computed from the full stored span. */
+  function setTrim(on) {
+    state.trim = !!on;
+    paintTrim();
+    if (typeof Study !== 'undefined' && state.screen === 'study') Study.render();
+    if (state.userId == null) return;
+    fetch(`${API_BASE}/api/v1/settings/${TRIM_KEY}?userId=${state.userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: { on: state.trim } }),
+    }).catch(() => { /* a preference is not a transaction */ });
+  }
+
+  async function loadTrim() {
+    try {
+      const all = await fetch(`${API_BASE}/api/v1/settings?userId=${state.userId}`)
+        .then((r) => (r.ok ? r.json() : {}));
+      const stored = all && all[TRIM_KEY];
+      // absent → the default, which is ON
+      state.trim = !(stored && stored.on === false);
+    } catch (e) { state.trim = true; }
+    paintTrim();
+  }
+
+  function setContours(on) {
+    state.contours = !!on;
+    localStorage.setItem('shadow.contours', state.contours ? '1' : '0');
+    if (typeof Study !== 'undefined') Study.paintContourState();
   }
 
   // ── navigation ─────────────────────────────────────────────────────────
@@ -54,6 +107,9 @@ const App = (() => {
       b.setAttribute('aria-selected', String(b.dataset.go === name));
     });
     state.screen = name;
+    // the phone hides the top navigation while studying (task 6.1)
+    document.body.classList.toggle('studying', name === 'study');
+    if (name !== 'study') document.body.classList.remove('nav-open');
     // refresh, not render: a book may have entered a working state while
     // another screen was open, and only a fetch can know that (it is also
     // what restarts the progress poll).
@@ -129,6 +185,9 @@ const App = (() => {
       if (t) { e.preventDefault(); show(t.dataset.go); }
     });
 
+    const trimRow = document.getElementById('trimRow');
+    if (trimRow) trimRow.addEventListener('click', () => setTrim(!state.trim));
+
     document.getElementById('koverClose').addEventListener('click', () => overlay(false));
     kover.addEventListener('click', (e) => { if (e.target === kover) overlay(false); });
 
@@ -147,8 +206,10 @@ const App = (() => {
 
     await UserLib.mountPicker('userPicker');
     state.userId = await UserLib.getCurrentUserId();
+    await loadTrim();
     window.addEventListener('phonexa:user-changed', async (e) => {
       state.userId = (e.detail && e.detail.userId) || await UserLib.getCurrentUserId();
+      await loadTrim();
       state.book = null;
       ChapterAudio.clear();
       await Library.refresh();
@@ -170,7 +231,9 @@ const App = (() => {
 
   return {
     state, show, toast, openBook, refreshBook, overlay, boot, reduced,
-    chapterIndexOf, globalIndexOf,
+    chapterIndexOf, globalIndexOf, setTrim, setContours,
+    get trim() { return state.trim; },
+    get contours() { return state.contours; },
     get userId() { return state.userId; },
     get book() { return state.book; },
     get sentences() { return state.sentences; },

@@ -35,7 +35,7 @@ const Wave = (() => {
    * SVG for peaks[fromMs..toMs] of a peak array that starts at 0 ms.
    * `bars` controls density; returns '' when there are no peaks to draw.
    */
-  function svg(peaks, fromMs, toMs, bars, peakMs) {
+  function svg(peaks, fromMs, toMs, bars, peakMs, fill) {
     if (!peaks || !peaks.length) return '';
     const pm = peakMs || PEAK_MS;
     const i0 = Math.max(0, Math.floor(fromMs / pm));
@@ -52,7 +52,34 @@ const Wave = (() => {
       const hh = Math.max(2, pk * (VIEW_H - 12));
       const x = (i * VIEW_W) / n, y = (VIEW_H - hh) / 2;
       out += `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${bw.toFixed(2)}" `
-           + `height="${hh.toFixed(2)}" rx="${(bw / 2).toFixed(2)}" fill="var(--wave)"/>`;
+           + `height="${hh.toFixed(2)}" rx="${(bw / 2).toFixed(2)}" fill="${fill || 'var(--wave)'}"/>`;
+    }
+    return `<svg viewBox="0 0 ${VIEW_W} ${VIEW_H}" preserveAspectRatio="none" aria-hidden="true">${out}</svg>`;
+  }
+
+  /**
+   * SVG straight from a list of 0..1 magnitudes — the lane drawing that has
+   * no chapter peak array behind it: a decoded recording, or the live
+   * envelope accumulating while the microphone is open. Same viewBox and
+   * same bar geometry as svg(), so the take lane looks like the sentence
+   * lane and the two compare bar for bar.
+   */
+  function barsSvg(values, fill, bars) {
+    const src = values || [];
+    const n = Math.max(8, Math.min(bars || 180, Math.max(1, src.length)));
+    const bw = (VIEW_W / n) * 0.62;
+    let max = 0;
+    for (let i = 0; i < src.length; i++) if (src[i] > max) max = src[i];
+    const norm = max > 0 ? 1 / max : 0;
+    let out = '';
+    for (let i = 0; i < n; i++) {
+      const a = Math.floor((i * src.length) / n), b = Math.floor(((i + 1) * src.length) / n);
+      let pk = 0;
+      for (let k = a; k < Math.max(b, a + 1); k++) if (src[k] > pk) pk = src[k];
+      const hh = Math.max(2, pk * norm * (VIEW_H - 12));
+      const x = (i * VIEW_W) / n, y = (VIEW_H - hh) / 2;
+      out += `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${bw.toFixed(2)}" `
+           + `height="${hh.toFixed(2)}" rx="${(bw / 2).toFixed(2)}" fill="${fill || 'var(--wave)'}"/>`;
     }
     return `<svg viewBox="0 0 ${VIEW_W} ${VIEW_H}" preserveAspectRatio="none" aria-hidden="true">${out}</svg>`;
   }
@@ -62,7 +89,7 @@ const Wave = (() => {
     return `<div class="nowave">${message}</div>`;
   }
 
-  return { PEAK_MS, peaksFromBuffer, svg, placeholder };
+  return { PEAK_MS, peaksFromBuffer, svg, barsSvg, placeholder };
 })();
 
 // ── pitch contours, for Compare (task 5.4) ───────────────────────────────
@@ -101,15 +128,25 @@ const Pitch = (() => {
     return d.trim();
   }
 
-  function render(svgEl, refResult, refMs, takeResult, takeMs) {
-    const a = path(refResult, refMs), b = path(takeResult, takeMs);
-    svgEl.innerHTML =
-      (a ? `<path d="${a}" fill="none" stroke="var(--ref)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>` : '') +
-      (b ? `<path d="${b}" fill="none" stroke="var(--usr)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 4"/>` : '');
-    return !!(a || b);
+  /**
+   * ONE contour onto ONE lane's overlay (task 3.4). There is no shared
+   * contour panel any more: the reference is drawn over the sentence lane
+   * and the take's over the take lane, each against its own duration, in
+   * the lane's own hue so the two stay distinguishable in both themes.
+   */
+  function renderOne(svgEl, result, durationMs, stroke, dashed) {
+    if (!svgEl) return false;
+    const d = path(result, durationMs);
+    svgEl.innerHTML = d
+      ? `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="2.5" `
+        + `stroke-linejoin="round" stroke-linecap="round"${dashed ? ' stroke-dasharray="5 4"' : ''}/>`
+      : '';
+    return !!d;
   }
 
-  return { analyse, render };
+  function clear(svgEl) { if (svgEl) svgEl.innerHTML = ''; }
+
+  return { analyse, path, renderOne, clear };
 })();
 
 // ── WAV encoding, needed only to hand a recorded take to Praat ────────────

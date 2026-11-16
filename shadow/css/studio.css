@@ -201,13 +201,65 @@ h1 { font-size: clamp(1.5rem, 3.4vw, 2.1rem); font-weight: 600; letter-spacing: 
 
 .stage { max-width: 940px; margin: 0 auto; padding: clamp(1.2rem, 4vw, 2.4rem) clamp(1rem, 4vw, 2rem) 4rem; }
 
-.wave-wrap { position: relative; }
-.wave-wrap svg { display: block; width: 100%; height: clamp(120px, 20vw, 180px); }
+/* ---- the two stacked, time-aligned lanes (tasks 3.1–3.4) ----
+   They share one time axis and therefore one width: both .wave-wrap boxes
+   are the full width of .lanes, so their left and right edges are identical
+   by construction (criterion 18). The take lane's box has a min-height, so
+   it keeps its height with no take in it and nothing below it moves when a
+   take appears or disappears (criterion 19). */
+.lanes { display: grid; gap: .55rem; }
+.lanes-head {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .14em; color: var(--faint);
+}
+.lanes-head .sp { flex: 1 1 auto; }
+.lane-toggle {
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-size: .72rem; letter-spacing: .04em; text-transform: none;
+  color: var(--muted); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 999px; padding: .12rem .6rem;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.lane-toggle:hover { color: var(--text); border-color: var(--line-strong); }
+.lane-toggle.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.lane-head {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: .76rem; color: var(--muted); margin-bottom: .22rem; min-height: 1.3rem;
+}
+.lane-head .nm { font-weight: 560; letter-spacing: -0.01em; }
+.lane-ref .lane-head .nm { color: var(--ref); }
+.lane-usr .lane-head .nm { color: var(--usr); }
+.trim {
+  font-size: .64rem; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--faint); border: 1px solid var(--line); border-radius: 999px; padding: 0 .45rem;
+  white-space: nowrap;
+}
+.lane-head .live { margin-left: auto; display: none; align-items: center; gap: .4rem; color: var(--rec); }
+.lane-usr.recording .lane-head .live { display: inline-flex; }
+.wave-wrap {
+  position: relative; border-radius: var(--radius-sm); overflow: hidden;
+  background: var(--surface-2); min-height: var(--laneh, clamp(78px, 12vw, 108px));
+}
+.wave-wrap svg { display: block; width: 100%; height: var(--laneh, clamp(78px, 12vw, 108px)); }
+.wave-wrap .contour-over {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; opacity: 0; transition: opacity var(--dur) var(--ease);
+}
+.lanes.contours .wave-wrap .contour-over { opacity: 1; }
 .wave-wrap .playhead {
   position: absolute; top: 0; bottom: 0; width: 2px; left: 0;
   background: var(--accent); opacity: 0; border-radius: 2px;
 }
+.lane-usr .wave-wrap .playhead { background: var(--usr); }
 .wave-wrap.playing .playhead { opacity: 1; }
+.lane-empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  gap: .35rem; color: var(--faint); font-size: .85rem; text-align: center;
+  border: 1px dashed var(--line-strong); border-radius: var(--radius-sm);
+}
+.lane-usr.has-take .lane-empty, .lane-usr.recording .lane-empty { display: none; }
+.recdot { width: 9px; height: 9px; border-radius: 99px; background: var(--rec); animation: pulse 1.1s ease-in-out infinite; }
+.rectime { font-variant-numeric: tabular-nums; font-size: .82rem; }
 .sent-meta {
   display: flex; gap: 1.2rem; flex-wrap: wrap; justify-content: center;
   color: var(--muted); font-size: .85rem; margin-top: .8rem;
@@ -216,18 +268,48 @@ h1 { font-size: clamp(1.5rem, 3.4vw, 2.1rem); font-weight: 600; letter-spacing: 
 .sentbox { transition: opacity 180ms var(--ease), transform 180ms var(--ease); }
 .sentbox.swap { opacity: 0; transform: translateX(-10px); }
 
+/* Ticks: done is SOLID-filled, not-done is a hollow outline, the current one
+   is taller and ringed (task 4.1). The previous treatment differed only in
+   lightness and the operator could not tell the two apart on his monitor. */
 .ticks {
-  display: flex; gap: 3px; align-items: flex-end; justify-content: center;
-  margin: 1.8rem 0 2.2rem; flex-wrap: wrap;
+  display: flex; gap: 4px; align-items: flex-end; justify-content: center;
+  margin: 1.7rem 0 .55rem; flex-wrap: wrap;
 }
 .ticks button {
-  width: 10px; height: 20px; border-radius: 3px; background: var(--surface-2);
-  border: 1px solid transparent;
-  transition: background var(--dur) var(--ease), height var(--dur) var(--ease), transform var(--dur) var(--ease);
+  width: 11px; height: 20px; border-radius: 3px;
+  background: transparent; border: 1.5px solid var(--line-strong);
+  transition: background var(--dur) var(--ease), height var(--dur) var(--ease),
+              transform var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
-.ticks button:hover { transform: translateY(-2px); }
-.ticks button.done { background: var(--wave-done); }
-.ticks button.cur { background: var(--accent); height: 30px; }
+.ticks button:hover { transform: translateY(-2px); border-color: var(--accent); }
+.ticks button.done { background: var(--text); border-color: var(--text); opacity: .68; }
+.ticks button.cur {
+  background: var(--accent); border-color: var(--accent); opacity: 1; height: 30px;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.tick-legend {
+  display: flex; gap: 1.1rem; justify-content: center; flex-wrap: wrap;
+  color: var(--faint); font-size: .74rem; margin: 0 0 2rem;
+}
+.tick-legend span { display: inline-flex; align-items: center; gap: .4rem; }
+.tick-legend i {
+  width: 9px; height: 15px; border-radius: 2px; display: inline-block;
+  border: 1.5px solid var(--line-strong);
+}
+.tick-legend i.d { background: var(--text); border-color: var(--text); opacity: .68; }
+.tick-legend i.c { background: var(--accent); border-color: var(--accent); }
+
+/* chapter stepping, read as chapter-scoped because it hugs the name */
+.t-ch-wrap { display: inline-flex; align-items: center; gap: .3rem; min-width: 0; }
+.ch-nav {
+  width: 26px; height: 26px; flex: 0 0 auto; border-radius: 99px;
+  border: 1px solid var(--line); color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 1rem; line-height: 1;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), opacity var(--dur) var(--ease);
+}
+.ch-nav:hover { color: var(--text); border-color: var(--accent); }
+.ch-nav[disabled] { opacity: .35; cursor: default; }
 
 .controls { display: flex; gap: .7rem; justify-content: center; flex-wrap: wrap; }
 .ctl {
@@ -273,23 +355,31 @@ h1 { font-size: clamp(1.5rem, 3.4vw, 2.1rem); font-weight: 600; letter-spacing: 
   color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: .05rem .45rem;
 }
 .transcript { font-size: 1.12rem; line-height: 1.65; letter-spacing: -0.01em; }
-.legend { display: flex; gap: 1.1rem; font-size: .8rem; color: var(--muted); margin-top: .5rem; }
-.legend i { display: inline-block; width: 16px; height: 3px; border-radius: 2px; margin-right: .4rem; vertical-align: middle; }
-.contour { width: 100%; height: 110px; display: block; }
+/* The separate pitch-contour panel is GONE (task 3.4): each contour is now
+   drawn inside its own lane as .contour-over, so .legend/.contour and the
+   old .recbar/.meter (the recording state now IS the take lane) went with
+   it. Nothing here styles a standalone contour graph any more. */
 
-/* recording state */
-.recbar {
-  margin-top: 1.5rem; padding: .9rem 1.1rem; border-radius: var(--radius);
-  background: var(--rec-soft); border: 1px solid var(--rec);
-  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
-  animation: fade var(--dur) var(--ease);
+/* settings — a preference surface, not a per-sentence control */
+.setrow {
+  display: flex; align-items: flex-start; gap: .9rem; width: 100%;
+  text-align: left; padding: .35rem 0;
 }
-.recbar.hidden { display: none; }
-.recdot { width: 10px; height: 10px; border-radius: 99px; background: var(--rec); animation: pulse 1.1s ease-in-out infinite; }
-.rectime { font-variant-numeric: tabular-nums; font-size: 1rem; color: var(--text); }
-.meter { display: flex; align-items: flex-end; gap: 2px; height: 26px; flex: 1 1 160px; min-width: 120px; }
-.meter i { flex: 1 1 auto; background: var(--rec); border-radius: 2px; height: 10%; transition: height 90ms linear; }
-.rechint { font-size: .8rem; color: var(--muted); }
+.setrow .copy { flex: 1 1 auto; min-width: 0; }
+.setrow .copy b { font-weight: 560; letter-spacing: -0.01em; }
+.setrow .copy small { display: block; color: var(--muted); font-size: .84rem; margin-top: .15rem; }
+.switch {
+  flex: 0 0 auto; width: 46px; height: 27px; border-radius: 999px; position: relative;
+  background: var(--surface-2); border: 1px solid var(--line-strong);
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 19px; height: 19px;
+  border-radius: 99px; background: var(--faint);
+  transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.switch[aria-checked="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(19px); background: var(--accent); }
 
 .ephemeral {
   margin-top: 1rem; font-size: .8rem; color: var(--faint); text-align: center;
@@ -368,31 +458,37 @@ h1 { font-size: clamp(1.5rem, 3.4vw, 2.1rem); font-weight: 600; letter-spacing: 
 .exch-count .bar { width: 112px; margin-top: .35rem; margin-left: auto; }
 .exbody { display: none; border-top: 1px solid var(--line); padding: .7rem .9rem 1rem; }
 .exch[data-open="1"] .exbody { display: block; }
-.sgrid { display: grid; gap: .35rem; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); }
+/* Explore cells: the WHOLE cell is the open-in-Study target (task 5.1).
+   The ▶ preview is its own sub-target inside it and stops the event.
+   Cells are 46px tall and ~156px wide so two fit, comfortably, at 360px. */
+.sgrid { display: grid; gap: .45rem; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); }
 .scell {
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; gap: .45rem;
-  padding: .38rem .5rem; font-size: .84rem;
+  position: relative; overflow: hidden; min-height: 46px;
+  display: flex; align-items: center; gap: .5rem;
+  padding: .45rem .55rem; font-size: .88rem;
   border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface);
   cursor: pointer;
   transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
+.scell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .scell:hover { border-color: var(--line-strong); }
 .scell.sel { border-color: var(--accent); background: var(--accent-soft); }
 .scell.cursor { box-shadow: inset 0 0 0 1px var(--accent); }
 .scell .tickmark { color: var(--faint); opacity: .3; font-size: .8rem; }
 .scell.done .tickmark { color: var(--accent); opacity: 1; }
-.snum {
-  font-variant-numeric: tabular-nums; color: var(--muted);
-  border-bottom: 1px dashed var(--line-strong); padding: 0 .05rem;
-}
-.snum:hover { color: var(--accent); border-color: var(--accent); }
+.snum { font-variant-numeric: tabular-nums; color: var(--muted); padding: 0 .05rem; }
+.scell:hover .snum { color: var(--text); }
 .sprev {
-  width: 22px; height: 22px; flex: 0 0 auto; border-radius: 99px;
-  border: 1px solid var(--line); color: var(--muted); font-size: .62rem;
+  width: 30px; height: 30px; flex: 0 0 auto; border-radius: 99px;
+  border: 1px solid var(--line); color: var(--muted); font-size: .72rem;
   display: inline-flex; align-items: center; justify-content: center;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 .sprev:hover { color: var(--accent); border-color: var(--accent); }
+.sprev:active { background: var(--accent-soft); }
+#exChapters.selmode .scell { cursor: copy; }
+#exChapters.selmode .scell:hover { border-color: var(--accent); }
+.selmode-btn.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .scell .sdur { margin-left: auto; color: var(--faint); font-size: .76rem; font-variant-numeric: tabular-nums; }
 .scell.playing::after {
   content: ""; position: absolute; top: 0; bottom: 0; width: 2px;
@@ -541,8 +637,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .t-book { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .nowave {
   display: flex; align-items: center; justify-content: center; text-align: center;
-  height: clamp(120px, 20vw, 180px); padding: 1rem;
-  border: 1px dashed var(--line-strong); border-radius: var(--radius);
+  height: var(--laneh, clamp(78px, 12vw, 108px)); padding: .6rem;
+  border: 1px dashed var(--line-strong); border-radius: var(--radius-sm);
   color: var(--muted); font-size: .88rem;
 }
 .ctl .gl { display: inline-flex; align-items: center; justify-content: center; }
@@ -556,44 +652,76 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 }
 .sent-text:empty { display: none; }
 
-/* the phone layout — criteria 35/36: primaries in the bottom half,
-   the ⋯ disclosure at the top, nothing else competing for the thumb */
+/* the phone's pull-tab for the hidden navigation (task 6.1).
+   Desktop never renders it; see the min-width rule at the end. */
+.m-pull {
+  display: none; flex-direction: column; align-items: center; gap: .18rem;
+  padding: .25rem .6rem .3rem; color: var(--faint); font-size: .62rem;
+  letter-spacing: .08em; text-transform: uppercase; touch-action: none;
+}
+.m-pull .grabber { width: 44px; height: 4px; border-radius: 99px; background: var(--line-strong); }
+.m-pull:hover { color: var(--muted); }
+
+/* the phone layout — four EQUAL primaries in the bottom half (task 6.2),
+   the ⋯ disclosure at the top, the tick strip deliberately absent (6.3),
+   and the top navigation hidden until pulled down (6.1). */
 @media (max-width: 620px) {
   .controls-2 { display: none; }
-  .stage { padding-bottom: 15rem; }
+  .stage { padding-bottom: 11rem; }
+
+  /* 6.3 — the chapter tick strip is NOT rendered on a phone. The operator
+     saw it there and judged it "too much info on small screen". Deliberate
+     omission; criterion 39 requires the absence. */
+  .ticks, .tick-legend { display: none !important; }
+
+  /* 6.1 — the one navigation is lifted off the screen while studying and
+     comes back on a short downward pull from the top edge. */
+  .m-pull { display: inline-flex; }
+  body.studying .nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 60;
+    transform: translateY(-110%); visibility: hidden;
+    transition: transform var(--dur) var(--ease), visibility 0s linear var(--dur);
+  }
+  body.studying.nav-open .nav {
+    transform: none; visibility: visible;
+    transition: transform var(--dur) var(--ease), visibility 0s;
+  }
+
   .controls {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
-    gap: .7rem .9rem; align-items: flex-end;
-    padding: .8rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+    gap: .55rem; align-items: flex-start; flex-wrap: nowrap;
+    padding: .8rem .6rem calc(.9rem + env(safe-area-inset-bottom, 0px));
     background: var(--surface); border-top: 1px solid var(--line);
   }
   .ctl .kbd { display: none; }
-  .ctl.js-play, .ctl.js-rec, .ctl.js-cmp {
-    flex-direction: column; gap: .3rem; padding: 0;
-    background: none; border: 0;
+  /* ALL FOUR, including Done & next, are the same box: criterion 37 measures
+     width and height and Play may not be bigger. The full-width done bar is
+     gone (criterion 38). */
+  .controls .ctl {
+    flex: 0 0 auto; width: 72px; height: 84px;
+    flex-direction: column; justify-content: flex-start; gap: .3rem;
+    padding: 0; background: none; border: 0; color: var(--text);
   }
-  .ctl.js-play .gl, .ctl.js-rec .gl, .ctl.js-cmp .gl {
-    width: 74px; height: 74px; border-radius: 99px; font-size: 1.35rem;
+  .controls .ctl .gl {
+    width: 58px; height: 58px; border-radius: 99px; font-size: 1.3rem;
     background: var(--surface); border: 1px solid var(--line);
   }
-  .ctl.js-play .gl { width: 88px; height: 88px; font-size: 1.95rem;
-    background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .ctl.js-play .gl { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
   .ctl.js-rec .gl { color: var(--rec); }
   .ctl.js-rec.armed .gl { background: var(--rec); color: #fff; border-color: transparent; }
   .ctl.js-cmp .gl { color: var(--accent); }
   .ctl.js-cmp.on { background: none; }
   .ctl.js-cmp.on .gl { background: var(--accent-soft); border-color: var(--accent); }
-  .ctl .lbl { margin-left: 0; font-size: .72rem; color: var(--muted); }
-  .ctl.js-done {
-    order: 9; flex: 1 1 100%; justify-content: center;
-    border-radius: 18px; padding: 1rem;
-    background: var(--surface); color: var(--accent); border: 1px solid var(--accent);
+  .ctl.js-done .gl { color: var(--accent); border-color: var(--accent); }
+  .ctl .lbl {
+    margin-left: 0; font-size: .68rem; color: var(--muted); font-weight: 400;
+    line-height: 1.15; text-align: center;
   }
-  .ctl.js-done .lbl { color: inherit; font-size: 1.02rem; }
-  .ticks { margin: 1.2rem 0 1.4rem; }
+  .lanes-head { font-size: .62rem; letter-spacing: .1em; }
+  .lane-head .quiet { display: none; }
 }
 @media (min-width: 621px) {
-  .m-more-pill, .m-sheet, .m-scrim { display: none !important; }
+  .m-more-pill, .m-sheet, .m-scrim, .m-pull { display: none !important; }
 }
 
 /* ---- prepare / explore odds and ends --------------------------- */
