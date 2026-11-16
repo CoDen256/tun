@@ -731,7 +731,14 @@ describe("builder pipeline: forecast + publish against a fixture stabbur and an 
     }
 
     fake.addBlob(shaOf("audio for r1"), "audio for r1");
-    addNotes(wordNote("r1", { pos: "verb" }));
+    // `inflections: null` (the projector's own "no inflections" input), not
+    // the fixture's default `{}`: an EMPTY object takes `wordInflectionLines`'
+    // verb branch, which destructures `perfektum` as undefined and throws in
+    // `ensurePrefix` — a pre-existing fixture/projector mismatch that fails
+    // this test and the three after it on any database, with or without this
+    // change. Out of scope here; left as a backlog item, not silently fixed
+    // in the projector.
+    addNotes(wordNote("r1", { pos: "verb", inflections: null }));
 
     const result = await runPublish(pool, config);
     assert.equal(result.published, true);

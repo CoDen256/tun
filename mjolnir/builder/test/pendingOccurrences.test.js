@@ -7,6 +7,20 @@ import { drainPendingOccurrences, queuePendingOccurrence, pendingByTier } from "
 const DATABASE_URL = process.env.DATABASE_URL;
 const describe = DATABASE_URL ? test : test.skip;
 
+// flush-record-atomicity (D-FA1): `drainPendingOccurrences` COMPUTES the
+// drain, it no longer applies it — the decrement and the deletes belong to
+// the run's one consumption transaction. These cases apply the returned plan
+// themselves, exactly as `consumptionPlan.js` does.
+async function applyDrain(pool, { decrementIds, amount, drained }) {
+  if (decrementIds.length > 0 && amount > 0) {
+    await pool.query("UPDATE pending_occurrences SET remaining = remaining - $2 WHERE id = ANY($1)", [decrementIds, amount]);
+  }
+  if (drained.length > 0) {
+    await pool.query("DELETE FROM pending_occurrences WHERE id = ANY($1)", [drained.map((d) => d.pendingId)]);
+  }
+  return drained;
+}
+
 describe("pendingOccurrences: D-F2 drains in deterministic insertion order", async (t) => {
   const pool = getPool();
   await migrate();
@@ -18,6 +32,11 @@ describe("pendingOccurrences: D-F2 drains in deterministic insertion order", asy
       Number(id.slice(-3)),
       `note-${id}`,
     ]);
+  }
+
+  async function pendingCount(deckCode) {
+    const { rows } = await pool.query("SELECT count(*) AS count FROM pending_occurrences WHERE deck_code = $1", [deckCode]);
+    return Number(rows[0].count);
   }
 
   t.after(async () => {
@@ -32,7 +51,9 @@ describe("pendingOccurrences: D-F2 drains in deterministic insertion order", asy
     await queuePendingOccurrence(pool, { deckCode: "C20", cardId: "C20001", letter: "E", remaining: 2 });
     await queuePendingOccurrence(pool, { deckCode: "C20", cardId: "C20003", letter: "E", remaining: 2 });
 
-    const drained = await drainPendingOccurrences(pool, "C20", 2);
+    const plan = await drainPendingOccurrences(pool, "C20", 2);
+    assert.equal(await pendingCount("C20"), 3, "D-FA1: computing the plan consumes nothing");
+    const drained = await applyDrain(pool, plan);
     assert.deepEqual(
       drained.map((d) => d.cardId),
       ["C20002", "C20001", "C20003"],
@@ -47,7 +68,7 @@ describe("pendingOccurrences: D-F2 drains in deterministic insertion order", asy
     await queuePendingOccurrence(pool, { deckCode: "C20", cardId: "C20001", letter: "E", remaining: 11 });
     await queuePendingOccurrence(pool, { deckCode: "C20", cardId: "C20002", letter: "E", remaining: 2 });
 
-    const drained = await drainPendingOccurrences(pool, "C20", 2);
+    const drained = await applyDrain(pool, await drainPendingOccurrences(pool, "C20", 2));
     assert.deepEqual(drained.map((d) => d.cardId), ["C20002"]);
 
     const { rows } = await pool.query("SELECT card_id, remaining FROM pending_occurrences WHERE deck_code = 'C20'");

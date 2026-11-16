@@ -23,33 +23,45 @@ export async function hasPendingOccurrence(pool, cardId, letter) {
   return rows.length > 0;
 }
 
-// Decrements every pending row in `deckCode` by `newACount` — the number of
-// brand-new `A` occurrences just appended to that deck this run — then
-// returns and deletes every row that reached `remaining <= 0`. A deck with
-// `newACount` of 0 touches nothing (03-data-model.md: "a deck that gets zero
-// new cards in a given publish leaves its queue untouched").
+// COMPUTES (never applies) this run's drain for `deckCode`: every pending
+// row in the deck is decremented by `newACount` — the number of brand-new
+// `A` occurrences just staged into that deck this run — and every row that
+// would reach `remaining <= 0` drains, i.e. leaves the queue and becomes a
+// staged-equivalent occurrence. A deck with `newACount` of 0 touches nothing
+// (03-data-model.md: "a deck that gets zero new cards in a given publish
+// leaves its queue untouched").
+//
+// flush-record-atomicity (D-FA1): this used to UPDATE and DELETE immediately,
+// inside `flushDeck`, before anything recorded where those occurrences went.
+// A run that died in the window destroyed them. The decrement and the
+// deletes are now part of the single consumption transaction that also
+// writes the publication row and the shipment rows, so a failed run leaves
+// the queue at its pre-run countdown and the next run drains it again.
+//
+// `decrementIds` is an explicit ID LIST, not `WHERE deck_code = $1`: by the
+// time the transaction applies it, this run's own freshly-queued rows are
+// already in the table (mint-time inserts stay immediate), and a card's
+// just-queued E must never be decremented by the very batch of A's that
+// created it (03-data-model.md's worked example).
+//
+// D-F2: ORDER BY id ASC (insertion order) — without it, when more than one
+// row crosses zero in the same run, the order they're appended to `Cards[]`
+// is whatever Postgres's physical storage happens to return, not
+// reproducible and not necessarily oldest-first. The row queued longest ago
+// must always drain first.
 export async function drainPendingOccurrences(pool, deckCode, newACount) {
-  if (newACount <= 0) return [];
-  await pool.query("UPDATE pending_occurrences SET remaining = remaining - $2 WHERE deck_code = $1", [
-    deckCode,
-    newACount,
-  ]);
-  // D-F2: ORDER BY id ASC (insertion order) — without it, when more than one
-  // row crosses zero in the same run, the order they're appended to
-  // `Cards[]` is whatever Postgres's physical storage happens to return, not
-  // reproducible and not necessarily oldest-first. The row queued longest
-  // ago must always drain first.
+  if (newACount <= 0) return { decrementIds: [], amount: 0, drained: [] };
   const { rows } = await pool.query(
-    "SELECT id, card_id, letter FROM pending_occurrences WHERE deck_code = $1 AND remaining <= 0 ORDER BY id ASC",
+    "SELECT id, card_id, letter, remaining FROM pending_occurrences WHERE deck_code = $1 ORDER BY id ASC",
     [deckCode]
   );
-  if (rows.length > 0) {
-    await pool.query(
-      "DELETE FROM pending_occurrences WHERE id = ANY($1)",
-      [rows.map((r) => r.id)]
-    );
-  }
-  return rows.map((r) => ({ cardId: r.card_id, letter: r.letter }));
+  return {
+    decrementIds: rows.map((r) => r.id),
+    amount: newACount,
+    drained: rows
+      .filter((r) => r.remaining - newACount <= 0)
+      .map((r) => ({ pendingId: r.id, cardId: r.card_id, letter: r.letter })),
+  };
 }
 
 // Forecast UI (task 6.2.8): per-deck queue depth and the oldest row's

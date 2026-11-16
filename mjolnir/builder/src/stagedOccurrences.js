@@ -35,30 +35,63 @@ export async function peekStaged(pool, deckCode) {
   return rows.map((r) => ({ cardId: r.card_id, letter: r.letter }));
 }
 
-// Pops the oldest staged rows for `deckCode` (FIFO by `id`, same ordering
-// reasoning as pendingOccurrences.js's D-F2) and deletes them, flushing
-// exactly enough to bring the deck's TOTAL occurrence count (`alreadyShipped`
-// + staged) to the next multiple of 5 — NOT `floor(stagedCount / 5) * 5` in
-// isolation. A deck that was already off the 5-grid before this mechanism
-// existed (every real deck prior to builder-sliding-window-shipping) would
-// otherwise never self-correct: `83 (irregular) + floor(5/5)*5 = 88`, still
-// irregular forever, since adding multiples of 5 to a non-multiple never
-// lands back on the grid. Computing the target against the deck's real
-// current total — not just what's sitting in the staging buffer — is what
-// actually fixes `Cards.length % 5 !== 0` for pre-existing decks, not just
-// decks created after this fix shipped. Returns an empty array — a no-op,
-// the caller logs "not enough yet" — when nothing would move the deck
-// forward to its next multiple of 5.
-export async function flushShippable(pool, deckCode, alreadyShipped) {
-  const staged = await stagedCount(pool, deckCode);
-  const target = Math.floor((alreadyShipped + staged) / 5) * 5;
-  const shipCount = Math.max(0, Math.min(staged, target - alreadyShipped));
-  if (shipCount === 0) return [];
-
+// SELECTS the oldest staged rows for `deckCode` (FIFO by `id`, same
+// ordering reasoning as pendingOccurrences.js's D-F2), enough to bring the
+// deck's TOTAL occurrence count (`alreadyShipped` + staged) to the next
+// multiple of 5 — NOT `floor(stagedCount / 5) * 5` in isolation. A deck that
+// was already off the 5-grid before this mechanism existed (every real deck
+// prior to builder-sliding-window-shipping) would otherwise never
+// self-correct: `83 (irregular) + floor(5/5)*5 = 88`, still irregular
+// forever, since adding multiples of 5 to a non-multiple never lands back on
+// the grid. Computing the target against the deck's real current total — not
+// just what's sitting in the staging buffer — is what actually fixes
+// `Cards.length % 5 !== 0` for pre-existing decks.
+//
+// flush-record-atomicity (D-FA1): THIS FUNCTION NO LONGER DELETES ANYTHING.
+// It used to pop-and-delete, which is precisely the defect — the rows were
+// consumed durably inside `flushDeck`, long before `writePublication` and
+// `recordShipments`, with no transaction spanning the gap, so a run that
+// died in between destroyed occurrences that existed nowhere else (the
+// in-memory model holding them is discarded by `runPublish`'s `finally`).
+// It is now a read-only PLAN: the caller records the returned `stagedId`s in
+// a consumption plan and deletes them inside the one transaction that also
+// writes the publication row and the shipment rows.
+//
+// `extraStaged` are this run's drained-queue occurrences — "staged
+// equivalents" that have NOT been written to `staged_occurrences` (their
+// pending rows are deleted in the same deferred transaction). They sort
+// after every real staged row, exactly where the old drain-then-stage order
+// put them. Returns `{ shippable, held, stagedTotal }`; `held` entries that
+// carry a `pendingId` are the ones the caller must insert as real staged
+// rows inside the transaction.
+export async function flushShippable(pool, deckCode, alreadyShipped, extraStaged = []) {
   const { rows } = await pool.query(
-    "SELECT id, card_id, letter FROM staged_occurrences WHERE deck_code = $1 ORDER BY id ASC LIMIT $2",
-    [deckCode, shipCount]
+    "SELECT id, card_id, letter FROM staged_occurrences WHERE deck_code = $1 ORDER BY id ASC",
+    [deckCode]
   );
-  await pool.query("DELETE FROM staged_occurrences WHERE id = ANY($1)", [rows.map((r) => r.id)]);
-  return rows.map((r) => ({ cardId: r.card_id, letter: r.letter }));
+  const all = [
+    ...rows.map((r) => ({ stagedId: r.id, cardId: r.card_id, letter: r.letter })),
+    ...extraStaged,
+  ];
+  const target = Math.floor((alreadyShipped + all.length) / 5) * 5;
+  const shipCount = Math.max(0, Math.min(all.length, target - alreadyShipped));
+  return { shippable: all.slice(0, shipCount), held: all.slice(shipCount), stagedTotal: all.length };
+}
+
+// flush-record-atomicity (D-FA3): the D86 recovery path re-stages a card's
+// immediate occurrences when the card is missing from the rebuilt model. Now
+// that a failed run no longer consumes its staged rows, that card's A is
+// routinely ALREADY staged (or already shipped) from the run that died — and
+// 019's unique index would turn a second insert into a hard failure. Asking
+// first is the fix: an occurrence that is already accounted for is simply
+// not staged again, and does not count toward the drain's decrement.
+export async function hasOccurrence(pool, cardId, letter) {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM staged_occurrences WHERE card_id = $1 AND letter = $2
+     UNION ALL
+     SELECT 1 FROM occurrence_shipments WHERE card_id = $1 AND letter = $2
+     LIMIT 1`,
+    [cardId, letter]
+  );
+  return rows.length > 0;
 }

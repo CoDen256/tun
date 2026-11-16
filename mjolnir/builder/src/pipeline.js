@@ -7,10 +7,10 @@ import { project } from "./projector.js";
 import { mintCardSlots, cardIdsForNotes, updateAudioSha256, allCardAudio, deckTitle, deckDescription } from "./mint.js";
 import { resolveActiveDeckCode } from "./deckFamilies.js";
 import { queuePendingOccurrence, hasPendingOccurrence, drainPendingOccurrences, pendingQueueDepths, pendingByTier } from "./pendingOccurrences.js";
-import { stageOccurrence, stagedCount, flushShippable, peekStaged } from "./stagedOccurrences.js";
-import { recordShipments } from "./occurrenceShipments.js";
+import { stageOccurrence, flushShippable, peekStaged, hasOccurrence } from "./stagedOccurrences.js";
 import { deckTotals, gridStatusForDeck } from "./cardFlow.js";
-import { previousVersions, writePublication } from "./publications.js";
+import { previousVersions } from "./publications.js";
+import { createConsumptionPlan, commitRun } from "./consumptionPlan.js";
 import { createBuildJob, markSucceeded, markFailed } from "./buildJobs.js";
 import { nextBuildId } from "./buildId.js";
 import { ensureBlobsPresent, writeAudioManifest, writePublicAudioManifest } from "./audioSnapshot.js";
@@ -73,33 +73,60 @@ function splitOccurrences(occurrences) {
 // flush step below. Returns the list of `{letter}` entries still to be
 // queued, plus how many brand-new `A`'s were just staged (the drain step's
 // decrement count).
-async function stageImmediateOccurrences(pool, deckCode, cardId, occurrences) {
+//
+// flush-record-atomicity (D-FA3): `skipExisting` is for the D86 recovery
+// path only. Now that a failed run no longer consumes its staged rows
+// (D-FA1), a recovered card's immediate letters are routinely ALREADY
+// staged by the run that died — staging them again would duplicate the
+// occurrence, which 019's unique index now refuses outright. An occurrence
+// already staged or already shipped is skipped, and does not count toward
+// `newACount` either: it is not a brand-new `A` landing in the deck, so it
+// must not decrement anybody's D91 countdown a second time.
+async function stageImmediateOccurrences(pool, deckCode, cardId, occurrences, { skipExisting = false } = {}) {
   const { immediate, queued } = splitOccurrences(occurrences);
-  for (const letter of immediate) await stageOccurrence(pool, { deckCode, cardId, letter });
-  return { queued, newACount: immediate.filter((l) => l === "A").length };
+  const staged = [];
+  for (const letter of immediate) {
+    if (skipExisting && (await hasOccurrence(pool, cardId, letter))) continue;
+    await stageOccurrence(pool, { deckCode, cardId, letter });
+    staged.push(letter);
+  }
+  return { queued, newACount: staged.filter((l) => l === "A").length };
 }
 
-// Drains `deckCode`'s *existing* queue by `newACount`, staging every row
-// that reaches `remaining <= 0` (D-W3 — same staging step as fresh
-// immediate letters, not appended directly), then queues `toQueue`'s rows
-// fresh at `remaining: 11` — in that order, so a card's own just-queued `E`
-// is never decremented by the very batch of `A`'s that created it
-// (03-data-model.md's worked example: "a queued E draining in the same run
-// does not count toward another queued E's countdown"). `hasPendingOccurrence`
-// guards the D86 recovery path against double-queuing a row a prior, crashed
-// run may already have written durably before failing.
-async function drainThenQueue(pool, deckCode, newACount, toQueue) {
+// Plans `deckCode`'s drain — every pending row decremented by `newACount`,
+// every row reaching `remaining <= 0` leaving the queue — and then queues
+// `toQueue`'s rows fresh at `remaining: 11`, in that order, so a card's own
+// just-queued `E` is never decremented by the very batch of `A`'s that
+// created it (03-data-model.md's worked example: "a queued E draining in the
+// same run does not count toward another queued E's countdown").
+// `hasPendingOccurrence` guards the D86 recovery path against double-queuing
+// a row a prior, crashed run may already have written durably before failing.
+//
+// flush-record-atomicity (D-FA1): the drain's decrement and deletes are now
+// only RECORDED here, into `plan`, and applied in the single consumption
+// transaction at the end of the run. The queue inserts stay immediate — they
+// are forward progress, not consumption. Returns the drained occurrences as
+// staged-equivalents for the flush step; they become real `staged_occurrences`
+// rows (inside that same transaction) only if they don't flush this run.
+//
+// D-FA3: called ONCE PER DECK PER RUN, never once per card. Calling it per
+// recovered card is what produced b000040 — each call decremented every
+// pending row in the deck, so 11 recovered cards drained a 127-row queue at
+// once and every card after that re-queued and re-staged the same `E`.
+async function drainThenQueue(pool, plan, deckCode, newACount, toQueue) {
+  let drained = [];
   if (newACount > 0) {
-    const drained = await drainPendingOccurrences(pool, deckCode, newACount);
-    for (const { cardId, letter } of drained) {
-      await stageOccurrence(pool, { deckCode, cardId, letter });
-    }
+    const { decrementIds, drained: rows } = await drainPendingOccurrences(pool, deckCode, newACount);
+    plan.pendingDecrements.push({ ids: decrementIds, amount: newACount });
+    for (const row of rows) plan.pendingIdsToDelete.push(row.pendingId);
+    drained = rows;
   }
   for (const { cardId, letter } of toQueue) {
     if (!(await hasPendingOccurrence(pool, cardId, letter))) {
       await queuePendingOccurrence(pool, { deckCode, cardId, letter, remaining: 11 });
     }
   }
+  return drained;
 }
 
 // builder-sliding-window-shipping (D-W2): once per deck per run, after that
@@ -109,7 +136,7 @@ async function drainThenQueue(pool, deckCode, newACount, toQueue) {
 // `occurrence-shipment-log`'s MODIFIED delta). Logs instead, no other
 // action, when the deck has staged occurrences but not enough to reach the
 // next multiple of 5 yet.
-async function flushDeck(pool, model, deckCode, deckTitleCache, deckDescriptionCache, shipments, log, buildJobId) {
+async function flushDeck(pool, plan, model, deckCode, deckTitleCache, deckDescriptionCache, drainedByDeck, shipments, log, buildJobId) {
   if (!deckTitleCache.has(deckCode)) deckTitleCache.set(deckCode, await deckTitle(pool, deckCode));
   const deck = ensureDeck(model.decks, { name: deckCode, title: deckTitleCache.get(deckCode) });
   syncDeckTitle(model.decks, deckCode, deckTitleCache.get(deckCode));
@@ -120,20 +147,32 @@ async function flushDeck(pool, model, deckCode, deckTitleCache, deckDescriptionC
   // already off the 5-grid before this mechanism existed needs the target
   // computed against its true total to ever land back on the grid).
   const alreadyShipped = deck.Cards.length;
-  const shippable = await flushShippable(pool, deckCode, alreadyShipped);
+  // D-FA1: this run's drained queue rows are staged-EQUIVALENTS — no row
+  // exists for them yet, and their pending row is deleted in the same
+  // transaction, so whichever of them don't flush must be inserted as real
+  // staged rows there, or they would be consumed without being recorded.
+  const { shippable, held, stagedTotal } = await flushShippable(
+    pool,
+    deckCode,
+    alreadyShipped,
+    drainedByDeck.get(deckCode) || []
+  );
+  for (const entry of held) {
+    if (entry.pendingId) plan.stagedInserts.push({ deckCode, cardId: entry.cardId, letter: entry.letter });
+  }
   if (shippable.length === 0) {
-    const staged = await stagedCount(pool, deckCode);
-    if (staged > 0) {
+    if (stagedTotal > 0) {
       await log(
         buildJobId,
-        `ship: ${deckCode} — ${staged} occurrence(s) staged (${alreadyShipped} already shipped), short of the next multiple of 5, held`
+        `ship: ${deckCode} — ${stagedTotal} occurrence(s) staged (${alreadyShipped} already shipped), short of the next multiple of 5, held`
       );
     }
     return;
   }
-  for (const { cardId, letter } of shippable) {
-    addOccurrence(deck, cardId, letter);
-    shipments.push({ cardId, letter });
+  for (const entry of shippable) {
+    addOccurrence(deck, entry.cardId, entry.letter);
+    shipments.push({ cardId: entry.cardId, letter: entry.letter });
+    if (entry.stagedId) plan.stagedIdsToDelete.push(entry.stagedId);
   }
   await log(buildJobId, `ship: ${deckCode} — ${shippable.length} occurrence(s) flushed (${alreadyShipped} -> ${deck.Cards.length})`);
 }
@@ -443,6 +482,11 @@ export async function runPublish(
     // run until `writePublication` at the very end, same as before.
     const buildId = await nextBuildId(pool);
     const shipments = [];
+    // flush-record-atomicity (D-FA1): every deletion/decrement this run
+    // would perform accumulates here and is applied in ONE transaction with
+    // `writePublication` + `recordShipments` (consumptionPlan.js). Nothing
+    // below this line consumes an occurrence on its own.
+    const plan = createConsumptionPlan();
 
     // D-L4: every run starts fresh from whichever `logic_bundles` row is
     // active — the mutable, long-lived `BUNDLE_PATH` working file this
@@ -485,6 +529,11 @@ export async function runPublish(
     // both the recovery path and the decksToMint loop would flush twice in
     // the same run against a half-staged count.
     const touchedDeckCodes = new Set();
+    // D-FA3: `{deckCode -> {newACount, toQueue}}`, filled by BOTH loops
+    // below (recovery and mint) and consumed by exactly one drain pass per
+    // deck afterwards. Merging the two sources is what makes "once per deck
+    // per run" literally true even when a deck is touched by both.
+    const pendingWorkByDeck = new Map();
     for (const note of alreadyMinted) {
       const entry = cardIdByNoteId.get(note.id);
       if (!entry) continue;
@@ -504,8 +553,19 @@ export async function runPublish(
         await ensureDeckByCode(deckCode);
         const title = deckTitleCache.get(deckCode);
         createCard(model.cards, { id: cardId, deckId: deckCode, N: content.N, E: content.E, D: title, X: content.X, A: content.A });
-        const { queued, newACount } = await stageImmediateOccurrences(pool, deckCode, cardId, content.occurrences);
-        await drainThenQueue(pool, deckCode, newACount, queued.map((letter) => ({ cardId, letter })));
+        // D-FA3: accumulated, NOT drained here. `drainThenQueue` runs once
+        // per deck per run, below, after every recovered card's own `A` is
+        // staged — a per-card drain is what produced b000040's 104
+        // double-shipped occurrences and 115 `E`-before-`A` cards.
+        // `skipExisting` because a failed run no longer loses its staged
+        // rows, so a recovered card's `A` is often already staged.
+        const { queued, newACount } = await stageImmediateOccurrences(pool, deckCode, cardId, content.occurrences, {
+          skipExisting: true,
+        });
+        const work = pendingWorkByDeck.get(deckCode) || { newACount: 0, toQueue: [] };
+        work.newACount += newACount;
+        for (const letter of queued) work.toQueue.push({ cardId, letter });
+        pendingWorkByDeck.set(deckCode, work);
         touchedDeckCodes.add(deckCode);
       }
       await updateAudioSha256(pool, cardId, note.audio_blob, note.grammar_rule_id ?? null);
@@ -539,11 +599,23 @@ export async function runPublish(
         newACount += result.newACount;
         for (const letter of result.queued) toQueue.push({ cardId, letter });
       }
-      const stagedBeforeDrain = await stagedCount(pool, deckCode);
-      await drainThenQueue(pool, deckCode, newACount, toQueue);
-      const stagedAfterDrain = await stagedCount(pool, deckCode);
-      await log(buildJobId, `drain: ${deckCode} — ${stagedAfterDrain - stagedBeforeDrain} row(s) reached remaining<=0, staged`);
+      const work = pendingWorkByDeck.get(deckCode) || { newACount: 0, toQueue: [] };
+      work.newACount += newACount;
+      work.toQueue.push(...toQueue);
+      pendingWorkByDeck.set(deckCode, work);
       decksMinted.push({ deckCode, count: minted.length });
+    }
+
+    // D-FA3: ONE drain/queue pass per deck per run, after every card that
+    // lands an `A` in that deck this run — recovered or freshly minted —
+    // has already staged it. That ordering is what makes a card's `E`
+    // unable to take a lower Cards[] position than its own `A` (D91),
+    // by construction rather than by luck.
+    const drainedByDeck = new Map();
+    for (const [deckCode, { newACount, toQueue }] of pendingWorkByDeck) {
+      const drained = await drainThenQueue(pool, plan, deckCode, newACount, toQueue);
+      drainedByDeck.set(deckCode, drained);
+      await log(buildJobId, `drain: ${deckCode} — ${drained.length} row(s) reached remaining<=0, staged`);
     }
 
     // builder-sliding-window-shipping (D-W2): one flush pass per deck
@@ -551,7 +623,7 @@ export async function runPublish(
     // every deck — ships the largest multiple of 5 each deck currently
     // holds, logs and holds the remainder otherwise.
     for (const deckCode of touchedDeckCodes) {
-      await flushDeck(pool, model, deckCode, deckTitleCache, deckDescriptionCache, shipments, log, buildJobId);
+      await flushDeck(pool, plan, model, deckCode, deckTitleCache, deckDescriptionCache, drainedByDeck, shipments, log, buildJobId);
     }
 
     await pruneRetiredDecks(pool, model, log, buildJobId);
@@ -580,25 +652,38 @@ export async function runPublish(
 
     const bundleBytes = fs.readFileSync(scratchPath);
     const bundleSha = crypto.createHash("sha256").update(bundleBytes).digest("hex");
+
+    // D-FA2: the consumption transaction COMMITs here, BEFORE `publish()`
+    // touches the OTA dir — publication row, shipment rows, and every
+    // staged/pending deletion and decrement this run planned, all or
+    // nothing. `bundleSha` is computed off the very bytes `publish()` is
+    // about to copy, so the row records the published sha even though the
+    // copy hasn't happened yet (publish() hashes the same file).
+    //
+    // D-H1's letter is inverted (shipments now precede publish), its intent
+    // kept: `replay` rebuilds from `occurrence_shipments`, so anything
+    // recorded is in every subsequent bundle — there are still never
+    // shipment rows for occurrences that cannot reach the device. See
+    // consumptionPlan.js for the crash-window analysis that settles the
+    // ordering against D26/D62.
+    await commitRun(pool, {
+      plan,
+      shipments,
+      publication: {
+        buildId,
+        baseVersion,
+        patchRev,
+        dataRev: dataRev + 1,
+        bundleSha,
+        logicBundleId: active.id,
+      },
+    });
+
     const result = publish(scratchPath, buildId, `base ${baseVersion} · logic ${patchRev} · data ${dataRev + 1}`, {
       dataDir,
       publicBase,
     });
     await log(buildJobId, `published ${buildId} — sha256 ${result.sha256}`);
-
-    await writePublication(pool, {
-      buildId,
-      baseVersion,
-      patchRev,
-      dataRev: dataRev + 1,
-      bundleSha: result.sha256,
-      logicBundleId: active.id,
-    });
-    // D-H1: only after `publish()` *and* `writePublication` have succeeded —
-    // never speculatively, and never before the `publications` row exists
-    // (occurrence_shipments.build_id has an FK to it). A run that fails
-    // anywhere above this line leaves zero shipment rows.
-    await recordShipments(pool, shipments, buildId);
     await markSucceeded(pool, buildJobId, buildId);
 
     return { published: true, buildId, decksMinted, eligibleCount: eligibleNotesById.size };
