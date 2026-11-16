@@ -1,0 +1,736 @@
+<title>Stabbur — merging, queues & dict.cc translations</title>
+<style>
+:root {
+  --bg: #f5f3ef; --bg-elevated: #ffffff; --bg-sunken: #ebe7e0;
+  --border: #e2ddd3; --border-soft: #ece8e0;
+  --text: #221f1a; --text-dim: #6b6660; --text-faint: #9a948a;
+  --accent: #b35a2d; --accent-soft: #b35a2d14; --accent-text: #8a431c;
+  --ok: #2f8a5c; --ok-soft: #2f8a5c14;
+  --warn: #a87c1f; --warn-soft: #a87c1f14;
+  --err: #b23a34; --err-soft: #b23a3414;
+  --radius: 6px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
+    --border: #2a3039; --border-soft: #232832;
+    --text: #e8e6e1; --text-dim: #8b94a3; --text-faint: #566073;
+    --accent: #c6703f; --accent-soft: #c6703f26; --accent-text: #f2b688;
+    --ok: #5bab7e; --ok-soft: #5bab7e1f;
+    --warn: #d4a73d; --warn-soft: #d4a73d1f;
+    --err: #d1453f; --err-soft: #d1453f1f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
+  --border: #2a3039; --border-soft: #232832;
+  --text: #e8e6e1; --text-dim: #8b94a3; --text-faint: #566073;
+  --accent: #c6703f; --accent-soft: #c6703f26; --accent-text: #f2b688;
+  --ok: #5bab7e; --ok-soft: #5bab7e1f;
+  --warn: #d4a73d; --warn-soft: #d4a73d1f;
+  --err: #d1453f; --err-soft: #d1453f1f;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #f5f3ef; --bg-elevated: #ffffff; --bg-sunken: #ebe7e0;
+  --border: #e2ddd3; --border-soft: #ece8e0;
+  --text: #221f1a; --text-dim: #6b6660; --text-faint: #9a948a;
+  --accent: #b35a2d; --accent-soft: #b35a2d14; --accent-text: #8a431c;
+  --ok: #2f8a5c; --ok-soft: #2f8a5c14;
+  --warn: #a87c1f; --warn-soft: #a87c1f14;
+  --err: #b23a34; --err-soft: #b23a3414;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0; color: var(--text); background: var(--bg);
+  font-size: 14px; line-height: 1.5;
+}
+h1,h2,h3,h4 { font-weight: 650; margin: 0; text-wrap: balance; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ---------- mockup chrome (not part of stabbur) ---------- */
+.mk-bar {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--bg-sunken); border-bottom: 1px solid var(--border);
+  padding: 10px 18px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+}
+.mk-bar h1 { font-size: 14px; letter-spacing: .01em; }
+.mk-bar .mk-sub { font-size: 12px; color: var(--text-dim); }
+.mk-spacer { flex: 1 1 auto; }
+.mk-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.mk-tab {
+  font: inherit; font-size: 12.5px; cursor: pointer;
+  background: transparent; color: var(--text-dim);
+  border: 1px solid transparent; border-radius: var(--radius);
+  padding: 5px 11px;
+}
+.mk-tab:hover { color: var(--text); background: var(--bg-elevated); }
+.mk-tab[aria-selected="true"] {
+  background: var(--bg-elevated); color: var(--text);
+  border-color: var(--border); font-weight: 600;
+}
+.mk-view { display: none; }
+.mk-view.on { display: block; }
+.mk-wrap { padding: 20px 18px 60px; max-width: 1180px; margin: 0 auto; }
+.mk-note {
+  border-left: 2px solid var(--accent); background: var(--accent-soft);
+  padding: 9px 13px; border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 12.5px; color: var(--text-dim); margin-bottom: 18px;
+}
+.mk-note b { color: var(--text); font-weight: 620; }
+.mk-h { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text-faint); margin: 26px 0 9px; font-weight: 650; }
+.mk-h:first-of-type { margin-top: 0; }
+.mk-cols { display: grid; gap: 18px; grid-template-columns: minmax(0,1fr) 340px; align-items: start; }
+@media (max-width: 900px) { .mk-cols { grid-template-columns: minmax(0,1fr); } }
+
+/* phone frame */
+.phone {
+  width: 340px; border: 1px solid var(--border); border-radius: 18px;
+  background: var(--bg); overflow: hidden; box-shadow: 0 10px 30px -14px rgba(0,0,0,.35);
+}
+.phone-top {
+  background: var(--bg-sunken); border-bottom: 1px solid var(--border);
+  padding: 7px 14px; font-size: 11px; color: var(--text-faint);
+  display: flex; justify-content: space-between;
+}
+.phone-body { padding: 12px; max-height: 620px; overflow-y: auto; }
+
+/* ---------- stabbur components ---------- */
+.panel { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); }
+.panel-pad { padding: 14px; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+.page-head h2 { font-size: 19px; }
+.page-sub { font-size: 12.5px; color: var(--text-dim); margin-top: 3px; }
+.eyebrow { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint); font-weight: 600; }
+
+button, .btn { font: inherit; cursor: pointer; border-radius: var(--radius); padding: 6px 12px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn-ghost { background: transparent; color: var(--text-dim); }
+.btn-ghost:hover { color: var(--text); background: var(--bg-sunken); }
+.btn-danger { background: transparent; border-color: var(--err); color: var(--err); }
+.btn-sm { padding: 3px 9px; font-size: 12px; }
+kbd { font: inherit; font-size: 10px; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; color: var(--text-faint); margin-left: 5px; }
+
+.pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--bg-sunken); color: var(--text-dim); border: 1px solid var(--border-soft); white-space: nowrap; }
+.pill-ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.pill-warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.pill-accent { background: var(--accent-soft); color: var(--accent-text); border-color: transparent; }
+.pill-new { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; font-size: 10px; letter-spacing: .03em; }
+
+input, select, textarea { font: inherit; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 9px; width: 100%; }
+label { font-size: 12px; color: var(--text-dim); }
+
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 650; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: 8px 10px; border-bottom: 1px solid var(--border-soft); font-size: 13px; vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+.table-wrap { overflow-x: auto; }
+.num { font-variant-numeric: tabular-nums; }
+.col-icon { width: 34px; text-align: center; }
+.trunc { max-width: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.glyph { display: inline-block; font-size: 13px; line-height: 1; cursor: help; }
+.g-ok { color: var(--ok); }
+.g-draft { color: var(--warn); }
+.g-none { color: var(--text-faint); }
+
+/* queue selector */
+.queue-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.queue-pick { display: flex; gap: 4px; flex-wrap: wrap; }
+.qchip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); background: var(--bg-elevated);
+  border-radius: 99px; padding: 4px 11px; font-size: 12.5px; color: var(--text-dim);
+}
+.qchip:hover { color: var(--text); }
+.qchip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.qchip .qn { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--text-faint); }
+.qchip[aria-pressed="true"] .qn { color: var(--accent-text); }
+.qchip.builtin::before { content: "●"; font-size: 7px; color: var(--text-faint); }
+
+.filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.field-presence { display: flex; flex-wrap: wrap; gap: 6px; }
+.tri { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.tri > span { font-size: 11px; padding: 3px 7px; color: var(--text-faint); border-right: 1px solid var(--border); background: var(--bg-sunken); }
+.tri > button { border: none; border-radius: 0; padding: 3px 8px; font-size: 11px; background: transparent; color: var(--text-faint); border-right: 1px solid var(--border-soft); }
+.tri > button:last-child { border-right: none; }
+.tri > button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); font-weight: 650; }
+
+/* belt */
+.belt { display: flex; gap: 16px; align-items: center; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); padding: 11px 14px; }
+.belt .n { font-size: 21px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.belt .n small { font-size: 12px; color: var(--text-faint); font-weight: 400; }
+.belt-track { flex: 1; display: flex; gap: 2px; align-items: center; min-width: 0; overflow: hidden; }
+.notch { width: 3px; height: 14px; border-radius: 2px; background: var(--border); flex: none; }
+.notch.done { background: var(--ok); opacity: .55; }
+.notch.here { background: var(--accent); height: 20px; }
+
+/* similar / merge */
+.similar-note-row { border: 1px solid var(--border); border-radius: var(--radius); padding: 11px 12px; display: flex; flex-direction: column; gap: 8px; background: var(--bg-elevated); }
+.similar-note-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.similar-note-text { font-weight: 620; }
+.similar-note-field { font-size: 12.5px; color: var(--text-dim); padding: 2px 0; }
+.similar-note-field b { color: var(--text-faint); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; margin-right: 7px; }
+.take-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.take-btn { font-size: 12px; padding: 3px 9px; background: transparent; color: var(--text-dim); display: inline-flex; align-items: center; gap: 5px; }
+.take-btn:hover { color: var(--text); }
+.take-btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.take-op { font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase; opacity: .8; }
+.op-add { color: var(--ok); }
+.op-rep { color: var(--err); }
+.take-btn[aria-pressed="true"] .op-add,
+.take-btn[aria-pressed="true"] .op-rep { color: inherit; }
+.merge-bar { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: var(--radius); padding: 11px 13px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.merge-sum { font-size: 12.5px; color: var(--text); flex: 1; min-width: 200px; }
+.merge-sum .op-add, .merge-sum .op-rep { font-weight: 700; }
+.dirty-strip { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn); border-radius: var(--radius); padding: 8px 12px; font-size: 12.5px; }
+
+/* suggest panel */
+.suggest-panel { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elevated); }
+.sp-head { display: flex; align-items: center; gap: 9px; padding: 9px 12px; border-bottom: 1px solid var(--border-soft); flex-wrap: wrap; }
+.sp-provider { font-size: 12px; font-weight: 650; }
+.pos-group { border-bottom: 1px solid var(--border-soft); }
+.pos-group:last-child { border-bottom: none; }
+.pos-group-head { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--bg-sunken); font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint); font-weight: 650; }
+.pos-group-head .pill-accent { text-transform: none; letter-spacing: 0; }
+.candidate-row { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-bottom: 1px solid var(--border-soft); }
+.candidate-row:last-child { border-bottom: none; }
+.candidate-text { font-weight: 560; }
+.candidate-text[title] { border-bottom: 1px dotted var(--text-faint); cursor: help; }
+.candidate-meta { font-size: 11.5px; color: var(--text-faint); }
+.candidate-spacer { flex: 1; }
+.use-btn { font-size: 12px; padding: 3px 11px; }
+.use-btn.used { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); font-weight: 650; }
+.assembled-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--warn-soft); border-top: 1px solid var(--border-soft); }
+.assembled-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--warn); font-weight: 650; }
+.audio-search { display: flex; gap: 7px; padding: 9px 12px; border-bottom: 1px solid var(--border-soft); align-items: center; }
+.play-btn { width: 26px; height: 26px; padding: 0; border-radius: 99px; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: var(--accent-text); border-color: var(--border); }
+
+/* pagination */
+.pager { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.pager-count { font-size: 12.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.pager-pages { display: flex; gap: 3px; margin-left: auto; flex-wrap: wrap; }
+.pager-pages button { padding: 3px 9px; font-size: 12px; min-width: 30px; }
+.pager-pages button[aria-current="page"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 650; }
+.pager select { width: auto; padding: 3px 7px; font-size: 12px; }
+
+.ftr { margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-faint); }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.stack-sm { display: flex; flex-direction: column; gap: 6px; }
+.row { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+.inline-note { font-size: 12px; color: var(--text-faint); }
+</style>
+
+<div class="mk-bar">
+  <div>
+    <h1>Stabbur — merging, queues &amp; dict.cc translations</h1>
+    <div class="mk-sub">batch <span class="mono">full-sweep</span> · design mockup · 11 backlog items, 4 changes</div>
+  </div>
+  <div class="mk-spacer"></div>
+  <div class="mk-tabs" role="tablist">
+    <button class="mk-tab" role="tab" aria-selected="true" data-view="v-triage">Triage &amp; saved queues</button>
+    <button class="mk-tab" role="tab" aria-selected="false" data-view="v-notes">Notes list, paged</button>
+    <button class="mk-tab" role="tab" aria-selected="false" data-view="v-merge">Merge panel</button>
+    <button class="mk-tab" role="tab" aria-selected="false" data-view="v-suggest">Enrichment panel</button>
+  </div>
+</div>
+
+<!-- ======================= TRIAGE ======================= -->
+<section class="mk-view on" id="v-triage" role="tabpanel">
+<div class="mk-wrap">
+  <div class="mk-note">
+    The <b>Queue</b> dropdown is gone. In its place: saved queues stored in the settings row, so they reach the phone too.
+    <span class="mono">import</span> / <span class="mono">manual</span> / <span class="mono">capture</span> ship as built-ins (dotted) and cannot be deleted; yours sit beside them.
+    Each queue carries its filters <b>and its own sort</b>.
+  </div>
+
+  <div class="page-head">
+    <div>
+      <h2>Triage</h2>
+      <div class="page-sub">One drafted note at a time, prefilled, three verdicts underneath.</div>
+    </div>
+    <button class="btn-ghost btn-sm" id="editFiltersBtn">⚙ Edit this queue's filters</button>
+  </div>
+
+  <div class="panel panel-pad" style="margin-bottom:12px;">
+    <div class="queue-bar">
+      <span class="eyebrow" style="margin-right:4px;">Queue</span>
+      <div class="queue-pick" id="queuePick">
+        <button class="qchip builtin" aria-pressed="false">import <span class="qn">312</span></button>
+        <button class="qchip builtin" aria-pressed="false">manual <span class="qn">8</span></button>
+        <button class="qchip builtin" aria-pressed="false">capture <span class="qn">47</span></button>
+        <button class="qchip" aria-pressed="true">Missing audio <span class="qn">63</span></button>
+        <button class="qchip" aria-pressed="false">Verbs without inflections <span class="qn">19</span></button>
+        <button class="qchip" aria-pressed="false">No IPA, ready <span class="qn">4</span></button>
+      </div>
+      <button class="btn-ghost btn-sm">+ Save current filters as a queue</button>
+    </div>
+  </div>
+
+  <div class="panel panel-pad" id="filterPanel" style="margin-bottom:12px; display:none;">
+    <div class="row" style="justify-content:space-between; margin-bottom:12px;">
+      <div class="row">
+        <span class="eyebrow">Editing</span>
+        <input value="Missing audio" style="width:200px;" aria-label="Queue name">
+      </div>
+      <div class="row">
+        <button class="btn-ghost btn-sm">Delete queue</button>
+        <button class="btn-primary btn-sm">Save queue</button>
+      </div>
+    </div>
+
+    <div class="filter-grid" style="margin-bottom:14px;">
+      <div class="stack-sm"><label for="f-status">Status</label>
+        <select id="f-status"><option>draft</option><option>ready</option><option selected>any</option></select></div>
+      <div class="stack-sm"><label for="f-type">Type</label>
+        <select id="f-type"><option selected>any</option><option>word</option><option>expression</option><option>listening</option><option>pronunciation</option><option>grammar</option></select></div>
+      <div class="stack-sm"><label for="f-origin">Origin</label>
+        <select id="f-origin"><option selected>any</option><option>manual</option><option>capture</option><option>import</option></select></div>
+      <div class="stack-sm"><label for="f-pos">Part of speech</label>
+        <select id="f-pos"><option selected>any</option><option>substantiv</option><option>verb</option><option>adjektiv</option></select></div>
+      <div class="stack-sm"><label for="f-lang">Source language</label>
+        <select id="f-lang"><option selected>any</option><option>no</option><option>de</option></select></div>
+      <div class="stack-sm"><label for="f-since">Updated since</label>
+        <select id="f-since"><option selected>any time</option><option>last 24 hours</option><option>last 7 days</option><option>last 30 days</option></select></div>
+      <div class="stack-sm" style="grid-column: 1 / -1;"><label for="f-q">Text search — matches text, lemma or translation</label>
+        <input id="f-q" placeholder="e.g. fastsatt"></div>
+    </div>
+
+    <div class="eyebrow" style="margin-bottom:7px;">Field presence</div>
+    <div class="field-presence">
+      <span class="tri"><span>audio</span><button>any</button><button aria-pressed="true">missing</button><button>has</button></span>
+      <span class="tri"><span>IPA</span><button aria-pressed="true">any</button><button>missing</button><button>has</button></span>
+      <span class="tri"><span>inflections</span><button aria-pressed="true">any</button><button>missing</button><button>has</button></span>
+      <span class="tri"><span>context</span><button aria-pressed="true">any</button><button>missing</button><button>has</button></span>
+      <span class="tri"><span>translations</span><button aria-pressed="true">any</button><button>missing</button><button>has</button></span>
+      <span class="tri"><span>lemma</span><button aria-pressed="true">any</button><button>missing</button><button>has</button></span>
+    </div>
+
+    <div class="row" style="margin-top:14px;">
+      <label for="f-sort" style="margin:0;">Order the belt by</label>
+      <select id="f-sort" style="width:auto;"><option selected>oldest updated first</option><option>newest updated first</option><option>oldest created first</option><option>A–Z by text</option></select>
+      <span class="inline-note">— stored with the queue, not globally</span>
+    </div>
+  </div>
+
+  <div class="belt" style="margin-bottom:12px;">
+    <div>
+      <div class="eyebrow">In queue</div>
+      <div class="n">63 <small>/ 63</small></div>
+    </div>
+    <div class="belt-track" id="beltTrack"></div>
+    <span class="pill pill-accent">Missing audio</span>
+  </div>
+
+  <div class="mk-cols">
+    <div class="panel panel-pad">
+      <div class="row" style="justify-content:space-between; margin-bottom:12px;">
+        <div>
+          <h3 style="font-size:18px;">fastsatt av</h3>
+          <div class="page-sub mono">expression · no · import · note 1 of 63</div>
+        </div>
+        <button class="btn-ghost btn-sm">⟳ Prefill again<kbd>L</kbd></button>
+      </div>
+      <div class="stack">
+        <div class="stack-sm"><label for="t-text">Text</label><input id="t-text" value="fastsatt av"></div>
+        <div class="row" style="gap:10px; align-items:flex-start;">
+          <div class="stack-sm" style="flex:1;"><label for="t-ipa">Transcription (IPA)</label><input id="t-ipa" class="mono" value="ˈfɑstsɑtː ɑːv"></div>
+          <div class="stack-sm" style="flex:1;"><label for="t-pos">Part of speech</label><select id="t-pos"><option selected>—</option><option>verb</option></select></div>
+        </div>
+        <div class="stack-sm"><label>Audio</label>
+          <div class="row"><span class="pill pill-warn">no recording</span><button class="btn-ghost btn-sm">Search existing notes' audio…</button></div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border-soft);">
+        <button class="btn-danger btn-sm">Delete<kbd>D</kbd></button>
+        <button class="btn-ghost btn-sm">Send to back<kbd>E</kbd></button>
+        <button class="btn-ghost btn-sm">Skip<kbd>S</kbd></button>
+        <button class="btn-ghost btn-sm">← Previous<kbd>T</kbd></button>
+        <div class="mk-spacer"></div>
+        <button class="btn-primary btn-sm">Mark ready &amp; next<kbd>R</kbd></button>
+      </div>
+    </div>
+
+    <div>
+      <div class="mk-h">Portrait</div>
+      <div class="phone">
+        <div class="phone-top"><span>stabbur</span><span>Triage</span></div>
+        <div class="phone-body">
+          <div class="stack">
+            <select aria-label="Queue"><option selected>Missing audio — 63</option><option>import — 312</option><option>manual — 8</option><option>capture — 47</option></select>
+            <div class="belt" style="padding:8px 10px;">
+              <div><div class="eyebrow">In queue</div><div class="n" style="font-size:17px;">63 <small>/ 63</small></div></div>
+              <div class="belt-track"><i class="notch here"></i><i class="notch"></i><i class="notch"></i><i class="notch"></i><i class="notch"></i><i class="notch"></i><i class="notch"></i><i class="notch"></i></div>
+            </div>
+            <div class="panel panel-pad">
+              <h3 style="font-size:16px;">fastsatt av</h3>
+              <div class="page-sub mono" style="margin-bottom:10px;">expression · no · 1 of 63</div>
+              <div class="stack-sm" style="margin-bottom:8px;"><label for="p-text">Text</label><input id="p-text" value="fastsatt av"></div>
+              <div class="stack-sm" style="margin-bottom:8px;"><label for="p-ipa">IPA</label><input id="p-ipa" class="mono" value="ˈfɑstsɑtː ɑːv"></div>
+              <div class="row"><span class="pill pill-warn">no recording</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--border); background:var(--bg-elevated); padding:9px 11px; display:flex; gap:6px;">
+          <button class="btn-ghost btn-sm" aria-label="Delete">✕</button>
+          <button class="btn-ghost btn-sm" aria-label="Skip">↷</button>
+          <button class="btn-ghost btn-sm" aria-label="Previous">←</button>
+          <button class="btn-primary btn-sm" style="flex:1;">Ready &amp; next</button>
+        </div>
+      </div>
+      <p class="inline-note" style="margin-top:9px;">The verdict bar pins to the bottom; the queue selector collapses to a native select so it is thumb-reachable.</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ======================= NOTES LIST ======================= -->
+<section class="mk-view" id="v-notes" role="tabpanel">
+<div class="mk-wrap">
+  <div class="mk-note">
+    Status and Audio collapse to single glyphs with tooltips, giving the width back to <b>Text</b>.
+    Paging is <b>server-side with a total</b>, so the response stays small whatever the note count.
+    The read API mjolnir pulls from is a different route and is untouched.
+  </div>
+
+  <div class="page-head">
+    <div><h2>Notes</h2><div class="page-sub">312 notes · 63 missing audio</div></div>
+    <div class="row">
+      <button class="btn-ghost btn-sm">▶ Triage these results <span class="pill pill-new">new</span></button>
+      <button class="btn-primary btn-sm">+ New note</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th style="width:30%;">Text ▾</th><th>Type</th><th>PoS</th>
+          <th class="col-icon" title="Status">St</th><th class="col-icon" title="Audio">♪</th>
+          <th style="width:28%;">Translation</th><th>Updated</th>
+        </tr></thead>
+        <tbody>
+          <tr><td class="trunc">fastsatt av</td><td>expression</td><td>—</td>
+            <td class="col-icon"><span class="glyph g-draft" title="draft">◐</span></td>
+            <td class="col-icon"><span class="glyph g-none" title="no audio">–</span></td>
+            <td class="trunc">en: determined by</td><td class="num">2m ago</td></tr>
+          <tr><td class="trunc">do</td><td>word</td><td>substantiv</td>
+            <td class="col-icon"><span class="glyph g-draft" title="draft">◐</span></td>
+            <td class="col-icon"><span class="glyph g-ok" title="has audio">●</span></td>
+            <td class="trunc">en: toilet / loo · de: Klo</td><td class="num">14m ago</td></tr>
+          <tr><td class="trunc">komme i vei</td><td>expression</td><td>verb</td>
+            <td class="col-icon"><span class="glyph g-ok" title="ready">●</span></td>
+            <td class="col-icon"><span class="glyph g-ok" title="has audio">●</span></td>
+            <td class="trunc">en: get going</td><td class="num">1h ago</td></tr>
+          <tr><td class="trunc">hus</td><td>word</td><td>substantiv</td>
+            <td class="col-icon"><span class="glyph g-ok" title="ready">●</span></td>
+            <td class="col-icon"><span class="glyph g-ok" title="has audio">●</span></td>
+            <td class="trunc">en: house · de: Haus</td><td class="num">3h ago</td></tr>
+          <tr><td class="trunc">kalv</td><td>word</td><td>substantiv</td>
+            <td class="col-icon"><span class="glyph g-draft" title="draft">◐</span></td>
+            <td class="col-icon"><span class="glyph g-none" title="no audio">–</span></td>
+            <td class="trunc">en: calf</td><td class="num">yesterday</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <span class="pager-count">41–60 of 312</span>
+      <label for="pgsize" style="margin-left:6px;">Per page</label>
+      <select id="pgsize" aria-label="Rows per page"><option>20</option><option selected>50</option><option>100</option></select>
+      <div class="pager-pages">
+        <button class="btn-ghost btn-sm">‹ Prev</button>
+        <button>1</button><button aria-current="page">2</button><button>3</button><button>4</button>
+        <span class="inline-note" style="padding:4px 2px;">…</span><button>7</button>
+        <button class="btn-ghost btn-sm">Next ›</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="mk-h">Portrait</div>
+  <div class="phone">
+    <div class="phone-top"><span>stabbur</span><span>Notes</span></div>
+    <div class="phone-body">
+      <input placeholder="Search text, translation, lemma…" style="margin-bottom:10px;" aria-label="Search notes">
+      <div class="panel">
+        <div class="stack-sm" style="gap:0;">
+          <div style="padding:9px 11px; border-bottom:1px solid var(--border-soft);">
+            <div class="row" style="justify-content:space-between;">
+              <b>fastsatt av</b>
+              <span><span class="glyph g-draft" title="draft">◐</span> <span class="glyph g-none" title="no audio">–</span></span>
+            </div>
+            <div class="inline-note">expression · en: determined by · 2m ago</div>
+          </div>
+          <div style="padding:9px 11px; border-bottom:1px solid var(--border-soft);">
+            <div class="row" style="justify-content:space-between;">
+              <b>do</b>
+              <span><span class="glyph g-draft" title="draft">◐</span> <span class="glyph g-ok" title="has audio">●</span></span>
+            </div>
+            <div class="inline-note">substantiv · en: toilet / loo · 14m ago</div>
+          </div>
+          <div style="padding:9px 11px;">
+            <div class="row" style="justify-content:space-between;">
+              <b>komme i vei</b>
+              <span><span class="glyph g-ok" title="ready">●</span> <span class="glyph g-ok" title="has audio">●</span></span>
+            </div>
+            <div class="inline-note">verb · en: get going · 1h ago</div>
+          </div>
+        </div>
+        <div class="pager" style="padding:8px 10px;">
+          <span class="pager-count">41–60 of 312</span>
+          <div class="pager-pages"><button class="btn-ghost btn-sm">‹</button><button aria-current="page">2</button><button class="btn-ghost btn-sm">›</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="inline-note" style="margin-top:9px;">In portrait the table becomes stacked rows — the two glyphs stay, everything else folds into one secondary line.</p>
+</div>
+</section>
+
+<!-- ======================= MERGE ======================= -->
+<section class="mk-view" id="v-merge" role="tabpanel">
+<div class="mk-wrap">
+  <div class="mk-note">
+    Two fixes. <b>Save-then-merge</b>: the merge request carries the open form's values, so nothing unsaved is ever lost.
+    And every Take button states its operation — <span class="op-add take-op">adds</span> or <span class="op-rep take-op">replaces</span> — before you commit, so the asymmetry is visible rather than remembered.
+  </div>
+
+  <div class="page-head">
+    <div><h2>do</h2><div class="page-sub mono">word · no · draft · 3 related notes</div></div>
+    <div class="row"><button class="btn-danger btn-sm">Delete</button><button class="btn-primary btn-sm">Save</button></div>
+  </div>
+
+  <div class="dirty-strip" style="margin-bottom:12px;">⚠ You have unsaved edits to <b>context</b> and <b>IPA</b>. Merging will save them first, then apply the takes on top.</div>
+
+  <div class="stack">
+    <div class="similar-note-row">
+      <div class="similar-note-head">
+        <input type="checkbox" checked aria-label="Absorb doen">
+        <span class="similar-note-text">doen</span>
+        <span class="pill pill-warn">draft</span>
+        <span class="pill">import</span>
+        <span class="pill">spelled alike</span>
+        <div class="mk-spacer"></div>
+        <a href="#" target="_blank" rel="noopener">Open in new tab ↗ <span class="pill pill-new">new</span></a>
+      </div>
+      <div>
+        <div class="similar-note-field"><b>Translations</b> en: the toilet · de: das Klo</div>
+        <div class="similar-note-field"><b>Context</b> Han gikk på doen før avgang.</div>
+        <div class="similar-note-field"><b>Inflections</b> article: en/et · sg_indef: do · sg_def: doen / doet</div>
+        <div class="similar-note-field"><b>IPA</b> ˈduːn</div>
+      </div>
+      <div class="take-row">
+        <button class="take-btn" aria-pressed="true" data-op="add">Take translations <span class="take-op op-add">adds</span></button>
+        <button class="take-btn" aria-pressed="true" data-op="add">Take context <span class="take-op op-add">adds</span></button>
+        <button class="take-btn" data-op="rep">Take inflections <span class="take-op op-rep">replaces + PoS</span></button>
+        <button class="take-btn" data-op="rep">Take IPA <span class="take-op op-rep">replaces</span></button>
+        <button class="take-btn" data-op="rep">Take text <span class="take-op op-rep">replaces</span> <span class="pill pill-new">new</span></button>
+        <button class="take-btn" data-op="rep">Take lemma <span class="take-op op-rep">replaces</span> <span class="pill pill-new">new</span></button>
+      </div>
+    </div>
+
+    <div class="similar-note-row">
+      <div class="similar-note-head">
+        <input type="checkbox" aria-label="Absorb dolokk">
+        <span class="similar-note-text">dolokk</span>
+        <span class="pill pill-ok">ready</span>
+        <span class="pill">manual</span>
+        <span class="pill">same word family</span>
+        <div class="mk-spacer"></div>
+        <a href="#" target="_blank" rel="noopener">Open in new tab ↗</a>
+      </div>
+      <div>
+        <div class="similar-note-field"><b>Audio</b> <button class="play-btn" aria-label="Play dolokk">▶</button> human recording</div>
+      </div>
+      <div class="inline-note">ready — cannot be absorbed by a merge; its fields can't be taken either, since taking one commits a merge. The link above still opens it.</div>
+    </div>
+
+    <div class="merge-bar">
+      <span class="merge-sum">
+        Absorb <b>doen</b> — taking translations (<span class="op-add">adds to</span> yours), context (<span class="op-add">adds on a new line</span>).
+      </span>
+      <button class="btn-danger btn-sm">Save &amp; merge into this note</button>
+    </div>
+  </div>
+
+  <div class="mk-h">What each take does, exactly</div>
+  <div class="panel table-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Operation</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>translations</td><td><span class="take-op op-add">adds</span></td><td>merged per language, joined with <span class="mono">" / "</span></td></tr>
+        <tr><td>context</td><td><span class="take-op op-add">adds</span></td><td>appended on a <b>single newline</b>; identical text skipped</td></tr>
+        <tr><td>inflections</td><td><span class="take-op op-rep">replaces</span></td><td>whole paradigm swapped, and the source's <b>PoS comes with it</b></td></tr>
+        <tr><td>IPA</td><td><span class="take-op op-rep">replaces</span></td><td>overwritten (unlike the suggest panel's Use, which appends)</td></tr>
+        <tr><td>audio</td><td><span class="take-op op-rep">replaces</span></td><td>the blob reference is swapped</td></tr>
+        <tr><td>text · lemma</td><td><span class="take-op op-rep">replaces</span></td><td>new buttons; overwrite the survivor's own</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="inline-note" style="margin-top:9px;">Note the deliberate asymmetry: merge's <b>Take IPA</b> replaces, while the suggest panel's <b>Use</b> on an IPA candidate appends. Different gestures, different intent.</p>
+</div>
+</section>
+
+<!-- ======================= SUGGEST ======================= -->
+<section class="mk-view" id="v-suggest" role="tabpanel">
+<div class="mk-wrap">
+  <div class="mk-note">
+    <b>PoS orders, it never filters.</b> Every candidate dict.cc returns is still here — the ones matching this note's PoS simply sort first, so the one automatic prefill takes is the right one.
+    Same rule for audio, which is why dict.cc recordings now carry a sense tag of their own.
+  </div>
+
+  <div class="mk-h">Translations — note PoS is <span class="mono">substantiv</span></div>
+  <div class="suggest-panel" style="margin-bottom:8px;">
+    <div class="sp-head">
+      <span class="sp-provider">dictcc_api</span>
+      <span class="pill">en</span>
+      <span class="pill pill-accent">ordered by PoS: substantiv</span>
+      <div class="mk-spacer"></div>
+      <button class="btn-ghost btn-sm">⟳</button>
+    </div>
+    <div class="pos-group">
+      <div class="pos-group-head">substantiv <span class="pill pill-accent">this note's PoS — prefill picks from here</span></div>
+      <div class="candidate-row"><span class="candidate-text">toilet/loo</span><span class="candidate-meta">do {n}</span><span class="candidate-spacer"></span><button class="use-btn used">✓ Used</button></div>
+      <div class="candidate-row"><span class="candidate-text">privy</span><span class="candidate-meta">utedo</span><span class="candidate-spacer"></span><button class="use-btn">Use</button></div>
+    </div>
+    <div class="pos-group">
+      <div class="pos-group-head">verb</div>
+      <div class="candidate-row"><span class="candidate-text">to do</span><span class="candidate-meta">å gjøre</span><span class="candidate-spacer"></span><button class="use-btn">Use</button></div>
+    </div>
+    <div class="pos-group">
+      <div class="pos-group-head">untagged <span style="text-transform:none; letter-spacing:0; font-weight:400;">— dictcc_static carries no bracketed PoS</span></div>
+      <div class="candidate-row"><span class="candidate-text">loo</span><span class="candidate-meta">noun Br.</span><span class="candidate-spacer"></span><button class="use-btn">Use</button></div>
+    </div>
+  </div>
+  <p class="inline-note" style="margin-bottom:4px;">Before: <span class="mono">to do</span> sat first and automatic prefill took it. Nothing is hidden now — the order just stopped lying.</p>
+
+  <div class="mk-h">IPA — additive, with hover-only variety</div>
+  <div class="suggest-panel" style="margin-bottom:8px;">
+    <div class="sp-head"><span class="sp-provider">nst</span><span class="pill">no</span><div class="mk-spacer"></div><button class="btn-ghost btn-sm">⟳</button></div>
+    <div class="candidate-row"><span class="candidate-text mono" title="Variety: standard">ˈfɑstsɑtː</span><span class="candidate-spacer"></span><button class="use-btn used">✓ Used</button></div>
+    <div class="candidate-row"><span class="candidate-text mono" title="Variety: oslo_normal / bergen_normal">ɑːv</span><span class="candidate-spacer"></span><button class="use-btn used">✓ Used</button></div>
+    <div class="candidate-row"><span class="candidate-text mono" title="Variety: trondheim_normal">ɑː</span><span class="candidate-spacer"></span><button class="use-btn">Use</button></div>
+    <div class="assembled-row">
+      <span class="assembled-label">Assembled from single words</span>
+      <span class="candidate-text mono">ˈfɑstsɑtː ɑːv</span>
+      <span class="candidate-spacer"></span>
+      <button class="use-btn">Use</button>
+    </div>
+  </div>
+  <p class="inline-note" style="margin-bottom:4px;">
+    Hover any transcription to see its variety — it is never shown as text.
+    Use <b>appends with a space</b>, so two clicks build <span class="mono">ˈfɑstsɑtː ɑːv</span>; ticks accumulate instead of cancelling each other.
+    Prefill now assembles the same way when smia declines to, flagged as assembled. <b>This supersedes D2 of <span class="mono">smia-ipa-multiword-response</span>.</b>
+  </p>
+
+  <div class="mk-h">Audio — per-entry, sense-tagged, PoS-ordered</div>
+  <div class="suggest-panel" style="margin-bottom:8px;">
+    <div class="sp-head"><span class="sp-provider">dictcc_api</span><span class="pill">no</span><span class="pill pill-accent">ordered by PoS: substantiv</span></div>
+    <div class="audio-search">
+      <input placeholder="Search your notes' audio — text, lemma or translation…" aria-label="Search existing notes' audio">
+      <button class="btn-ghost btn-sm">Search</button>
+      <span class="pill pill-new">new</span>
+    </div>
+    <div class="candidate-row"><button class="play-btn" aria-label="Play">▶</button><span class="candidate-text">human</span><span class="candidate-meta">[noun] do {n}</span><span class="candidate-spacer"></span><button class="use-btn">Use</button></div>
+    <div class="candidate-row"><button class="play-btn" aria-label="Play">▶</button><span class="candidate-text">synthetic</span><span class="candidate-meta">[noun] · Liv</span><span class="candidate-spacer"></span><button class="use-btn">Use</button></div>
+    <div class="candidate-row"><button class="play-btn" aria-label="Play">▶</button><span class="candidate-text">human</span><span class="candidate-meta">[verb] å gjøre</span><span class="candidate-spacer"></span><button class="use-btn">Use</button></div>
+    <div class="pos-group">
+      <div class="pos-group-head">From your own notes <span style="text-transform:none; letter-spacing:0; font-weight:400;">— attaches the same blob, nothing is copied</span></div>
+      <div class="candidate-row"><button class="play-btn" aria-label="Play">▶</button><span class="candidate-text">dolokk</span><span class="candidate-meta">ready · manual · en: toilet seat</span><span class="candidate-spacer"></span><button class="use-btn">Attach</button></div>
+      <div class="candidate-row"><button class="play-btn" aria-label="Play">▶</button><span class="candidate-text">utedo</span><span class="candidate-meta">draft · import · en: outhouse</span><span class="candidate-spacer"></span><button class="use-btn">Attach</button></div>
+    </div>
+  </div>
+  <p class="inline-note">Before, smia only ever asked dict.cc for <span class="mono">translations[0].id</span>, so a word whose first entry had no recording got nothing at all. Now every entry is asked, and each candidate carries its sense so the ordering can work.</p>
+
+  <div class="mk-h">Inflections — the <span class="mono">do</span> fix</div>
+  <div class="panel table-wrap">
+    <table>
+      <thead><tr><th>Slot</th><th>Before</th><th>After</th></tr></thead>
+      <tbody>
+        <tr><td>article</td><td class="mono" style="color:var(--err);">en</td><td class="mono" style="color:var(--ok);">en/et</td></tr>
+        <tr><td>sg_indef</td><td class="mono" style="color:var(--err);">/ et do</td><td class="mono" style="color:var(--ok);">do</td></tr>
+        <tr><td>sg_def</td><td class="mono">doen / doet</td><td class="mono">doen / doet</td></tr>
+        <tr><td>pl_indef</td><td class="mono">doer / do</td><td class="mono">doer / do</td></tr>
+        <tr><td>pl_def</td><td class="mono">doene / doa</td><td class="mono">doene / doa</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="inline-note" style="margin-top:9px;">dict.cc sends <span class="mono">en / et do | doen / doet | doer / do | doene / doa</span>. The article splitter took one token and left the rest in the noun slot. Nothing about <span class="mono">do</span> is special — every two-gender noun broke the same way. One candidate, slashes preserved.</p>
+
+  <div class="ftr">
+    Four changes: <span class="mono">smia-dictcc-fixes</span> · <span class="mono">stabbur-merge-fixes</span> · <span class="mono">stabbur-triage-queues</span> · <span class="mono">stabbur-portrait</span>.
+    smia builds first — stabbur's audio ordering reads the sense tag it adds.
+  </div>
+</div>
+</section>
+
+<script>
+(function () {
+  var tabs = document.querySelectorAll('.mk-tab');
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      tabs.forEach(function (o) { o.setAttribute('aria-selected', 'false'); });
+      t.setAttribute('aria-selected', 'true');
+      document.querySelectorAll('.mk-view').forEach(function (v) { v.classList.remove('on'); });
+      document.getElementById(t.dataset.view).classList.add('on');
+      window.scrollTo(0, 0);
+    });
+  });
+
+  var track = document.getElementById('beltTrack');
+  if (track) {
+    var html = '';
+    for (var i = 0; i < 63; i++) html += '<i class="notch' + (i === 0 ? ' here' : '') + '"></i>';
+    track.innerHTML = html;
+  }
+
+  var fp = document.getElementById('filterPanel');
+  document.getElementById('editFiltersBtn').addEventListener('click', function () {
+    fp.style.display = fp.style.display === 'none' ? '' : 'none';
+  });
+
+  document.querySelectorAll('#queuePick .qchip').forEach(function (c) {
+    c.addEventListener('click', function () {
+      document.querySelectorAll('#queuePick .qchip').forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
+      c.setAttribute('aria-pressed', 'true');
+    });
+  });
+
+  document.querySelectorAll('.tri').forEach(function (g) {
+    g.querySelectorAll('button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        g.querySelectorAll('button').forEach(function (o) { o.removeAttribute('aria-pressed'); });
+        b.setAttribute('aria-pressed', 'true');
+      });
+    });
+  });
+
+  document.querySelectorAll('.take-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    });
+  });
+
+  document.querySelectorAll('.use-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (b.classList.contains('used')) { b.classList.remove('used'); b.textContent = b.textContent.indexOf('Attach') > -1 ? 'Attach' : 'Use'; }
+      else { b.classList.add('used'); b.textContent = '✓ Used'; }
+    });
+  });
+
+  document.querySelectorAll('.pager-pages button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (!/^\d+$/.test(b.textContent.trim())) return;
+      document.querySelectorAll('.pager-pages button').forEach(function (o) { o.removeAttribute('aria-current'); });
+      b.setAttribute('aria-current', 'page');
+    });
+  });
+})();
+</script>

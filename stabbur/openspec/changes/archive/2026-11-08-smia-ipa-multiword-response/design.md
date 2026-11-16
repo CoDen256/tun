@@ -63,6 +63,29 @@ payload's shape would re-derive what the contract already states.
 
 ### D2 — When `joined` is absent, stabbur offers no whole-phrase fill
 
+> **SUPERSEDED 2026-11-16 by `stabbur-triage-queues`** (batch `full-sweep`,
+> package "Stabbur merging & dict.cc translations", design D7). Read the
+> reversal before acting on anything below.
+>
+> In practice smia omits `joined` for most Norwegian multiword phrases —
+> one token with two dialect varieties is enough — so automatic prefill
+> left the transcription field empty far more often than the operator
+> expected, and the restraint below cost more than it protected.
+>
+> The operator was shown this decision and its reasoning in the design
+> session and reversed it deliberately (D161: operator feedback outranks a
+> spec). **stabbur now assembles** a whole-phrase value from each token's
+> first candidate, joined by a single space, when smia supplies none.
+>
+> Three bounds keep the reversal honest: stabbur never re-tokenises
+> (smia's tokenizer stays authoritative); a token with zero candidates
+> leaves a **visible gap marker** rather than being silently dropped; and
+> the value is flagged as assembled in its provenance badge.
+>
+> **D3 below is NOT superseded** — it is what makes this safe, and it now
+> extends to the prefilled value. Do not restore D2's behaviour as a bug
+> fix.
+
 smia's spec is unusually explicit here, and the reasoning transfers
 directly: `joined` is omitted precisely when some token has zero candidates
 or more than one, i.e. when picking a single phrase transcription requires

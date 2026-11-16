@@ -13,6 +13,12 @@ Batch opened 2026-11-15 from all triaged packages.
   only (the operator chose it over sharing a renderer module precisely to keep
   the two build-parallel in code), but the file has to exist first.
 
+- smia `dictcc-parsing-fixes` **before** stabbur `stabbur-triage-queues`
+  — added during the stabbur design session. The suggest panel orders AUDIO
+  candidates by part of speech, and the `context` tag it orders on is what
+  the smia change adds to dict.cc `/tts` candidates. A DATA dependency only;
+  both are inside the same package, so one build session takes them in order.
+
 All other packages are parallel-safe.
 
 ## Status
@@ -22,7 +28,7 @@ All other packages are parallel-safe.
 | Builder UI rehaul & data versioning | building — mjolnir: `flush-record-atomicity` then `builder-ship-strips` |
 | Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` |
 | Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
-| Stabbur merging & dict.cc translations | pending |
+| Stabbur merging & dict.cc translations | designed (smia: `dictcc-parsing-fixes`; stabbur: `stabbur-merge-fixes`, `stabbur-triage-queues`) |
 | Shadow studying mode | archived — `shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode` |
 | Calst/pygmalion audio consolidation | archived (smia: `2026-11-15-calst-audio-union`) |
 
@@ -178,6 +184,82 @@ projects: stabbur, smia
 [REHAUL] rethink dictcc parsing and stabbur displaying of translations. also dict_cc audios not everyone is present and stabbur when asking dict_cc should filter by PoS, because he picks the wrong PoS sometimes
 [UX] smia filmot link for multiword should search them in a quotes: https://filmot.com/search/%22fastsatt%20av%22/1?lang=no&hideDeleted=1&gridView=1&
 
+Designed 2026-11-16 → three changes, built in this order:
+**`dictcc-parsing-fixes`** (smia) → **`stabbur-merge-fixes`** (stabbur,
+independent) and **`stabbur-triage-queues`** (stabbur, reads the first
+change's output).
+
+Two defects were root-caused against the running code rather than inferred
+from the report, and both reports were right about the effect while wrong
+about the cause:
+
+- **Merge does not "remove" unsaved fields — it never sees them.**
+  `commitSimilarMerge` posts only `{survivor_id, absorbed_ids, take}`; the
+  server reads the survivor FROM THE DATABASE and the UI re-renders from
+  the response, so the open form's unsaved state is overwritten by the
+  stored row. Destructive and silent, since the absorbed note is
+  hard-deleted in the same transaction. Fixed by carrying the form's values
+  in the merge request (save-then-merge), takes applying on top.
+- **The `do` bug is the article splitter, not the pipe parser.** Confirmed
+  live against `app_translations.php`: dict.cc returns
+  `en / et do | doen / doet | doer / do | doene / doa`, and
+  `seg.split(maxsplit=1)` takes `article="en"`, `sg_indef="/ et do"`.
+  `do` is a TWO-GENDER noun; nothing about the word is special and every
+  `en/et` noun broke identically.
+
+The decision most likely to be got wrong at build time, and the one the
+operator corrected mid-session: **part of speech ORDERS candidates, it
+never filters them.** His diagnosis was that the right candidate was
+already in the response and simply was not first — `walkProviders` takes
+`candidates[0]`. So nothing is withheld; matching candidates sort first so
+automatic prefill picks the right sense, in translations AND audio. With no
+part of speech on the note, or no match, the provider's order is left
+untouched and no preference is invented.
+
+A deliberate asymmetry, recorded in both changes so it is not "made
+consistent": merge's **Take IPA replaces**, the suggest panel's **Use
+appends** (with a space, since the operator is assembling a multiword
+transcription token by token). Same column, two gestures, two intents.
+
+The operator also reversed his own backlog text on one point: it says
+"inflections should be merged as tranlsations and context", and in session
+he made inflections **purely replacive**, carrying the source's PoS with
+them. Only translations and context are additive.
+
+**Conflict with a settled decision, surfaced:** prefill assembling a
+multiword transcription reverses **D2 of the archived
+`smia-ipa-multiword-response`**, which forbade any stabbur-side join and
+called it "the one place where doing less is the requirement". The operator
+was shown that decision and reversed it deliberately (D161). The archived
+design.md is annotated in place with the reversal and its bounds; D3 of
+that change is kept and extended.
+
+Accepted mockup:
+`stabbur/openspec/changes/stabbur-triage-queues/mockups/stabbur-merge-dictcc.html`,
+accepted on the first pass with one scope change — portrait removed.
+
+**Deferred by the operator, NOT dropped:** phone portrait display
+(`[ux] convenient phone portrait display for stabbur`). It was designed in
+full and then deliberately taken out of the package so the operator can do
+it later; the fourth change that would have carried it was never created.
+What was settled is recorded verbatim in the root `BACKLOG.md` so it need
+not be re-derived, and `stabbur-triage-queues` task 8.1 forbids any
+responsive work, with acceptance criterion 55 failing a diff that contains
+it.
+
+Deferred to the builder's judgement (tier 2, not guesses):
+- the default and maximum page size, and the page-navigation widget's shape
+- the glyphs chosen for the status and audio indicators, provided each
+  carries an accessible description
+- the updated-since window's offered intervals
+- how a queue's filters are keyed in the settings JSONB, and whether the
+  built-in queues are literal rows or synthesised
+- the gap marker's appearance in an assembled transcription, provided an
+  absent token is visible rather than silently dropped
+- whether the audio search is a new endpoint or a parameter on the
+  authoring route
+- the exact wording of the dirty-form marker and the merge confirmation
+
 ### Shadow studying mode
 projects: shadow
 status: archived 2026-11-16 — `shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode`
@@ -257,7 +339,13 @@ progress-display details.
 
 ## Dropped / deferred
 
-(none)
+- **`[ux] convenient phone portrait display for stabbur`** — deferred by the
+  operator 2026-11-16, out of the "Stabbur merging & dict.cc translations"
+  package, AFTER it was fully designed. Not a drop: the operator wants it,
+  later, by themselves. The settled design is recorded verbatim in the root
+  `BACKLOG.md`; the mockup's "Portrait" blocks show the treatment;
+  `stabbur-triage-queues` task 8.1 and acceptance criterion 55 forbid any
+  responsive work landing in this package by accident.
 
 ## Out-of-package changes that rode along
 
