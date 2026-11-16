@@ -56,27 +56,123 @@ def test_shadow_mounts_exactly_one_audio_volume_and_no_other_zone_s_data():
             f"unexpected writable mount: {m}"
 
 
+# Every route in shadowing.py that is ALLOWED to read a request body of
+# bytes, and why. Anything else that reads one fails the guard below.
+# Keeping it as an allowlist is the point: a new endpoint must be named
+# here deliberately, in a test whose docstring says what the rule is.
+BODY_READING_ROUTES = {
+    # shadowing.py — persistence.
+    "append_upload_slice": "one slice of the AUDIOBOOK's resumable upload",
+    # app.py — pure proxies. Each takes the learner's own audio and
+    # forwards it to another service without ever touching the disk; the
+    # second assertion below is what holds them to that (design.md §7).
+    "http_transcribe": "forwards one sentence of the AUDIOBOOK to smia; stores nothing",
+    "analyze_praat": "forwards the learner's take to phonexa for a pitch "
+                     "contour, transiently; stores nothing, here or there",
+}
+
+# Of those, the ones that must additionally never open a file.
+MUST_NOT_WRITE = ("http_transcribe", "analyze_praat")
+
+# The ways a Flask route can take a body. `request.files` was the only one
+# the first version of this guard knew about — and this change's own upload
+# path uses `request.stream`, so a recordings endpoint written in exactly
+# the style of the code next to it would have sailed through.
+BODY_ACCESSORS = ("files", "stream", "data", "form", "get_data", "input_stream")
+
+
+def _body_reading_functions(source: str):
+    """Every function in `source` that reads a request body, and how.
+
+    One implementation, used both by the guard and by the test that proves
+    the guard bites — a guard verified against planted code it never
+    actually runs on is the failure mode this file keeps re-learning.
+    """
+    import ast
+
+    found = {}
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        used = {
+            inner.attr for inner in ast.walk(node)
+            if isinstance(inner, ast.Attribute)
+            and isinstance(inner.value, ast.Name) and inner.value.id == "request"
+            and inner.attr in BODY_ACCESSORS
+        }
+        if used:
+            found[node.name] = sorted(used)
+    return found
+
+
 def test_recordings_are_never_persisted():
     """The one thing this change must not quietly relax.
 
     shadow stores the AUDIOBOOK. It must never gain a route that accepts
     the learner's own take for storage — that is what keeps the database
-    dump a complete backup and the audio volume disposable.
-    """
-    import ast
+    dump a complete backup and the audio volume disposable (design.md §7).
 
-    source = (ROOT / "shadowing.py").read_text()
-    tree = ast.parse(source)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef):
-            body = ast.get_source_segment(source, node) or ""
-            if "request.files" in body:
-                raise AssertionError(
-                    f"shadowing.{node.name} accepts an uploaded FILE — recordings "
-                    "must stay ephemeral and no persistence route may take audio"
+    THIS GUARD WAS TOO NARROW UNTIL 2026-11-16: it scanned for
+    `request.files` only, while shadow's own upload path streams with
+    `request.stream`, so a recordings endpoint written in exactly the
+    style of the code next to it would have sailed through. It now
+    enumerates every function that reads a body in ANY style this codebase
+    uses and demands each one be on a named allowlist. The code it was
+    written against is clean; the test was the defect.
+    """
+    import ast  # noqa: PLC0415
+
+    sources = {name: (ROOT / name).read_text() for name in ("shadowing.py", "app.py")}
+    offenders = {}
+    for module, source in sources.items():
+        for name, acc in _body_reading_functions(source).items():
+            if name not in BODY_READING_ROUTES:
+                offenders[f"{module}:{name}"] = acc
+
+    # A proxy that gained a file write would be persistence by another name.
+    for module, source in sources.items():
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.FunctionDef) or node.name not in MUST_NOT_WRITE:
+                continue
+            for inner in ast.walk(node):
+                opened = (isinstance(inner, ast.Call)
+                          and getattr(inner.func, "id", getattr(inner.func, "attr", ""))
+                          in ("open", "write_bytes", "write_text", "save", "copyfileobj"))
+                assert not opened, (
+                    f"{module}:{node.name} writes the learner's audio to disk — "
+                    "takes are transient and are never stored"
                 )
+
+    assert not offenders, (
+        "these functions read a request body and are not on the allowlist: "
+        + "; ".join(f"{name} (request.{', request.'.join(acc)})"
+                    for name, acc in offenders.items())
+        + " — recordings must stay ephemeral and no route may persist the "
+          "learner's own audio. If this is a new AUDIOBOOK route, add it to "
+          "BODY_READING_ROUTES with the reason."
+    )
     # And no route anywhere in the service may be named for taking one.
-    assert "/recordings" not in source and "/takes" not in source
+    for forbidden in ("/recordings", "/takes", "/recording", "/take"):
+        for module, source in sources.items():
+            assert f"'{forbidden}" not in source and f'"{forbidden}' not in source, \
+                f"{module} declares a route at {forbidden} — a place to put a recording"
+
+
+@pytest.mark.parametrize("accessor", BODY_ACCESSORS)
+def test_the_recordings_guard_would_catch_a_planted_route(accessor):
+    """The guard run against a violation in each style, so it cannot pass
+    by being blind. A test that cannot fail on bad code is a green light.
+    """
+    planted = (
+        "@shadowing_bp.route('/api/v1/shadowing/sessions/<i>/take', methods=['PUT'])\n"
+        "def store_take(i):\n"
+        f"    blob = request.{accessor}\n"
+        "    open('/data/audio/take.webm', 'wb').write(blob)\n"
+    )
+    found = _body_reading_functions(planted)
+    assert found.get("store_take") == [accessor], \
+        f"the guard would miss a recordings route using request.{accessor}"
+    assert "store_take" not in BODY_READING_ROUTES
 
 
 def test_shadow_does_not_import_phonexa_models():
