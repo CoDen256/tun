@@ -32,6 +32,22 @@ CONN_LIMIT="${PG_ROLE_CONNECTION_LIMIT:-20}"
 
 log() { echo "[bootstrap] $*"; }
 
+# Second defence behind the health check's `-h 127.0.0.1` (see compose.yaml).
+# `depends_on: service_healthy` is satisfied by the LAST recorded probe, so a
+# daemon restart, a resume from suspend, or a cluster still finishing its
+# entrypoint can all hand us a server that is not yet accepting TCP. Every
+# statement below is idempotent, so waiting costs nothing and a refused
+# connection costs eight services their boot.
+for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  if pg_isready -q -d postgres; then break; fi
+  if [ "$attempt" = 15 ]; then
+    log "FATAL: $PGHOST not accepting connections after 30s"
+    exit 1
+  fi
+  [ "$attempt" = 1 ] && log "waiting for $PGHOST to accept connections"
+  sleep 2
+done
+
 for db in $DATABASES; do
   pw="${POSTGRES_PASSWORD}_${db}"
 
@@ -39,7 +55,16 @@ for db in $DATABASES; do
   # effect — unlike the server's own POSTGRES_PASSWORD, which is applied only
   # at initdb and is exactly the trap that made the four per-database keys
   # necessary in the first place.
-  if psql -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='$db'" | grep -q 1; then
+  # Ask, and check that the ASKING worked — `psql ... | grep -q 1` cannot tell
+  # "no such role" from "the query never ran": a connection error yields empty
+  # output, grep returns 1, and control falls into the CREATE branch as if the
+  # role were absent. Under `set -e` the `if` condition is never fatal, so the
+  # failure is swallowed and only the CREATE that follows aborts the script.
+  if ! role_exists=$(psql -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='$db'"); then
+    log "FATAL: cannot query pg_roles for $db"
+    exit 1
+  fi
+  if [ "$role_exists" = 1 ]; then
     psql -q -d postgres -c "ALTER ROLE \"$db\" LOGIN PASSWORD '$pw' CONNECTION LIMIT $CONN_LIMIT"
     log "role $db: updated"
   else

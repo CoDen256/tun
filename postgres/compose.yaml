@@ -30,7 +30,16 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tunadmin -d postgres"]
+      # `-h 127.0.0.1` is LOAD-BEARING, not noise. Without it pg_isready probes
+      # the UNIX SOCKET, and the official entrypoint runs a temporary server
+      # with `listen_addresses=''` — socket up, TCP refused — whenever it
+      # initialises or repairs the data directory. A probe landing in that
+      # window reports healthy, `depends_on: service_healthy` opens, and
+      # postgres-init (which connects over TCP, PGHOST=postgres) gets
+      # "Connection refused" and exits 1 — taking down the eight services that
+      # gate on `service_completed_successfully`. Probe the transport the
+      # consumers actually use.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U tunadmin -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
