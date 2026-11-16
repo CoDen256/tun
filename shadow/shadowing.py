@@ -1191,6 +1191,25 @@ def split_shadowing_segment(segment_id):
                         'second': _segment_json(new_seg, ranges)})
 
 
+def _renumber_children(db, parent: ShadowingSegment) -> int:
+    """Renumber a parent's children 0..n-1 in time order. Returns the count.
+
+    `order_index` is a dense rank over one (config, kind, parent) sibling
+    set and every operation that moves rows between parents must restore
+    it. Ordering by `start_ms` (then id, so a zero-length pair is still
+    deterministic) is the only ordering that cannot disagree with the
+    audio.
+    """
+    children = (db.query(ShadowingSegment)
+                .filter(ShadowingSegment.config_id == parent.config_id,
+                        ShadowingSegment.parent_segment_id == parent.id)
+                .order_by(ShadowingSegment.start_ms, ShadowingSegment.id).all())
+    for index, child in enumerate(children):
+        if child.order_index != index:
+            child.order_index = index
+    return len(children)
+
+
 @shadowing_bp.route('/api/v1/shadowing/segments/merge', methods=['POST'])
 def merge_shadowing_segments():
     """Merge two adjacent segments. Doneness becomes CONJUNCTIVE for free:
@@ -1215,6 +1234,16 @@ def merge_shadowing_segments():
         first.text = ' '.join(t for t in [first.text, second.text] if t) or None
         db.query(ShadowingSegment).filter_by(parent_segment_id=second.id).update(
             {'parent_segment_id': first.id})
+        db.flush()
+        # The adopted children arrive carrying SECOND's numbering, so the
+        # merged chapter would hold sentences numbered 0..n AND 0..m
+        # (confirmed by review, 2026-11-16). Duplicate order_index then
+        # breaks split's sibling shift, makes this function's own adjacency
+        # test accept non-adjacent pairs, and scrambles ORM ordering. Only
+        # the UI's sentence merge is exercised today, but the API accepts
+        # kind='chapter', so renumber the whole sibling set from the one
+        # thing that is never ambiguous: time.
+        _renumber_children(db, first)
         later = db.query(ShadowingSegment).filter(
             ShadowingSegment.config_id == first.config_id, ShadowingSegment.kind == first.kind,
             ShadowingSegment.parent_segment_id == first.parent_segment_id,
