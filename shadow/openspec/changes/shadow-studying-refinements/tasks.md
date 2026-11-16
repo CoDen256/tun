@@ -6,28 +6,28 @@ sentence, and measuring that against an inaccurate cut bakes the error in.
 
 ## 1. Sample-accurate cuts
 
-- [ ] 1.1 Replace the stream-copy cut in `shadow/audio.py` with a precise
+- [x] 1.1 Replace the stream-copy cut in `shadow/audio.py` with a precise
       one: a cut must begin and end at the requested millisecond. The
       current `-ss`/`-to` **before** `-i` with `-c copy` is the defect.
-- [ ] 1.2 Rewrite the module comment that advertises the stream copy as
+- [x] 1.2 Rewrite the module comment that advertises the stream copy as
       what "makes a chapter chunk cheap" — annotate the old claim in place
       with why it was wrong, per the repo convention.
-- [ ] 1.3 Pre-cut a configuration's chapter chunks in the background once
+- [x] 1.3 Pre-cut a configuration's chapter chunks in the background once
       analysis finishes; entering an un-cut chapter must still work, slower.
-- [ ] 1.4 Invalidate chunks cut the old, inaccurate way — an existing cached
+- [x] 1.4 Invalidate chunks cut the old, inaccurate way — an existing cached
       chunk is wrong and must not be served after this change.
-- [ ] 1.5 Confirm by measurement that `GET /segments/<id>/audio` no longer
+- [x] 1.5 Confirm by measurement that `GET /segments/<id>/audio` no longer
       carries the previous sentence's audio, and that a chapter chunk starts
       at the chapter's start.
 
 ## 2. Silence trimming
 
-- [ ] 2.1 Compute, per sentence, the window inside its span where speech
+- [x] 2.1 Compute, per sentence, the window inside its span where speech
       occurs. Conservative at onsets — clipping a soft consonant is the
       failure mode that matters and it is invisible.
-- [ ] 2.2 Persist or derive that window (tier 2), and recompute it on
+- [x] 2.2 Persist or derive that window (tier 2), and recompute it on
       re-analysis. **The stored `start_ms`/`end_ms` must not change.**
-- [ ] 2.3 Playback and waveform drawing use the speech window; **marking
+- [x] 2.3 Playback and waveform drawing use the speech window; **marking
       done still covers the FULL stored span**. Nothing in `progress.py`
       changes.
 - [ ] 2.4 Trim the learner's take in the browser, on bytes discarded with
@@ -85,10 +85,10 @@ sentence, and measuring that against an inaccurate cut bakes the error in.
 
 ## 7. Standards and regression
 
-- [ ] 7.1 Nothing outside `shadow/` modified. `bin/check-standards.sh`
+- [x] 7.1 Nothing outside `shadow/` modified. `bin/check-standards.sh`
       passes.
-- [ ] 7.2 `cd shadow && python -m pytest` green; extend the suite for the
+- [x] 7.2 `cd shadow && python -m pytest` green; extend the suite for the
       speech-window rule and for "trimming never alters a stored span".
-- [ ] 7.3 Serve-before-migrate (D157) still holds.
-- [ ] 7.4 The completed-time-ranges model, the coverage rule and the
+- [x] 7.3 Serve-before-migrate (D157) still holds.
+- [x] 7.4 The completed-time-ranges model, the coverage rule and the
       time-position cursor are untouched — confirm by test, not by reading.
