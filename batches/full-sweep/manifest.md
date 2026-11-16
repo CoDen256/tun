@@ -28,7 +28,7 @@ All other packages are parallel-safe.
 | Builder UI rehaul & data versioning | building — mjolnir: `flush-record-atomicity` then `builder-ship-strips` |
 | Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` |
 | Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
-| Stabbur merging & dict.cc translations | designed (smia: `dictcc-parsing-fixes`; stabbur: `stabbur-merge-fixes`, `stabbur-triage-queues`) |
+| Stabbur merging & dict.cc translations | building — smia `dictcc-parsing-fixes` first, then stabbur `stabbur-merge-fixes` + `stabbur-triage-queues` |
 | Shadow studying mode | archived — `shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode` |
 | Calst/pygmalion audio consolidation | archived (smia: `2026-11-15-calst-audio-union`) |
 
