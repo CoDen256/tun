@@ -1,5 +1,6 @@
 import http from "node:http";
 import { runForecast, runPublish } from "./pipeline.js";
+import { checkOccurrenceIntegrity } from "./integrity.js";
 import { recentBuildJobs, getBuildJob } from "./buildJobs.js";
 import { buildGrammarRuleLookup } from "./stabburClient.js";
 import { getSchedule, setSchedule } from "./schedulerConfig.js";
@@ -512,7 +513,49 @@ function renderForecastDegradedBanner(forecast) {
 </div>`;
 }
 
-export function buildForecastBody(forecast, jobs, batches, batchDetails, activeLogicBundle, deckMeta = new Map(), shipOrders = new Map()) {
+// flush-record-atomicity (D-FA4): the occurrence-ledger integrity banner.
+//
+// Renders ONLY when `checkOccurrenceIntegrity` (builder/src/integrity.js)
+// finds something — zero anomalies is zero UI, deliberately: a permanent
+// green "all good" panel is read once and never again, and this has to be
+// noticeable on the one morning it is not green. On 2026-11-10 the opposite
+// was true: 13 lost `E` occurrences were found by accident, days later,
+// because nothing on any page could have shown them.
+//
+// Exported on its own (not only via `buildForecastBody`) because the
+// `builder-ship-strips` change renders the same banner on its new page. One
+// check, one renderer, two call sites — never a second implementation.
+export function renderIntegrityBanner(integrity) {
+  if (!integrity || integrity.anomalies.length === 0) return "";
+  const byKind = new Map();
+  for (const a of integrity.anomalies) {
+    if (!byKind.has(a.kind)) byKind.set(a.kind, []);
+    byKind.get(a.kind).push(a);
+  }
+  const LABEL = {
+    missing: "owed occurrences that exist nowhere — shipped, staged or queued",
+    duplicate: "occurrences that exist in more than one place",
+    orderBreak: "cards whose E shipped while their own A never did (D91)",
+  };
+  const sections = [...byKind.entries()]
+    .map(([kind, items]) => {
+      const ids = items.map((a) => `<span class="mono">${escapeHtml(a.cardId)}</span>`).join(", ");
+      return `<div style="margin-top:8px"><strong>${items.length}</strong> ${escapeHtml(LABEL[kind] || kind)}:
+        <div style="margin-top:4px">${ids}</div>
+        <div class="mono" style="opacity:.7;margin-top:4px">${escapeHtml(items[0].detail)}</div>
+      </div>`;
+    })
+    .join("");
+  return `<div class="panel panel-pad" style="border-color: var(--err); margin-bottom:16px;">
+    <strong style="color: var(--err);">⚠ Occurrence-ledger integrity: ${integrity.anomalies.length} anomal${integrity.anomalies.length === 1 ? "y" : "ies"}.</strong>
+    Every minted card must have each occurrence it owes in exactly one of
+    shipped / staged / pending, exactly once, with its A shipped before its E.
+    ${sections}
+    ${integrity.truncated ? `<div style="margin-top:8px;opacity:.7">(list truncated — more anomalies exist than are shown)</div>` : ""}
+  </div>`;
+}
+
+export function buildForecastBody(forecast, jobs, batches, batchDetails, activeLogicBundle, deckMeta = new Map(), shipOrders = new Map(), integrity = null) {
   // builder-sliding-window-shipping (task 3.1): eligible ≠ ships today —
   // split into what the flush step would actually append to Cards[] this
   // run vs. what gets (re)staged and held short of the next multiple of 5.
@@ -567,6 +610,8 @@ export function buildForecastBody(forecast, jobs, batches, batchDetails, activeL
   <div><h2>Forecast &amp; publish</h2><div class="page-sub">What would ship if you published right now — no floor, every eligible note mints.</div></div>
   <button class="btn-primary" id="publish-now">Publish now</button>
 </div>
+
+${renderIntegrityBanner(integrity)}
 
 ${renderForecastDegradedBanner(forecast)}
 
@@ -643,11 +688,11 @@ document.getElementById('publish-now').addEventListener('click', async () => {
 </script>`;
 }
 
-function renderForecastPage(forecast, jobs, batches, batchDetails, activeLogicBundle, deckMeta, shipOrders) {
+function renderForecastPage(forecast, jobs, batches, batchDetails, activeLogicBundle, deckMeta, shipOrders, integrity) {
   return renderShell({
     title: "mjolnir / builder — forecast",
     activeHref: "/builder",
-    body: buildForecastBody(forecast, jobs, batches, batchDetails, activeLogicBundle, deckMeta, shipOrders),
+    body: buildForecastBody(forecast, jobs, batches, batchDetails, activeLogicBundle, deckMeta, shipOrders, integrity),
   });
 }
 
@@ -879,12 +924,16 @@ export function createServer(pool, config, boot) {
         };
         const batchDetails = new Map();
         for (const b of batches) batchDetails.set(b.buildId, await occurrencesForBuild(pool, b.buildId));
-        const [deckMeta, shipOrders] = await Promise.all([
+        const [deckMeta, shipOrders, integrity] = await Promise.all([
           loadDeckMeta(pool, forecast.byDeck.map((d) => d.deckCode)),
           loadShipOrders(pool, forecast),
+          // D-FA4: read-only, builder's own database — it must still render
+          // when the stabbur pull above has already failed, so it is NOT
+          // behind the forecast's degraded fallback.
+          checkOccurrenceIntegrity(pool),
         ]);
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        return res.end(renderForecastPage(forecast, jobs, batches, batchDetails, activeLogicBundle, deckMeta, shipOrders));
+        return res.end(renderForecastPage(forecast, jobs, batches, batchDetails, activeLogicBundle, deckMeta, shipOrders, integrity));
       }
       // Task 4.15: triggers 4.2-4.12 immediately, independent of the
       // schedule — a no-op if nothing is newly eligible (runPublish handles it).

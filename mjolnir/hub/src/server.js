@@ -58,6 +58,7 @@ import { jobLogLines } from "../../builder/src/jobLogs.js";
 import { recentBatches, occurrencesForBuild } from "../../builder/src/batchHistory.js";
 import { getActiveMeta } from "../../builder/src/logicBundle.js";
 import { buildForecastBody, buildScheduleBody, buildLogsBody, loadDeckMeta, loadShipOrders } from "../../builder/src/server.js";
+import { checkOccurrenceIntegrity } from "../../builder/src/integrity.js";
 import { buildInsights } from "./insights.js";
 import { renderInsightsPage } from "./insightsPage.js";
 
@@ -1207,11 +1208,14 @@ export function createServer(pool, config, boot) {
         };
         const batchDetails = new Map();
         for (const b of batches) batchDetails.set(b.buildId, await occurrencesForBuild(pool, b.buildId));
-        const [deckMeta, shipOrders] = await Promise.all([
+        const [deckMeta, shipOrders, integrity] = await Promise.all([
           loadDeckMeta(pool, forecast.byDeck.map((d) => d.deckCode)),
           loadShipOrders(pool, forecast),
+          // D-FA4: the same check builder's own page renders — one
+          // implementation, imported, never a second copy (D109).
+          checkOccurrenceIntegrity(pool),
         ]);
-        const body = buildForecastBody(forecast, jobs, batches, batchDetails, activeLogicBundle, deckMeta, shipOrders);
+        const body = buildForecastBody(forecast, jobs, batches, batchDetails, activeLogicBundle, deckMeta, shipOrders, integrity);
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         return res.end(renderShell({ title: "mjolnir / hub — forecast & publish", activeHref: "/mjolnir/builder/forecast", body }));
       }

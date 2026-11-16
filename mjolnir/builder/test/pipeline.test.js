@@ -18,6 +18,8 @@ import { buildGrammarRuleLookup } from "../src/stabburClient.js";
 import { occurrencesForBuild } from "../src/batchHistory.js";
 import { makeDbLogger } from "../src/jobLogs.js";
 import { shipOrderForDeck } from "../src/cardFlow.js";
+import { checkOccurrenceIntegrity } from "../src/integrity.js";
+import { renderIntegrityBanner } from "../src/server.js";
 
 // deck-consolidation: `assignDeck` now resolves every `type=word` note
 // (any `pos`) and `type=expression` to the single `lexic` family (starts at
@@ -709,6 +711,47 @@ describe("builder pipeline: forecast + publish against a fixture stabbur and an 
       if (a === -1 || e === -1) continue;
       assert.ok(a < e, `${cardId}: its A must precede its own E in Cards[] order (D91), got A@${a} E@${e}`);
     }
+  });
+
+  // D-FA4: the check that would have made 2026-11-09 visible the next
+  // morning instead of by accident, days later.
+  await t.test("D-FA4: the integrity check is silent on a healthy ledger and names the offender on a broken one", async () => {
+    const healthy = await checkOccurrenceIntegrity(pool);
+    assert.deepEqual(healthy.anomalies, [], "every run above left the ledger consistent");
+    assert.equal(renderIntegrityBanner(healthy), "", "zero anomalies renders zero UI — no permanent green panel to stop reading");
+
+    const { rows: staged } = await pool.query("SELECT deck_code, card_id, letter FROM staged_occurrences LIMIT 1");
+    assert.equal(staged.length, 1, "sanity: something is staged at this point in the suite");
+    const row = staged[0];
+
+    // 019 makes the single-table duplicate impossible — the database
+    // refuses it rather than letting it reach occurrence_shipments twice.
+    await assert.rejects(
+      () =>
+        pool.query("INSERT INTO staged_occurrences (deck_code, card_id, letter) VALUES ($1, $2, $3)", [
+          row.deck_code,
+          row.card_id,
+          row.letter,
+        ]),
+      /duplicate key value/,
+      "a second staged row for the same (card, letter) is rejected by the database itself"
+    );
+
+    // So the remaining way to break it is ACROSS tables: the same
+    // occurrence staged AND queued — exactly what b000040's re-queue
+    // produced before the per-deck drain fix.
+    await pool.query("INSERT INTO pending_occurrences (deck_code, card_id, letter, remaining) VALUES ($1, $2, $3, 11)", [
+      row.deck_code,
+      row.card_id,
+      row.letter,
+    ]);
+    const broken = await checkOccurrenceIntegrity(pool);
+    assert.deepEqual(broken.anomalies.map((a) => a.cardId), [row.card_id], "the banner names exactly the offending card");
+    assert.equal(broken.anomalies[0].kind, "duplicate");
+    assert.match(renderIntegrityBanner(broken), new RegExp(row.card_id));
+
+    await pool.query("DELETE FROM pending_occurrences WHERE card_id = $1 AND letter = $2", [row.card_id, row.letter]);
+    assert.deepEqual((await checkOccurrenceIntegrity(pool)).anomalies, [], "removing the row makes the banner disappear again");
   });
 
   // D91's cross-batch queue mechanics, isolated on a genuinely fresh,
