@@ -69,12 +69,15 @@ after three operator iterations — inline strip text removed (it broke the
 40-cell grid), the page trimmed of prose, one stat order adopted everywhere,
 deltas added per deck, and staged split into flushing vs held.
 
+Locked after operator click-through (no longer builder decisions): the
+pending delta carries the queued/drained split in BOTH the global totals and
+every deck rail, and the off-grid chip names the offending shipped count
+("Off the 5-grid — 12 shipped is not a multiple of 5").
+
 Deferred to the builder's judgement (tier 2, not guesses):
 - the stalled-run threshold, and the progress polling interval
 - the exact icon/glyph set for the five stats, provided it is identical in
   the global totals and every rail header
-- whether the per-deck pending delta stays a single net number or gains the
-  queued/drained split the global totals carry
 - the detail view's exact field order
 - where the extractor's style map is read from, provided an absent map fails
   loudly instead of falling back to invented values

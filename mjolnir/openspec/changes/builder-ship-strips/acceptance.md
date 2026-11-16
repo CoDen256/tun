@@ -131,7 +131,13 @@ appears above any deck's strip.
 For a deck whose shipped occurrence count is a multiple of 5, the rail header
 renders no grid-status element at all. For a deck seeded off the 5-grid, the
 rail header renders a prominent fault element whose text identifies the deck
-as off the 5-grid and does not call it stalled.
+as off the 5-grid, states that deck's actual shipped count, and does not call
+it stalled.
+
+### A16f. The pending delta shows queued and drained separately in both places
+For a run that both queues and drains pending occurrences in one deck, that
+deck's rail and the global totals each show the queued count and the drained
+count as two separate signed values, not their net.
 
 ### A17. The open-slot count is correct for a deck carried past its multiple
 For the seeded deck at 245 shipped and 9 staged, the strip renders exactly

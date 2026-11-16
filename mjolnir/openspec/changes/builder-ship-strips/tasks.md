@@ -30,6 +30,7 @@
 - [ ] 3.6a Render the edited figure (already-minted cards this publish rewrites) beside minted in both the rail header and the global totals, with no delta and an explicit zero
 - [ ] 3.6b Render a prominent off-the-5-grid fault element only for a deck whose shipped count is not a multiple of 5, naming the grid fault rather than staleness; drop the "Stalled" label's conflation of the two
 - [ ] 3.7 Make the global totals use the same order, labels and icons as the rail readout, with the delta inline and smaller beside each figure, and no per-deck breakdown sub-lines
+- [ ] 3.7a Render the pending delta as queued and drained separately in both the global totals and every rail, derived from the same two fields so the two surfaces cannot disagree
 - [ ] 3.8 Implement hover: index, card id, letter, and the changed-face readout from 1.3, with the no-card wording for open and filler cells
 - [ ] 3.9 Implement kin-highlight of the same card's other occurrence on hover and on focus
 - [ ] 3.10 Implement the detail view as a pushing panel that keeps the strip visible, carrying shipping build and timestamp, flush-or-hold, tier countdown, and the sibling occurrence's position

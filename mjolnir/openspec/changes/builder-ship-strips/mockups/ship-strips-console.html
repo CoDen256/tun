@@ -146,6 +146,7 @@ button:hover { border-color: var(--text-faint); }
 .stat-readout .i { color: var(--text-faint); font-size: 11px; }
 .stat-readout b { color: var(--text); font-weight: 700; }
 .stat-readout .plus { color: var(--ok); font-weight: 700; font-size: 11px; }
+.stat-readout .minus { color: var(--text-faint); font-weight: 700; font-size: 11px; }
 .flow-cell-stat .label .i { font-family: var(--mono); color: var(--text-faint); margin-right: 6px; }
 .flow-status-chip {
   display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 650;
@@ -726,7 +727,9 @@ document.getElementById("totals").innerHTML = ORDER.map((k) => `<div class="flow
 //   eventual = those cards × this family's occurrences per card
 //   shipped  = what would flush
 //   staged   = staged now − staged before the run  (net)
-//   pending  = queued this run − drained this run  (net)
+//   pending  = queued this run AND drained this run, kept as two numbers —
+//              the net hides the queue/drain split, and the operator asked
+//              for the same +4 / −3 form the global totals carry
 const deckDeltas = (d) => ({
   minted: d.newCards,
   // no `edited`: the figure IS the this-run number
@@ -734,15 +737,25 @@ const deckDeltas = (d) => ({
   eventual: d.newCards * d.occPerCard,
   shipped: d.wouldFlush,
   staged: d.staged - d.stagedBefore,
-  pending: d.pendingQueued - d.pendingDrained,
+  pendingQ: d.pendingQueued,
+  pendingD: d.pendingDrained,
 });
 
 // the same five figures, same order, same icons — plus this run's delta
 const readout = (d) => {
   const dd = deckDeltas(d);
+  const deltaFor = (k) => {
+    // pending carries the queue/drain split, not a net — same form as the
+    // global totals row, so the two cannot read as different facts
+    if (k === "pending") {
+      return (dd.pendingQ > 0 ? `<span class="plus">+${dd.pendingQ}</span>` : "")
+           + (dd.pendingD > 0 ? `<span class="minus">\u2212${dd.pendingD}</span>` : "");
+    }
+    return dd[k] > 0 ? `<span class="plus">+${dd[k]}</span>` : "";
+  };
   return `<span class="stat-readout">` + ORDER.map((k) =>
     `<span class="f" title="${LABEL[k]}"><span class="i">${ICON[k]}</span><b>${d[k]}</b>` +
-    (dd[k] > 0 ? `<span class="plus">+${dd[k]}</span>` : "") + `</span>`
+    deltaFor(k) + `</span>`
   ).join("") + `</span>`;
 };
 

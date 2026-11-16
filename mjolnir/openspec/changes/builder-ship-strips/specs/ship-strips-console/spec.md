@@ -168,5 +168,17 @@ being off the 5-grid rather than as staleness.
 #### Scenario: A deck that has lost occurrences
 - **WHEN** a deck's shipped occurrence count is not a multiple of 5
 - **THEN** its header shows a prominent fault indicator identifying the
-  deck as off the 5-grid, distinct from any notion of how long it has been
-  since the deck last shipped
+  deck as off the 5-grid AND stating that deck's offending shipped count,
+  distinct from any notion of how long it has been since the deck last
+  shipped
+
+### Requirement: The pending delta carries the queue and drain counts separately
+The system SHALL render the pending figure's delta as the count queued by
+this run and the count drained by this run as two separate signed values, in
+both the global totals and every deck header, rather than as their net.
+
+#### Scenario: A run that both queues and drains in one deck
+- **WHEN** a run queues 4 pending occurrences in a deck and drains 3 of that
+  deck's existing ones
+- **THEN** that deck's pending delta shows both counts, not the net of 1,
+  and the global totals show the same form

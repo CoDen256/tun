@@ -103,10 +103,11 @@ rather than in the header. The rail header is deck code · title · that readout
 and nothing else — the sentence-form flush note and the per-deck banner
 paragraph are both removed as duplication of the readout.
 
-Per-deck pending delta is rendered as the net of queued minus drained
-(one number per slot); the global totals keep the fuller `+queued / −drained`
-because they have room. Both derive from the same two fields so they cannot
-disagree.
+The pending delta is rendered as `+queued / −drained` in **both** the global
+totals and every deck rail — LOCKED by the operator after seeing the net
+form. The net hides the queue/drain split, and two different forms for one
+fact would read as two different facts. Both derive from the same two fields
+so they cannot disagree.
 
 ## D-SS4: Hover is about change; click is about state
 
@@ -292,6 +293,11 @@ The off-grid chip is also **relabelled**. Today it reads "Stalled — N d",
 conflating two unrelated things: being off the 5-grid (a correctness fault)
 and days since the last shipment (slowness, which is not a fault at all).
 The chip names the grid fault; staleness is not a chip.
+
+The chip's text names the offending number, not merely the condition —
+`Off the 5-grid — 12 shipped is not a multiple of 5` — LOCKED by the
+operator. "Off-grid" alone does not tell the operator what to go and look
+at.
 
 ## Device-plane check
 
