@@ -797,10 +797,16 @@ let assembleEmbedded = false;
 // with an explanatory caption in standalone mode. BASE_VERSION is never a
 // row here — it's always read from the base folder's own apktool.yml
 // (D-G2), never operator-editable.
+// builder-ship-strips (D-SS7): `readOnly` rows are DERIVED, never typed —
+// D151 says a derivable value is computed, not entered, so the row shows
+// the value and refuses every edit affordance (key, value and Remove), and
+// `assemblePlaceholdersAsObject` never submits it. assemble.js supplies the
+// real instant server-side; this row is the operator's view of it.
 let assemblePlaceholders = [
   { key: "PATCH_REV", value: "" },
   { key: "LABEL", value: "" },
   { key: "DATA_VERSION", value: "" },
+  { key: "BUILT_AT", value: "", readOnly: true },
   { key: "BUILD_ID", value: "" },
   { key: "SYNC_BASE_URL", value: "" },
   { key: "SYNC_TOKEN", value: "" },
@@ -835,9 +841,14 @@ function renderAssemblePlaceholders() {
     keyInput.type = "text";
     keyInput.value = row.key;
     keyInput.placeholder = "e.g. LABEL";
-    keyInput.addEventListener("input", () => {
-      row.key = keyInput.value.trim().toUpperCase();
-    });
+    if (row.readOnly) {
+      keyInput.readOnly = true;
+      keyInput.disabled = true;
+    } else {
+      keyInput.addEventListener("input", () => {
+        row.key = keyInput.value.trim().toUpperCase();
+      });
+    }
     keyLabel.appendChild(keyInput);
 
     const isSecret = /TOKEN|SECRET/.test(row.key);
@@ -856,9 +867,14 @@ function renderAssemblePlaceholders() {
                 : row.key.endsWith("_URL")
                     ? "(default from TUN_PUBLIC_BASE, if configured)"
                     : "";
-    valueInput.addEventListener("input", () => {
-      row.value = valueInput.value;
-    });
+    if (row.readOnly) {
+      valueInput.readOnly = true;
+      valueInput.disabled = true;
+    } else {
+      valueInput.addEventListener("input", () => {
+        row.value = valueInput.value;
+      });
+    }
 
     if (isSecret) {
       const secretWrap = document.createElement("span");
@@ -880,15 +896,21 @@ function renderAssemblePlaceholders() {
       valueLabel.appendChild(valueInput);
     }
 
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.textContent = "Remove";
-    removeBtn.addEventListener("click", () => {
-      assemblePlaceholders = assemblePlaceholders.filter((r) => r !== row);
-      renderAssemblePlaceholders();
-    });
-
-    rowEl.append(keyLabel, valueLabel, removeBtn);
+    if (row.readOnly) {
+      // No Remove either: the companion ABORTS on an unsubstituted key, so
+      // this one is not the operator's to drop.
+      const spacer = document.createElement("span");
+      rowEl.append(keyLabel, valueLabel, spacer);
+    } else {
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.textContent = "Remove";
+      removeBtn.addEventListener("click", () => {
+        assemblePlaceholders = assemblePlaceholders.filter((r) => r !== row);
+        renderAssemblePlaceholders();
+      });
+      rowEl.append(keyLabel, valueLabel, removeBtn);
+    }
     wrap.appendChild(rowEl);
 
     const caption = assemblePlaceholderCaptions[row.key];
@@ -905,7 +927,10 @@ function renderAssemblePlaceholders() {
 
 function assemblePlaceholdersAsObject() {
   const out = {};
-  for (const { key, value } of assemblePlaceholders) {
+  for (const { key, value, readOnly } of assemblePlaceholders) {
+    // A derived row is displayed, never submitted — the server computes it
+    // (D151), so sending it back would make the browser a second source.
+    if (readOnly) continue;
     if (key && value.trim()) out[key] = value.trim();
   }
   return out;
@@ -944,6 +969,8 @@ async function loadAssembleView() {
     assemblePlaceholderCaptions.AUDIO_BASE_URL = defaults.audioBaseUrl
         ? "prefilled from this server's own TUN_PUBLIC_BASE"
         : "not configured on this server (TUN_PUBLIC_BASE unset)";
+    assemblePlaceholderCaptions.BUILT_AT =
+        "derived automatically at assemble time — not editable. builder replaces it with the publish instant when it publishes from this bundle.";
     assemblePlaceholderCaptions.BUILD_ID = "hub assigns its own build id at submit time — leave blank";
   } else {
     el("assemble-mode-caption").textContent =
@@ -957,6 +984,8 @@ async function loadAssembleView() {
     assemblePlaceholderCaptions.PATCH_REV = noServerHint;
     assemblePlaceholderCaptions.LABEL = noServerHint;
     assemblePlaceholderCaptions.DATA_VERSION = noServerHint;
+    assemblePlaceholderCaptions.BUILT_AT =
+        "derived automatically at assemble time — not editable. Nothing restamps it on this path (no hub, no publish), so this IS the build time the bundle carries.";
     assemblePlaceholderCaptions.BUILD_ID =
         "required if a selected patch/companion bakes __MJOLNIR_BUILD_ID__";
     assemblePlaceholderCaptions.SYNC_BASE_URL =
@@ -986,6 +1015,12 @@ async function loadAssembleView() {
       fill("AUDIO_BASE_URL", defaults.audioBaseUrl);
     }
   }
+  // Auto-filled on every view load, not only the first: a tab left open for
+  // an hour must not show an hour-old instant. The authoritative value is
+  // still assemble.js's own (server-side); the standalone path's response
+  // carries it back and `runAssemble` writes the exact value into this row.
+  const builtAtRow = assemblePlaceholders.find((r) => r.key === "BUILT_AT");
+  if (builtAtRow) builtAtRow.value = new Date().toISOString();
   renderAssemblePlaceholders();
   el("assemble-placeholder-add-btn").onclick = () => {
     assemblePlaceholders = [...assemblePlaceholders, { key: "", value: "" }];
@@ -1174,6 +1209,13 @@ async function runAssemble() {
       companionFiles,
       placeholders,
     });
+    // D-SS7: show the instant actually baked, not the preview this page
+    // filled the row with when it loaded.
+    const builtAtRow = assemblePlaceholders.find((r) => r.key === "BUILT_AT");
+    if (builtAtRow && result.placeholders?.BUILT_AT) {
+      builtAtRow.value = result.placeholders.BUILT_AT;
+      renderAssemblePlaceholders();
+    }
     resultEl.innerHTML = `Assembled <code>${result.outputPath}</code> — base_version <strong>${result.baseVersion}</strong>, patch_rev <strong>${result.placeholders.PATCH_REV ?? "(not baked)"}</strong>, ${result.appliedPatches.length} patch(es) applied, ${result.appliedPatchbackPairs.length} patch-back pair(s) applied, ${result.appliedCompanions.length} companion(s) appended.<br>Submit it to hub's OTA console (<code>/mjolnir/ota</code>) when ready, or drag-drop it there by hand.`;
     resultEl.classList.remove("hidden");
   } catch (err) {

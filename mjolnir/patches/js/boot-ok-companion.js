@@ -27,6 +27,15 @@
 // data-version) are baked the same way, purely for on-device display on
 // the account screen (module 2176) — free-form strings, no format checks.
 //
+// `__MJOLNIR_BUILT_AT__` (builder-ship-strips, D-SS7) is the same again:
+// an ISO-8601 UTC instant, baked once and formatted to the DEVICE's local
+// time by whatever screen displays it. Assemble substitutes it with the
+// assemble instant (which is the only build time a standalone D108 bundle
+// ever carries); a publish through hub restamps it, together with BUILD_ID
+// and DATA_VERSION, to the publish instant — the same instant written to
+// `publications.created_at`. It is NOT `__BUNDLE_START_TIME__`, which is a
+// runtime marker, not a build timestamp.
+//
 // It also exposes `globalThis.MJOLNIR_BUILD_ID` synchronously (task 10.1) —
 // this runs right after the entry call (`__r(0);`), long before any screen
 // the user navigates to (e.g. "My account", module 2176) can mount, so that
@@ -40,12 +49,14 @@
   var PATCH_REV = __MJOLNIR_PATCH_REV__;
   var LABEL = '__MJOLNIR_LABEL__';
   var DATA_VERSION = '__MJOLNIR_DATA_VERSION__';
+  var BUILT_AT = '__MJOLNIR_BUILT_AT__';
   if (typeof globalThis !== 'undefined') {
     globalThis.MJOLNIR_BUILD_ID = BUILD_ID;
     globalThis.MJOLNIR_BASE_VERSION = BASE_VERSION;
     globalThis.MJOLNIR_PATCH_REV = PATCH_REV;
     globalThis.MJOLNIR_LABEL = LABEL;
     globalThis.MJOLNIR_DATA_VERSION = DATA_VERSION;
+    globalThis.MJOLNIR_BUILT_AT = BUILT_AT;
   }
   var DELAY_MS = 3000; // D52: survive 3 s before declaring boot-ok
   var RETRY_MS = 2000; // expo modules may not be installed yet at T+3s

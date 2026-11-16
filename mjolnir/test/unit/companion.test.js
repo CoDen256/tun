@@ -110,6 +110,7 @@ test("boot-companion-label-data-version: the real boot-ok-companion.js requires 
       PATCH_REV: 3,
       LABEL: "spring-release",
       DATA_VERSION: "17",
+      BUILT_AT: "2026-11-15T03:12:00.000Z",
     },
     name: "boot-ok",
   }).toString("utf8");
@@ -123,7 +124,22 @@ test("boot-companion-label-data-version: the real boot-ok-companion.js requires 
   assert.ok(out.includes("PATCH_REV = 3"));
   assert.ok(out.includes("LABEL = 'spring-release'"));
   assert.ok(out.includes("DATA_VERSION = '17'"));
+  // builder-ship-strips D-SS7: BUILT_AT rides the same generic mechanism —
+  // no per-key plumbing anywhere in the CLI/HTTP/UI layers (D-G1).
+  assert.ok(out.includes("globalThis.MJOLNIR_BUILT_AT = BUILT_AT"));
+  assert.ok(out.includes("BUILT_AT = '2026-11-15T03:12:00.000Z'"));
   assert.ok(!out.includes("__MJOLNIR_"));
+});
+
+test("builder-ship-strips: omitting BUILT_AT aborts, since the real companion always bakes it", () => {
+  assert.throws(
+    () =>
+      appendCompanion(bundleWithMap(), REAL_BOOT_OK_COMPANION, {
+        placeholders: { BUILD_ID: "b000002", BASE_VERSION: "1.5.12", PATCH_REV: 3, LABEL: "l", DATA_VERSION: "17" },
+        name: "boot-ok",
+      }),
+    /no value was given for BUILT_AT/
+  );
 });
 
 test("boot-companion-label-data-version: omitting LABEL/DATA_VERSION aborts, since the real companion always bakes them", () => {

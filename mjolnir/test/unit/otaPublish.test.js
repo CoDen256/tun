@@ -10,7 +10,7 @@ import {
   checkCompanionMatch,
   checkReuse,
   publish,
-  restampCompanionBuildId,
+  restampCompanionConstants,
   findBakedBaseVersion,
   findBakedPatchRev,
 } from "../../tool/src/otaPublish.js";
@@ -26,9 +26,15 @@ function withTmpDir(fn) {
   }
 }
 
-function bundleBytes({ withCompanion = true, buildId = "b1" } = {}) {
+function bundleBytes({ withCompanion = true, buildId = "b1", dataVersion = "1", builtAt = "2026-01-01T00:00:00.000Z" } = {}) {
   let src = `${MAGIC}1;\nconsole.log("hi");\n`;
-  if (withCompanion) src += `var BUILD_ID = '${buildId}';\n`;
+  if (withCompanion) {
+    src += `var BUILD_ID = '${buildId}';\n`;
+    src += `var BASE_VERSION = '1.5.12';\n`;
+    src += `var PATCH_REV = 3;\n`;
+    src += `var DATA_VERSION = '${dataVersion}';\n`;
+    src += `var BUILT_AT = '${builtAt}';\n`;
+  }
   return Buffer.from(src, "utf8");
 }
 
@@ -52,31 +58,52 @@ test("checkCompanionMatch refuses a baked BUILD_ID that differs from the publish
   assert.throws(() => checkCompanionMatch(bytes, "b2"));
 });
 
-test("restampCompanionBuildId updates the baked id so a second publish doesn't refuse itself", () => {
+test("restampCompanionConstants restamps every publish-time fact, keyed on the constant NAME not the baked literal", () => {
   withTmpDir((dir) => {
     const file = path.join(dir, "bundle.js");
-    fs.writeFileSync(file, bundleBytes({ buildId: "b000001" }));
+    // Deliberately wrong baked values — the restamp must not depend on
+    // knowing what assemble happened to put there (D-SS7).
+    fs.writeFileSync(file, bundleBytes({ buildId: "b000001", dataVersion: "99", builtAt: "1999-01-01T00:00:00.000Z" }));
 
-    // Second publish, same working file: without the restamp, this would
-    // refuse forever (the exact bug this test guards against).
-    const result = restampCompanionBuildId(file, "b000002");
-    assert.equal(result, "b000002");
+    const { restamped, missing } = restampCompanionConstants(file, {
+      BUILD_ID: "b000002",
+      DATA_VERSION: "247",
+      BUILT_AT: "2026-11-15T03:12:00.000Z",
+    });
+    assert.deepEqual(restamped, ["BUILD_ID", "DATA_VERSION", "BUILT_AT"]);
+    assert.deepEqual(missing, []);
 
     const updated = fs.readFileSync(file);
+    const text = updated.toString("utf8");
+    // Second publish, same working file: without the restamp this would
+    // refuse forever (the exact bug the BUILD_ID half guards against).
     assert.equal(checkCompanionMatch(updated, "b000002"), "b000002");
     assert.throws(() => checkCompanionMatch(updated, "b000001"));
+    assert.match(text, /var DATA_VERSION = '247';/);
+    assert.match(text, /var BUILT_AT = '2026-11-15T03:12:00\.000Z';/);
+    // D-L4/D-L6: assemble-time facts are NOT restamped.
+    assert.match(text, /var BASE_VERSION = '1\.5\.12';/);
+    assert.match(text, /var PATCH_REV = 3;/);
   });
 });
 
-test("restampCompanionBuildId is a no-op when already correct or when there's no companion", () => {
+test("restampCompanionConstants reports a constant the companion doesn't carry, and is a no-op with no companion", () => {
   withTmpDir((dir) => {
-    const matching = path.join(dir, "matching.js");
-    fs.writeFileSync(matching, bundleBytes({ buildId: "b1" }));
-    assert.equal(restampCompanionBuildId(matching, "b1"), "b1");
-
     const noCompanion = path.join(dir, "none.js");
-    fs.writeFileSync(noCompanion, bundleBytes({ withCompanion: false }));
-    assert.equal(restampCompanionBuildId(noCompanion, "b1"), null);
+    const before = bundleBytes({ withCompanion: false });
+    fs.writeFileSync(noCompanion, before);
+    const result = restampCompanionConstants(noCompanion, { BUILD_ID: "b1", DATA_VERSION: "2", BUILT_AT: "z" });
+    assert.deepEqual(result.restamped, []);
+    assert.deepEqual(result.missing, ["BUILD_ID", "DATA_VERSION", "BUILT_AT"]);
+    assert.deepEqual(fs.readFileSync(noCompanion), before, "nothing written when there is nothing to restamp");
+
+    // An older companion predating BUILT_AT: what exists is restamped, what
+    // doesn't is reported rather than failing the publish.
+    const older = path.join(dir, "older.js");
+    fs.writeFileSync(older, `${MAGIC}1;\nvar BUILD_ID = 'b000001';\nvar DATA_VERSION = '3';\n`);
+    const partial = restampCompanionConstants(older, { BUILD_ID: "b000002", DATA_VERSION: "4", BUILT_AT: "2026-11-15T03:12:00.000Z" });
+    assert.deepEqual(partial.restamped, ["BUILD_ID", "DATA_VERSION"]);
+    assert.deepEqual(partial.missing, ["BUILT_AT"]);
   });
 });
 

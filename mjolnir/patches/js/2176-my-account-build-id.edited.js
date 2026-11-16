@@ -42,6 +42,42 @@ __d(function (g, _r, _i, a, m, _e, d) {
       return r;
     })(e, t);
   }
+  // builder-ship-strips (D-SS8): ONE "App version" row carrying every
+  // version fact, replacing the previous three rows (App version / Label /
+  // Data version). The globals are baked by the boot-ok companion and read
+  // synchronously — no fetch, no loading state (account-build-info).
+  //
+  // `MJOLNIR_BUILT_AT` is a canonical ISO-8601 UTC instant; it is formatted
+  // to the DEVICE's own local time here, so one value in the bundle renders
+  // correctly wherever the device is.
+  function mjolnirLocalBuildTime(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    function p(n) {
+      return (n < 10 ? '0' : '') + n;
+    }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  // The tier-4 embedded asset ships with NO companion at all, so every one
+  // of these globals is unset — that is "no OTA active", not a bug, and it
+  // renders as 'embedded'. Written as an explicit early return rather than
+  // the previous `a && b + c || 'embedded'` expression, whose `&&`/`+`
+  // precedence made the fallback unreachable and rendered the literal
+  // string "undefined base:undefined" on an embedded build.
+  function mjolnirVersionLine() {
+    var G = typeof globalThis !== 'undefined' ? globalThis : null;
+    if (!G || !G.MJOLNIR_BUILD_ID) return 'embedded';
+    var parts = [String(G.MJOLNIR_BUILD_ID)];
+    if (G.MJOLNIR_BASE_VERSION) parts.push('base ' + G.MJOLNIR_BASE_VERSION);
+    if (G.MJOLNIR_PATCH_REV !== undefined && G.MJOLNIR_PATCH_REV !== null && G.MJOLNIR_PATCH_REV !== '') {
+      parts.push('logic ' + G.MJOLNIR_PATCH_REV);
+    }
+    if (G.MJOLNIR_DATA_VERSION) parts.push('data ' + G.MJOLNIR_DATA_VERSION);
+    var builtAt = mjolnirLocalBuildTime(G.MJOLNIR_BUILT_AT);
+    if (builtAt) parts.push('built ' + builtAt);
+    return parts.join(' · ');
+  }
   var k = function (e) {
     return o.default.setType(e), s.StyleSheet.create({
       container: {
@@ -364,25 +400,7 @@ __d(function (g, _r, _i, a, m, _e, d) {
               children: "App version"
             }), (0, S.jsx)(s.Text, {
               style: _.value,
-              children: typeof globalThis !== 'undefined' && globalThis.MJOLNIR_BUILD_ID+' base:'+globalThis.MJOLNIR_BASE_VERSION || 'embedded'
-            })]
-          }), (0, S.jsxs)(s.View, {
-            style: _.item,
-            children: [(0, S.jsx)(s.Text, {
-              style: _.label,
-              children: "Label"
-            }), (0, S.jsx)(s.Text, {
-              style: _.value,
-              children: typeof globalThis !== 'undefined' && globalThis.MJOLNIR_LABEL || 'embedded'
-            })]
-          }), (0, S.jsxs)(s.View, {
-            style: _.item,
-            children: [(0, S.jsx)(s.Text, {
-              style: _.label,
-              children: "Data version"
-            }), (0, S.jsx)(s.Text, {
-              style: _.value,
-              children: typeof globalThis !== 'undefined' && globalThis.MJOLNIR_DATA_VERSION || 'embedded'
+              children: mjolnirVersionLine()
             })]
           })]
         }), (0, S.jsx)(h.default, {

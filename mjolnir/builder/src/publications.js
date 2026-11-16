@@ -11,10 +11,15 @@ export async function previousVersions(pool) {
   return { dataRev: rows[0].data_rev };
 }
 
-export async function writePublication(pool, { buildId, baseVersion, patchRev, dataRev, bundleSha, logicBundleId }) {
+// builder-ship-strips (D-SS7): `createdAt` is passed explicitly — the same
+// instant that was stamped into the bundle as `BUILT_AT` — so the device's
+// reported build time and this row cannot disagree. Omitted, it falls back
+// to the column's own `now()` default, which is what every other caller
+// (and every pre-existing row) relies on.
+export async function writePublication(pool, { buildId, baseVersion, patchRev, dataRev, bundleSha, logicBundleId, createdAt }) {
   await pool.query(
-    `INSERT INTO publications (build_id, base_version, patch_rev, data_rev, bundle_sha, logic_bundle_id)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [buildId, baseVersion, patchRev, dataRev, bundleSha, logicBundleId ?? null]
+    `INSERT INTO publications (build_id, base_version, patch_rev, data_rev, bundle_sha, logic_bundle_id, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, now()))`,
+    [buildId, baseVersion, patchRev, dataRev, bundleSha, logicBundleId ?? null, createdAt ?? null]
   );
 }

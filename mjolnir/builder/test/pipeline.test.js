@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import crypto from "node:crypto";
 import { migrate } from "../../hub/src/migrate.js";
 import { getPool, closePool } from "../src/db.js";
 import { DECK_ALLOCATION } from "../../hub/src/decks.js";
@@ -238,7 +239,17 @@ describe("builder pipeline: forecast + publish against a fixture stabbur and an 
     const model = outputModel(result.buildId);
     const deck = model.decks.find((d) => d.Name === "C30");
     assert.ok(deck, "C30 (lexic's starting code) should have been created in the bundle");
-    assert.equal(deck.Description, "Vocabulary and expressions.", "a freshly-created deck gets its real description, not blank");
+    // D-SS9: `<operator prose> · <N> cards · <M> occ`, counted from what is
+    // ACTUALLY IN THE BUNDLE — this run staged 4 A's and flushed none, so
+    // the bundle's deck is genuinely empty and says so (the held path gets
+    // a correct description too, not a stale or missing one).
+    assert.equal(
+      deck.Description,
+      "Vocabulary and expressions. · 0 cards · 0 occ",
+      "a freshly-created deck gets its real description plus the bundle's own counts, not blank"
+    );
+    const { rows: descRows } = await pool.query("SELECT description FROM decks WHERE code = 'C30'");
+    assert.equal(descRows[0].description, "Vocabulary and expressions.", "the counts are NEVER written back to decks.description");
     assert.equal(deck.Cards.length, 0, "4 A's staged this run, short of a multiple of 5 — none flush yet");
     assert.equal(model.cards.filter((c) => c.DECK_ID === "C30").length, 4);
 
@@ -368,6 +379,12 @@ describe("builder pipeline: forecast + publish against a fixture stabbur and an 
     // multiple of 5, so this run's flush finally ships all 5 at once.
     const lexicDeck = model.decks.find((d) => d.Name === "C30");
     assert.equal(lexicDeck.Cards.length, 5, "5 staged A's is an exact multiple of 5 — all flush this run");
+    // D-SS9: the counts INCLUDE this run's flush — `syncDeckDescription`
+    // runs after the `addOccurrence` loop, not before it (before this
+    // change it ran at the top of `flushDeck` and would have said 0/0).
+    // 5 distinct cards, one `A` occurrence each; every card's `E` is still
+    // queued, so the occurrence count is the BUNDLE's, not the eventual 10.
+    assert.equal(lexicDeck.Description, "Vocabulary and expressions. · 5 cards · 5 occ");
 
     const { rows: jobs } = await pool.query("SELECT status FROM build_jobs ORDER BY requested_at DESC LIMIT 1");
     assert.equal(jobs[0].status, "succeeded");
@@ -520,6 +537,71 @@ describe("builder pipeline: forecast + publish against a fixture stabbur and an 
     assert.match(otherModuleAfter, /bonjour/, "built onto the second logic bundle's own unrelated module, not the first's");
 
     assert.equal(model.cards.filter((c) => c.DECK_ID === "C30").length, 7, "every lexic card minted so far survives the base change");
+  });
+
+  // ---- builder-ship-strips (D-SS7): publish-time version stamping ----
+  await t.test("D-SS7: BUILD_ID/DATA_VERSION/BUILT_AT are restamped at publish; base/patch are not", async () => {
+    const stampedPath = path.join(tmpDir, "logic-bundle-stamped.js");
+    // Deliberately WRONG baked literals: the restamp keys on the constant
+    // NAMES, so it must succeed regardless of what assemble baked.
+    const companion = [
+      "",
+      "/* mjolnir-companion: boot-ok-companion */",
+      "(function () {",
+      "  var BUILD_ID = 'unassigned';",
+      "  var BASE_VERSION = '1.7.0';",
+      "  var PATCH_REV = 3;",
+      "  var LABEL = 'assemble-time-label';",
+      "  var DATA_VERSION = '99';",
+      "  var BUILT_AT = '1999-01-01T00:00:00.000Z';",
+      "})();",
+      "",
+    ].join("\n");
+    fs.writeFileSync(stampedPath, "var __BUNDLE_START_TIME__=1;\n" + buildFixtureBundleSource() + otherModuleSource() + companion);
+    runExplode(stampedPath);
+    const stampedId = await seedActiveLogicBundle(pool, stampedPath, { baseVersion: "1.7.0", patchRev: 3 });
+    await pool.query("UPDATE logic_bundles SET active = FALSE WHERE id != $1", [stampedId]);
+
+    fake.addBlob(shaOf("audio for s1"), "audio for s1");
+    addNotes(wordNote("s1", { pos: "konjunksjon" }));
+
+    const result = await runPublish(pool, config);
+    assert.equal(result.published, true, "a baked BUILD_ID of 'unassigned' must not make publish() refuse itself");
+
+    const publishedPath = path.join(dataDir, "ota", "bundle", `${result.buildId}.js`);
+    const text = fs.readFileSync(publishedPath, "utf8");
+
+    const { rows: pub } = await pool.query(
+      "SELECT data_rev, created_at, bundle_sha, base_version, patch_rev FROM publications WHERE build_id = $1",
+      [result.buildId]
+    );
+    assert.ok(text.includes(`var BUILD_ID = '${result.buildId}';`), "BUILD_ID restamped to this run's id");
+    assert.ok(text.includes(`var DATA_VERSION = '${pub[0].data_rev}';`), "DATA_VERSION restamped to this publish's data rev");
+    assert.ok(!text.includes("var DATA_VERSION = '99'"), "the assemble-time data rev is gone");
+
+    // A31: ONE instant, stamped into the bundle and written to the row.
+    const builtAt = text.match(/var BUILT_AT = '([^']+)';/);
+    assert.ok(builtAt, "BUILT_AT is present");
+    assert.equal(
+      new Date(builtAt[1]).getTime(),
+      new Date(pub[0].created_at).getTime(),
+      "BUILT_AT and publications.created_at are the same instant"
+    );
+
+    // D-L4/D-L6: assemble-time facts untouched.
+    assert.ok(text.includes("var BASE_VERSION = '1.7.0';"));
+    assert.ok(text.includes("var PATCH_REV = 3;"));
+    assert.equal(pub[0].base_version, "1.7.0");
+    assert.equal(pub[0].patch_rev, 3);
+
+    // A35: the recorded hash covers the RESTAMPED bytes.
+    const sha = crypto.createHash("sha256").update(fs.readFileSync(publishedPath)).digest("hex");
+    assert.equal(pub[0].bundle_sha, sha, "the recorded hash is the hash of the published, restamped bundle");
+
+    const { rows: logs } = await pool.query(
+      "SELECT line FROM job_logs WHERE line LIKE 'restamp:%' ORDER BY id DESC LIMIT 1"
+    );
+    assert.match(logs[0].line, /BUILD_ID, DATA_VERSION, BUILT_AT/);
   });
 
   // ---- flush-record-atomicity (D-FA1/D-FA2/D-FA3) ----

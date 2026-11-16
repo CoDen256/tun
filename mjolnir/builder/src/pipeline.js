@@ -1,6 +1,6 @@
 import { loadDeckCardModel, saveDeckCardModel, addOccurrence } from "../../src/deckData.js";
 import { createCard, upsertCardContent, ensureDeck, syncDeckDescription, syncDeckTitle, removeDeck } from "../../src/injectDeck.js";
-import { publish, restampCompanionBuildId } from "../../tool/src/otaPublish.js";
+import { publish, restampCompanionConstants } from "../../tool/src/otaPublish.js";
 import { pullNotes, filterAudioEligible } from "./stabburClient.js";
 import { partitionByDeck } from "./eligibility.js";
 import { project } from "./projector.js";
@@ -16,7 +16,7 @@ import { nextBuildId } from "./buildId.js";
 import { ensureBlobsPresent, writeAudioManifest, writePublicAudioManifest } from "./audioSnapshot.js";
 import { loadActive } from "./logicBundle.js";
 import { replay } from "./replay.js";
-import { upsert as upsertCardContentRow, getAll as getAllCardContent, contentChanged } from "./cardContent.js";
+import { upsert as upsertCardContentRow, getAll as getAllCardContent, contentChanged, changedFaces } from "./cardContent.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -129,6 +129,25 @@ async function drainThenQueue(pool, plan, deckCode, newACount, toQueue) {
   return drained;
 }
 
+// D-SS9: the on-device deck description is `<operator prose> · <N> cards ·
+// <M> occ`, where both counts describe what is ACTUALLY IN THE BUNDLE being
+// published — distinct card ids in `deck.Cards` and `deck.Cards.length` —
+// not the deck's eventual totals. Nothing here is ever written back to
+// `decks.description`: the operator's prose stays the only stored half, and
+// the counts are re-derived at every publish (writing them back would
+// overwrite the prose and duplicate derivable data into state, D151).
+//
+// `prose` is `undefined` for a deck with no description row; the sync call
+// ignores `undefined`, so such a deck's bundle entry is left untouched
+// rather than being given a bare count string with no subject.
+export function describeDeck(prose, deck) {
+  if (prose === undefined || prose === null) return undefined;
+  const occurrences = deck.Cards.length;
+  const cards = new Set(deck.Cards.map((c) => c.Card.slice(0, -1))).size;
+  const counts = `${cards} cards · ${occurrences} occ`;
+  return prose === "" ? counts : `${prose} · ${counts}`;
+}
+
 // builder-sliding-window-shipping (D-W2): once per deck per run, after that
 // deck's minting/draining/staging is done — flushes the largest multiple of
 // 5 it currently holds into `deck.Cards[]`, pushing each onto `shipments`
@@ -141,7 +160,6 @@ async function flushDeck(pool, plan, model, deckCode, deckTitleCache, deckDescri
   const deck = ensureDeck(model.decks, { name: deckCode, title: deckTitleCache.get(deckCode) });
   syncDeckTitle(model.decks, deckCode, deckTitleCache.get(deckCode));
   if (!deckDescriptionCache.has(deckCode)) deckDescriptionCache.set(deckCode, await deckDescription(pool, deckCode));
-  syncDeckDescription(model.decks, deckCode, deckDescriptionCache.get(deckCode));
   // The deck's REAL current total matters, not just what's sitting staged —
   // see stagedOccurrences.js's flushShippable for why (a deck that was
   // already off the 5-grid before this mechanism existed needs the target
@@ -167,14 +185,21 @@ async function flushDeck(pool, plan, model, deckCode, deckTitleCache, deckDescri
         `ship: ${deckCode} — ${stagedTotal} occurrence(s) staged (${alreadyShipped} already shipped), short of the next multiple of 5, held`
       );
     }
-    return;
+  } else {
+    for (const entry of shippable) {
+      addOccurrence(deck, entry.cardId, entry.letter);
+      shipments.push({ cardId: entry.cardId, letter: entry.letter });
+      if (entry.stagedId) plan.stagedIdsToDelete.push(entry.stagedId);
+    }
+    await log(buildJobId, `ship: ${deckCode} — ${shippable.length} occurrence(s) flushed (${alreadyShipped} -> ${deck.Cards.length})`);
   }
-  for (const entry of shippable) {
-    addOccurrence(deck, entry.cardId, entry.letter);
-    shipments.push({ cardId: entry.cardId, letter: entry.letter });
-    if (entry.stagedId) plan.stagedIdsToDelete.push(entry.stagedId);
-  }
-  await log(buildJobId, `ship: ${deckCode} — ${shippable.length} occurrence(s) flushed (${alreadyShipped} -> ${deck.Cards.length})`);
+  // D-SS9: LAST, so the counts describe the deck as this run leaves it.
+  // Until builder-ship-strips this ran at the TOP of `flushDeck`, before
+  // the `addOccurrence` loop above — any count formatted there was stale by
+  // exactly this run's flush. It runs on the held path too (a deck that
+  // flushes nothing still needs a correct description — its counts simply
+  // didn't change), which is why the early `return` above became an `else`.
+  syncDeckDescription(model.decks, deckCode, describeDeck(deckDescriptionCache.get(deckCode), deck));
 }
 
 // deck-consolidation: a deck code can be REUSED by an entirely different
@@ -389,13 +414,25 @@ export async function runForecast(pool, { stabburBaseUrl, internalToken, sourceL
   // project()-then-compare, the same content a real publish would write.
   const cardIdByNoteId = await cardIdsForNotes(pool, alreadyMinted.map((n) => n.id));
   const existingContent = await getAllCardContent(pool);
+  //
+  // builder-ship-strips (D-SS4): each entry also carries WHICH faces differ
+  // (`changedFaces`), which the strip's hover readout names. The decision to
+  // report the card at all is still the one `changedFaces` makes — there is
+  // no second comparison here that could disagree with it.
   const wouldUpdate = [];
   for (const note of alreadyMinted) {
     const entry = cardIdByNoteId.get(note.id);
     if (!entry) continue;
     const content = project(note, {});
-    if (contentChanged(existingContent.get(entry.cardId), content)) {
-      wouldUpdate.push({ cardId: entry.cardId, deckCode: entry.deckCode, noteId: note.id, noteText: note.text });
+    const faces = changedFaces(existingContent.get(entry.cardId), content);
+    if (faces.length > 0) {
+      wouldUpdate.push({
+        cardId: entry.cardId,
+        deckCode: entry.deckCode,
+        noteId: note.id,
+        noteText: note.text,
+        changedFaces: faces,
+      });
     }
   }
 
@@ -630,14 +667,6 @@ export async function runPublish(
 
     saveDeckCardModel(scratchPath, model);
 
-    // The scratch bundle's boot-ok companion bakes a BUILD_ID that never
-    // moves on its own — re-stamp it to this run's buildId on every publish,
-    // not just the first, or publish()'s own checkCompanionMatch refuses
-    // every run after the one where it happened to already match.
-    // base_version/patch_rev need no restamp: they came from the active
-    // logic bundle this run started from and never change mid-run (D-L4).
-    restampCompanionBuildId(scratchPath, buildId);
-
     const cardAudio = await allCardAudio(pool);
     const finalCardAudio = await ensureBlobsPresent(cardAudio, { stabburBaseUrl, dataDir, selMsByCardId });
     await log(buildJobId, `snapshot: audio manifest covers ${Object.keys(finalCardAudio).length} card(s)`);
@@ -649,6 +678,37 @@ export async function runPublish(
     const { dataRev } = await previousVersions(pool);
     writeAudioManifest(finalCardAudio, { dataDir, buildId });
     writePublicAudioManifest(finalCardAudio, { dataDir, buildId });
+
+    // D-SS7: the scratch bundle's boot-ok companion bakes its constants at
+    // ASSEMBLE time and nothing moves them on its own. Every publish-time
+    // fact is re-stamped here, on every run and not just the first:
+    //   - BUILD_ID, or publish()'s own checkCompanionMatch refuses every run
+    //     after the one where it happened to already match;
+    //   - DATA_VERSION, which was silently frozen at whatever the logic
+    //     bundle's assemble baked, so every publish after the first off a
+    //     given bundle shipped a device-visible data rev that was wrong;
+    //   - BUILT_AT, so the device can say when it was built.
+    // base_version/patch_rev are deliberately NOT restamped: they came from
+    // the active logic bundle this run started from and cannot change
+    // mid-run (D-L4/D-L6).
+    //
+    // ONE timestamp is used for both BUILT_AT and `publications.created_at`,
+    // so the device's reported build time and the console's publication
+    // history can never disagree. This runs BEFORE `bundleSha` below, so the
+    // recorded hash is the hash of the bundle containing these values.
+    const publishedAt = new Date();
+    const restamp = restampCompanionConstants(scratchPath, {
+      BUILD_ID: buildId,
+      DATA_VERSION: String(dataRev + 1),
+      BUILT_AT: publishedAt.toISOString(),
+    });
+    await log(
+      buildJobId,
+      `restamp: ${restamp.restamped.join(", ") || "nothing"}` +
+        (restamp.missing.length
+          ? ` — NOT PRESENT in this logic bundle's companion: ${restamp.missing.join(", ")} (re-assemble to pick them up)`
+          : "")
+    );
 
     const bundleBytes = fs.readFileSync(scratchPath);
     const bundleSha = crypto.createHash("sha256").update(bundleBytes).digest("hex");
@@ -676,6 +736,7 @@ export async function runPublish(
         dataRev: dataRev + 1,
         bundleSha,
         logicBundleId: active.id,
+        createdAt: publishedAt,
       },
     });
 

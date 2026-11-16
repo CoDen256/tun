@@ -22,18 +22,27 @@ export async function getAll(pool) {
   return new Map(rows.map((r) => [r.card_id, { N: r.n, E: r.e, X: r.x, A: r.a }]));
 }
 
+// The four content faces, in the order every readout presents them.
+export const CONTENT_FACES = ["N", "E", "X", "A"];
+
 // D-C2: a card's content is a pure function of its note (`project()`), so
 // "would this publish actually change it" is exactly a field-by-field
 // equality check against what's already stored — no fuzzy diffing, no new
 // schema. `existing` is `undefined` for a card with no stored row yet
 // (shouldn't normally happen for an already-minted card, but treated as
-// "changed" rather than crashing on it).
+// "changed" rather than crashing on it — every face counts as written).
+//
+// builder-ship-strips (D-SS4): the comparison now NAMES the faces that
+// differ, because the strip's hover readout reports "E and X change this
+// publish", not merely "something changes". `contentChanged` is derived
+// from this one function rather than re-implementing the comparison beside
+// it — two comparison paths is exactly how the boolean and the per-face
+// readout would come to disagree.
+export function changedFaces(existing, projected) {
+  if (!existing) return [...CONTENT_FACES];
+  return CONTENT_FACES.filter((face) => existing[face] !== projected[face]);
+}
+
 export function contentChanged(existing, projected) {
-  if (!existing) return true;
-  return (
-    existing.N !== projected.N ||
-    existing.E !== projected.E ||
-    existing.X !== projected.X ||
-    existing.A !== projected.A
-  );
+  return changedFaces(existing, projected).length > 0;
 }

@@ -50,6 +50,7 @@ export async function assembleBundle({
   outputPath,
   companionFiles,
   placeholders,
+  builtAt,
 }) {
   const baseBundlePath = path.join(baseFolderPath, BASE_BUNDLE_RELATIVE_PATH);
   if (!fs.existsSync(baseBundlePath)) {
@@ -61,7 +62,22 @@ export async function assembleBundle({
   // D-G2 (generic-placeholder-substitution): BASE_VERSION is never operator-
   // supplied — it's always read from the base folder's own apktool.yml,
   // overriding any BASE_VERSION the caller might have mistakenly included.
-  const mergedPlaceholders = { ...placeholders, BASE_VERSION: baseVersion };
+  //
+  // builder-ship-strips (D-SS7): BUILT_AT is derived the same way, for the
+  // same reason — a timestamp is computed, never typed (D151) — so it is
+  // supplied here rather than by any of the four callers (the CLI, the
+  // bundle-workbench HTTP layer, hub's assemble-and-submit, and the
+  // standalone D108 path all inherit it with no per-key plumbing, D-G1).
+  // The boot-ok companion ABORTS on an unsubstituted key, so assemble has
+  // to fill it regardless of what publish later restamps it to; for a
+  // standalone assemble that is never published, this IS the build time
+  // that bundle carries forever. `builtAt` is injectable only so a test can
+  // pin it.
+  const mergedPlaceholders = {
+    ...placeholders,
+    BASE_VERSION: baseVersion,
+    BUILT_AT: builtAt || new Date().toISOString(),
+  };
 
   // Resolve every patch up front: "a patch that fails to locate aborts the
   // assembly with no partial output written" (task 5.3) — a patch name that

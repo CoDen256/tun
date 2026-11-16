@@ -143,7 +143,7 @@ export async function submitBundle(bytes, { label, baseVersion, patchRev, dataDi
 // Placeholder for a companion's BUILD_ID placeholder at assembly time — a
 // freshly-assembled logic bundle has no device-facing build identity yet
 // (that's only assigned once `builder` eventually publishes from it, and
-// re-stamped on every publish regardless, D105's `restampCompanionBuildId`)
+// re-stamped on every publish regardless, D105's `restampCompanionConstants`)
 // so any value matching `appendCompanion`'s own charset (D48) is fine here.
 const ASSEMBLE_PLACEHOLDER_BUILD_ID = "unassigned";
 

@@ -143,27 +143,51 @@ function cleanup() {
   delete globalThis.MJOLNIR_DATA_VERSION;
   delete globalThis.MJOLNIR_BUILD_ID;
   delete globalThis.MJOLNIR_BASE_VERSION;
+  delete globalThis.MJOLNIR_PATCH_REV;
+  delete globalThis.MJOLNIR_BUILT_AT;
 }
 
-test("my-account screen: 'Label' and 'Data version' rows render the baked globals", async () => {
+// builder-ship-strips D-SS8: ONE "App version" row; the separate "Label"
+// and "Data version" rows are gone from the device.
+test("my-account screen: one 'App version' row carries build id, base, logic, data and build time", async () => {
+  globalThis.MJOLNIR_BUILD_ID = "b000042";
+  globalThis.MJOLNIR_BASE_VERSION = "1.5.12";
+  globalThis.MJOLNIR_PATCH_REV = 3;
+  globalThis.MJOLNIR_DATA_VERSION = "247";
   globalThis.MJOLNIR_LABEL = "spring-release";
-  globalThis.MJOLNIR_DATA_VERSION = "17";
+  globalThis.MJOLNIR_BUILT_AT = "2026-11-15T03:12:00.000Z";
 
   const source = await patchedModule2176Source();
   const { render, findRowValue } = loadPatchedModule2176(source);
   const tree = render();
 
-  assert.equal(findRowValue(tree, "Label"), "spring-release");
-  assert.equal(findRowValue(tree, "Data version"), "17");
+  const value = findRowValue(tree, "App version");
+  assert.match(value, /^b000042 · base 1\.5\.12 · logic 3 · data 247 · built \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+
+  // The UTC constant is rendered in the DEVICE's local time, so the exact
+  // digits depend on the running timezone — derive the expectation the same
+  // way a device would rather than hard-coding a UTC-only string.
+  const d = new Date("2026-11-15T03:12:00.000Z");
+  const p = (n) => String(n).padStart(2, "0");
+  assert.ok(
+    value.endsWith(
+      `built ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+    ),
+    `build time rendered in local time — got ${value}`
+  );
+
+  assert.equal(findRowValue(tree, "Label"), undefined, "the separate Label row is gone from the device");
+  assert.equal(findRowValue(tree, "Data version"), undefined, "the separate Data version row is gone");
   cleanup();
 });
 
-test("my-account screen: 'Label'/'Data version' fall back to 'embedded' when the globals are unset (tier-4 asset, no companion)", async () => {
+test("my-account screen: the App version row falls back to 'embedded' with no companion, never to a string containing 'undefined'", async () => {
   const source = await patchedModule2176Source();
   const { render, findRowValue } = loadPatchedModule2176(source);
   const tree = render();
 
-  assert.equal(findRowValue(tree, "Label"), "embedded");
-  assert.equal(findRowValue(tree, "Data version"), "embedded");
+  const value = findRowValue(tree, "App version");
+  assert.equal(value, "embedded");
+  assert.ok(!String(value).includes("undefined"), "the &&/+ precedence defect rendered 'undefined base:undefined'");
   cleanup();
 });

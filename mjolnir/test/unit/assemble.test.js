@@ -435,3 +435,41 @@ test("generic-placeholder-substitution: a caller-supplied BASE_VERSION is silent
     assert.ok(!outBytes.includes("9.9.9-not-the-real-one"));
   });
 });
+
+// builder-ship-strips D-SS7/D-G1: BUILT_AT is DERIVED by assemble, never
+// typed (D151) — every caller (the CLI, the workbench HTTP layer, hub's
+// assemble-and-submit, and the standalone D108 path) inherits it with no
+// per-key plumbing. For a standalone assemble that is never published, this
+// is the only build time that bundle will ever carry.
+test("builder-ship-strips: assemble derives BUILT_AT itself and overrides any caller-supplied value", async () => {
+  await withTmpDir(async (dir) => {
+    const baseFolder = makeBaseFolder(dir, "1.5.12");
+    const patchesDir = path.join(dir, "patches");
+    const outputPath = path.join(dir, "out", "assembled.bundle");
+
+    const before = Date.now();
+    const result = await assembleBundle({
+      baseFolderPath: baseFolder,
+      patchNames: [],
+      patchesDir,
+      outputPath,
+      companionFiles: [COMPANION_FILE],
+      placeholders: {
+        BUILD_ID: "b000003",
+        PATCH_REV: 2,
+        LABEL: "test-label",
+        DATA_VERSION: "2",
+        BUILT_AT: "1999-01-01T00:00:00.000Z",
+      },
+    });
+    const after = Date.now();
+
+    assert.notEqual(result.placeholders.BUILT_AT, "1999-01-01T00:00:00.000Z");
+    const stamped = Date.parse(result.placeholders.BUILT_AT);
+    assert.ok(stamped >= before && stamped <= after, "BUILT_AT is the assemble instant");
+    const outBytes = fs.readFileSync(outputPath, "utf8");
+    assert.ok(outBytes.includes(`BUILT_AT = '${result.placeholders.BUILT_AT}'`));
+    assert.ok(!outBytes.includes("1999-01-01"));
+    assert.ok(!outBytes.includes("__MJOLNIR_BUILT_AT__"), "the companion aborts on an unsubstituted key");
+  });
+});
