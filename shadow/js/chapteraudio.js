@@ -119,20 +119,55 @@ const ChapterAudio = (() => {
    * Play [offsetMs, offsetMs+durationMs) of a loaded chapter, stopping dead
    * at the end of the range — never spilling into the next sentence
    * (criterion 24). Returns a stop() function.
+   *
+   * FOUR THINGS CAN STOP IT, deliberately, because requestAnimationFrame
+   * alone cannot (confirmed by review, 2026-11-16): rAF is throttled to
+   * nothing in a background tab and does not run at all on a locked
+   * phone, while the audio keeps playing — so backgrounding mid-sentence
+   * used to let the chapter run on through every following sentence,
+   * which is precisely what criterion 24 forbids, on the device the
+   * design exists for.
+   *
+   *   · rAF       the smooth one: drives onFrame, so it stays the primary
+   *               path while the tab is visible;
+   *   · timeupdate  fired by the media pipeline, not the frame clock, so
+   *               it keeps arriving (~4/s) in a hidden tab;
+   *   · ended     the chunk ran out before the range did;
+   *   · a timer   armed for the remaining span plus a small margin. Timers
+   *               are throttled in a background tab but not to zero, so
+   *               this is the backstop of the backstop for a browser that
+   *               decides to batch timeupdate as well.
+   *
+   * All four funnel into finish(), which is idempotent and removes every
+   * listener, so whichever fires first wins and the rest are no-ops.
    */
+  const END_EPSILON = 0.02;        // seconds; currentTime lands on a frame
+                                   // boundary, not exactly on endSec
+
   function play(entry, offsetMs, durationMs, handlers) {
     const h = handlers || {};
     const audio = entry.audio;
     const endSec = (offsetMs + durationMs) / 1000;
-    let raf = 0, stopped = false;
+    let raf = 0, timer = 0, stopped = false;
 
+    function atEnd() {
+      return audio.currentTime >= endSec - END_EPSILON;
+    }
     function finish(reason) {
       if (stopped) return;
       stopped = true;
       cancelAnimationFrame(raf);
+      clearTimeout(timer);
+      audio.removeEventListener('timeupdate', onTimeUpdate);
+      audio.removeEventListener('ended', onEnded);
       try { audio.pause(); } catch (e) { /* nothing playing */ }
       if (h.onEnd) h.onEnd(reason);
     }
+    function onTimeUpdate() {
+      // The backstop that works when the frame clock does not.
+      if (!stopped && atEnd()) finish('end');
+    }
+    function onEnded() { finish('end'); }
     function tick() {
       if (stopped) return;
       const t = audio.currentTime;
@@ -141,12 +176,28 @@ const ChapterAudio = (() => {
       raf = requestAnimationFrame(tick);
     }
 
+    audio.addEventListener('timeupdate', onTimeUpdate);
+    audio.addEventListener('ended', onEnded);
+
     metadataReady(audio).then(() => {
       if (stopped) return;
       audio.currentTime = offsetMs / 1000;
       const p = audio.play();
       if (p && p.catch) p.catch((e) => { if (h.onError) h.onError(e); finish('error'); });
       raf = requestAnimationFrame(tick);
+      // Wall-clock backstop: the range's own length, plus a margin for a
+      // slow start. It is re-armed by nothing — if it fires early,
+      // atEnd() is false and it simply re-arms itself once.
+      const armFor = () => {
+        clearTimeout(timer);
+        const remainMs = Math.max(0, (endSec - audio.currentTime) * 1000) + 120;
+        timer = setTimeout(() => {
+          if (stopped) return;
+          if (atEnd() || audio.paused || audio.ended) finish('end');
+          else armFor();
+        }, remainMs);
+      };
+      armFor();
     });
 
     return () => finish('stopped');
