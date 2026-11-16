@@ -16,6 +16,8 @@
 - [ ] 2.5 Collapse `patches/js/2176-my-account-build-id.edited.js`'s three version rows into one App version row carrying build identity, base version, patch revision, data revision and build time, formatting the UTC constant to device-local time
 - [ ] 2.6 Fix that row's no-companion fallback so it renders `embedded` rather than a string containing "undefined" (the `&&`/`+` precedence defect)
 - [ ] 2.7 Update the companion and account-screen unit tests for the new constant and the single row
+- [ ] 2.8 Supply the build-timestamp placeholder from the assemble path so the companion's substitution succeeds, relying on D-G1's generic mechanism rather than adding a per-key branch
+- [ ] 2.9 Add the read-only, auto-filled build-timestamp row to the Assemble tab beside the other placeholder fields, labelled as assemble time and noting that publish replaces it; confirm it is not editable and is stored as no configuration value
 
 ## 3. The ship-strips page
 
@@ -25,7 +27,7 @@
 - [ ] 3.4 Render the strip with no text inside the cell grid — rows of a fixed cell count, a divider every 5 throughout, row labels outside the grid
 - [ ] 3.5 Render each pending tier's countdown as that many filler cells, in ascending tier order, with no caption; render no pending zone at all for single-occurrence families
 - [ ] 3.6 Build the deck rail header: code, title, the five-figure readout in the shared order with deltas (absent at zero), and the grid-status chip
-- [ ] 3.7 Make the global totals use the same order, labels and icons as the rail readout
+- [ ] 3.7 Make the global totals use the same order, labels and icons as the rail readout, with the delta inline and smaller beside each figure, and no per-deck breakdown sub-lines
 - [ ] 3.8 Implement hover: index, card id, letter, and the changed-face readout from 1.3, with the no-card wording for open and filler cells
 - [ ] 3.9 Implement kin-highlight of the same card's other occurrence on hover and on focus
 - [ ] 3.10 Implement the detail view as a pushing panel that keeps the strip visible, carrying shipping build and timestamp, flush-or-hold, tier countdown, and the sibling occurrence's position
@@ -37,6 +39,10 @@
 - [ ] 3.16 Update the Builder nav entry's label in `hub/src/layout.js` and `builder/src/layout.js` to match the new page
 
 ## 4. Publish progress and result
+
+The accepted mockup carries all six states (idle, publishing, succeeded,
+failed, stalled, no-op) behind a mockup-only switcher — build each against
+its drawn state.
 
 - [ ] 4.1 Add a progress endpoint returning the most recent run's state and its narration lines
 - [ ] 4.2 Keep the publish POST synchronous and authoritative; drive the in-progress indication from the click and the narration tail from concurrent polling

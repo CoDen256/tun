@@ -74,9 +74,14 @@ unchanged — only described accurately.
 
 minted ◆ → occurrences eventual Σ → shipped ● → staged ◐ → pending ○.
 Identical sequence, glyphs and labels in the global totals and in every deck
-rail header, each with this run's `+N` delta (nothing rendered at zero, so
+rail header, each with this run's `+N` delta rendered **inline, smaller, to
+the right of the figure** in both places (nothing rendered at zero, so
 "nothing moved" reads as silence and the five slots stay aligned across
-rails). The rail header is deck code · title · that readout · on-grid chip,
+rails).
+
+The global totals carry **no per-deck breakdown sub-lines**. Those facts are
+on the deck rails a screen below; repeating them under every stat cell was
+the same duplication the rail header's banner paragraph was cut for. The rail header is deck code · title · that readout · on-grid chip,
 and nothing else — the sentence-form flush note and the per-deck banner
 paragraph are both removed as duplication of the readout.
 
@@ -174,6 +179,27 @@ narration lines per job. No new table.
 - `BUILT_AT` is baked as **ISO-8601 UTC** and formatted to the device's local
   time for display. One canonical value in the bundle, local rendering on
   screen.
+- `BUILT_AT` is a new `__MJOLNIR_BUILT_AT__` placeholder. Under D-G1's
+  generic substitution it needs no per-key plumbing in the CLI, HTTP or UI
+  layers — only a new key in the map the caller already builds.
+
+**Assemble must fill it, and the Assemble tab shows it.** The companion
+aborts on any unsubstituted placeholder key, so assemble supplies a value
+regardless of what publish later does with it. That assemble-time value is
+not merely a throwaway: a **standalone** bundle-workbench assemble (D108 —
+no hub, no database, no publish) is never restamped, so for that bundle it
+is the only build time it will ever carry.
+
+The Assemble tab therefore gains a `BUILT_AT` row alongside the other
+placeholder fields, **auto-filled and read-only**, labelled as the assemble
+time and noted as replaced at publish when published through hub. It is not
+operator-typed: a timestamp is derivable, and D151 says derivable values are
+computed, never typed.
+
+This touches the Assemble form, which `assembly-tab-usability` owned. That
+change is archived, so this is an additive edit rather than a reopen — and
+`LABEL` keeps being baked and keeps its form field; only the device's
+display of it goes.
 
 **Build time means publish time, not assemble time.** One logic bundle is
 published many times; stamping assemble time would recreate exactly the

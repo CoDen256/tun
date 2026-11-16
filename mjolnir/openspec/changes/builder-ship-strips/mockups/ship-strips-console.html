@@ -119,14 +119,13 @@ button:hover { border-color: var(--text-faint); }
   background: var(--border); border: 1px solid var(--border); border-radius: 10px;
   overflow: hidden; margin-bottom: 18px;
 }
-.flow-cell-stat { background: var(--bg-elevated); padding: 14px 18px; }
-.flow-cell-stat .label { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; margin-bottom: 6px; }
-.flow-cell-stat .value { font-size: 22px; font-weight: 700; font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.flow-cell-stat .sub { font-size: 11.5px; color: var(--text-faint); margin-top: 3px; }
-.flow-cell-stat .delta { font-size: 11.5px; font-weight: 650; color: var(--text-dim); margin-top: 3px; }
-.flow-cell-stat .delta .plus { color: var(--ok); font-weight: 700; }
-.flow-cell-stat .delta .minus { color: var(--text-faint); font-weight: 700; }
-.flow-cell-stat .delta.neutral { color: var(--text-faint); font-weight: 500; }
+.flow-cell-stat { background: var(--bg-elevated); padding: 11px 18px 12px; }
+.flow-cell-stat .label { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; margin-bottom: 3px; }
+.flow-cell-stat .value { font-size: 22px; font-weight: 700; font-family: var(--mono); font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 8px; }
+/* the delta sits beside the number, same treatment as the rail readout */
+.flow-cell-stat .value .d { font-size: 11.5px; font-weight: 700; }
+.flow-cell-stat .value .plus { color: var(--ok); }
+.flow-cell-stat .value .minus { color: var(--text-faint); }
 
 /* ── 3. one rail per deck, always expanded ──────────────────────────── */
 .flow-deck { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 18px; }
@@ -306,8 +305,72 @@ body.drawer-open .page { padding-right: 452px; }
 .mapped-note { font-size: 10.5px; color: var(--text-faint); margin-top: 9px; line-height: 1.5; }
 .mapped-note code { color: var(--text-dim); }
 
+/* ── the run: progress strip, result banners ───────────────────────────
+   One slot directly under the sticky header. Exactly one of the two is
+   ever filled: a run in progress, or the LAST RUN's outcome. The outcome
+   is worded as "last run" and not "your publish" on purpose — it survives
+   a reload and may describe a scheduled run nobody watched. */
+.run-slot { position: relative; z-index: 35; }
+
+.progress-strip { background: var(--bg-sunken); border-bottom: 1px solid var(--border); padding: 10px 24px 11px; }
+.progress-head { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-dim); margin-bottom: 7px; }
+.progress-head b { color: var(--text); font-family: var(--mono); }
+.progress-head .el { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--text-faint); }
+.spin { width: 12px; height: 12px; flex: none; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.tail { max-height: 128px; overflow-y: auto; font-family: var(--mono); font-size: 11.5px; line-height: 1.8; color: var(--text-dim); }
+.tail .ln { white-space: pre-wrap; }
+.tail .ln .k { color: var(--accent-text); }
+.tail .ln.in { animation: tailin .2s ease both; }
+@keyframes tailin { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+.tail .more { color: var(--text-faint); letter-spacing: .25em; animation: blink 1.4s ease-in-out infinite; }
+@keyframes blink { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+
+.run-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 24px 11px; font-size: 12.5px; color: var(--text-dim);
+  background: var(--bg-sunken); border-bottom: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+}
+.run-banner b { color: var(--text); }
+.run-banner .mono { font-family: var(--mono); }
+.run-banner .tag {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .07em; font-weight: 700;
+  padding: 2px 9px 3px; border-radius: 999px; font-family: var(--mono); white-space: nowrap;
+}
+.run-banner .sp { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.run-banner.ok      { border-left-color: var(--ok); }
+.run-banner.ok      .tag { background: var(--ok-soft); color: var(--ok); }
+.run-banner.err     { border-left-color: var(--err); background: #241413; }
+.run-banner.err     .tag { background: var(--err-soft); color: var(--err); }
+.run-banner.err .msg { color: var(--text); font-family: var(--mono); }
+.run-banner.warn    { border-left-color: var(--warn); background: #211d10; }
+.run-banner.warn    .tag { background: var(--warn-soft); color: var(--warn); }
+.run-banner.neutral .tag { background: var(--border-soft); color: var(--text-dim); }
+
+.btn-primary[disabled] { cursor: default; filter: none; opacity: .8; }
+.btn-primary .spin { border-color: #1a0d0533; border-top-color: #1a0d05; }
+
+/* ── MOCKUP-ONLY control — deliberately NOT console chrome ──────────── */
+.mock-switcher {
+  position: fixed; left: 16px; bottom: 16px; z-index: 95;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-elevated); border: 1px dashed #8b6cff; border-radius: 10px;
+  padding: 7px 10px 8px; box-shadow: 0 14px 36px #000b;
+}
+.mock-switcher .ml {
+  font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
+  font-family: var(--mono); color: #b49bff; margin-right: 4px;
+}
+.mock-switcher button { font-size: 11.5px; font-weight: 600; padding: 3px 10px 4px; border-radius: 999px; background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+.mock-switcher button[aria-pressed="true"] { background: #8b6cff22; border-color: #8b6cff; color: #c9b8ff; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
+  .spin { display: none; }
+  .tail .more { opacity: 1; }
 }
 </style>
 
@@ -327,7 +390,7 @@ body.drawer-open .page { padding-right: 452px; }
         <b>+6</b>◆ · <span class="plus">5</span>▲ · <span class="hold">6</span>⏸ · <span class="chg">3</span>✎
       </span>
       <div class="head-right">
-        <button class="btn-primary">Publish now</button>
+        <button class="btn-primary" id="publish-btn">Publish now</button>
       </div>
     </div>
 
@@ -363,6 +426,9 @@ body.drawer-open .page { padding-right: 452px; }
     </div>
   </header>
 
+  <!-- the run slot: progress while publishing, last run's outcome otherwise -->
+  <div class="run-slot" id="run-slot"></div>
+
   <div class="content">
     <!-- 2. global totals -->
     <div class="flow-totals" id="totals"></div>
@@ -370,6 +436,10 @@ body.drawer-open .page { padding-right: 452px; }
     <!-- 3. one full-width rail per deck, all expanded -->
     <div id="decks"></div>
   </div>
+</div>
+
+<div class="mock-switcher" id="switcher" role="group" aria-label="Mockup state switcher">
+  <span class="ml">mockup · page state</span>
 </div>
 
 <div class="tip" id="tip"></div>
@@ -591,18 +661,11 @@ const DELTA = {
   staged: '<span class="plus">+9</span>',
   pending: '<span class="plus">+4</span> / <span class="minus">−3</span>',
 };
-const SUB = {
-  minted: "C20 47 · C30 189",
-  eventual: "C20 47 · C30 378",
-  shipped: "C20 45 · C30 245",
-  staged: "C20 2 · C30 9",
-  pending: "C20 0 · C30 124",
-};
+// No per-deck breakdown sub-line: the rails carry those numbers, and the
+// rails are on the same screen.
 document.getElementById("totals").innerHTML = ORDER.map((k) => `<div class="flow-cell-stat">
     <div class="label"><span class="i">${ICON[k]}</span>${LABEL[k]}</div>
-    <div class="value">${TOTAL[k]}</div>
-    <div class="delta">${DELTA[k]}</div>
-    <div class="sub">${SUB[k]}</div>
+    <div class="value">${TOTAL[k]}${DELTA[k] ? `<span class="d">${DELTA[k]}</span>` : ""}</div>
   </div>`).join("");
 
 // This run's per-deck deltas, DERIVED from the deck's own scenario rather
@@ -973,4 +1036,136 @@ document.addEventListener("keydown", (e) => {
     info.querySelector("button").setAttribute("aria-expanded", "false");
   }
 });
+
+/* ══════════════════════════════════════════════════════════════════════
+   PUBLISH STATES — one slot under the sticky header.
+   A run is either in progress (narration tail) or finished (result
+   banner). "stalled" exists so a dead process cannot be mistaken for
+   healthy ongoing work: it is a warning, never a spinner.
+   ══════════════════════════════════════════════════════════════════════ */
+const RM = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const RUN_LOG = [
+  ["pull",   "312 eligible notes from stabbur"],
+  ["pull",   "236 already minted, 6 newly ready"],
+  ["mint",   "C30 — 4 new cards (C30186…C30189)"],
+  ["mint",   "C20 — 2 new cards (C20046, C20047)"],
+  ["queue",  "C30 — 4 E occurrence(s) queued at remaining 11"],
+  ["drain",  "C30 — 3 E occurrence(s) reached 0, staged"],
+  ["stage",  "C30 — 9 staged, C20 — 2 staged"],
+  ["ship",   "C30 — 5 occurrence(s) flushed (245 -> 250)"],
+  ["ship",   "C20 — 0 occurrence(s) flushed (45, target 50, 3 short)"],
+  ["blobs",  "12 present, 0 fetched"],
+  ["bundle", "logic bundle #3 · base 1.5.12 · patch rev 7"],
+  ["build",  "b000050 assembling"],
+  ["build",  "b000050 written, 4.1 MB"],
+  ["ota",    "manifest updated, 2 blob(s) linked"],
+];
+
+const BANNERS = {
+  // idle pins the LAST run's outcome — it survives a reload and may well
+  // describe a scheduled run the operator never watched.
+  idle: `<div class="run-banner ok">
+    <span class="tag">last run</span>
+    <span><b class="mono">b000049</b> succeeded <span class="mono">2026-11-14 04:00</span> ·
+      shipped <b>5</b> occurrences — C30 5 · C20 0 · took <span class="mono">41 s</span></span>
+    <span class="sp"><a href="#">full log →</a><button class="btn-ghost" data-dismiss aria-label="Dismiss">✕</button></span>
+  </div>`,
+  succeeded: `<div class="run-banner ok">
+    <span class="tag">last run</span>
+    <span><b class="mono">b000050</b> succeeded <span class="mono">2026-11-16 11:18</span> ·
+      shipped <b>5</b> occurrences — C30 5 · C20 0 · took <span class="mono">38 s</span></span>
+    <span class="sp"><a href="#">full log →</a><button class="btn-ghost" data-dismiss aria-label="Dismiss">✕</button></span>
+  </div>`,
+  failed: `<div class="run-banner err">
+    <span class="tag">last run — failed</span>
+    <span><b class="mono">b000050</b> failed <span class="mono">2026-11-16 11:18</span> after
+      <span class="mono">12 s</span> · nothing was written
+      <span class="msg">— smia /inflect returned 502 after 3 retries (card C30187, side N)</span></span>
+    <span class="sp"><a href="#">full log →</a><button class="btn-ghost" data-dismiss aria-label="Dismiss">✕</button></span>
+  </div>`,
+  stalled: `<div class="run-banner warn">
+    <span class="tag">last run — stalled</span>
+    <span><b class="mono">b000050</b> is still recorded as <b>running</b>, but has written no new
+      output for <b class="mono">14 min</b> (last line <span class="mono">11:04 mint: C30 — 4 new cards</span>).
+      No process appears to be writing to it.</span>
+    <span class="sp"><a href="#">full log →</a><button class="btn-ghost" data-dismiss aria-label="Dismiss">✕</button></span>
+  </div>`,
+  noop: `<div class="run-banner neutral">
+    <span class="tag">nothing to publish</span>
+    <span>Nothing was newly eligible, so nothing needed publishing — no run was recorded.
+      Last run remains <b class="mono">b000049</b>.</span>
+    <span class="sp"><button class="btn-ghost" data-dismiss aria-label="Dismiss">✕</button></span>
+  </div>`,
+};
+
+const STATES = [
+  ["idle", "Idle"], ["publishing", "Publishing"], ["succeeded", "Succeeded"],
+  ["failed", "Failed"], ["stalled", "Stalled"], ["noop", "No-op"],
+];
+
+const slot = document.getElementById("run-slot");
+const publishBtn = document.getElementById("publish-btn");
+const switcher = document.getElementById("switcher");
+switcher.insertAdjacentHTML("beforeend", STATES.map(
+  ([k, label]) => `<button type="button" data-state="${k}" aria-pressed="false">${label}</button>`
+).join(""));
+
+let pageState = "idle";
+let tailTimer = null;
+let tailIdx = 0;
+
+function startTail() {
+  slot.innerHTML = `<div class="progress-strip">
+    <div class="progress-head">
+      <span class="spin" aria-hidden="true"></span>
+      <span>Publishing — <b>b000050</b> running</span>
+      <span class="el">started 11:17:42</span>
+    </div>
+    <div class="tail" id="tail"><div class="ln more" id="tail-more">• • •</div></div>
+  </div>`;
+  const tail = document.getElementById("tail");
+  const more = document.getElementById("tail-more");
+  tailIdx = 0;
+  const step = () => {
+    if (tailIdx >= RUN_LOG.length) return; // the pulse stays: more is still coming
+    const [k, rest] = RUN_LOG[tailIdx++];
+    const ln = document.createElement("div");
+    ln.className = "ln" + (RM ? "" : " in");
+    ln.innerHTML = `<span class="k">${k}:</span> ${rest}`;
+    tail.insertBefore(ln, more);     // newest at the bottom
+    tail.scrollTop = tail.scrollHeight;
+    tailTimer = setTimeout(step, 420);
+  };
+  step();
+}
+
+function setState(st) {
+  pageState = st;
+  clearTimeout(tailTimer);
+  tailTimer = null;
+
+  const running = st === "publishing";
+  publishBtn.disabled = running;
+  publishBtn.innerHTML = running
+    ? `<span class="spin" aria-hidden="true"></span>Publishing…`
+    : "Publish now";
+
+  if (running) startTail();
+  else slot.innerHTML = BANNERS[st] || "";
+
+  for (const b of switcher.querySelectorAll("button[data-state]")) {
+    b.setAttribute("aria-pressed", String(b.dataset.state === st));
+  }
+}
+
+document.addEventListener("click", (e) => {
+  const sw = e.target.closest("#switcher button[data-state]");
+  if (sw) { setState(sw.dataset.state); return; }
+  if (e.target.closest("#publish-btn")) { setState("publishing"); return; }
+  if (e.target.closest("[data-dismiss]")) { slot.innerHTML = ""; return; }
+});
+
+setState("idle");
+
 </script>

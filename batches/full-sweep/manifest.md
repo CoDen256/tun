@@ -58,6 +58,12 @@ Also corrected in the UI copy: D91's prose says the queued `E` waits for "11
 other occurrences", but the implementation decrements by the count of new
 CARDS. The mechanism is unchanged; every label now describes it accurately.
 
+Scope note added after `assembly-tab-usability` archived: this package also
+adds a read-only `BUILT_AT` row to the **Assemble tab**. The companion
+aborts on an unsubstituted placeholder, so assemble must fill it; and a
+standalone (D108) assemble is never restamped, so there it is the only build
+time that bundle will ever carry. Additive to a closed change, not a reopen.
+
 Accepted mockup: `builder-ship-strips/mockups/ship-strips-console.html`,
 after three operator iterations — inline strip text removed (it broke the
 40-cell grid), the page trimmed of prose, one stat order adopted everywhere,

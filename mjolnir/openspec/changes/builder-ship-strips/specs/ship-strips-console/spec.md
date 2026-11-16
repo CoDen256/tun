@@ -115,10 +115,18 @@ while the detail view is open.
 The system SHALL present cards minted, eventual occurrences, shipped, staged
 and pending in that same order, with the same labels and icons, both in the
 page's global totals and in every deck's own header, each accompanied by this
-run's delta. A zero delta SHALL be rendered as absence rather than as an
-explicit zero.
+run's delta rendered inline and smaller beside the figure in both places. A
+zero delta SHALL be rendered as absence rather than as an explicit zero.
+
+The global totals SHALL NOT repeat per-deck breakdowns, which the deck
+headers already carry.
 
 #### Scenario: A deck where nothing moves this run
 - **WHEN** a deck has no newly eligible cards and nothing would flush
 - **THEN** its header shows its absolute figures in the same five positions
   with no delta annotations
+
+#### Scenario: Reading a global total
+- **WHEN** the operator reads a global total that changed this run
+- **THEN** the delta appears beside the figure rather than beneath it, and
+  no per-deck breakdown is listed under the figure

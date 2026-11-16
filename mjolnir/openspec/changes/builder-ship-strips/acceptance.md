@@ -100,12 +100,19 @@ occurrences or in batches; every one expresses it as new cards into that
 deck. The legend's info affordance states that several tiers can drain in
 one publish.
 
-### A16. One stat order in both places, with deltas and silent zeros
+### A16. One stat order in both places, with inline deltas and silent zeros
 The global totals and every deck header present minted, eventual, shipped,
-staged, pending in that order with the same labels. A deck with activity
-shows a delta on each figure that changed; a deck with no activity shows the
-same five figures with no delta annotation and no explicit zero. Each deck
-header's five absolute figures equal that deck's values in the forecast.
+staged, pending in that order with the same labels. In **both** places the
+delta is positioned beside its figure, not beneath it, and is rendered
+smaller than the figure. A deck with activity shows a delta on each figure
+that changed; a deck with no activity shows the same five figures with no
+delta annotation and no explicit zero. Each deck header's five absolute
+figures equal that deck's values in the forecast.
+
+### A16b. The global totals carry no per-deck breakdown
+No stat cell in the global totals contains a per-deck list or a descriptive
+sentence beneath its figure. The per-deck figures appear only on the deck
+headers.
 
 ### A17. The open-slot count is correct for a deck carried past its multiple
 For the seeded deck at 245 shipped and 9 staged, the strip renders exactly
@@ -209,6 +216,18 @@ names, not on the previously baked literals.
 The hash recorded for the publish equals the hash of the published bundle
 file as it contains the restamped values — recomputing the file's hash after
 the run matches the recorded value.
+
+### A34b. The build timestamp is a substituted placeholder, shown and not editable
+Assembling a bundle substitutes the build-timestamp placeholder with the
+assemble instant — a bundle assembled with that placeholder left unsubstituted
+is refused, as it already is for the other companion constants. The Assemble
+tab shows the resulting value in a field the operator cannot edit, labelled as
+the assemble time and noting that publish replaces it.
+
+### A34c. A standalone assemble keeps its assemble-time build timestamp
+A bundle assembled through the standalone workbench path, with no publish,
+carries the assemble instant as its build timestamp when read back out of the
+bundle.
 
 ## Cross-cutting
 
