@@ -1,0 +1,2257 @@
+<title>shadow — studying mode</title>
+
+<style>
+/* ---------------------------------------------------------------
+   tokens — light is the base, dark comes from the media query,
+   and the [data-theme] overrides win in BOTH directions.
+   --------------------------------------------------------------- */
+:root {
+  --bg: #f6f6f4;
+  --surface: #ffffff;
+  --surface-2: #f0f0ed;
+  --text: #15171a;
+  --muted: #6c7177;
+  --faint: #9aa0a6;
+  --line: #e2e2de;
+  --line-strong: #cfcfca;
+  --accent: #0d7f72;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(13,127,114,.12);
+  --rec: #b4322e;
+  --rec-soft: rgba(180,50,46,.12);
+  --ref: #0d7f72;
+  --usr: #a65a06;
+  --wave: #9aa6ab;
+  --wave-done: #c3c9cc;
+  --radius: 14px;
+  --radius-sm: 9px;
+  --dur: 240ms;
+  --ease: cubic-bezier(.2,.7,.3,1);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0c0e;
+    --surface: #141619;
+    --surface-2: #1b1e22;
+    --text: #e9ebee;
+    --muted: #9aa0a6;
+    --faint: #6d7378;
+    --line: #262a2f;
+    --line-strong: #363b41;
+    --accent: #2fd4bd;
+    --accent-ink: #06231f;
+    --accent-soft: rgba(47,212,189,.14);
+    --rec: #ff6b63;
+    --rec-soft: rgba(255,107,99,.14);
+    --ref: #2fd4bd;
+    --usr: #f3b53f;
+    --wave: #4d555c;
+    --wave-done: #343a40;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f6f6f4; --surface: #ffffff; --surface-2: #f0f0ed; --text: #15171a;
+  --muted: #6c7177; --faint: #9aa0a6; --line: #e2e2de; --line-strong: #cfcfca;
+  --accent: #0d7f72; --accent-ink: #ffffff; --accent-soft: rgba(13,127,114,.12);
+  --rec: #b4322e; --rec-soft: rgba(180,50,46,.12);
+  --ref: #0d7f72; --usr: #a65a06; --wave: #9aa6ab; --wave-done: #c3c9cc;
+}
+:root[data-theme="dark"] {
+  --bg: #0b0c0e; --surface: #141619; --surface-2: #1b1e22; --text: #e9ebee;
+  --muted: #9aa0a6; --faint: #6d7378; --line: #262a2f; --line-strong: #363b41;
+  --accent: #2fd4bd; --accent-ink: #06231f; --accent-soft: rgba(47,212,189,.14);
+  --rec: #ff6b63; --rec-soft: rgba(255,107,99,.14);
+  --ref: #2fd4bd; --usr: #f3b53f; --wave: #4d555c; --wave-done: #343a40;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+input[type=text] { font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: .35rem .6rem; max-width: 100%; }
+.num { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.mono-ish { font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+
+/* ---------------- product navigation (part of the design) ------- */
+.nav {
+  position: sticky; top: 0; z-index: 60;
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: clamp(.5rem, 2vw, 1.4rem);
+  padding: .5rem clamp(.75rem, 3vw, 1.5rem);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.nav-brand {
+  display: inline-flex; align-items: center; gap: .5rem;
+  font-size: .98rem; font-weight: 600; letter-spacing: -0.01em;
+}
+.nav-brand .mark { width: 9px; height: 9px; border-radius: 3px; background: var(--accent); }
+.nav-links { display: flex; gap: .15rem; overflow-x: auto; max-width: 100%; }
+.nav-links button {
+  white-space: nowrap;
+  padding: .42rem .85rem; border-radius: var(--radius-sm);
+  font-size: .9rem; color: var(--muted);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.nav-links button:hover { color: var(--text); background: var(--surface-2); }
+.nav-links button[aria-selected="true"] {
+  color: var(--text); font-weight: 560; background: var(--surface-2);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.nav .spacer { flex: 1 1 auto; }
+.mock-aside {
+  display: inline-flex; align-items: center; gap: .45rem;
+  padding-left: .75rem; border-left: 1px dashed var(--line-strong);
+}
+.mock-tag {
+  font-size: .64rem; text-transform: uppercase; letter-spacing: .14em;
+  color: var(--faint);
+}
+.ghost-btn {
+  padding: .35rem .7rem; border: 1px solid var(--line); border-radius: 999px;
+  font-size: .82rem; color: var(--muted); background: var(--surface);
+  transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.ghost-btn:hover { color: var(--text); border-color: var(--line-strong); }
+
+/* ---------------- shared ---------------------------------------- */
+.screen { display: none; }
+.screen.on { display: block; animation: fade var(--dur) var(--ease); }
+@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+.wrap { max-width: 1120px; margin: 0 auto; padding: clamp(1.2rem, 4vw, 3rem) clamp(1rem, 4vw, 2rem) 6rem; }
+h1 { font-size: clamp(1.5rem, 3.4vw, 2.1rem); font-weight: 600; letter-spacing: -0.02em; margin: 0 0 .25rem; }
+.sub { color: var(--muted); font-size: .95rem; margin: 0 0 2rem; }
+.eyebrow { font-size: .72rem; text-transform: uppercase; letter-spacing: .16em; color: var(--faint); }
+
+.kbd {
+  display: inline-block; min-width: 1.5em; text-align: center;
+  padding: .05em .4em; margin-left: .45em;
+  font-size: .68em; line-height: 1.5;
+  border: 1px solid var(--line-strong); border-radius: 5px;
+  color: var(--muted); background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.bar { height: 4px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width 300ms var(--ease); }
+
+/* ---------------- 1. library ------------------------------------ */
+.books { display: grid; gap: .75rem; }
+.book {
+  display: grid; gap: .9rem; align-items: center;
+  grid-template-columns: 1fr auto;
+  padding: 1.15rem 1.25rem;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  text-align: left; width: 100%;
+  transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.book:hover { border-color: var(--accent); transform: translateY(-1px); }
+.book[disabled] { cursor: default; opacity: .9; }
+.book[disabled]:hover { border-color: var(--line); transform: none; }
+.book-title { font-size: 1.08rem; font-weight: 580; letter-spacing: -0.01em; }
+.book-meta { color: var(--muted); font-size: .86rem; margin-top: .15rem; }
+.book-cursor { color: var(--accent); font-size: .86rem; margin-top: .55rem; }
+.book .bar { margin-top: .6rem; }
+.book-right { color: var(--faint); font-size: .85rem; text-align: right; white-space: nowrap; }
+.pct { font-size: 1.1rem; color: var(--text); font-weight: 560; }
+.chip {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: .76rem; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px; padding: .12rem .6rem;
+}
+.dot { width: 7px; height: 7px; border-radius: 99px; background: var(--accent); }
+.dot.pulse { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+
+.drop {
+  margin-top: 1.5rem; padding: 2.2rem 1.25rem;
+  border: 1.5px dashed var(--line-strong); border-radius: var(--radius);
+  text-align: center; color: var(--muted); width: 100%;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.drop:hover { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+.drop b { display: block; font-weight: 560; color: var(--text); margin-bottom: .2rem; }
+.drop small { color: var(--faint); }
+
+.row-actions { display: flex; gap: .5rem; margin-top: .7rem; flex-wrap: wrap; }
+.mini {
+  font-size: .78rem; color: var(--muted); padding: .2rem .6rem;
+  border: 1px solid var(--line); border-radius: 999px;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.mini:hover { color: var(--text); border-color: var(--line-strong); }
+.mini.go { color: var(--accent); border-color: var(--accent); }
+
+/* ---------------- 2. study -------------------------------------- */
+.topbar {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  padding: .85rem clamp(1rem, 4vw, 2rem);
+  border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.topbar .t-book { font-weight: 560; letter-spacing: -0.01em; }
+.topbar .t-ch { color: var(--muted); font-size: .9rem; }
+.topbar .t-count { margin-left: auto; font-size: .95rem; color: var(--muted); }
+.topbar .t-count b { color: var(--text); font-weight: 600; }
+.t-progress { flex: 1 1 100%; }
+
+.stage { max-width: 940px; margin: 0 auto; padding: clamp(1.2rem, 4vw, 2.4rem) clamp(1rem, 4vw, 2rem) 4rem; }
+
+/* ---- the two stacked, time-aligned lanes ---- */
+.lanes { display: grid; gap: .55rem; }
+.lanes-head {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .14em; color: var(--faint);
+}
+.lanes-head .sp { flex: 1 1 auto; }
+.lane-toggle {
+  display: inline-flex; align-items: center;
+  font-size: .72rem; letter-spacing: .04em; text-transform: none;
+  color: var(--muted); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 999px; padding: .12rem .6rem;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.lane-toggle:hover { color: var(--text); border-color: var(--line-strong); }
+.lane-toggle.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.lane-head {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: .76rem; color: var(--muted); margin-bottom: .22rem; min-height: 1.3rem;
+}
+.lane-head .nm { font-weight: 560; letter-spacing: -0.01em; }
+.lane-ref .lane-head .nm { color: var(--ref); }
+.lane-usr .lane-head .nm { color: var(--usr); }
+.trim {
+  font-size: .64rem; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--faint); border: 1px solid var(--line); border-radius: 999px; padding: 0 .45rem;
+  white-space: nowrap;
+}
+.lane-head .live { margin-left: auto; display: none; align-items: center; gap: .4rem; color: var(--rec); }
+.lane-usr.recording .lane-head .live { display: inline-flex; }
+.wave-wrap {
+  position: relative; border-radius: var(--radius-sm); overflow: hidden;
+  background: var(--surface-2); min-height: var(--laneh, clamp(78px, 12vw, 108px));
+}
+.wave-wrap svg { display: block; width: 100%; height: var(--laneh, clamp(78px, 12vw, 108px)); }
+.wave-wrap .contour-over {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; opacity: 0; transition: opacity var(--dur) var(--ease);
+}
+.lanes.contours .wave-wrap .contour-over { opacity: 1; }
+.wave-wrap .playhead {
+  position: absolute; top: 0; bottom: 0; width: 2px; left: 0;
+  background: var(--accent); opacity: 0; border-radius: 2px;
+}
+.lane-usr .wave-wrap .playhead { background: var(--usr); }
+.wave-wrap.playing .playhead { opacity: 1; }
+.lane-empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: var(--faint); font-size: .85rem; text-align: center;
+  border: 1px dashed var(--line-strong); border-radius: var(--radius-sm);
+}
+.lane-usr.has-take .lane-empty, .lane-usr.recording .lane-empty { display: none; }
+.recdot { width: 9px; height: 9px; border-radius: 99px; background: var(--rec); animation: pulse 1.1s ease-in-out infinite; }
+.rectime { font-variant-numeric: tabular-nums; font-size: .82rem; }
+.sent-meta {
+  display: flex; gap: 1.2rem; flex-wrap: wrap; justify-content: center;
+  color: var(--muted); font-size: .85rem; margin-top: .8rem;
+}
+.sent-meta b { color: var(--text); font-weight: 560; }
+.sentbox { transition: opacity 180ms var(--ease), transform 180ms var(--ease); }
+.sentbox.swap { opacity: 0; transform: translateX(-10px); }
+
+.ticks {
+  display: flex; gap: 4px; align-items: flex-end; justify-content: center;
+  margin: 1.7rem 0 .55rem; flex-wrap: wrap;
+}
+.ticks button {
+  width: 11px; height: 20px; border-radius: 3px;
+  background: transparent; border: 1.5px solid var(--line-strong);
+  transition: background var(--dur) var(--ease), height var(--dur) var(--ease),
+              transform var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.ticks button:hover { transform: translateY(-2px); border-color: var(--accent); }
+.ticks button.done { background: var(--text); border-color: var(--text); opacity: .68; }
+.ticks button.cur {
+  background: var(--accent); border-color: var(--accent); opacity: 1; height: 30px;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.tick-legend {
+  display: flex; gap: 1.1rem; justify-content: center; flex-wrap: wrap;
+  color: var(--faint); font-size: .74rem; margin: 0 0 2rem;
+}
+.tick-legend span { display: inline-flex; align-items: center; gap: .4rem; }
+.tick-legend i {
+  width: 9px; height: 15px; border-radius: 2px; display: inline-block;
+  border: 1.5px solid var(--line-strong);
+}
+.tick-legend i.d { background: var(--text); border-color: var(--text); opacity: .68; }
+.tick-legend i.c { background: var(--accent); border-color: var(--accent); }
+
+/* chapter stepping, read as chapter-scoped because it hugs the name */
+.t-ch-wrap, .m-ch-row { display: inline-flex; align-items: center; gap: .3rem; min-width: 0; }
+.m-ch-row { justify-content: center; }
+.ch-nav {
+  width: 26px; height: 26px; flex: 0 0 auto; border-radius: 99px;
+  border: 1px solid var(--line); color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 1rem; line-height: 1;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.ch-nav:hover { color: var(--text); border-color: var(--accent); }
+
+.controls { display: flex; gap: .7rem; justify-content: center; flex-wrap: wrap; }
+.ctl {
+  display: inline-flex; align-items: center; gap: .15rem;
+  padding: .85rem 1.4rem; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line);
+  font-size: 1rem; font-weight: 540; letter-spacing: -0.01em;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease), transform 120ms var(--ease);
+}
+.ctl:hover { border-color: var(--line-strong); }
+.ctl:active { transform: scale(.97); }
+.ctl.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.ctl.primary .kbd { border-color: currentColor; color: currentColor; background: transparent; opacity: .75; }
+.ctl.rec.armed { background: var(--rec); color: #fff; border-color: transparent; }
+.ctl.rec.armed .kbd { border-color: currentColor; color: currentColor; background: transparent; }
+.ctl.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+.controls-2 { display: flex; gap: .45rem; justify-content: center; flex-wrap: wrap; margin-top: 1.4rem; }
+.ctl-s {
+  display: inline-flex; align-items: center; gap: .1rem;
+  padding: .4rem .75rem; border-radius: 999px; font-size: .84rem; color: var(--muted);
+  border: 1px solid transparent;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.ctl-s:hover { color: var(--text); border-color: var(--line); }
+.ctl-s.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+/* panels under the waveform */
+.panel {
+  margin-top: 1.6rem; padding: 1.1rem 1.25rem;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  animation: fade var(--dur) var(--ease);
+}
+.panel.hidden { display: none; }
+.panel-head {
+  display: flex; align-items: center; gap: .6rem; margin-bottom: .7rem;
+  font-size: .74rem; text-transform: uppercase; letter-spacing: .14em; color: var(--faint);
+}
+.panel-head .x { margin-left: auto; color: var(--faint); font-size: 1rem; line-height: 1; text-transform: none; letter-spacing: 0; }
+.panel-head .x:hover { color: var(--text); }
+.provenance {
+  font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: .05rem .45rem;
+}
+.transcript { font-size: 1.12rem; line-height: 1.65; letter-spacing: -0.01em; }
+.legend { display: flex; gap: 1.1rem; font-size: .8rem; color: var(--muted); margin-top: .5rem; }
+.legend i { display: inline-block; width: 16px; height: 3px; border-radius: 2px; margin-right: .4rem; vertical-align: middle; }
+
+/* settings — a preference surface, not a per-sentence control */
+.setrow {
+  display: flex; align-items: flex-start; gap: .9rem; width: 100%;
+  text-align: left; padding: .35rem 0;
+}
+.setrow .copy { flex: 1 1 auto; min-width: 0; }
+.setrow .copy b { font-weight: 560; letter-spacing: -0.01em; }
+.setrow .copy small { display: block; color: var(--muted); font-size: .84rem; margin-top: .15rem; }
+.switch {
+  flex: 0 0 auto; width: 46px; height: 27px; border-radius: 999px; position: relative;
+  background: var(--surface-2); border: 1px solid var(--line-strong);
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 19px; height: 19px;
+  border-radius: 99px; background: var(--faint);
+  transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.switch[aria-checked="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(19px); background: var(--accent); }
+
+.ephemeral {
+  margin-top: 1rem; font-size: .8rem; color: var(--faint); text-align: center;
+}
+
+/* shortcut overlay */
+.overlay {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center; padding: 1rem;
+  animation: fade 180ms var(--ease);
+}
+.overlay.hidden { display: none; }
+.sheet {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  max-width: 520px; width: 100%; max-height: 86vh; overflow-y: auto; padding: 1.5rem;
+}
+.sheet h3 { margin: 0 0 1rem; font-size: 1.05rem; font-weight: 580; letter-spacing: -0.01em; }
+.klist { display: grid; gap: .5rem; }
+.klist div { display: flex; align-items: baseline; gap: .75rem; font-size: .92rem; }
+.klist span:first-child { color: var(--muted); flex: 1 1 auto; }
+
+/* ---------------- 3. mobile ------------------------------------- */
+.phone-area { display: flex; justify-content: center; padding: 2rem 1rem 4rem; }
+.phone {
+  position: relative; width: 390px; height: 844px; flex: 0 0 auto;
+  background: var(--bg); border: 10px solid var(--line-strong); border-radius: 42px;
+  overflow: hidden; display: flex; flex-direction: column;
+  --laneh: 62px;
+}
+.phone-note { text-align: center; color: var(--faint); font-size: .78rem; margin-bottom: 1rem; }
+@media (max-width: 560px) {
+  .phone-area { padding: 0; }
+  .phone { width: 100%; height: 86vh; border-width: 0; border-radius: 0; }
+  .phone-note { display: none; }
+}
+.m-nav {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 24;
+  display: flex; align-items: center; gap: .4rem;
+  padding: .55rem .7rem .5rem;
+  border-bottom: 1px solid var(--line); background: var(--surface);
+  box-shadow: 0 8px 18px rgba(0,0,0,.18);
+  transform: translateY(-118%);
+  transition: transform 260ms var(--ease);
+}
+.phone.nav-open .m-nav { transform: none; }
+.m-toprow { display: flex; align-items: flex-start; gap: .5rem; padding: .25rem .7rem 0; }
+.m-pull {
+  flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; gap: .2rem;
+  padding: .3rem 0 .15rem; color: var(--faint);
+  font-size: .6rem; letter-spacing: .14em; text-transform: uppercase;
+  cursor: grab; touch-action: none;
+  transition: color var(--dur) var(--ease), opacity var(--dur) var(--ease);
+}
+.m-pull .grabber { width: 44px; height: 4px; border-radius: 99px; background: var(--line-strong); }
+.m-pull:hover { color: var(--muted); }
+.phone.nav-open .m-pull { opacity: .3; }
+.m-nav-links { display: flex; gap: .1rem; flex: 1 1 auto; overflow-x: auto; }
+.m-nav-links button {
+  white-space: nowrap; padding: .3rem .55rem; border-radius: 7px;
+  font-size: .76rem; color: var(--muted);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.m-nav-links button[aria-selected="true"] { color: var(--accent); background: var(--accent-soft); font-weight: 560; }
+.m-top { padding: .6rem 1.25rem .3rem; text-align: center; }
+.m-ch { font-size: .82rem; color: var(--muted); }
+.m-count { font-size: 1.45rem; font-weight: 600; letter-spacing: -0.02em; margin-top: .1rem; }
+.m-count small { font-size: .9rem; color: var(--muted); font-weight: 400; }
+.m-prog { margin: .6rem 1.25rem 0; }
+.m-mid { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; padding: 0 1.1rem; overflow-y: auto; }
+.m-swipe { text-align: center; font-size: .74rem; color: var(--faint); margin-top: .9rem; display: flex; align-items: center; justify-content: center; gap: .9rem; }
+.m-arrow { font-size: 1.1rem; color: var(--muted); padding: .3rem .7rem; border-radius: 99px; border: 1px solid var(--line); }
+.m-bottom { padding: 0 1.1rem 1.4rem; }
+.m-more-pill {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .28rem .65rem; border-radius: 999px; font-size: .78rem;
+  color: var(--muted); border: 1px solid var(--line); background: var(--surface);
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.m-more-pill:hover { color: var(--text); border-color: var(--line-strong); }
+.m-cluster { display: flex; align-items: flex-start; justify-content: center; gap: .55rem; }
+.m-key { display: flex; flex-direction: column; align-items: center; gap: .3rem; }
+.m-key .lbl { font-size: .72rem; color: var(--muted); }
+/* four equal, thumb-reachable buttons — play is no bigger than the rest */
+.m-round {
+  width: 58px; height: 58px; border-radius: 99px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--line);
+  font-size: 1.25rem; display: flex; align-items: center; justify-content: center;
+  transition: transform 120ms var(--ease), background var(--dur) var(--ease),
+              color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.m-round:active { transform: scale(.95); }
+.m-round.pri { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.m-round.pri.on { background: var(--accent); }
+.m-round.sec { color: var(--rec); }
+.m-round.sec.armed { background: var(--rec); color: #fff; border-color: transparent; }
+.m-round.cmp { color: var(--accent); }
+.m-round.cmp.on { background: var(--accent-soft); border-color: var(--accent); }
+.m-round.dn { color: var(--accent); border-color: var(--accent); }
+.m-round.dn:active { background: var(--accent); color: var(--accent-ink); }
+@media (max-width: 400px) { .m-round { width: 54px; height: 54px; font-size: 1.15rem; } }
+.m-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 10;
+  background: var(--surface); border-top: 1px solid var(--line);
+  border-radius: 22px 22px 0 0; padding: 1rem 1.1rem 1.6rem;
+  transform: translateY(102%); transition: transform 280ms var(--ease);
+  max-height: 72%; overflow-y: auto;
+}
+.m-sheet.open { transform: none; }
+.m-sheet .grab { width: 38px; height: 4px; border-radius: 99px; background: var(--line-strong); margin: 0 auto 1rem; }
+.m-sheet .item {
+  display: flex; align-items: center; gap: .8rem; width: 100%;
+  padding: .85rem .4rem; border-bottom: 1px solid var(--line); font-size: .98rem; text-align: left;
+}
+.m-sheet .item:last-of-type { border-bottom: 0; }
+.m-sheet .item .tag { margin-left: auto; font-size: .76rem; color: var(--faint); }
+.m-scrim { position: absolute; inset: 0; z-index: 9; background: rgba(0,0,0,.35); opacity: 0; pointer-events: none; transition: opacity 280ms var(--ease); }
+.m-scrim.on { opacity: 1; pointer-events: auto; }
+.m-panel { margin-top: .9rem; padding: .8rem .9rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); font-size: .95rem; }
+.m-panel.hidden { display: none; }
+
+/* ---------------- 4. explore ------------------------------------ */
+.exhead { display: flex; align-items: baseline; gap: .9rem; flex-wrap: wrap; margin-bottom: .4rem; }
+.exhint { color: var(--muted); font-size: .84rem; margin: 0 0 1.3rem; }
+.exhint b { color: var(--text); font-weight: 540; }
+.exch {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  margin-bottom: .55rem; overflow: hidden;
+}
+.exch-head { display: flex; align-items: center; gap: .7rem; padding: .75rem .9rem; flex-wrap: wrap; }
+.cbx {
+  width: 21px; height: 21px; flex: 0 0 auto; border-radius: 6px;
+  border: 1.5px solid var(--line-strong); display: inline-flex; align-items: center;
+  justify-content: center; font-size: .78rem; line-height: 1; color: transparent;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.cbx:hover { border-color: var(--accent); }
+.cbx[aria-checked="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.cbx[aria-checked="mixed"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.exch-toggle { flex: 1 1 180px; display: flex; align-items: baseline; gap: .6rem; text-align: left; min-width: 0; }
+.exch-toggle .caret { color: var(--faint); transition: transform var(--dur) var(--ease); display: inline-block; }
+.exch[data-open="1"] .exch-toggle .caret { transform: rotate(90deg); }
+.exch-name { font-weight: 540; letter-spacing: -0.01em; }
+.exch-meta { color: var(--faint); font-size: .8rem; }
+.exch-count { margin-left: auto; text-align: right; font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.exch-count .bar { width: 112px; margin-top: .35rem; margin-left: auto; }
+.exbody { display: none; border-top: 1px solid var(--line); padding: .7rem .9rem 1rem; }
+.exch[data-open="1"] .exbody { display: block; }
+.sgrid { display: grid; gap: .45rem; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); }
+.scell {
+  position: relative; overflow: hidden; min-height: 46px;
+  display: flex; align-items: center; gap: .5rem;
+  padding: .45rem .55rem; font-size: .88rem;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.scell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.scell:hover { border-color: var(--line-strong); }
+.scell.sel { border-color: var(--accent); background: var(--accent-soft); }
+.scell.cursor { box-shadow: inset 0 0 0 1px var(--accent); }
+.scell .tickmark { color: var(--faint); opacity: .3; font-size: .8rem; }
+.scell.done .tickmark { color: var(--accent); opacity: 1; }
+.snum { font-variant-numeric: tabular-nums; color: var(--muted); padding: 0 .05rem; }
+.scell:hover .snum { color: var(--text); }
+.sprev {
+  width: 30px; height: 30px; flex: 0 0 auto; border-radius: 99px;
+  border: 1px solid var(--line); color: var(--muted); font-size: .72rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.sprev:active { background: var(--accent-soft); }
+#exChapters.selmode .scell { cursor: copy; }
+#exChapters.selmode .scell:hover { border-color: var(--accent); }
+.selmode-btn.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.sprev:hover { color: var(--accent); border-color: var(--accent); }
+.scell .sdur { margin-left: auto; color: var(--faint); font-size: .76rem; font-variant-numeric: tabular-nums; }
+.scell.playing::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 2px;
+  background: var(--accent); animation: sweep var(--pdur, 900ms) linear 1;
+}
+@keyframes sweep { from { left: 0; } to { left: calc(100% - 2px); } }
+
+.selbar {
+  position: fixed; z-index: 70; left: 50%; transform: translateX(-50%); bottom: 1.3rem;
+  display: flex; align-items: center; gap: .55rem; flex-wrap: wrap;
+  padding: .55rem .7rem; background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: 999px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.2);
+  animation: fade 180ms var(--ease);
+}
+.selbar.hidden { display: none; }
+.selbar .cnt { font-weight: 560; padding: 0 .5rem; font-variant-numeric: tabular-nums; }
+.selbar .mini { padding: .35rem .8rem; }
+.selbar .mini.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+@media (max-width: 620px) {
+  .selbar {
+    left: 0; right: 0; bottom: 0; transform: none; border-radius: 16px 16px 0 0;
+    justify-content: center; padding: .7rem .8rem 1rem; border-width: 1px 0 0;
+  }
+}
+
+/* ---------------- 5. prepare ------------------------------------ */
+.quiet { color: var(--muted); }
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.1rem 1.25rem; margin-bottom: .75rem;
+}
+.params { display: grid; gap: 1.3rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.param label { display: flex; justify-content: space-between; font-size: .86rem; color: var(--muted); margin-bottom: .4rem; }
+.param label b { color: var(--text); font-weight: 560; font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.warn {
+  margin-top: 1rem; padding: .85rem 1rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--rec); background: var(--rec-soft); font-size: .88rem;
+}
+.warn.hidden { display: none; }
+.warn .acts { display: flex; gap: .5rem; margin-top: .7rem; flex-wrap: wrap; }
+.danger { border: 1px solid var(--rec); color: var(--rec); border-radius: 999px; padding: .25rem .8rem; font-size: .82rem; }
+
+.carry {
+  display: flex; align-items: flex-start; gap: .5rem;
+  font-size: .83rem; color: var(--muted);
+  border-left: 2px solid var(--accent); padding: .15rem .7rem;
+  margin: 0 0 1rem;
+}
+.carry b { color: var(--text); font-weight: 540; }
+
+.cfg {
+  display: flex; gap: .9rem; align-items: flex-start; flex-wrap: wrap;
+  padding: .9rem 1rem; margin-bottom: .5rem;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.cfg.active { border-color: var(--accent); background: var(--accent-soft); }
+.cfg .cfg-main { flex: 1 1 260px; min-width: 0; }
+.cfg-name { font-weight: 560; letter-spacing: -0.01em; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.badge {
+  font-size: .64rem; text-transform: uppercase; letter-spacing: .12em;
+  color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: .1rem .5rem;
+}
+.cfg-meta { color: var(--muted); font-size: .83rem; margin-top: .2rem; font-variant-numeric: tabular-nums; }
+.cfg-meta .done-n { color: var(--accent); }
+.cfg-acts { display: flex; gap: .35rem; flex-wrap: wrap; margin-left: auto; align-items: flex-start; }
+.cfg-extra { flex: 1 1 100%; }
+.cfg-extra.hidden { display: none; }
+.cfg-extra .box { margin-top: .7rem; padding: .85rem .9rem; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); }
+
+.prep-sec { margin-top: 1.6rem; }
+.chapter-row {
+  display: flex; align-items: center; gap: .9rem; width: 100%;
+  padding: .85rem 0; border-bottom: 1px solid var(--line); text-align: left;
+}
+.chapter-row:last-of-type { border-bottom: 0; }
+.chapter-row .caret { color: var(--faint); transition: transform var(--dur) var(--ease); display: inline-block; }
+.chapter-row[aria-expanded="true"] .caret { transform: rotate(90deg); }
+.chapter-row .nm { font-weight: 540; }
+.chapter-row .st { margin-left: auto; color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.prows { border-top: 1px solid var(--line); }
+.prows.hidden { display: none; }
+.prow {
+  display: flex; flex-wrap: wrap; gap: .45rem .7rem; align-items: center;
+  padding: .5rem .2rem; border-bottom: 1px solid var(--line); font-size: .85rem;
+  font-variant-numeric: tabular-nums;
+}
+.prow:last-child { border-bottom: 0; }
+.prow .pnum { color: var(--muted); min-width: 2.2em; }
+.prow .pw { position: relative; flex: 1 1 150px; min-width: 110px; }
+.prow .pw svg { display: block; width: 100%; height: 30px; }
+.prow .pw .ph { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); opacity: 0; left: 0; }
+.prow .pw.playing .ph { opacity: 1; animation: sweep var(--pdur, 900ms) linear 1; }
+.prow .ptime { color: var(--faint); font-size: .78rem; white-space: nowrap; }
+.prow .pdone { color: var(--faint); opacity: .35; }
+.prow.done .pdone { color: var(--accent); opacity: 1; }
+.prow .pacts { display: flex; gap: .3rem; margin-left: auto; }
+.scrub { flex: 1 1 100%; padding: .7rem .8rem; margin: .2rem 0 .5rem; border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--surface-2); }
+.scrub .sw { position: relative; cursor: crosshair; }
+.scrub .sw svg { display: block; width: 100%; height: 64px; }
+.scrub .mark { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--rec); left: 50%; }
+.scrub .lbl { font-size: .78rem; color: var(--muted); margin-bottom: .4rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+</style>
+
+<!-- =============== the one navigation =============== -->
+<nav class="nav" aria-label="main">
+  <span class="nav-brand"><span class="mark"></span>shadow</span>
+  <div class="nav-links" id="navLinks" role="tablist">
+    <button role="tab" data-go="library" aria-selected="true">Library</button>
+    <button role="tab" data-go="explore" aria-selected="false">Explore</button>
+    <button role="tab" data-go="study" aria-selected="false">Study</button>
+    <button role="tab" data-go="prepare" aria-selected="false">Prepare</button>
+  </div>
+  <span class="spacer"></span>
+  <span class="mock-aside">
+    <span class="mock-tag">mockup</span>
+    <button class="ghost-btn" id="phoneBtn" aria-pressed="false">◱ phone</button>
+    <button class="ghost-btn" id="themeBtn">◐ theme</button>
+  </span>
+</nav>
+
+<!-- =============== 1. LIBRARY =============== -->
+<section class="screen on" id="s-library">
+  <div class="wrap">
+    <h1>Lydbøker</h1>
+    <p class="sub">Four books on the server. One file each — mono Opus, split into ranges.</p>
+
+    <div class="books">
+      <button class="book" data-go="study">
+        <div>
+          <div class="book-title">Kristin Lavransdatter — Kransen</div>
+          <div class="book-meta num">11 t 42 min · 24 chapters · Sigrid Undset</div>
+          <div class="bar" style="margin-top:.6rem"><i style="width:22%"></i></div>
+          <div class="book-cursor num">▸ Chapter 3 · sentence 47 of 212</div>
+        </div>
+        <div class="book-right"><div class="pct num">22%</div><div>continue</div></div>
+      </button>
+
+      <button class="book" data-go="study">
+        <div>
+          <div class="book-title">Sult</div>
+          <div class="book-meta num">6 t 09 min · 4 chapters · Knut Hamsun</div>
+          <div class="bar" style="margin-top:.6rem"><i style="width:68%"></i></div>
+          <div class="book-cursor num">▸ Chapter 2 · sentence 318 of 470</div>
+        </div>
+        <div class="book-right"><div class="pct num">68%</div><div>continue</div></div>
+      </button>
+
+      <button class="book" disabled>
+        <div>
+          <div class="book-title">Markens grøde</div>
+          <div class="book-meta num">14 t 03 min · transcoded · splitting</div>
+          <div class="bar" style="margin-top:.6rem"><i style="width:41%"></i></div>
+          <div class="book-cursor"><span class="chip"><span class="dot pulse"></span> analysing silence — 41% · ~6 min left</span></div>
+        </div>
+        <div class="book-right"><div class="pct num">41%</div><div>server-side</div></div>
+      </button>
+
+      <button class="book" data-go="study">
+        <div>
+          <div class="book-title">Sofies verden</div>
+          <div class="book-meta num">16 t 27 min · 35 chapters · Jostein Gaarder</div>
+          <div class="bar" style="margin-top:.6rem"><i style="width:3%"></i></div>
+          <div class="book-cursor num">▸ Chapter 1 · sentence 9 of 1 204</div>
+          <div class="row-actions">
+            <span class="mini" data-go="explore">Explore</span>
+            <span class="mini" data-go="prepare">Prepare / split</span>
+            <span class="mini">Rename</span>
+          </div>
+        </div>
+        <div class="book-right"><div class="pct num">3%</div><div>continue</div></div>
+      </button>
+    </div>
+
+    <button class="drop">
+      <b>Add audiobook</b>
+      <small>Drop an m4b / mp3 / flac here. It is transcoded once to mono Opus; the original is discarded.</small>
+    </button>
+
+    <div class="prep-sec">
+      <div class="eyebrow" style="margin-bottom:.5rem">Settings</div>
+      <div class="card">
+        <button class="setrow" id="trimRow" type="button">
+          <span class="copy">
+            <b>Trim silence</b>
+            <small>Play only the spoken part of a sentence, and of your recordings. One switch — it governs both waveforms.</small>
+          </span>
+          <span class="switch" id="trimSwitch" role="switch" aria-checked="true" aria-label="Trim silence"></span>
+        </button>
+        <div class="quiet" style="font-size:.82rem;margin-top:.5rem" id="trimEcho">On — waveforms show the speech-only window.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============== 2. EXPLORE =============== -->
+<section class="screen" id="s-explore">
+  <div class="wrap">
+    <div class="eyebrow">Kristin Lavransdatter — Kransen</div>
+    <div class="exhead">
+      <h1 style="font-size:1.45rem;margin:0">Explore</h1>
+      <span class="quiet num" id="exTotals">24 chapters · 212 sentences · 43 done</span>
+      <button class="mini selmode-btn" id="selModeBtn" aria-pressed="false" style="margin-left:auto">☑ Select mode</button>
+    </div>
+    <p class="exhint" id="exHint">
+      Tap <b>anywhere on a sentence</b> to open it in Study · tap <b>▶</b> to hear it without leaving ·
+      turn on <b>Select mode</b> to tap-to-select instead. Chapter checkboxes always select.
+    </p>
+
+    <div id="exChapters"></div>
+  </div>
+
+  <div class="selbar hidden" id="selbar">
+    <span class="cnt num" id="selCount">0 selected</span>
+    <button class="mini" id="selExtend">⇥ select to…</button>
+    <button class="mini go" id="selDone">✓ Mark done</button>
+    <button class="mini" id="selUndone">↺ Mark not done</button>
+    <button class="mini" id="selClear">✕ Clear</button>
+  </div>
+</section>
+
+<!-- =============== 3. STUDY — DESKTOP =============== -->
+<section class="screen" id="s-study" data-study="desktop">
+  <div class="topbar">
+    <span class="t-book">Kristin Lavransdatter</span>
+    <span class="t-ch-wrap">
+      <button class="ch-nav js-chprev" type="button" title="previous chapter (Shift+←)" aria-label="previous chapter">‹</button>
+      <span class="t-ch js-ch">Kransen · III. Kirkebakken</span>
+      <button class="ch-nav js-chnext" type="button" title="next chapter (Shift+→)" aria-label="next chapter">›</button>
+    </span>
+    <span class="t-count num">sentence <b class="js-idx">47</b> / <span class="js-total">212</span></span>
+    <button class="ctl-s" data-go="library">✕ exit<span class="kbd">Esc</span></button>
+    <div class="t-progress bar"><i class="js-prog" style="width:22%"></i></div>
+  </div>
+
+  <div class="stage">
+    <div class="sentbox js-sentbox">
+      <div class="lanes contours js-lanes">
+        <div class="lanes-head">
+          <span>one time axis · two takes</span>
+          <span class="trim js-trimchip">silence trimmed</span>
+          <span class="sp"></span>
+          <button class="lane-toggle on js-contour-toggle" type="button" aria-pressed="true">pitch contour<span class="kbd">P</span></button>
+        </div>
+
+        <div class="lane lane-ref">
+          <div class="lane-head"><span class="nm">The sentence</span><span class="quiet">audiobook</span></div>
+          <div class="wave-wrap js-wavewrap">
+            <div class="js-wave"></div>
+            <svg class="contour-over js-contour-ref" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <div class="playhead js-playhead"></div>
+          </div>
+        </div>
+
+        <div class="lane lane-usr js-lane-usr">
+          <div class="lane-head">
+            <span class="nm">My take</span><span class="quiet">this session only</span>
+            <span class="live"><span class="recdot"></span><span class="rectime num js-rectime">0.0 s</span></span>
+          </div>
+          <div class="wave-wrap js-userwrap">
+            <div class="js-userwave"></div>
+            <svg class="contour-over js-contour-usr" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <div class="playhead js-userplayhead"></div>
+            <div class="lane-empty js-lane-empty">press <span class="kbd">R</span> to record</div>
+          </div>
+        </div>
+      </div>
+      <div class="sent-meta num">
+        <span><b class="js-dur">4.2 s</b> long</span>
+        <span>at <b class="js-at">18:04</b> in the chapter</span>
+        <span class="js-state">idle</span>
+      </div>
+    </div>
+
+    <div class="ticks js-ticks" aria-label="sentences in this chapter"></div>
+    <div class="tick-legend">
+      <span><i class="d"></i>done</span>
+      <span><i></i>not done</span>
+      <span><i class="c"></i>this sentence</span>
+    </div>
+
+    <div class="controls">
+      <button class="ctl primary js-play">▶ Play<span class="kbd">space</span></button>
+      <button class="ctl rec js-rec">● Record<span class="kbd">R</span></button>
+      <button class="ctl js-cmp">⇄ Compare<span class="kbd">C</span></button>
+      <button class="ctl primary js-done">✓ Done &amp; next<span class="kbd">↵</span></button>
+    </div>
+
+    <div class="controls-2">
+      <button class="ctl-s js-prev">← prev<span class="kbd">←</span></button>
+      <button class="ctl-s js-next">→ next<span class="kbd">→</span></button>
+      <button class="ctl-s js-chprev">⟨ prev chapter<span class="kbd">⇧←</span></button>
+      <button class="ctl-s js-chnext">⟩ next chapter<span class="kbd">⇧→</span></button>
+      <button class="ctl-s js-split">✂ split here<span class="kbd">X</span></button>
+      <button class="ctl-s js-merge">⇢⇠ merge with next<span class="kbd">M</span></button>
+      <button class="ctl-s js-tr">📝 transcribe<span class="kbd">T</span></button>
+      <button class="ctl-s js-fl">🔬 Formant Lab<span class="kbd">F</span></button>
+      <button class="ctl-s js-jump">⤓ first unfinished<span class="kbd">U</span></button>
+      <button class="ctl-s js-contour-toggle on">∿ pitch contour<span class="kbd">P</span></button>
+      <button class="ctl-s js-help">? shortcuts<span class="kbd">?</span></button>
+    </div>
+
+    <div class="panel hidden js-tr-panel">
+      <div class="panel-head">
+        <span>Transcript</span><span class="provenance">smia</span>
+        <button class="x js-close-tr">✕</button>
+      </div>
+      <div class="transcript js-tr-text"></div>
+    </div>
+
+    <div class="panel hidden js-fl-panel">
+      <div class="panel-head">
+        <span>Formant Lab</span><span class="provenance">phonexa</span>
+        <button class="x js-close-fl">✕</button>
+      </div>
+      <div class="quiet">Sent this sentence's <b>book audio</b> (range 18:04.2 → 18:08.4) to phonexa for vowel analysis. Opens in the Formant Lab tab.</div>
+    </div>
+
+    <div class="ephemeral">Recordings are never uploaded. Closing this tab discards them.</div>
+  </div>
+</section>
+
+<!-- =============== 4. STUDY — MOBILE =============== -->
+<section class="screen" id="s-mobile" data-study="mobile">
+  <div class="phone-area">
+    <div>
+      <div class="phone-note">390 × 844 — same loop, thumb-first</div>
+      <div class="phone">
+        <div class="m-nav">
+          <div class="m-nav-links" id="mNavLinks" role="tablist">
+            <button role="tab" data-go="library" aria-selected="false">Library</button>
+            <button role="tab" data-go="explore" aria-selected="false">Explore</button>
+            <button role="tab" data-go="study" aria-selected="true">Study</button>
+            <button role="tab" data-go="prepare" aria-selected="false">Prepare</button>
+          </div>
+        </div>
+        <div class="m-toprow">
+          <button class="m-pull js-pull" type="button" aria-label="pull down for navigation">
+            <span class="grabber"></span>
+            <span>pull for nav</span>
+          </button>
+          <button class="m-more-pill js-more">⋯ more</button>
+        </div>
+        <div class="m-top">
+          <div class="m-ch-row">
+            <button class="ch-nav js-chprev" type="button" aria-label="previous chapter">‹</button>
+            <div class="m-ch js-ch">III. Kirkebakken</div>
+            <button class="ch-nav js-chnext" type="button" aria-label="next chapter">›</button>
+          </div>
+          <div class="m-count num"><b class="js-idx">47</b> <small>/ <span class="js-total">212</span></small></div>
+        </div>
+        <div class="m-prog bar"><i class="js-prog" style="width:22%"></i></div>
+
+        <div class="m-mid">
+          <div class="sentbox js-sentbox">
+            <div class="lanes contours js-lanes">
+              <div class="lanes-head">
+                <span class="trim js-trimchip">silence trimmed</span>
+                <span class="sp"></span>
+                <button class="lane-toggle on js-contour-toggle" type="button" aria-pressed="true">∿ contour</button>
+              </div>
+              <div class="lane lane-ref">
+                <div class="lane-head"><span class="nm">The sentence</span></div>
+                <div class="wave-wrap js-wavewrap">
+                  <div class="js-wave"></div>
+                  <svg class="contour-over js-contour-ref" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"></svg>
+                  <div class="playhead js-playhead"></div>
+                </div>
+              </div>
+              <div class="lane lane-usr js-lane-usr">
+                <div class="lane-head">
+                  <span class="nm">My take</span>
+                  <span class="live"><span class="recdot"></span><span class="rectime num js-rectime">0.0 s</span></span>
+                </div>
+                <div class="wave-wrap js-userwrap">
+                  <div class="js-userwave"></div>
+                  <svg class="contour-over js-contour-usr" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"></svg>
+                  <div class="playhead js-userplayhead"></div>
+                  <div class="lane-empty js-lane-empty">press R to record</div>
+                </div>
+              </div>
+            </div>
+            <div class="sent-meta num" style="margin-top:.6rem">
+              <span class="js-dur">4.2 s</span><span class="js-state">idle</span>
+            </div>
+          </div>
+          <div class="m-swipe">
+            <button class="m-arrow js-prev">←</button>
+            <span>swipe the waveform</span>
+            <button class="m-arrow js-next">→</button>
+          </div>
+          <div class="panel hidden js-tr-panel m-panel">
+            <div class="panel-head"><span>Transcript</span><span class="provenance">smia</span><button class="x js-close-tr">✕</button></div>
+            <div class="js-tr-text"></div>
+          </div>
+          <div class="panel hidden js-fl-panel m-panel">
+            <div class="panel-head"><span>Formant Lab</span><span class="provenance">phonexa</span><button class="x js-close-fl">✕</button></div>
+            <div class="quiet">Book audio for this sentence sent to phonexa.</div>
+          </div>
+        </div>
+
+        <div class="m-bottom">
+          <div class="m-cluster">
+            <span class="m-key">
+              <button class="m-round pri js-play">▶</button>
+              <span class="lbl">Play</span>
+            </span>
+            <span class="m-key">
+              <button class="m-round sec js-rec">●</button>
+              <span class="lbl">Record</span>
+            </span>
+            <span class="m-key">
+              <button class="m-round cmp js-cmp">⇄</button>
+              <span class="lbl">Compare</span>
+            </span>
+            <span class="m-key">
+              <button class="m-round dn js-done">✓</button>
+              <span class="lbl">Done &amp; next</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="m-scrim js-scrim"></div>
+        <div class="m-sheet js-sheet">
+          <div class="grab"></div>
+          <button class="item js-split">✂ <span>Split here</span><span class="tag">at the playhead</span></button>
+          <button class="item js-merge">⇢⇠ <span>Merge with next</span><span class="tag">joins 2 → 1</span></button>
+          <button class="item js-tr">📝 <span>Transcribe</span><span class="tag">smia</span></button>
+          <button class="item js-fl">🔬 <span>Formant Lab</span><span class="tag">phonexa</span></button>
+          <button class="item js-jump">⤓ <span>First unfinished</span><span class="tag">chapter 3</span></button>
+          <button class="item" data-go="explore">☰ <span>Explore the book</span></button>
+          <button class="item" data-go="library">✕ <span>Exit to library</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============== 5. PREPARE / SPLIT =============== -->
+<section class="screen" id="s-prepare">
+  <div class="wrap">
+    <div class="eyebrow">Sofies verden</div>
+    <h1 style="font-size:1.45rem">Prepare / split</h1>
+    <p class="sub">Server-side silence analysis. Produces ranges only — no clips are cut or stored.</p>
+
+    <div class="carry">
+      <span>↻</span>
+      <span><b>Progress carries across configs.</b> Done-ness is stored as completed <b>time ranges on the book</b>; a sentence is done when its whole span is covered — so a fresh config starts with sentences already ticked.</span>
+    </div>
+
+    <div id="cfgList"></div>
+
+    <div class="row-actions" style="margin-bottom:.4rem">
+      <button class="mini go" id="newCfgBtn">+ New split config…</button>
+    </div>
+
+    <div class="card hidden" id="newCfgPanel">
+      <div class="params">
+        <div class="param">
+          <label>Silence threshold <b><span id="p1">-38</span> dB</b></label>
+          <input type="range" min="-60" max="-20" value="-38" id="r1">
+        </div>
+        <div class="param">
+          <label>Minimum silence <b><span id="p2">420</span> ms</b></label>
+          <input type="range" min="100" max="1200" step="20" value="420" id="r2">
+        </div>
+      </div>
+      <div class="row-actions" style="margin-top:1.1rem;align-items:center">
+        <input type="text" id="newCfgName" value="Nytt oppsett" aria-label="config name">
+        <button class="mini go" id="analyseBtn">Analyse</button>
+        <button class="mini" id="newCfgCancel">Cancel</button>
+        <span class="quiet num" style="font-size:.8rem">estimate: <span id="estOut">1 204</span> sentences · 35 chapters</span>
+      </div>
+    </div>
+
+    <div class="prep-sec">
+      <div class="eyebrow" style="margin-bottom:.5rem">Sentences in <span id="activeCfgName">Standard</span></div>
+      <div class="card" id="chapters"></div>
+      <p class="quiet" style="font-size:.84rem">Chunks are cut on demand when a phone asks for a chapter, then cached. Nothing here is pre-rendered.</p>
+    </div>
+  </div>
+</section>
+
+<!-- =============== shortcut overlay =============== -->
+<div class="overlay hidden" id="kover">
+  <div class="sheet">
+    <h3>Keyboard</h3>
+    <div class="klist">
+      <div><span>Play the sentence</span><span class="kbd">space</span></div>
+      <div><span>Record / stop</span><span class="kbd">R</span></div>
+      <div><span>Compare — reference then your take</span><span class="kbd">C</span></div>
+      <div><span>Done &amp; next</span><span class="kbd">↵</span></div>
+      <div><span>Previous sentence</span><span class="kbd">←</span></div>
+      <div><span>Next without marking</span><span class="kbd">→</span></div>
+      <div><span>Previous chapter</span><span class="kbd">⇧ ←</span></div>
+      <div><span>Next chapter</span><span class="kbd">⇧ →</span></div>
+      <div><span>Show / hide the pitch contours</span><span class="kbd">P</span></div>
+      <div><span>Split here (at the playhead)</span><span class="kbd">X</span></div>
+      <div><span>Merge with next</span><span class="kbd">M</span></div>
+      <div><span>Transcribe (smia)</span><span class="kbd">T</span></div>
+      <div><span>Formant Lab (phonexa, book audio)</span><span class="kbd">F</span></div>
+      <div><span>Jump to first unfinished</span><span class="kbd">U</span></div>
+      <div><span>Close panel / exit</span><span class="kbd">Esc</span></div>
+      <div><span>This panel</span><span class="kbd">?</span></div>
+    </div>
+    <div class="row-actions" style="margin-top:1.2rem"><button class="mini" id="koverClose">Close</button></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- deterministic pseudo-random ---------- */
+  function rng(seed) {
+    var s = seed >>> 0;
+    return function () {
+      s += 0x6D2B79F5;
+      var t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* speech-looking amplitude envelope: bursts separated by pauses */
+  function speech(seed, n) {
+    var r = rng(seed), a = new Array(n), i = 0;
+    while (i < n) {
+      var pause = 3 + Math.floor(r() * 8);
+      for (var p = 0; p < pause && i < n; p++, i++) a[i] = 0.02 + r() * 0.04;
+      var burst = 8 + Math.floor(r() * 22), peak = 0.45 + r() * 0.55;
+      for (var b = 0; b < burst && i < n; b++, i++) {
+        var env = Math.sin((b / burst) * Math.PI);
+        a[i] = Math.max(0.03, peak * env * (0.45 + r() * 0.75));
+      }
+    }
+    return a;
+  }
+
+  /* bars = how many bars to draw, slots = how many fit across the full width
+     (so a growing live take keeps a constant bar width), pad = leading and
+     trailing silence, i.e. the UNtrimmed span. */
+  function waveSVG(seed, bars, fill, slots, pad) {
+    var n = bars || 180, sl = slots || n, a = speech(seed, n);
+    var w = 1000, h = 120, bw = (w / sl) * 0.62, out = "";
+    var col = fill || "var(--wave)";
+    for (var i = 0; i < n; i++) {
+      var amp = Math.min(1, a[i]);
+      if (pad) {
+        var f = i / Math.max(1, n - 1);
+        if (f < 0.13) amp *= 0.05 + (f / 0.13) * 0.95;
+        else if (f > 0.87) amp *= 0.05 + ((1 - f) / 0.13) * 0.95;
+      }
+      var hh = Math.max(2, amp * 108);
+      var x = (i * w) / sl;
+      var y = (h - hh) / 2;
+      out += '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + bw.toFixed(2) +
+             '" height="' + hh.toFixed(2) + '" rx="' + (bw / 2).toFixed(2) + '" fill="' + col + '"/>';
+    }
+    return '<svg viewBox="0 0 1000 120" preserveAspectRatio="none" aria-hidden="true">' + out + '</svg>';
+  }
+
+  function contourPath(seed, bias) {
+    var r = rng(seed), pts = [], n = 14;
+    for (var i = 0; i < n; i++) pts.push(20 + r() * 70 + bias);
+    var d = "", w = 600;
+    for (var j = 0; j < n; j++) {
+      var x = (j * w) / (n - 1), y = Math.max(8, Math.min(102, pts[j]));
+      if (j === 0) d += "M" + x.toFixed(1) + "," + y.toFixed(1);
+      else {
+        var px = ((j - 1) * w) / (n - 1), py = Math.max(8, Math.min(102, pts[j - 1]));
+        var cx = (px + x) / 2;
+        d += " C" + cx.toFixed(1) + "," + py.toFixed(1) + " " + cx.toFixed(1) + "," + y.toFixed(1) + " " + x.toFixed(1) + "," + y.toFixed(1);
+      }
+    }
+    return d;
+  }
+
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* one brief, fake "this sentence is playing" animation */
+  function previewPlay(el, secs) {
+    var ms = Math.min(1500, Math.max(420, secs * 230));
+    el.style.setProperty("--pdur", ms + "ms");
+    el.classList.remove("playing");
+    void el.offsetWidth;
+    el.classList.add("playing");
+    setTimeout(function () { el.classList.remove("playing"); }, reduced ? 200 : ms);
+  }
+
+  function fmtInt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+
+  /* ---------- fake data — study ---------- */
+  var SENTENCES = [
+    { dur: 4.2, at: "18:04", txt: "Det var en gang en gård som het Jørundgaard, og den lå høyt oppe i Sil." },
+    { dur: 2.8, at: "18:09", txt: "Lavrans Bjørgulfsøn het mannen som eide den." },
+    { dur: 5.1, at: "18:12", txt: "Han var av god ætt, men slekten hans hadde lenge bodd sør i landet." },
+    { dur: 3.6, at: "18:18", txt: "Ragnfrid Ivarsdatter, hans hustru, var nitten år da de giftet seg." },
+    { dur: 2.4, at: "18:22", txt: "De fikk flere barn, men bare Kristin vokste opp." },
+    { dur: 4.7, at: "18:25", txt: "Om morgenen red de oppover mot setrene i det klare været." }
+  ];
+  var TICKS = 34, TICK_START = 11, GLOBAL_START = 47, TOTAL = 212;
+
+  var CH_NAMES = [
+    "Forord", "I. Jørundgaard", "II. Vinterveien", "III. Kirkebakken", "IV. Fehirdsletten",
+    "V. Setrene", "VI. Brudeferden", "VII. Lavrans og Ragnfrid", "VIII. Høstmarked", "IX. Nonneseter",
+    "X. Erlend Nikulaussøn", "XI. Julenatt", "XII. Haugen", "XIII. Gunnulv", "XIV. Simon Darre",
+    "XV. Fastelavn", "XVI. Skogsferden", "XVII. Olavsvaka", "XVIII. Husaby", "XIX. Trondheimsveien",
+    "XX. Brylluppet", "XXI. Kransen faller", "XXII. Hjemkomsten", "XXIII. Vinter igjen"
+  ];
+
+  /* preferences that outlive a sentence change, shared by both study instances */
+  var contoursOn = true;      /* P */
+  var trimOn = true;          /* the one Settings switch — governs BOTH lanes */
+  var studyAll = [];
+
+  function setContours(v) {
+    contoursOn = !!v;
+    studyAll.forEach(function (s) { s.paintContours(); });
+  }
+  function setTrim(v) {
+    trimOn = !!v;
+    studyAll.forEach(function (s) { s.refresh(); });
+    var sw = document.getElementById("trimSwitch");
+    if (sw) sw.setAttribute("aria-checked", String(trimOn));
+    var echo = document.getElementById("trimEcho");
+    if (echo) {
+      echo.textContent = trimOn
+        ? "On — waveforms and playback cover the speech-only window of the sentence and of your take."
+        : "Off — waveforms and playback cover the full untrimmed span, silence included.";
+    }
+  }
+
+  /* ---------- study instance factory ---------- */
+  function makeStudy(root) {
+    var q = function (sel) { return root.querySelector(sel); };
+    var qa = function (sel) { return Array.prototype.slice.call(root.querySelectorAll(sel)); };
+
+    var isPhone = root.getAttribute("data-study") === "mobile";
+    var chPrefix = isPhone ? "" : "Kransen · ";
+    var phoneEl = root.querySelector(".phone");
+
+    var st = {
+      i: 0,
+      ch: 3,                        /* index into CH_NAMES */
+      done: {},
+      takes: {},                    /* per-sentence ephemeral takes */
+      playing: false,
+      recording: false,
+      pos: 0,                       /* 0..1 playhead position, used by split */
+      ticks: TICKS,
+      tickStart: TICK_START,
+      base: GLOBAL_START,
+      total: TOTAL,
+      sents: SENTENCES.map(function (s) { return { dur: s.dur, at: s.at, txt: s.txt }; }),
+      raf: 0,
+      recTimer: 0, liveTimer: 0, recStart: 0
+    };
+    var ticksEl = q(".js-ticks");
+    var lanesEl = q(".js-lanes");
+    var userLane = q(".js-lane-usr");
+
+    function tickIdx() { return st.tickStart + st.i; }
+    function globalIdx() { return st.base + st.i; }
+    function chLabel() { return chPrefix + CH_NAMES[st.ch]; }
+
+    /* the trim switch decides what the lanes depict and how long playback runs */
+    function refDur() {
+      var d = st.sents[st.i].dur;
+      return trimOn ? d : +(d + 1.3).toFixed(1);
+    }
+    function takeDur(t) { return trimOn ? t.dur : +(t.dur + 0.9).toFixed(1); }
+
+    function buildTicks() {
+      if (!ticksEl) return;
+      ticksEl.innerHTML = "";
+      for (var t = 0; t < st.ticks; t++) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.title = "sentence " + (st.base - st.tickStart + t);
+        (function (t) {
+          b.addEventListener("click", function () {
+            var target = t - st.tickStart;
+            if (target < 0) target = 0;
+            if (target > st.sents.length - 1) target = st.sents.length - 1;
+            go(target, false);
+          });
+        })(t);
+        ticksEl.appendChild(b);
+      }
+      paintTicks();
+    }
+    function paintTicks() {
+      if (!ticksEl) return;
+      var kids = ticksEl.children;
+      for (var t = 0; t < kids.length; t++) {
+        var k = kids[t];
+        k.className = "";
+        if (t < st.tickStart || st.done[t - st.tickStart]) k.classList.add("done");
+        if (t === tickIdx()) k.classList.add("cur");
+      }
+    }
+
+    function setState(txt) { qa(".js-state").forEach(function (e) { e.textContent = txt; }); }
+
+    /* ---- the two lanes ---- */
+    function paintContours() {
+      if (lanesEl) lanesEl.classList.toggle("contours", contoursOn);
+      qa(".js-contour-toggle").forEach(function (b) {
+        b.classList.toggle("on", contoursOn);
+        b.setAttribute("aria-pressed", String(contoursOn));
+      });
+    }
+    function paintTrimChip() {
+      qa(".js-trimchip").forEach(function (e) {
+        e.textContent = trimOn ? "silence trimmed" : "full span";
+        e.title = trimOn
+          ? "Trim silence is on (Settings) — this is the speech-only window"
+          : "Trim silence is off (Settings) — the full untrimmed span";
+      });
+    }
+    function renderTake() {
+      var t = st.takes[st.i];
+      var uw = q(".js-userwave"), cu = q(".js-contour-usr");
+      if (userLane) userLane.classList.toggle("has-take", !!t && !st.recording);
+      if (!t || st.recording) {
+        if (!st.recording && uw) uw.innerHTML = "";
+        if (!st.recording && cu) cu.innerHTML = "";
+        return;
+      }
+      if (uw) uw.innerHTML = waveSVG(t.seed, 170, "var(--usr)", 170, !trimOn);
+      if (cu) {
+        cu.innerHTML = '<path d="' + contourPath(t.seed + 400, 8) + '" fill="none" stroke="var(--usr)" ' +
+          'stroke-width="2.5" stroke-linecap="round" stroke-dasharray="5 4"/>';
+      }
+    }
+
+    function render() {
+      var s = st.sents[st.i];
+      var seed = 1337 + st.ch * 701 + st.i * 977 + Math.round(s.dur * 100);
+      q(".js-wave").innerHTML = waveSVG(seed, 170, "var(--ref)", 170, !trimOn);
+      var cr = q(".js-contour-ref");
+      if (cr) {
+        cr.innerHTML = '<path d="' + contourPath(90 + seed, 0) + '" fill="none" stroke="var(--ref)" ' +
+          'stroke-width="2.5" stroke-linecap="round"/>';
+      }
+      renderTake();
+      paintContours();
+      paintTrimChip();
+      qa(".js-dur").forEach(function (e) { e.textContent = refDur().toFixed(1) + " s"; });
+      qa(".js-at").forEach(function (e) { e.textContent = s.at; });
+      qa(".js-idx").forEach(function (e) { e.textContent = globalIdx(); });
+      qa(".js-total").forEach(function (e) { e.textContent = fmtInt(st.total); });
+      qa(".js-prog").forEach(function (e) { e.style.width = ((globalIdx() / st.total) * 100).toFixed(1) + "%"; });
+      qa(".js-ch").forEach(function (e) { e.textContent = chLabel(); });
+      var trText = q(".js-tr-text");
+      if (trText) trText.textContent = s.txt;
+      paintTicks();
+      setState(st.done[st.i] ? "done" : "idle");
+    }
+
+    function hidePanels() {
+      [".js-tr-panel", ".js-fl-panel"].forEach(function (sel) {
+        var p = q(sel); if (p) p.classList.add("hidden");
+      });
+      qa(".js-cmp, .js-tr, .js-fl").forEach(function (b) { b.classList.remove("on"); });
+    }
+
+    function go(next, markDone) {
+      if (markDone) st.done[st.i] = true;
+      stopPlay(); stopRec();
+      var box = q(".js-sentbox");
+      if (next < 0) next = 0;
+      var wrapped = false;
+      if (next > st.sents.length - 1) { next = 0; wrapped = true; }
+      var apply = function () {
+        st.i = next;
+        st.pos = 0;
+        hidePanels();
+        render();
+        if (wrapped) setState("mockup wrapped to the first demo sentence");
+        if (box) box.classList.remove("swap");
+      };
+      if (box && !reduced) { box.classList.add("swap"); setTimeout(apply, 170); } else apply();
+    }
+
+    /* ---- chapter stepping (Shift + arrows) ---- */
+    function stepChapter(d) {
+      var ci = st.ch + d;
+      if (ci < 0 || ci > CH_NAMES.length - 1) { setState("no chapter that way"); return; }
+      stopPlay(); stopRec();
+      st.ch = ci;
+      st.i = 0;
+      st.pos = 0;
+      st.done = {};
+      st.takes = {};
+      st.ticks = 24 + ((ci * 7) % 13);
+      st.tickStart = Math.min(st.ticks - 1, (ci * 5) % 11);
+      st.base = 1 + ci * 9 + st.tickStart;
+      hidePanels();
+      buildTicks();
+      render();
+      setState("chapter " + (ci + 1) + " of " + CH_NAMES.length + " — " + CH_NAMES[ci]);
+    }
+
+    /* ---- split / merge against the fake data ---- */
+    function shiftDone(from, delta) {
+      var next = {};
+      Object.keys(st.done).forEach(function (k) {
+        var n = Number(k);
+        next[n >= from ? n + delta : n] = true;
+      });
+      st.done = next;
+    }
+    function splitHere() {
+      var s = st.sents[st.i];
+      if (s.dur < 1.2) { setState("too short to split"); return; }
+      var frac = st.pos > 0.08 && st.pos < 0.92 ? st.pos : 0.5;
+      var words = s.txt.split(" ");
+      var cut = Math.max(1, Math.min(words.length - 1, Math.round(words.length * frac)));
+      var a = { dur: Math.max(0.4, +(s.dur * frac).toFixed(1)), at: s.at, txt: words.slice(0, cut).join(" ") };
+      var b = { dur: Math.max(0.4, +(s.dur * (1 - frac)).toFixed(1)), at: s.at, txt: words.slice(cut).join(" ") };
+      st.sents.splice(st.i, 1, a, b);
+      shiftDone(st.i + 1, 1);
+      delete st.done[st.i];
+      delete st.takes[st.i];
+      st.ticks += 1;
+      st.total += 1;
+      buildTicks();
+      render();
+      setState("split at " + Math.round(frac * 100) + "% — this chapter now has " + st.ticks + " sentences");
+    }
+    function mergeNext() {
+      if (st.i >= st.sents.length - 1) { setState("nothing after this one to merge"); return; }
+      var a = st.sents[st.i], b = st.sents[st.i + 1];
+      st.sents.splice(st.i, 2, { dur: +(a.dur + b.dur).toFixed(1), at: a.at, txt: (a.txt + " " + b.txt).trim() });
+      delete st.done[st.i];
+      delete st.takes[st.i];
+      shiftDone(st.i + 2, -1);
+      st.ticks = Math.max(1, st.ticks - 1);
+      st.total -= 1;
+      buildTicks();
+      render();
+      setState("merged with the next — this chapter now has " + st.ticks + " sentences");
+    }
+
+    /* ---- playback: one lane at a time, both share the same time axis ---- */
+    function stopPlay() {
+      st.playing = false;
+      cancelAnimationFrame(st.raf);
+      qa(".js-wavewrap, .js-userwrap").forEach(function (w) { w.classList.remove("playing"); });
+      qa(".js-playhead, .js-userplayhead").forEach(function (p) { p.style.left = "0%"; });
+      var pb = q(".js-play"); if (pb) pb.classList.remove("on");
+    }
+    /* NOTE: play() always stops first, so pressing play while playing RESTARTS
+       the sentence — the playhead visibly jumps back to 0 and runs again. */
+    function play(opts) {
+      opts = opts || {};
+      var usr = opts.lane === "usr";
+      stopPlay();
+      st.playing = true;
+      var wrap = q(usr ? ".js-userwrap" : ".js-wavewrap");
+      var ph = q(usr ? ".js-userplayhead" : ".js-playhead");
+      if (wrap) wrap.classList.add("playing");
+      var pb = q(".js-play"); if (pb) pb.classList.add("on");
+      setState(opts.label || "playing");
+      var take = st.takes[st.i];
+      var total = (usr && take ? takeDur(take) : refDur()) * 1000;
+      var start = performance.now();
+      function step(now) {
+        var p = Math.min(1, (now - start) / total);
+        if (!usr) st.pos = p;
+        if (ph) ph.style.left = (p * 100).toFixed(2) + "%";
+        if (p < 1 && st.playing) st.raf = requestAnimationFrame(step);
+        else { stopPlay(); setState(st.done[st.i] ? "done" : "idle"); if (opts.after) opts.after(); }
+      }
+      st.raf = requestAnimationFrame(step);
+    }
+
+    /* ---- recording (ephemeral) — the live lane IS the take lane ---- */
+    function stopRec() {
+      if (!st.recording) return;
+      st.recording = false;
+      clearInterval(st.recTimer); clearInterval(st.liveTimer);
+      if (userLane) userLane.classList.remove("recording");
+      qa(".js-rec").forEach(function (b) { b.classList.remove("armed"); });
+      var secs = Math.max(0.9, (performance.now() - st.recStart) / 1000);
+      st.takes[st.i] = { seed: 8800 + st.i * 613 + Math.round(secs * 10), dur: +secs.toFixed(1) };
+      renderTake();
+      setState("take held in memory — C to compare");
+    }
+    function startRec() {
+      if (st.recording) { stopRec(); return; }
+      stopPlay();
+      st.recording = true;
+      st.recStart = performance.now();
+      if (userLane) { userLane.classList.add("recording"); userLane.classList.remove("has-take"); }
+      qa(".js-rec").forEach(function (b) { b.classList.add("armed"); });
+      setState("recording — R or space to stop");
+      var rt = q(".js-rectime"), uw = q(".js-userwave"), cu = q(".js-contour-usr");
+      if (cu) cu.innerHTML = "";
+      if (uw) uw.innerHTML = "";
+      st.recTimer = setInterval(function () {
+        if (rt) rt.textContent = ((performance.now() - st.recStart) / 1000).toFixed(1) + " s";
+      }, 100);
+      st.liveTimer = setInterval(function () {
+        var el = performance.now() - st.recStart;
+        var n = Math.max(6, Math.min(170, Math.round(el / 26)));
+        if (uw) uw.innerHTML = waveSVG(5000 + Math.floor(el / 130), n, "var(--rec)", 170, false);
+      }, reduced ? 420 : 90);
+    }
+
+    /* ---- compare: the sentence lane, then mine, in place ---- */
+    function compare() {
+      stopRec();
+      qa(".js-cmp").forEach(function (b) { b.classList.add("on"); });
+      function clear() { qa(".js-cmp").forEach(function (b) { b.classList.remove("on"); }); }
+      play({
+        label: "comparing — the sentence",
+        after: function () {
+          if (!st.takes[st.i]) { clear(); setState("no take yet — press R to record one"); return; }
+          play({
+            lane: "usr",
+            label: "comparing — my take",
+            after: function () { clear(); setState("compared"); }
+          });
+        }
+      });
+    }
+
+    /* ---- phone chrome: the nav is hidden while studying ---- */
+    var navTimer = 0;
+    function revealNav(on) {
+      if (!phoneEl) return;
+      phoneEl.classList.toggle("nav-open", !!on);
+      clearTimeout(navTimer);
+      if (on) navTimer = setTimeout(function () { phoneEl.classList.remove("nav-open"); }, 3200);
+    }
+    var pull = q(".js-pull");
+    if (pull) {
+      var py = null;
+      pull.addEventListener("pointerdown", function (e) { py = e.clientY; });
+      pull.addEventListener("pointermove", function (e) {
+        if (py !== null && e.clientY - py > 16) { revealNav(true); py = null; }
+      });
+      pull.addEventListener("pointerup", function () {
+        if (py !== null) revealNav(!phoneEl.classList.contains("nav-open"));
+        py = null;
+      });
+      pull.addEventListener("pointercancel", function () { py = null; });
+    }
+
+    /* ---- wiring ---- */
+    function bind(sel, fn) {
+      qa(sel).forEach(function (b) {
+        b.addEventListener("click", function (e) { revealNav(false); fn(e); });
+      });
+    }
+
+    bind(".js-play", function () { stopRec(); play({ label: st.playing ? "restarted from the beginning" : "playing" }); });
+    bind(".js-rec", startRec);
+    bind(".js-cmp", compare);
+    bind(".js-done", function () { go(st.i + 1, true); });
+    bind(".js-prev", function () { go(st.i - 1, false); });
+    bind(".js-next", function () { go(st.i + 1, false); });
+    bind(".js-chprev", function () { stepChapter(-1); });
+    bind(".js-chnext", function () { stepChapter(1); });
+    bind(".js-contour-toggle", function () { setContours(!contoursOn); });
+    bind(".js-split", splitHere);
+    bind(".js-merge", mergeNext);
+    bind(".js-tr", function () {
+      var p = q(".js-tr-panel");
+      if (p) { p.classList.toggle("hidden"); qa(".js-tr").forEach(function (b) { b.classList.toggle("on", !p.classList.contains("hidden")); }); }
+      setState("transcribed");
+    });
+    bind(".js-fl", function () {
+      var p = q(".js-fl-panel");
+      if (p) { p.classList.toggle("hidden"); qa(".js-fl").forEach(function (b) { b.classList.toggle("on", !p.classList.contains("hidden")); }); }
+    });
+    bind(".js-jump", function () {
+      var first = 0;
+      while (first < st.sents.length && st.done[first]) first++;
+      go(Math.min(first, st.sents.length - 1), false);
+      setState("jumped to first unfinished");
+    });
+    bind(".js-close-tr", function () { var p = q(".js-tr-panel"); if (p) p.classList.add("hidden"); qa(".js-tr").forEach(function (b) { b.classList.remove("on"); }); });
+    bind(".js-close-fl", function () { var p = q(".js-fl-panel"); if (p) p.classList.add("hidden"); qa(".js-fl").forEach(function (b) { b.classList.remove("on"); }); });
+    bind(".js-help", function () { toggleOverlay(true); });
+
+    /* mobile sheet */
+    var sheet = q(".js-sheet"), scrim = q(".js-scrim");
+    function closeSheet() { if (sheet) sheet.classList.remove("open"); if (scrim) scrim.classList.remove("on"); }
+    bind(".js-more", function () { if (sheet) sheet.classList.toggle("open"); if (scrim) scrim.classList.toggle("on"); });
+    if (scrim) scrim.addEventListener("click", closeSheet);
+    if (sheet) qa(".js-sheet .item").forEach(function (b) { b.addEventListener("click", closeSheet); });
+
+    /* swipe on the sentence lane */
+    var ww = q(".js-wavewrap");
+    if (ww) {
+      var sx = null;
+      ww.addEventListener("touchstart", function (e) { sx = e.touches[0].clientX; }, { passive: true });
+      ww.addEventListener("touchend", function (e) {
+        if (sx === null) return;
+        var dx = e.changedTouches[0].clientX - sx;
+        if (Math.abs(dx) > 48) go(st.i + (dx < 0 ? 1 : -1), false);
+        sx = null;
+      }, { passive: true });
+      /* clicking the sentence lane parks the playhead — that is what "split here" uses */
+      ww.addEventListener("click", function (e) {
+        if (st.playing) return;
+        var r = ww.getBoundingClientRect();
+        st.pos = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        var ph = q(".js-playhead");
+        if (ph) { ph.style.left = (st.pos * 100).toFixed(2) + "%"; ww.classList.add("playing"); }
+        setState("playhead at " + Math.round(st.pos * 100) + "% — X splits here");
+      });
+    }
+
+    buildTicks();
+    render();
+
+    var api = {
+      root: root,
+      closeSheet: closeSheet,
+      paintContours: paintContours,
+      refresh: function () { render(); },
+      jumpTo: function (gi, ci) {
+        st.base = gi;
+        st.i = 0;
+        st.ch = Math.max(0, Math.min(CH_NAMES.length - 1, ci));
+        st.done = {};
+        st.takes = {};
+        buildTicks();
+        render();
+        setState("jumped from Explore to sentence " + gi);
+      },
+      key: function (k, ev) {
+        revealNav(false);
+        switch (k) {
+          case " ": ev.preventDefault(); if (st.recording) stopRec(); else play({ label: st.playing ? "restarted from the beginning" : "playing" }); break;
+          case "r": startRec(); break;
+          case "c": compare(); break;
+          case "p": setContours(!contoursOn); break;
+          case "enter": ev.preventDefault(); go(st.i + 1, true); break;
+          case "arrowleft": ev.preventDefault(); if (ev.shiftKey) stepChapter(-1); else go(st.i - 1, false); break;
+          case "arrowright": ev.preventDefault(); if (ev.shiftKey) stepChapter(1); else go(st.i + 1, false); break;
+          case "x": splitHere(); break;
+          case "m": mergeNext(); break;
+          case "t": qa(".js-tr")[0] && qa(".js-tr")[0].click(); break;
+          case "f": qa(".js-fl")[0] && qa(".js-fl")[0].click(); break;
+          case "u": qa(".js-jump")[0] && qa(".js-jump")[0].click(); break;
+          case "escape": stopPlay(); stopRec(); hidePanels(); closeSheet(); revealNav(false); break;
+        }
+      }
+    };
+    studyAll.push(api);
+    return api;
+  }
+
+  /* ---------- screens ---------- */
+  var screens = {
+    library: document.getElementById("s-library"),
+    explore: document.getElementById("s-explore"),
+    study: document.getElementById("s-study"),
+    mobile: document.getElementById("s-mobile"),
+    prepare: document.getElementById("s-prepare")
+  };
+  var current = "library";
+  var phoneMode = false;
+
+  /* the nav has one "Study" entry — it resolves to the phone or the desktop screen */
+  function resolve(name) {
+    if (name === "study" && (phoneMode || window.innerWidth < 620)) return "mobile";
+    return name;
+  }
+  function navKey(name) { return name === "mobile" ? "study" : name; }
+
+  function show(name) {
+    name = resolve(name);
+    if (!screens[name]) return;
+    Object.keys(screens).forEach(function (k) { screens[k].classList.toggle("on", k === name); });
+    var key = navKey(name);
+    Array.prototype.forEach.call(document.querySelectorAll("#navLinks button, #mNavLinks button"), function (b) {
+      b.setAttribute("aria-selected", String(b.dataset.go === key));
+    });
+    current = name;
+    window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
+  }
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest ? e.target.closest("[data-go]") : null;
+    if (t) { e.preventDefault(); show(t.dataset.go); }
+  });
+
+  /* mockup-only: look at Study in the phone frame instead of the desktop stage */
+  var phoneBtn = document.getElementById("phoneBtn");
+  phoneBtn.addEventListener("click", function () {
+    phoneMode = !phoneMode;
+    phoneBtn.setAttribute("aria-pressed", String(phoneMode));
+    if (current === "study" || current === "mobile") show(phoneMode ? "mobile" : "study");
+  });
+
+  /* the one trim switch, on the Settings surface in Library */
+  var trimRow = document.getElementById("trimRow");
+  if (trimRow) trimRow.addEventListener("click", function () { setTrim(!trimOn); });
+
+  /* theme toggle — must beat the media query in both directions */
+  document.getElementById("themeBtn").addEventListener("click", function () {
+    var r = document.documentElement;
+    var cur = r.getAttribute("data-theme");
+    if (!cur) cur = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    r.setAttribute("data-theme", cur === "dark" ? "light" : "dark");
+  });
+
+  /* shortcut overlay */
+  var kover = document.getElementById("kover");
+  function toggleOverlay(on) { kover.classList.toggle("hidden", !on); }
+  document.getElementById("koverClose").addEventListener("click", function () { toggleOverlay(false); });
+  kover.addEventListener("click", function (e) { if (e.target === kover) toggleOverlay(false); });
+
+  /* instances */
+  var desktop = makeStudy(document.getElementById("s-study"));
+  var mobile = makeStudy(document.getElementById("s-mobile"));
+
+  document.addEventListener("keydown", function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var tag = (e.target && e.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    var k = e.key.toLowerCase();
+    if (k === "?" || (k === "/" && e.shiftKey)) { e.preventDefault(); toggleOverlay(kover.classList.contains("hidden")); return; }
+    if (!kover.classList.contains("hidden")) { if (k === "escape") toggleOverlay(false); return; }
+    var inst = current === "study" ? desktop : (current === "mobile" ? mobile : null);
+    if (!inst) return;
+    if (k === "escape") { inst.key("escape", e); return; }
+    inst.key(k === "enter" ? "enter" : k, e);
+  });
+
+  /* ================= EXPLORE ================= */
+  function buildBook() {
+    var r = rng(4711), counts = [], sum = 0, i;
+    for (i = 0; i < CH_NAMES.length; i++) { counts.push(5 + Math.floor(r() * 8)); sum += counts[i]; }
+    var diff = 212 - sum, guard = 0;
+    while (diff !== 0 && guard < 2000) {
+      var idx = guard % counts.length, sign = diff > 0 ? 1 : -1;
+      if (counts[idx] + sign >= 3) { counts[idx] += sign; diff -= sign; }
+      guard++;
+    }
+    var chapters = [], gi = 1;
+    for (i = 0; i < CH_NAMES.length; i++) {
+      var sents = [], total = 0;
+      for (var j = 0; j < counts[i]; j++) {
+        var d = +(1.8 + r() * 5).toFixed(1);
+        total += d;
+        sents.push({ gi: gi, dur: d });
+        gi++;
+      }
+      chapters.push({ name: CH_NAMES[i], sents: sents, secs: total + counts[i] * 1.4 });
+    }
+    return chapters;
+  }
+
+  var EX = buildBook();
+  var exDone = {};
+  EX.forEach(function (c) {
+    c.sents.forEach(function (s) { if (s.gi < 47 && s.gi % 13 !== 0) exDone[s.gi] = true; });
+  });
+
+  var exSel = {}, exAnchor = null, exExtendArmed = false, exSelectMode = false;
+
+  function openInStudy(gi, ci) {
+    var inst = resolve("study") === "mobile" ? mobile : desktop;
+    show("study");
+    inst.jumpTo(gi, ci);
+  }
+  var exCells = {}, exChRefs = [];
+  var exBox = document.getElementById("exChapters");
+  var selbar = document.getElementById("selbar");
+  var selCount = document.getElementById("selCount");
+  var selExtendBtn = document.getElementById("selExtend");
+
+  function mmss(secs) {
+    var m = Math.floor(secs / 60), s = Math.round(secs % 60);
+    if (s === 60) { m++; s = 0; }
+    return m + " min " + (s < 10 ? "0" : "") + s + " s";
+  }
+  function selSize() { return Object.keys(exSel).length; }
+
+  function paintCell(gi) {
+    var el = exCells[gi];
+    if (!el) return;
+    el.classList.toggle("done", !!exDone[gi]);
+    el.classList.toggle("sel", !!exSel[gi]);
+  }
+
+  function paintChapter(ci) {
+    var ref = exChRefs[ci], ch = EX[ci];
+    var done = 0, allSel = true, anySel = false;
+    ch.sents.forEach(function (s) {
+      if (exDone[s.gi]) done++;
+      if (exSel[s.gi]) anySel = true; else allSel = false;
+    });
+    ref.count.textContent = done + " / " + ch.sents.length + " done";
+    ref.bar.style.width = ((done / ch.sents.length) * 100).toFixed(1) + "%";
+    ref.cbx.setAttribute("aria-checked", allSel && anySel ? "true" : (anySel ? "mixed" : "false"));
+    ref.cbx.textContent = allSel && anySel ? "✓" : (anySel ? "–" : "");
+  }
+
+  function paintAll() {
+    var done = 0, total = 0;
+    EX.forEach(function (c, ci) {
+      total += c.sents.length;
+      c.sents.forEach(function (s) { if (exDone[s.gi]) done++; });
+      paintChapter(ci);
+    });
+    document.getElementById("exTotals").textContent =
+      EX.length + " chapters · " + total + " sentences · " + done + " done";
+    paintSelbar();
+  }
+
+  function paintSelbar() {
+    var n = selSize();
+    selbar.classList.toggle("hidden", n === 0);
+    selCount.textContent = n + " selected";
+    selExtendBtn.classList.toggle("on", exExtendArmed);
+    selExtendBtn.textContent = exExtendArmed ? "⇥ tap the end sentence" : "⇥ select to…";
+  }
+
+  function allGis() {
+    var out = [];
+    EX.forEach(function (c) { c.sents.forEach(function (s) { out.push(s.gi); }); });
+    return out;
+  }
+
+  function selectRange(a, b) {
+    var lo = Math.min(a, b), hi = Math.max(a, b);
+    allGis().forEach(function (gi) { if (gi >= lo && gi <= hi) exSel[gi] = true; });
+  }
+
+  function cellClick(gi, shift) {
+    if ((shift || exExtendArmed) && exAnchor !== null) {
+      selectRange(exAnchor, gi);
+      exExtendArmed = false;
+    } else if (exSel[gi] && selSize() === 1) {
+      exSel = {}; exAnchor = null;
+    } else {
+      exSel = {}; exSel[gi] = true; exAnchor = gi;
+    }
+    allGis().forEach(paintCell);
+    EX.forEach(function (c, ci) { paintChapter(ci); });
+    paintSelbar();
+  }
+
+  EX.forEach(function (ch, ci) {
+    var wrapEl = document.createElement("div");
+    wrapEl.className = "exch";
+    wrapEl.setAttribute("data-open", ci === 3 ? "1" : "0");
+
+    var head = document.createElement("div");
+    head.className = "exch-head";
+
+    var cbx = document.createElement("button");
+    cbx.className = "cbx";
+    cbx.type = "button";
+    cbx.setAttribute("aria-checked", "false");
+    cbx.title = "select the whole chapter";
+
+    var toggle = document.createElement("button");
+    toggle.className = "exch-toggle";
+    toggle.type = "button";
+    toggle.innerHTML = '<span class="caret">▸</span><span class="exch-name"></span>' +
+      '<span class="exch-meta num">' + mmss(ch.secs) + '</span>';
+    toggle.querySelector(".exch-name").textContent = ch.name;
+
+    var countWrap = document.createElement("div");
+    countWrap.className = "exch-count";
+    countWrap.innerHTML = '<div class="cnt"></div><div class="bar"><i></i></div>';
+
+    head.appendChild(cbx);
+    head.appendChild(toggle);
+    head.appendChild(countWrap);
+
+    var body = document.createElement("div");
+    body.className = "exbody";
+    var grid = document.createElement("div");
+    grid.className = "sgrid";
+    body.appendChild(grid);
+
+    ch.sents.forEach(function (s) {
+      var cell = document.createElement("div");
+      cell.className = "scell";
+      cell.setAttribute("role", "button");
+      cell.setAttribute("tabindex", "0");
+      cell.title = "open sentence " + s.gi + " in Study";
+      cell.innerHTML = '<button class="sprev" type="button" title="hear this sentence here" aria-label="preview">▶</button>' +
+        '<span class="snum num"></span>' +
+        '<span class="tickmark">✓</span>' +
+        '<span class="sdur">' + s.dur.toFixed(1) + ' s</span>';
+      cell.querySelector(".snum").textContent = s.gi;
+      /* a plain tap anywhere on the cell opens Study — unless select mode is on */
+      function activate(shift) {
+        if (exSelectMode) { cellClick(s.gi, shift); return; }
+        openInStudy(s.gi, ci);
+      }
+      cell.addEventListener("click", function (e) {
+        if (e.target.closest(".sprev")) return;
+        activate(e.shiftKey);
+      });
+      cell.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(e.shiftKey); }
+      });
+      cell.querySelector(".sprev").addEventListener("click", function (e) {
+        e.stopPropagation();
+        previewPlay(cell, s.dur);
+      });
+      exCells[s.gi] = cell;
+      grid.appendChild(cell);
+    });
+
+    toggle.addEventListener("click", function () {
+      wrapEl.setAttribute("data-open", wrapEl.getAttribute("data-open") === "1" ? "0" : "1");
+    });
+    cbx.addEventListener("click", function () {
+      var allSel = ch.sents.every(function (s) { return exSel[s.gi]; });
+      ch.sents.forEach(function (s) {
+        if (allSel) delete exSel[s.gi]; else exSel[s.gi] = true;
+      });
+      exAnchor = allSel ? null : ch.sents[0].gi;
+      ch.sents.forEach(function (s) { paintCell(s.gi); });
+      EX.forEach(function (c, i2) { paintChapter(i2); });
+      paintSelbar();
+    });
+
+    exChRefs.push({ cbx: cbx, count: countWrap.querySelector(".cnt"), bar: countWrap.querySelector(".bar > i") });
+    wrapEl.appendChild(head);
+    wrapEl.appendChild(body);
+    exBox.appendChild(wrapEl);
+  });
+
+  function bulkMark(v) {
+    Object.keys(exSel).forEach(function (k) {
+      var gi = Number(k);
+      if (v) exDone[gi] = true; else delete exDone[gi];
+      paintCell(gi);
+    });
+    paintAll();
+  }
+  document.getElementById("selDone").addEventListener("click", function () { bulkMark(true); });
+  document.getElementById("selUndone").addEventListener("click", function () { bulkMark(false); });
+  document.getElementById("selClear").addEventListener("click", function () {
+    exSel = {}; exAnchor = null; exExtendArmed = false;
+    allGis().forEach(paintCell);
+    EX.forEach(function (c, ci) { paintChapter(ci); });
+    paintSelbar();
+  });
+  selExtendBtn.addEventListener("click", function () {
+    exExtendArmed = !exExtendArmed;
+    paintSelbar();
+  });
+
+  /* select mode — taps select instead of opening; chapter checkboxes always select */
+  var selModeBtn = document.getElementById("selModeBtn");
+  var exHint = document.getElementById("exHint");
+  selModeBtn.addEventListener("click", function () {
+    exSelectMode = !exSelectMode;
+    selModeBtn.classList.toggle("on", exSelectMode);
+    selModeBtn.setAttribute("aria-pressed", String(exSelectMode));
+    selModeBtn.textContent = exSelectMode ? "☑ Select mode — on" : "☑ Select mode";
+    exBox.classList.toggle("selmode", exSelectMode);
+    exHint.innerHTML = exSelectMode
+      ? 'Select mode is <b>on</b> — a tap selects. Shift-click (or <b>“select to…”</b>) takes a range. Turn it off to open sentences in Study again.'
+      : 'Tap <b>anywhere on a sentence</b> to open it in Study · tap <b>▶</b> to hear it without leaving · turn on <b>Select mode</b> to tap-to-select instead. Chapter checkboxes always select.';
+    if (!exSelectMode) { exExtendArmed = false; paintSelbar(); }
+  });
+  paintAll();
+
+  /* ================= PREPARE — split configs ================= */
+  var COVER = 0.176;   /* share of the book's time already completed */
+  var cfgSeq = 4;
+  var CFGS = [
+    { id: 1, name: "Standard", th: -38, ms: 420, chs: 35, sents: 1204, edits: 3, active: true, fresh: false },
+    { id: 2, name: "Tette pauser", th: -45, ms: 260, chs: 35, sents: 1677, edits: 0, active: false, fresh: false },
+    { id: 3, name: "Grov / avsnittsvis", th: -30, ms: 900, chs: 35, sents: 728, edits: 0, active: false, fresh: false }
+  ];
+  function estSents(th, ms) {
+    return Math.max(120, Math.round(1204 * Math.pow(420 / ms, 0.55) * (1 + (-38 - th) * 0.010)));
+  }
+  function doneOf(cfg) { return Math.round(cfg.sents * COVER); }
+
+  var cfgList = document.getElementById("cfgList");
+
+  function renderCfgs() {
+    cfgList.innerHTML = "";
+    CFGS.forEach(function (cfg) {
+      var el = document.createElement("div");
+      el.className = "cfg" + (cfg.active ? " active" : "");
+
+      var main = document.createElement("div");
+      main.className = "cfg-main";
+      var dn = doneOf(cfg);
+      main.innerHTML =
+        '<div class="cfg-name"><span class="nm"></span>' +
+        (cfg.active ? '<span class="badge">active</span>' : '') +
+        (cfg.fresh ? '<span class="chip">done carried over</span>' : '') + '</div>' +
+        '<div class="cfg-meta num">' + cfg.th + ' dB · ' + cfg.ms + ' ms &nbsp;·&nbsp; ' +
+        cfg.chs + ' chapters · ' + fmtInt(cfg.sents) + ' sentences &nbsp;·&nbsp; ' +
+        '<span class="done-n">' + fmtInt(dn) + ' done</span> (' + Math.round(COVER * 100) + '% of the book)' +
+        (cfg.edits ? ' · ' + cfg.edits + ' manual edits' : '') + '</div>';
+      main.querySelector(".nm").textContent = cfg.name;
+
+      var acts = document.createElement("div");
+      acts.className = "cfg-acts";
+      acts.innerHTML =
+        (cfg.active ? '' : '<button class="mini go" data-a="activate">Make active</button>') +
+        '<button class="mini" data-a="adjust">Adjust &amp; re-analyse</button>' +
+        '<button class="mini" data-a="rename">Rename</button>' +
+        '<button class="mini" data-a="dup">Duplicate</button>' +
+        '<button class="mini" data-a="del">Delete</button>';
+
+      var extra = document.createElement("div");
+      extra.className = "cfg-extra hidden";
+
+      el.appendChild(main);
+      el.appendChild(acts);
+      el.appendChild(extra);
+      cfgList.appendChild(el);
+
+      function closeExtra() { extra.classList.add("hidden"); extra.innerHTML = ""; }
+      /* drop any listeners from a previous inline form before opening a new one */
+      function freshExtra() {
+        var n = extra.cloneNode(false);
+        extra.parentNode.replaceChild(n, extra);
+        extra = n;
+        n.classList.remove("hidden");
+        return extra;
+      }
+
+      acts.addEventListener("click", function (e) {
+        var b = e.target.closest("button");
+        if (!b) return;
+        var a = b.dataset.a;
+        if (a === "activate") {
+          CFGS.forEach(function (c) { c.active = false; });
+          cfg.active = true;
+          renderCfgs();
+          renderPrepChapters();
+          return;
+        }
+        if (a === "dup") {
+          var copy = { id: cfgSeq++, name: cfg.name + " (kopi)", th: cfg.th, ms: cfg.ms, chs: cfg.chs, sents: cfg.sents, edits: 0, active: false, fresh: true };
+          CFGS.push(copy);
+          renderCfgs();
+          return;
+        }
+        if (a === "rename") {
+          freshExtra();
+          extra.innerHTML = '<div class="box"><div class="quiet" style="font-size:.82rem;margin-bottom:.4rem">Rename this config</div>' +
+            '<div class="row-actions" style="margin-top:0"><input type="text" class="nm-in"><button class="mini go" data-x="ok">Save</button><button class="mini" data-x="no">Cancel</button></div></div>';
+          var inp = extra.querySelector(".nm-in");
+          inp.value = cfg.name;
+          inp.focus();
+          extra.addEventListener("click", function (ev) {
+            var t = ev.target.closest("button");
+            if (!t) return;
+            if (t.dataset.x === "ok") { cfg.name = inp.value.trim() || cfg.name; renderCfgs(); renderPrepChapters(); }
+            else closeExtra();
+          });
+          return;
+        }
+        if (a === "del") {
+          freshExtra();
+          extra.innerHTML = '<div class="warn" style="margin-top:.6rem"><b>Delete “' + cfg.name + '”?</b>' +
+            '<div class="quiet" style="margin-top:.3rem">Its boundaries and manual edits go. Your completed time ranges stay on the book, so every other config keeps its done count.</div>' +
+            '<div class="acts"><button class="danger" data-x="go">Delete config</button><button class="mini" data-x="no">Cancel</button></div></div>';
+          extra.addEventListener("click", function (ev) {
+            var t = ev.target.closest("button");
+            if (!t) return;
+            if (t.dataset.x === "go") {
+              var i = CFGS.indexOf(cfg);
+              if (i >= 0) CFGS.splice(i, 1);
+              if (cfg.active && CFGS.length) CFGS[0].active = true;
+              renderCfgs();
+              renderPrepChapters();
+            } else closeExtra();
+          });
+          return;
+        }
+        if (a === "adjust") {
+          freshExtra();
+          extra.innerHTML =
+            '<div class="box"><div class="params">' +
+            '<div class="param"><label>Silence threshold <b><span class="o1">' + cfg.th + '</span> dB</b></label>' +
+            '<input type="range" class="i1" min="-60" max="-20" value="' + cfg.th + '"></div>' +
+            '<div class="param"><label>Minimum silence <b><span class="o2">' + cfg.ms + '</span> ms</b></label>' +
+            '<input type="range" class="i2" min="100" max="1200" step="20" value="' + cfg.ms + '"></div>' +
+            '</div>' +
+            '<div class="row-actions"><button class="mini go" data-x="run">Re-analyse</button><button class="mini" data-x="no">Cancel</button>' +
+            '<span class="quiet num" style="font-size:.8rem">estimate: <span class="oe">' + fmtInt(cfg.sents) + '</span> sentences</span></div>' +
+            '<div class="warn hidden"><b>Re-analysing discards the ' + cfg.edits + ' manual boundary edits in “' + cfg.name + '” only.</b>' +
+            '<div class="quiet" style="margin-top:.3rem">Other configs are untouched, and your completed time ranges stay on the book — the new boundaries inherit them straight away.</div>' +
+            '<div class="acts"><button class="danger" data-x="confirm">Re-analyse anyway</button><button class="mini" data-x="no">Cancel</button></div></div></div>';
+          var i1 = extra.querySelector(".i1"), i2 = extra.querySelector(".i2");
+          var o1 = extra.querySelector(".o1"), o2 = extra.querySelector(".o2"), oe = extra.querySelector(".oe");
+          var warnEl = extra.querySelector(".warn");
+          function upd() {
+            o1.textContent = i1.value;
+            o2.textContent = i2.value;
+            oe.textContent = fmtInt(estSents(+i1.value, +i2.value));
+          }
+          i1.addEventListener("input", upd);
+          i2.addEventListener("input", upd);
+          extra.addEventListener("click", function (ev) {
+            var t = ev.target.closest("button");
+            if (!t) return;
+            if (t.dataset.x === "run") { warnEl.classList.remove("hidden"); return; }
+            if (t.dataset.x === "confirm") {
+              cfg.th = +i1.value; cfg.ms = +i2.value;
+              cfg.sents = estSents(cfg.th, cfg.ms);
+              cfg.edits = 0; cfg.fresh = true;
+              renderCfgs();
+              renderPrepChapters();
+              return;
+            }
+            closeExtra();
+          });
+        }
+      });
+    });
+    var act = activeCfg();
+    document.getElementById("activeCfgName").textContent = act ? act.name : "—";
+  }
+  function activeCfg() {
+    for (var i = 0; i < CFGS.length; i++) if (CFGS[i].active) return CFGS[i];
+    return CFGS[0];
+  }
+
+  /* new config */
+  var newPanel = document.getElementById("newCfgPanel");
+  var r1 = document.getElementById("r1"), r2 = document.getElementById("r2");
+  function updEst() {
+    document.getElementById("p1").textContent = r1.value;
+    document.getElementById("p2").textContent = r2.value;
+    document.getElementById("estOut").textContent = fmtInt(estSents(+r1.value, +r2.value));
+  }
+  r1.addEventListener("input", updEst);
+  r2.addEventListener("input", updEst);
+  updEst();
+  document.getElementById("newCfgBtn").addEventListener("click", function () { newPanel.classList.toggle("hidden"); });
+  document.getElementById("newCfgCancel").addEventListener("click", function () { newPanel.classList.add("hidden"); });
+  document.getElementById("analyseBtn").addEventListener("click", function () {
+    var btn = this;
+    btn.textContent = "Analysing… 12%";
+    setTimeout(function () { btn.textContent = "Analysing… 67%"; }, 700);
+    setTimeout(function () {
+      btn.textContent = "Analyse";
+      newPanel.classList.add("hidden");
+      CFGS.push({
+        id: cfgSeq++,
+        name: document.getElementById("newCfgName").value.trim() || "Nytt oppsett",
+        th: +r1.value, ms: +r2.value, chs: 35,
+        sents: estSents(+r1.value, +r2.value),
+        edits: 0, active: false, fresh: true
+      });
+      renderCfgs();
+    }, 1500);
+  });
+
+  /* ---------- prepare: chapters + sentence rows ---------- */
+  var PREP_CH = ["Forord", "1. Hagen i Eden", "2. Flosshatten", "3. Mytene", "4. Naturfilosofene"];
+  var chBox = document.getElementById("chapters");
+
+  function secsToStamp(s) {
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m + ":" + (x < 10 ? "0" : "") + x.toFixed(2);
+  }
+  function makeRows(seed, n, startAt, doneShare) {
+    var r = rng(seed), rows = [], t = startAt;
+    for (var i = 0; i < n; i++) {
+      var d = +(1.6 + r() * 5.2).toFixed(2);
+      rows.push({ k: seed + "-" + i, start: t, dur: d, done: r() < doneShare, seed: Math.floor(r() * 100000) });
+      t = +(t + d + 0.4 + r() * 0.5).toFixed(2);
+    }
+    return rows;
+  }
+
+  function renderPrepChapters() {
+    var cfg = activeCfg();
+    chBox.innerHTML = "";
+    PREP_CH.forEach(function (name, ci) {
+      var row = document.createElement("button");
+      row.className = "chapter-row";
+      row.type = "button";
+      row.setAttribute("aria-expanded", ci === 0 ? "true" : "false");
+
+      var body = document.createElement("div");
+      body.className = "prows" + (ci === 0 ? "" : " hidden");
+
+      var n = Math.max(4, Math.round((cfg.sents / cfg.chs) * (0.5 + ci * 0.18)));
+      var shown = Math.min(7, n);
+      var rows = makeRows(cfg.id * 1000 + ci * 37, shown, 261.4 + ci * 1260, COVER + 0.25);
+
+      function paintHead() {
+        var done = rows.filter(function (x) { return x.done; }).length;
+        row.innerHTML = '<span class="caret">▸</span><span class="nm"></span>' +
+          '<span class="st num">' + n + ' sentences · ' + done + '/' + shown + ' shown done</span>';
+        row.querySelector(".nm").textContent = name;
+      }
+
+      function renderRows() {
+        body.innerHTML = "";
+        rows.forEach(function (rw, ri) {
+          var el = document.createElement("div");
+          el.className = "prow" + (rw.done ? " done" : "");
+          el.innerHTML =
+            '<span class="pnum">' + (ri + 1) + '</span>' +
+            '<button class="sprev" type="button" title="play just this sentence">▶</button>' +
+            '<span class="pw"><span class="ph"></span>' + waveSVG(rw.seed, 46) + '</span>' +
+            '<span class="ptime num">' + secsToStamp(rw.start) + ' → ' + secsToStamp(+(rw.start + rw.dur).toFixed(2)) + ' · ' + rw.dur.toFixed(2) + ' s</span>' +
+            '<span class="pdone" title="covered by a completed time range">✓</span>' +
+            '<span class="pacts"><button class="mini" data-a="split">✂ Split</button><button class="mini" data-a="merge">⇣ Merge</button></span>';
+
+          var pw = el.querySelector(".pw");
+          el.querySelector(".sprev").addEventListener("click", function () { previewPlay(pw, rw.dur); });
+
+          el.querySelector(".pacts").addEventListener("click", function (e) {
+            var b = e.target.closest("button");
+            if (!b) return;
+            if (b.dataset.a === "merge") {
+              if (ri >= rows.length - 1) return;
+              var nx = rows[ri + 1];
+              rw.dur = +(nx.start + nx.dur - rw.start).toFixed(2);
+              rw.done = rw.done && nx.done;
+              rows.splice(ri + 1, 1);
+              cfg.sents = Math.max(1, cfg.sents - 1);
+              cfg.edits++;
+              renderCfgs();
+              paintHead(); renderRows();
+              return;
+            }
+            /* inline split scrubber */
+            if (el.querySelector(".scrub")) { el.querySelector(".scrub").remove(); return; }
+            var sc = document.createElement("div");
+            sc.className = "scrub";
+            sc.innerHTML = '<div class="lbl">Click the waveform to set the split point</div>' +
+              '<div class="sw">' + waveSVG(rw.seed, 120) + '<span class="mark"></span></div>' +
+              '<div class="row-actions"><button class="mini go" data-x="ok">Split here</button><button class="mini" data-x="no">Cancel</button>' +
+              '<span class="quiet num" style="font-size:.8rem">at <span class="at">' + (rw.dur / 2).toFixed(2) + '</span> s</span></div>';
+            el.appendChild(sc);
+            var sw = sc.querySelector(".sw"), mark = sc.querySelector(".mark"), at = sc.querySelector(".at");
+            var frac = 0.5;
+            sw.addEventListener("click", function (ev) {
+              var rect = sw.getBoundingClientRect();
+              frac = Math.max(0.05, Math.min(0.95, (ev.clientX - rect.left) / rect.width));
+              mark.style.left = (frac * 100).toFixed(1) + "%";
+              at.textContent = (rw.dur * frac).toFixed(2);
+            });
+            sc.addEventListener("click", function (ev) {
+              var b2 = ev.target.closest("button");
+              if (!b2) return;
+              if (b2.dataset.x === "ok") {
+                var d1 = +(rw.dur * frac).toFixed(2), d2 = +(rw.dur - d1).toFixed(2);
+                var second = { k: rw.k + "b", start: +(rw.start + d1).toFixed(2), dur: d2, done: rw.done, seed: rw.seed + 7 };
+                rw.dur = d1;
+                rows.splice(ri + 1, 0, second);
+                cfg.sents += 1;
+                cfg.edits++;
+                renderCfgs();
+                paintHead(); renderRows();
+              } else sc.remove();
+            });
+          });
+
+          body.appendChild(el);
+        });
+        var more = document.createElement("div");
+        more.className = "prow";
+        more.innerHTML = '<span class="quiet" style="font-size:.82rem">… ' + Math.max(0, n - rows.length) + ' more sentences in this chapter</span>';
+        body.appendChild(more);
+      }
+
+      row.addEventListener("click", function () {
+        var open = row.getAttribute("aria-expanded") === "true";
+        row.setAttribute("aria-expanded", String(!open));
+        body.classList.toggle("hidden", open);
+      });
+
+      paintHead();
+      renderRows();
+      chBox.appendChild(row);
+      chBox.appendChild(body);
+    });
+  }
+
+  renderCfgs();
+  renderPrepChapters();
+})();
+</script>
