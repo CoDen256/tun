@@ -17,6 +17,7 @@ import { seedActiveLogicBundle } from "./helpers/logicBundleFixture.js";
 import { buildGrammarRuleLookup } from "../src/stabburClient.js";
 import { occurrencesForBuild } from "../src/batchHistory.js";
 import { makeDbLogger } from "../src/jobLogs.js";
+import { shipOrderForDeck } from "../src/cardFlow.js";
 
 // deck-consolidation: `assignDeck` now resolves every `type=word` note
 // (any `pos`) and `type=expression` to the single `lexic` family (starts at
@@ -517,6 +518,197 @@ describe("builder pipeline: forecast + publish against a fixture stabbur and an 
     assert.match(otherModuleAfter, /bonjour/, "built onto the second logic bundle's own unrelated module, not the first's");
 
     assert.equal(model.cards.filter((c) => c.DECK_ID === "C30").length, 7, "every lexic card minted so far survives the base change");
+  });
+
+  // ---- flush-record-atomicity (D-FA1/D-FA2/D-FA3) ----
+  //
+  // The 2026-11-09 18:59:50 incident, reproduced: a run that dies between
+  // the flush and `recordShipments`. `flushShippable` and
+  // `drainPendingOccurrences` used to consume DURABLY at flush time, while
+  // the only other copy of what they consumed lived in the in-memory model
+  // `runPublish`'s `finally` throws away. For a card that already has a
+  // shipped occurrence the D86 self-heal can never bring it back — `replay`
+  // recreates that card from its shipment row, so it is never seen as
+  // missing and never re-staged. That is how 13 `E` occurrences
+  // (C30049-C30061) were lost for good.
+
+  async function stagedRows(deckCode) {
+    const { rows } = await pool.query(
+      "SELECT id, card_id, letter FROM staged_occurrences WHERE deck_code = $1 ORDER BY id",
+      [deckCode]
+    );
+    return rows;
+  }
+
+  async function shippedCount(deckCode) {
+    const { rows } = await pool.query(
+      "SELECT count(*) AS count FROM occurrence_shipments os JOIN card_slots cs ON cs.id = os.card_id WHERE cs.deck_code = $1",
+      [deckCode]
+    );
+    return Number(rows[0].count);
+  }
+
+  // Every (card, letter) this deck owes, and where it currently lives —
+  // the invariant the whole change exists to protect: exactly one of
+  // shipped / staged / pending, never zero, never two.
+  async function occurrencePlaces(deckCode) {
+    const places = new Map();
+    const add = (cardId, letter, where) => {
+      const key = `${cardId}/${letter}`;
+      if (!places.has(key)) places.set(key, []);
+      places.get(key).push(where);
+    };
+    const { rows: shipped } = await pool.query(
+      "SELECT os.card_id, os.letter FROM occurrence_shipments os JOIN card_slots cs ON cs.id = os.card_id WHERE cs.deck_code = $1",
+      [deckCode]
+    );
+    for (const r of shipped) add(r.card_id, r.letter, "shipped");
+    for (const r of await stagedRows(deckCode)) add(r.card_id, r.letter, "staged");
+    for (const r of await pendingRows(deckCode)) add(r.card_id, r.letter, "pending");
+    return places;
+  }
+
+  let atomicityNewCardIds;
+  await t.test("D-FA1: a run that fails after the flush consumes no staged or pending occurrence", async () => {
+    // Induce the preconditions by SQL (inducing state, not asserting it):
+    // C30001's queued E is one new card away from draining, and its card
+    // already has a shipped A — the exact non-self-healing shape.
+    await pool.query("UPDATE pending_occurrences SET remaining = 99 WHERE deck_code = 'C30'");
+    await pool.query(
+      "UPDATE pending_occurrences SET remaining = 1 WHERE deck_code = 'C30' AND card_id = 'C30001' AND letter = 'E'"
+    );
+    const { rows: priorShipment } = await pool.query(
+      "SELECT letter FROM occurrence_shipments WHERE card_id = 'C30001'"
+    );
+    assert.ok(
+      priorShipment.some((r) => r.letter === "A"),
+      "sanity: C30001's A already shipped, so replay recreates the card and D86 can never re-stage its E"
+    );
+
+    const shippedBefore = await shippedCount("C30");
+    const stagedBefore = await stagedRows("C30");
+    const pendingBefore = await pendingRows("C30");
+
+    // Enough brand-new cards that the flush genuinely fires this run (the
+    // deck's total has to reach a multiple of 5) — one drained E plus `k`
+    // fresh A's.
+    let k = (5 - ((shippedBefore + stagedBefore.length + 1) % 5)) % 5;
+    if (k === 0) k = 5;
+    const fresh = Array.from({ length: k }, (_, i) => wordNote(`fa${i}`));
+    for (const n of fresh) fake.addBlob(shaOf(`audio for ${n.id}`), `audio for ${n.id}`);
+    // The LAST note's blob is never registered with the fake stabbur, so
+    // the real `ensureBlobsPresent` throws — well after mint, drain, stage
+    // and flush have all run. The same naturally-occurring failure shape as
+    // the ffmpeg error that fired on 2026-11-09, not a contrived throw.
+    fresh[fresh.length - 1].audio_blob = shaOf("fa-never-registered");
+    addNotes(...fresh);
+
+    await assert.rejects(() => runPublish(pool, config), /could not fetch blob/);
+
+    const stagedAfter = await stagedRows("C30");
+    const pendingAfter = await pendingRows("C30");
+
+    assert.equal(await shippedCount("C30"), shippedBefore, "D-H1: a failed run records no shipment");
+    for (const row of stagedBefore) {
+      assert.ok(
+        stagedAfter.some((r) => r.id === row.id),
+        `staged row ${row.id} (${row.card_id}/${row.letter}) was consumed by a run that then failed — it is gone for good`
+      );
+    }
+    const c30001E = pendingAfter.find((r) => r.card_id === "C30001" && r.letter === "E");
+    assert.ok(c30001E, "C30001's queued E must still be queued — nothing recorded it, so nothing may consume it");
+    assert.equal(c30001E.remaining, 1, "…at its pre-run countdown, so the next run drains it again rather than dropping it");
+    assert.equal(
+      pendingAfter.length,
+      pendingBefore.length + k,
+      "the only queue growth is this run's own freshly-minted E's (mint-time inserts stay immediate, D-FA1)"
+    );
+
+    atomicityNewCardIds = (
+      await pool.query("SELECT cs.id FROM card_slots cs JOIN minted_notes mn ON mn.card_slot_id = cs.id WHERE mn.note_id = ANY($1) ORDER BY cs.id", [
+        fresh.map((n) => n.id),
+      ])
+    ).rows.map((r) => r.id);
+    assert.equal(atomicityNewCardIds.length, k, "every new note minted despite the later failure (D86's own precondition)");
+  });
+
+  await t.test("D-FA1: the next successful publish accounts for every occurrence the failed run touched, exactly once", async () => {
+    // The companion half of the boundary: the failed run's own brand-new
+    // cards have NO prior shipment, so even before this change D86 would
+    // have re-staged them. C30001's E is the half that never self-heals.
+    fake.addBlob(shaOf("fa-never-registered"), "fa-never-registered");
+    const result = await runPublish(pool, config);
+    assert.equal(result.published, true);
+
+    const places = await occurrencePlaces("C30");
+    const c30001E = places.get("C30001/E");
+    assert.deepEqual(c30001E?.length, 1, `C30001's E must live in exactly one place, found: ${c30001E}`);
+    for (const cardId of atomicityNewCardIds) {
+      assert.deepEqual(places.get(`${cardId}/A`)?.length, 1, `${cardId}'s A must live in exactly one place`);
+      assert.deepEqual(places.get(`${cardId}/E`)?.length, 1, `${cardId}'s E must live in exactly one place`);
+    }
+    const doubled = [...places.entries()].filter(([, where]) => where.length > 1);
+    assert.deepEqual(doubled, [], "no occurrence may exist in two places at once (or twice in one)");
+  });
+
+  // D-FA3: the b000040 fingerprint — `drainThenQueue` called once per
+  // RECOVERED CARD instead of once per deck. With N queued E's sitting at
+  // remaining 11, the first 11 recovered cards drained all of them at once;
+  // from the 12th on `hasPendingOccurrence` no longer saw a row and
+  // re-queued the same E, which later cards drained and staged a SECOND
+  // time. 104 occurrences double-shipped, and 115 cards got their E ahead
+  // of their own A in Cards[] — a D91 violation ("never quizzed
+  // text-first") that deduplication cannot undo.
+  await t.test("D-FA3: mass D86 recovery into a deck with a non-empty queue double-ships nothing and keeps A before E", async () => {
+    const recovered = [];
+    const { rows: maxRow } = await pool.query("SELECT COALESCE(MAX(card_no), 0) AS max_no FROM card_slots WHERE deck_code = 'C30'");
+    let nextNo = Number(maxRow[0].max_no) + 1;
+    for (let i = 0; i < 14; i++) {
+      const noteId = `rec${i}`;
+      const cardId = `C30${String(nextNo).padStart(3, "0")}`;
+      nextNo += 1;
+      // The crashed run's committed half: card_slots + minted_notes + a
+      // queued E, and nothing else — no card_content, no shipment, so the
+      // card is missing from the rebuilt model and takes the D86 path.
+      await pool.query("INSERT INTO card_slots (id, deck_code, card_no, note_id) VALUES ($1, 'C30', $2, $3)", [
+        cardId,
+        Number(cardId.slice(-3)),
+        noteId,
+      ]);
+      await pool.query("INSERT INTO minted_notes (note_id, card_slot_id) VALUES ($1, $2)", [noteId, cardId]);
+      await pool.query(
+        "INSERT INTO pending_occurrences (deck_code, card_id, letter, remaining) VALUES ('C30', $1, 'E', 11)",
+        [cardId]
+      );
+      fake.addBlob(shaOf(`audio for ${noteId}`), `audio for ${noteId}`);
+      recovered.push({ noteId, cardId });
+    }
+    addNotes(...recovered.map(({ noteId }) => wordNote(noteId)));
+
+    const pendingBefore = (await pendingRows("C30")).length;
+    const result = await runPublish(pool, config);
+    assert.equal(result.published, true);
+
+    const places = await occurrencePlaces("C30");
+    const doubled = [...places.entries()].filter(([, where]) => where.length > 1);
+    assert.deepEqual(doubled, [], "no (card, letter) may be shipped/staged/queued more than once");
+
+    assert.ok(
+      (await pendingRows("C30")).length <= pendingBefore,
+      "no already-drained E may be re-queued — the queue can only shrink in a run that mints nothing new"
+    );
+
+    // D91 by construction: every recovered card's own A is staged before
+    // the single per-deck drain runs, so its E can never take a lower
+    // position in the deck's real Cards[] order.
+    const { shipped, staged } = await shipOrderForDeck(pool, "C30");
+    const order = [...shipped, ...staged].map((o) => `${o.cardId}/${o.letter}`);
+    for (const { cardId } of recovered) {
+      const a = order.indexOf(`${cardId}/A`);
+      const e = order.indexOf(`${cardId}/E`);
+      if (a === -1 || e === -1) continue;
+      assert.ok(a < e, `${cardId}: its A must precede its own E in Cards[] order (D91), got A@${a} E@${e}`);
+    }
   });
 
   // D91's cross-batch queue mechanics, isolated on a genuinely fresh,
