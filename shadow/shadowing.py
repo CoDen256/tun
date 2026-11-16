@@ -243,13 +243,16 @@ def _upload_json(u: ShadowingUpload) -> dict:
 def _sweep_upload_rows(db) -> None:
     """Drop upload rows whose temp file is gone or whose work is long over.
 
-    The .part files are swept by audio.sweep_abandoned_uploads; this is the
-    row half of the same chore, so a finished or abandoned upload does not
-    accumulate forever in a table the operator never looks at. A finished
-    row is kept for a day because a client that lost the `complete`
-    response still asks this table which book it got.
+    The row half of the chore `sweep_uploads` runs; a finished or abandoned
+    upload must not accumulate forever in a table the operator never looks
+    at. A finished row is kept for a day because a client that lost the
+    `complete` response still asks this table which book it got.
+
+    The ORDER matters, and it is why this runs before the file sweep: a row
+    deleted here turns its part file into an orphan, and the file sweep
+    immediately afterwards reclaims it in the same pass rather than a day
+    later.
     """
-    import datetime
     cutoff = datetime.datetime.utcnow() - datetime.timedelta(seconds=audio.UPLOAD_TTL_SEC)
     for row in db.query(ShadowingUpload).all():
         stale = row.updated_at is not None and row.updated_at < cutoff
@@ -257,6 +260,50 @@ def _sweep_upload_rows(db) -> None:
         if (row.state in ('done', 'failed') and stale) or (row.state == 'receiving' and missing and stale):
             db.delete(row)
     db.commit()
+
+
+def sweep_uploads() -> int:
+    """Task 1.5, both halves, in the one order that works: rows first, then
+    the files the rows no longer claim.
+
+    Returns the number of part files reclaimed. Every caller is allowed to
+    fail: cleanup is never the reason a request or a boot goes wrong.
+    """
+    live: set[str] | None = None
+    try:
+        with get_sessionmaker()() as db:
+            _sweep_upload_rows(db)
+            live = {r.id for r in db.query(ShadowingUpload).filter_by(state='receiving').all()}
+    except Exception:  # noqa: BLE001 — a database outage must not stop the disk sweep
+        live = None
+    return audio.sweep_abandoned_uploads(live_ids=live)
+
+
+def start_upload_janitor() -> None:
+    """One daemon thread, started by scripts/bootstrap.py after the port is
+    bound, sweeping every `SWEEP_INTERVAL_SEC`.
+
+    This is NOT a scheduler creeping in: shadow runs a single process with
+    one of these threads, and the work is a glob of one directory. The
+    earlier design (sweep only when a new upload starts) meant an operator
+    who abandoned an upload and never uploaded again kept the bytes
+    forever, which is exactly what was found on disk.
+    """
+    def loop():
+        # A short head start: the first sweep wants the uploads table, and
+        # at boot the migration may still be running behind the readiness
+        # flag (D157). Being early only costs this pass its orphan rule.
+        time.sleep(15)
+        while True:
+            try:
+                n = sweep_uploads()
+                if n:
+                    print(f'shadow — swept {n} abandoned upload part file(s)', flush=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f'shadow — upload sweep failed: {exc}', flush=True)
+            time.sleep(audio.SWEEP_INTERVAL_SEC)
+
+    threading.Thread(target=loop, name='shadow-upload-janitor', daemon=True).start()
 
 
 @shadowing_bp.route('/api/v1/shadowing/uploads', methods=['POST'])
@@ -280,12 +327,12 @@ def start_upload():
         return jsonify({'error': 'userId, filename and sizeBytes are required'}), 400
 
     fingerprint = f'{filename}:{size_bytes}'
-    audio.sweep_abandoned_uploads()  # task 1.5 — no scheduler; do it when disk is about to be used
+    sweep_uploads()  # task 1.5 — an upload is exactly when the disk is about
+                     # to be used; the janitor thread covers the rest of the time
 
     with get_sessionmaker()() as db:
         if phonexa_client.verify_user(user_id) is False:
             return jsonify({'error': 'no such user'}), 404
-        _sweep_upload_rows(db)
 
         existing = (db.query(ShadowingMedia)
                     .filter_by(user_id=user_id, fingerprint=fingerprint).first())

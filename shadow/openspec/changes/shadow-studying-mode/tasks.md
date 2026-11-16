@@ -19,6 +19,12 @@ land before any UI reads progress**, and it must be verified before the old
 - [x] 1.4 One-time transcode to a mono Opus master on the final slice;
       discard the original; record duration, sample rate and channels.
 - [x] 1.5 Abandoned-upload cleanup for temp files.
+      *(CORRECTED 2026-11-16: the first implementation swept on mtime only
+      and only when a NEW upload started, so a real orphan —
+      `_uploads/830cf05b….part`, 64 MB — survived indefinitely. The sweep is
+      now database-aware (a part file with no `receiving` row is reclaimed
+      at once) and runs from a 15-minute janitor thread as well as on
+      upload start.)*
 - [x] 1.6 Book deletion removes the master, the chapter-chunk cache and the
       database rows.
 

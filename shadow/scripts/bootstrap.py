@@ -43,6 +43,7 @@ from pyservice.migrate import upgrade_head
 
 from app import app  # the Flask app, routes already registered
 from db.session import get_engine
+from shadowing import start_upload_janitor
 
 
 def main() -> None:
@@ -61,6 +62,12 @@ def main() -> None:
         protect=("/api/v1/shadowing/",),
         db_errors=(OperationalError,),
     )
+
+    # Abandoned-upload cleanup (task 1.5). A daemon thread that blocks
+    # nothing and whose first pass is delayed, so serve-before-migrate is
+    # untouched and a database that is not up yet costs the sweep one pass
+    # of its orphan rule, never the boot.
+    start_upload_janitor()
 
     print("shadow — HTTP :5051", flush=True)
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"

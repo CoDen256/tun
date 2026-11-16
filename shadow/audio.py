@@ -56,7 +56,11 @@ OPUS_APPLICATION = 'audio'    # not 'voip': audiobooks are produced speech
 SILENCE_NOISE_DB = -30        # the fixed noise floor; the two THRESHOLDS
                               # (sentence/chapter silence length) stay the
                               # only analysis parameters, per design.md §5
-UPLOAD_TTL_SEC = 24 * 3600    # abandoned .part files are swept after a day
+UPLOAD_TTL_SEC = 24 * 3600    # a RESUMABLE upload survives a day of silence;
+                              # an orphan part file is reclaimed at once
+ORPHAN_GRACE_SEC = 60         # a part file younger than this is never judged
+                              # an orphan — see sweep_abandoned_uploads
+SWEEP_INTERVAL_SEC = 900      # the janitor's period; shadow runs one process
 PROBE_TIMEOUT_SEC = 60
 CUT_TIMEOUT_SEC = 120
 
@@ -110,17 +114,38 @@ def delete_book_audio(media_id: int) -> None:
     shutil.rmtree(book_dir(media_id), ignore_errors=True)
 
 
-def sweep_abandoned_uploads(ttl_sec: int = UPLOAD_TTL_SEC) -> int:
-    """Delete .part files nobody has touched in `ttl_sec`. Returns the count.
+def sweep_abandoned_uploads(ttl_sec: int = UPLOAD_TTL_SEC, live_ids=None) -> int:
+    """Reclaim `.part` files. Returns how many were deleted.
 
-    Called opportunistically whenever an upload starts — shadow runs no
-    scheduler, and an upload is exactly when the disk is about to be used.
+    Two kinds of rubbish, and only one of them is a matter of time:
+
+      * a part file with NO live `receiving` upload row is an orphan by
+        construction — nothing can ever append to it or complete it again,
+        because the resume path finds uploads through the table. It goes
+        immediately, whatever its age. (This is the case the first version
+        of this sweep missed: it looked only at mtime, so a part file whose
+        row had already been swept sat on the disk for a full day, and then
+        only if another upload happened to start.)
+      * a part file that still HAS a live row is a resumable upload. It
+        survives until nobody has touched it for `ttl_sec`.
+
+    `live_ids` is the set of upload ids still in state `receiving`. Passing
+    None means "the caller cannot reach the database", and then only the
+    TTL rule applies — a sweep that cannot tell an orphan from a resume
+    must not guess.
+
+    A part file younger than ORPHAN_GRACE_SEC is never called an orphan:
+    `live_ids` was read before this glob, so an upload that started in
+    between would otherwise have its brand-new file deleted underneath it.
     """
     removed = 0
-    cutoff = time.time() - ttl_sec
+    now = time.time()
+    cutoff = now - ttl_sec
     for part in uploads_dir().glob('*.part'):
         try:
-            if part.stat().st_mtime < cutoff:
+            orphan = (live_ids is not None and part.stem not in live_ids
+                      and part.stat().st_mtime < now - ORPHAN_GRACE_SEC)
+            if orphan or part.stat().st_mtime < cutoff:
                 part.unlink()
                 removed += 1
         except OSError:
