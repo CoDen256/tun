@@ -1,23 +1,23 @@
 ## 1. Correctness fixes the UI depends on
 
-- [ ] 1.1 Fix `shipOrderForDeck`'s open-slot expression in `builder/src/cardFlow.js` to `nextMultipleOf5(shipped + staged) - (shipped + staged)`, and remove the negative-value branch and its "data-integrity signal" `console.error` — the expression can no longer go negative
-- [ ] 1.2 Update the `card-flow-view` tests that encoded the old expectations (including the "staged zero, shipped on grid → open 0" case) to the corrected values; add a case for a deck whose staged rows carry it past the next multiple of 5
-- [ ] 1.3 Widen the content-change detection behind `runForecast`'s `wouldUpdate` so each entry reports which content faces differ, keeping the existing comparison as the single source of the decision
-- [ ] 1.4 Move `syncDeckDescription` in `pipeline.js`'s `flushDeck` to after the `addOccurrence` loop, so anything it formats reflects this run's flush
-- [ ] 1.5 Format `<operator prose> · <N> cards · <M> occ` into the bundle's deck entry from the post-flush in-memory model (distinct card ids and `deck.Cards.length`), writing nothing back to `decks.description`
-- [ ] 1.6 Verify a deck that flushes nothing in a run still gets a correct description (the sync must run on the held path too, not only when `shippable` is non-empty)
+- [x] 1.1 Fix `shipOrderForDeck`'s open-slot expression in `builder/src/cardFlow.js` to `nextMultipleOf5(shipped + staged) - (shipped + staged)`, and remove the negative-value branch and its "data-integrity signal" `console.error` — the expression can no longer go negative
+- [x] 1.2 Update the `card-flow-view` tests that encoded the old expectations (including the "staged zero, shipped on grid → open 0" case) to the corrected values; add a case for a deck whose staged rows carry it past the next multiple of 5
+- [x] 1.3 Widen the content-change detection behind `runForecast`'s `wouldUpdate` so each entry reports which content faces differ, keeping the existing comparison as the single source of the decision
+- [x] 1.4 Move `syncDeckDescription` in `pipeline.js`'s `flushDeck` to after the `addOccurrence` loop, so anything it formats reflects this run's flush
+- [x] 1.5 Format `<operator prose> · <N> cards · <M> occ` into the bundle's deck entry from the post-flush in-memory model (distinct card ids and `deck.Cards.length`), writing nothing back to `decks.description`
+- [x] 1.6 Verify a deck that flushes nothing in a run still gets a correct description (the sync must run on the held path too, not only when `shippable` is non-empty)
 
 ## 2. Publish-time version stamping
 
-- [ ] 2.1 Add the build-timestamp placeholder and constant to `patches/js/boot-ok-companion.js`, exposed on `globalThis` beside the existing version globals, substituted at assemble by the generic placeholder mechanism
-- [ ] 2.2 Generalize `restampCompanionBuildId` in `tool/src/otaPublish.js` to restamp build identity, data revision and build timestamp, keyed on constant names rather than previously baked literals
-- [ ] 2.3 Call the generalized restamp from `pipeline.js`'s publish path before the bundle hash is computed, passing one timestamp that is also used for the `publications` insert
-- [ ] 2.4 Confirm base version and patch revision are not restamped and still come from the active logic bundle
-- [ ] 2.5 Collapse `patches/js/2176-my-account-build-id.edited.js`'s three version rows into one App version row carrying build identity, base version, patch revision, data revision and build time, formatting the UTC constant to device-local time
-- [ ] 2.6 Fix that row's no-companion fallback so it renders `embedded` rather than a string containing "undefined" (the `&&`/`+` precedence defect)
-- [ ] 2.7 Update the companion and account-screen unit tests for the new constant and the single row
-- [ ] 2.8 Supply the build-timestamp placeholder from the assemble path so the companion's substitution succeeds, relying on D-G1's generic mechanism rather than adding a per-key branch
-- [ ] 2.9 Add the read-only, auto-filled build-timestamp row to the Assemble tab beside the other placeholder fields, labelled as assemble time and noting that publish replaces it; confirm it is not editable and is stored as no configuration value
+- [x] 2.1 Add the build-timestamp placeholder and constant to `patches/js/boot-ok-companion.js`, exposed on `globalThis` beside the existing version globals, substituted at assemble by the generic placeholder mechanism
+- [x] 2.2 Generalize `restampCompanionBuildId` in `tool/src/otaPublish.js` to restamp build identity, data revision and build timestamp, keyed on constant names rather than previously baked literals
+- [x] 2.3 Call the generalized restamp from `pipeline.js`'s publish path before the bundle hash is computed, passing one timestamp that is also used for the `publications` insert
+- [x] 2.4 Confirm base version and patch revision are not restamped and still come from the active logic bundle
+- [x] 2.5 Collapse `patches/js/2176-my-account-build-id.edited.js`'s three version rows into one App version row carrying build identity, base version, patch revision, data revision and build time, formatting the UTC constant to device-local time
+- [x] 2.6 Fix that row's no-companion fallback so it renders `embedded` rather than a string containing "undefined" (the `&&`/`+` precedence defect)
+- [x] 2.7 Update the companion and account-screen unit tests for the new constant and the single row
+- [x] 2.8 Supply the build-timestamp placeholder from the assemble path so the companion's substitution succeeds, relying on D-G1's generic mechanism rather than adding a per-key branch
+- [x] 2.9 Add the read-only, auto-filled build-timestamp row to the Assemble tab beside the other placeholder fields, labelled as assemble time and noting that publish replaces it; confirm it is not editable and is stored as no configuration value
 
 ## 3. The ship-strips page
 
