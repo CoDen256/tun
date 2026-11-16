@@ -18,9 +18,34 @@ request:
   * analysis       ffmpeg `silencedetect` over the master, once per
                    analysis the operator explicitly asks for, emitting
                    RANGES ONLY — no audio is ever written by an analysis.
-  * chapter chunk  a STREAM COPY cut (`-c copy`), milliseconds, cached on
-                   disk and keyed by the chapter's boundaries so a moved
-                   boundary cannot serve a stale chunk.
+  * chapter chunk  a PRECISE re-encode, cached on disk and keyed by the
+                   chapter's boundaries so a moved boundary cannot serve a
+                   stale chunk. Cut ONCE per chapter, in the background,
+                   right after the analysis that created the boundary.
+
+CORRECTION, 2026-11-16 (shadow-studying-refinements). The line above used
+to read "a STREAM COPY cut (`-c copy`), milliseconds", and the whole file
+advertised that stream copy as what made a chapter chunk cheap. IT WAS
+CHEAP AND IT WAS WRONG, and the stale claim is annotated rather than
+deleted because the mistake is the instructive part:
+
+  `-ss`/`-to` placed BEFORE `-i` is INPUT seeking, and a stream copy
+  cannot cut between the frames it muxes. The output therefore began at
+  the enclosing Ogg page, somewhere before the millisecond asked for. Two
+  operator-visible bugs came out of that one flag:
+
+    - Explore's sentence preview opened with the PREVIOUS sentence's
+      audio (Prepare did not, because it seeks inside an already-decoded
+      chapter chunk — sample-accurate, and the contrast was the clue);
+    - the Study playhead desynced from the sound. Every manifest offset
+      is `sentence.startMs - chapter.startMs`, which is true only if the
+      chunk really starts at `chapter.startMs`. It did not, so the whole
+      drawn window was shifted against what was heard.
+
+  The previous cycle's review saw it, called it "audibly small" and
+  deferred it. The operator hit it within a day. Cheapness was never worth
+  this; every cut here now decodes and starts at the requested
+  millisecond.
 
 No per-sentence artefact is ever stored. The file count for a book is 1
 master plus a derivable cache; it does not scale with the sentence count.
@@ -33,7 +58,7 @@ LAYOUT, under SHADOW_AUDIO_DIR (a named volume, see compose.yaml):
 
     <root>/_uploads/<upload_id>.part        resumable upload, appended to
     <root>/books/<media_id>/master.opus     the one stored artefact
-    <root>/books/<media_id>/chunks/ch-<segment_id>-<start>-<end>.opus
+    <root>/books/<media_id>/chunks/ch-<cutver>-<segment_id>-<start>-<end>.opus
                                             derivable cache, free to delete
 """
 
@@ -45,6 +70,7 @@ import pathlib
 import shutil
 import subprocess
 import time
+import uuid
 
 # One constant, defaulted in code and set in compose.yaml only (D151: used by
 # exactly one project, so it is that project's business and is typed once).
@@ -62,7 +88,36 @@ ORPHAN_GRACE_SEC = 60         # a part file younger than this is never judged
                               # an orphan — see sweep_abandoned_uploads
 SWEEP_INTERVAL_SEC = 900      # the janitor's period; shadow runs one process
 PROBE_TIMEOUT_SEC = 60
-CUT_TIMEOUT_SEC = 120
+CUT_TIMEOUT_SEC = 120         # a sentence: seconds of audio, a fraction of a
+                              # second of work
+CHUNK_CUT_TIMEOUT_SEC = 3600  # a chapter: a real re-encode, ~20-30 s for 45
+                              # minutes. It runs in the background, so the
+                              # ceiling is generous on purpose — a chunk that
+                              # times out is a chapter that cannot be studied.
+
+# The precise cut (shadow-studying-refinements task 1.1).
+#
+# `-ss` BEFORE `-i` is fast (it seeks the container) but lands on a page;
+# `-ss` AFTER `-i` is exact (it decodes and discards) but reads the file from
+# zero, which is minutes into a 12-hour book. Doing BOTH is the whole trick:
+# seek the container to CUT_SEEK_PAD_MS before the target, then discard the
+# remaining pad by decoding it. Cost is one pad's worth of decode; the output
+# starts at the millisecond asked for.
+CUT_SEEK_PAD_MS = 500
+
+# ── Silence TRIMMING (shadow-studying-refinements §2) ───────────────────
+# A PLAYBACK AND DISPLAY ATTRIBUTE, NEVER A BOUNDARY. See speech_window.
+TRIM_MIN_SILENCE_MS = 120     # the shortest edge silence worth trimming at all
+TRIM_ONSET_GUARD_MS = 80      # never trim closer than this to detected speech.
+                              # Conservative at onsets is the whole rule: a
+                              # clipped soft consonant does not LOOK broken, it
+                              # just means shadowing a truncated model, which
+                              # is invisible to the operator. 80 ms still
+                              # leaves <150 ms of lead-in on a 300 ms silence.
+TRIM_TAIL_GUARD_MS = 120      # the tail is cheap to be wrong about and
+                              # expensive to clip — a trailing fricative
+TRIM_MIN_SPEECH_MS = 300      # a window shorter than this is not believed;
+                              # the full span is used instead
 
 
 class AudioError(RuntimeError):
@@ -94,19 +149,57 @@ def chunks_dir(media_id: int) -> pathlib.Path:
     return book_dir(media_id) / 'chunks'
 
 
+# Bumped whenever the BYTES a chunk contains change for the same boundaries.
+# v1 chunks were stream-copied and start early; v2 chunks start at the
+# millisecond. The tag is in the filename, so a v1 file is simply never
+# addressed again — the same mechanism the boundaries already use (task 1.4).
+CHUNK_CUT_VERSION = 'v2'
+
+
 def chunk_path(media_id: int, segment_id: int, start_ms: int, end_ms: int) -> pathlib.Path:
-    """Cache path KEYED BY THE BOUNDARIES (task 2.2).
+    """Cache path KEYED BY THE BOUNDARIES AND BY THE CUT (task 2.2, task 1.4).
 
     Putting start/end in the name is the whole invalidation strategy: a
     boundary edit changes the key, so the old file is simply never asked
     for again. It is garbage, not a stale answer, and `drop_chunk_cache`
     clears it. Correctness does not depend on remembering to invalidate.
+
+    CHUNK_CUT_VERSION extends that to a change in HOW the bytes are made.
+    The boundaries of a chapter cut before 2026-11-16 are still valid, so
+    the boundary key alone would have happily served a chunk that starts
+    at the wrong millisecond. The version tag makes the stale file
+    unaddressable too, and `purge_stale_chunks` reclaims it.
     """
-    return chunks_dir(media_id) / f'ch-{int(segment_id)}-{int(start_ms)}-{int(end_ms)}.opus'
+    return (chunks_dir(media_id)
+            / f'ch-{CHUNK_CUT_VERSION}-{int(segment_id)}-{int(start_ms)}-{int(end_ms)}.opus')
 
 
 def drop_chunk_cache(media_id: int) -> None:
     shutil.rmtree(chunks_dir(media_id), ignore_errors=True)
+
+
+def purge_stale_chunks() -> int:
+    """Delete every cached chunk not cut by the CURRENT cut (task 1.4).
+
+    Addressability alone already makes a stale chunk harmless — nothing
+    asks for it. This only reclaims the disk, and it is a sweep rather
+    than a migration because the cache is pure derivation: being wrong
+    here costs a re-cut, never a wrong answer.
+    """
+    removed = 0
+    books = AUDIO_ROOT / 'books'
+    if not books.is_dir():
+        return 0
+    prefix = f'ch-{CHUNK_CUT_VERSION}-'
+    for chunk in books.glob('*/chunks/ch-*.opus'):
+        if chunk.name.startswith(prefix):
+            continue
+        try:
+            chunk.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
 
 
 def delete_book_audio(media_id: int) -> None:
@@ -232,44 +325,80 @@ def transcode_to_master(source: pathlib.Path, media_id: int) -> dict:
 
 
 def cut(media_id: int, start_ms: int, end_ms: int, dest: pathlib.Path,
-        *, stream_copy: bool = True, to_wav: bool = False) -> pathlib.Path:
-    """Cut [start_ms, end_ms) out of the master.
+        *, to_wav: bool = False, timeout: int = CUT_TIMEOUT_SEC) -> pathlib.Path:
+    """Cut [start_ms, end_ms) out of the master, STARTING AT start_ms.
 
-    `stream_copy` is the default and is what makes a chapter chunk cheap:
-    `-c copy` muxes existing Opus frames, so a 45-minute chapter cuts in
-    milliseconds and re-encodes nothing. Sentence previews and the Formant
-    Lab handoff ask for `to_wav`, because phonexa's parselmouth wants PCM
-    — those are seconds of audio, not a chapter.
+    CORRECTION, 2026-11-16. This docstring used to open with "`stream_copy`
+    is the default and is what makes a chapter chunk cheap: `-c copy` muxes
+    existing Opus frames, so a 45-minute chapter cuts in milliseconds and
+    re-encodes nothing." Every word of that was true and the result was
+    still wrong: a stream copy cannot cut between the frames it muxes, so
+    the output began at the enclosing Ogg page rather than at `start_ms`.
+    See the module docstring for the two bugs that came out of it. The
+    parameter is gone; there is one kind of cut here now and it is precise.
+
+    The flags, and why they are in this order:
+
+        -ss (start - PAD)   container seek: cheap, inexact, gets us close
+        -i  master
+        -ss PAD             OUTPUT seek: decodes and discards the pad, so
+                            the first sample written is `start_ms`
+        -t  duration        a duration, not `-to`: `-to` is read against
+                            the input's own timeline, which the input seek
+                            has already moved. A duration cannot be
+                            misread.
+
+    `to_wav` is for phonexa's parselmouth, which wants PCM. Either way the
+    output is re-encoded, which is what makes it exact.
     """
     src = master_path(media_id)
     if not src.exists():
         raise AudioError('this book has no stored audio')
+    start_ms, end_ms = int(start_ms), int(end_ms)
+    if end_ms <= start_ms:
+        raise AudioError(f'empty cut requested: [{start_ms}, {end_ms})')
     dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_name(dest.name + '.partial')
+    # Unique per call: the background pre-cutter and a live request may ask
+    # for the same chunk at the same moment, and two writers sharing one
+    # `.partial` would interleave into a corrupt file. `replace` is atomic,
+    # so whichever finishes last simply wins with identical bytes.
+    tmp = dest.with_name(f'{dest.name}.{os.getpid()}-{uuid.uuid4().hex[:8]}.partial')
+    coarse_ms = max(0, start_ms - CUT_SEEK_PAD_MS)
+    fine_ms = start_ms - coarse_ms
     args = ['ffmpeg', '-nostdin', '-y',
-            '-ss', f'{start_ms / 1000:.3f}', '-to', f'{end_ms / 1000:.3f}',
-            '-i', str(src)]
+            '-ss', f'{coarse_ms / 1000:.3f}',
+            '-i', str(src),
+            '-ss', f'{fine_ms / 1000:.3f}',
+            '-t', f'{(end_ms - start_ms) / 1000:.3f}']
     if to_wav:
         args += ['-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 'wav']
-    elif stream_copy:
-        args += ['-c', 'copy', '-f', 'opus']
     else:
-        args += ['-c:a', 'libopus', '-b:a', OPUS_BITRATE, '-f', 'opus']
+        args += ['-ac', '1', '-c:a', 'libopus', '-b:a', OPUS_BITRATE,
+                 '-vbr', 'on', '-application', OPUS_APPLICATION, '-f', 'opus']
     args.append(str(tmp))
-    proc = _run(args, CUT_TIMEOUT_SEC)
-    if proc.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
+    try:
+        proc = _run(args, timeout)
+        if proc.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
+            raise AudioError('cut failed: ' + (proc.stderr or '').strip()[-400:])
+        tmp.replace(dest)
+    finally:
         tmp.unlink(missing_ok=True)
-        raise AudioError('cut failed: ' + (proc.stderr or '').strip()[-400:])
-    tmp.replace(dest)
     return dest
 
 
 def chapter_chunk(media_id: int, segment_id: int, start_ms: int, end_ms: int) -> pathlib.Path:
-    """The cached chapter chunk, cut on first demand (task 2.1)."""
+    """The cached chapter chunk.
+
+    Normally already on disk: `shadowing.py` pre-cuts a configuration's
+    chapters in the background as soon as its analysis finishes, which is
+    what buys accuracy without making the operator wait for an encode on
+    entering a chapter. Cutting here is the fallback for a chapter entered
+    before the pre-cut reached it — slower, never wrong, never an error.
+    """
     path = chunk_path(media_id, segment_id, start_ms, end_ms)
     if path.exists() and path.stat().st_size > 0:
         return path
-    return cut(media_id, start_ms, end_ms, path, stream_copy=True)
+    return cut(media_id, start_ms, end_ms, path, timeout=CHUNK_CUT_TIMEOUT_SEC)
 
 
 # ── Silence analysis — ranges only, never audio ─────────────────────────
@@ -291,9 +420,24 @@ def detect_silences(media_id: int, min_silence_ms: int) -> list[tuple[int, int]]
                 timeout=6 * 3600)
     if proc.returncode != 0:
         raise AudioError('silence analysis failed: ' + (proc.stderr or '').strip()[-400:])
+    return _parse_silences(proc.stderr or '')
+
+
+def _parse_silences(stderr: str, duration_ms: int | None = None) -> list[tuple[int, int]]:
+    """ffmpeg's `silencedetect` log lines, as (start_ms, end_ms) pairs.
+
+    `duration_ms` closes a silence that ffmpeg never ended — a span that
+    fades out and stops gets a `silence_start` and no `silence_end`,
+    because the stream ran out first. Dropping that pair (which this code
+    did until 2026-11-16) is harmless over a whole book, where it only
+    affects the final silence, and WRONG over a single sentence cut, where
+    the trailing pause always runs to EOF and would therefore never be
+    trimmed. Passing None keeps the old behaviour, which is what the
+    whole-book pass wants.
+    """
     silences: list[tuple[int, int]] = []
     pending: float | None = None
-    for line in (proc.stderr or '').splitlines():
+    for line in stderr.splitlines():
         if 'silence_start:' in line:
             try:
                 pending = float(line.split('silence_start:')[1].split()[0])
@@ -307,12 +451,15 @@ def detect_silences(media_id: int, min_silence_ms: int) -> list[tuple[int, int]]
                 continue
             silences.append((int(pending * 1000), int(end * 1000)))
             pending = None
+    if pending is not None and duration_ms is not None:
+        silences.append((int(pending * 1000), int(duration_ms)))
     return silences
 
 
 def segment_ranges(media_id: int, duration_ms: int,
                    sentence_silence_ms: int, chapter_silence_ms: int) -> dict:
-    """The whole segmentation, as ranges: {'chapters': [...], 'sentences': [...]}.
+    """The whole segmentation: {'chapters': [...], 'sentences': [...],
+    'silences': [...]}, all as (start_ms, end_ms) ranges.
 
     Sentences are the spans BETWEEN silences of at least
     `sentence_silence_ms`; chapters are the spans between the subset of
@@ -347,4 +494,104 @@ def segment_ranges(media_id: int, duration_ms: int,
 
     sentence_cuts = [(s + e) // 2 for s, e in silences if (e - s) >= sentence_silence_ms]
     chapter_cuts = [(s + e) // 2 for s, e in silences if (e - s) >= chapter_silence_ms]
-    return {'chapters': spans(chapter_cuts), 'sentences': spans(sentence_cuts)}
+    # The silence list travels with the ranges so the caller can derive every
+    # sentence's speech window (see speech_window) from the SAME pass that
+    # placed the boundaries. No second decode, and no second noise floor.
+    return {'chapters': spans(chapter_cuts), 'sentences': spans(sentence_cuts),
+            'silences': silences}
+
+
+# ── The speech window — a playback attribute, never a boundary ──────────
+
+def speech_window(start_ms: int, end_ms: int, silences) -> tuple[int, int]:
+    """Where speech actually occurs inside the stored span [start_ms, end_ms).
+
+    THE STORED SPAN IS NOT TOUCHED AND MUST NEVER BE. This returns a
+    narrower window to PLAY and to DRAW; doneness, coverage, merge, split
+    and cross-config carry-over all keep using the full span (design.md
+    §2). Tightening the stored boundaries to this window was offered and
+    rejected: the silence between two sentences would then belong to no
+    sentence, could never be marked, and a wider sentence in another split
+    config would read not-done forever.
+
+    `silences` is the (start_ms, end_ms) list `detect_silences` already
+    produced for the segmentation — the SAME pass, at the SAME noise floor
+    that placed the boundaries. That is deliberate and it is the safety
+    argument: this function can only ever trim audio the segmenter had
+    already judged to be silence, so it cannot clip something the detector
+    counted as speech. A boundary sits at the MIDDLE of a silence, so each
+    span opens and closes with roughly half a pause, and that half-pause is
+    exactly what is trimmed.
+
+    Three guards on top, all of them erring towards playing too much:
+
+      * TRIM_ONSET_GUARD_MS / TRIM_TAIL_GUARD_MS — back off from the
+        detected edge, for the detector's own latency on a soft onset;
+      * TRIM_MIN_SILENCE_MS — an edge silence shorter than this is not
+        worth trimming and is left alone;
+      * TRIM_MIN_SPEECH_MS — if what is left is implausibly short, the
+        window is not believed and the FULL span is returned.
+
+    Idempotent and total: given the same span and the same silence list it
+    always returns the same pair, and the pair is always inside the span.
+    """
+    start_ms, end_ms = int(start_ms), int(end_ms)
+    if end_ms - start_ms <= TRIM_MIN_SPEECH_MS:
+        return start_ms, end_ms
+
+    speech_start, speech_end = start_ms, end_ms
+    for s_start, s_end in silences:
+        if s_end <= start_ms or s_start >= end_ms:
+            continue
+        if (s_end - s_start) < TRIM_MIN_SILENCE_MS:
+            continue
+        # A LEADING silence is one that covers the span's own start.
+        if s_start <= start_ms < s_end:
+            speech_start = max(speech_start, min(s_end, end_ms) - TRIM_ONSET_GUARD_MS)
+        # A TRAILING one covers the span's end.
+        if s_start < end_ms <= s_end:
+            speech_end = min(speech_end, max(s_start, start_ms) + TRIM_TAIL_GUARD_MS)
+
+    speech_start = max(start_ms, min(speech_start, end_ms))
+    speech_end = max(start_ms, min(speech_end, end_ms))
+    if speech_end - speech_start < TRIM_MIN_SPEECH_MS:
+        return start_ms, end_ms
+    return speech_start, speech_end
+
+
+def local_speech_window(media_id: int, start_ms: int, end_ms: int) -> tuple[int, int]:
+    """`speech_window` for ONE span, when no analysis silence list exists.
+
+    Used after a manual split or merge, where the new boundary was chosen
+    by the operator and not by a silence. It runs `silencedetect` over that
+    span alone — seconds of audio, not a book — and feeds the result to the
+    same rule, so a manually-edited sentence trims by exactly the same
+    arithmetic as an analysed one.
+
+    Degrades to the full span on any ffmpeg trouble: no trim is always a
+    correct answer, and this must never be able to fail a split.
+    """
+    start_ms, end_ms = int(start_ms), int(end_ms)
+    if end_ms - start_ms <= TRIM_MIN_SPEECH_MS:
+        return start_ms, end_ms
+    src = master_path(media_id)
+    if not src.exists():
+        return start_ms, end_ms
+    coarse_ms = max(0, start_ms - CUT_SEEK_PAD_MS)
+    try:
+        proc = _run(['ffmpeg', '-nostdin',
+                     '-ss', f'{coarse_ms / 1000:.3f}', '-i', str(src),
+                     '-ss', f'{(start_ms - coarse_ms) / 1000:.3f}',
+                     '-t', f'{(end_ms - start_ms) / 1000:.3f}',
+                     '-af', f'silencedetect=noise={SILENCE_NOISE_DB}dB:'
+                            f'd={TRIM_MIN_SILENCE_MS / 1000:.3f}',
+                     '-f', 'null', '-'],
+                    CUT_TIMEOUT_SEC)
+    except AudioError:
+        return start_ms, end_ms
+    if proc.returncode != 0:
+        return start_ms, end_ms
+    # The sub-cut's clock starts at 0; shift it back onto the book's.
+    local = _parse_silences(proc.stderr or '', duration_ms=end_ms - start_ms)
+    return speech_window(start_ms, end_ms,
+                         [(a + start_ms, b + start_ms) for a, b in local])

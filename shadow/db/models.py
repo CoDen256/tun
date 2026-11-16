@@ -170,6 +170,19 @@ class ShadowingSegment(Base):
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     start_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    # WHERE SPEECH ACTUALLY IS inside [start_ms, end_ms) — a PLAYBACK AND
+    # DISPLAY attribute and nothing else (shadow-studying-refinements §2).
+    # Nullable: NULL means "not computed", which every reader renders as the
+    # full span, so a pre-change row and a failed detection both degrade to
+    # no trimming. Recomputed by every analysis and by split/merge.
+    #
+    # These two columns MUST NEVER be copied into start_ms/end_ms. Doneness,
+    # the coverage rule, merge, split and cross-config carry-over all read the
+    # full span; narrowing the stored span would leave the silence between two
+    # sentences belonging to no sentence, unmarkable forever. That is a tier-3
+    # tripwire in design.md, not a refactor.
+    speech_start_ms: Mapped[int | None] = mapped_column(Integer)
+    speech_end_ms: Mapped[int | None] = mapped_column(Integer)
     text: Mapped[str | None] = mapped_column(Text)  # transcript
     # Frozen legacy column — see the class docstring. Not read, not written.
     done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
