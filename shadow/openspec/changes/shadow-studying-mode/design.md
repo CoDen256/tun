@@ -104,10 +104,32 @@ No text is shown by default. The paper book is the text.
 
 ## 7. Recordings stay ephemeral
 
-In memory for the session only. Never uploaded, never persisted, never
-backed up. The UI must not imply a take survives the session. This
-preserves D147's statement that the database dump *is* the shadowing
-backup.
+In memory for the session only. Never persisted, never backed up. The UI
+must not imply a take survives the session. This preserves D147's
+statement that the database dump *is* the shadowing backup.
+
+**CORRECTION, 2026-11-16.** This section said a recording is "never
+uploaded". That was never quite true of the code, and the wording is
+corrected in place rather than left to be discovered as a contradiction.
+Compare draws the two pitch contours overlaid (§8), and the take's contour
+comes from `POST /analyze-praat` — Compare (`shadow/js/study.js`) hands the
+recorded take to `Pitch.analyse` (`shadow/js/waveform.js`), which posts it
+to shadow, which forwards it to phonexa's parselmouth and relays the
+numbers back. This is pre-existing behaviour, predates this change, and is not
+altered by it.
+
+Precisely, then: **the take is transmitted transiently for pitch analysis
+and is never stored anywhere.** shadow's `/analyze-praat` is a pure proxy
+— it writes no file, creates no row, and the audio volume never sees it;
+phonexa analyses the bytes in the request and keeps nothing. The invariant
+that matters is unchanged and is the one the tests enforce
+(`shadow/tests/test_zone_boundary.py`): no route in shadow may persist the
+learner's own audio, in any style, and the two body-reading proxies must
+never open a file.
+
+What is still forbidden outright: storing a take, backing one up, or any
+endpoint that accepts one for keeping. "Sent for analysis and forgotten"
+and "uploaded" are different things, and §7 now says which one happens.
 
 ## 8. Navigation and the four screens
 
