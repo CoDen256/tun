@@ -107,7 +107,7 @@ const Library = (() => {
       main.className = 'book-main';
       main.innerHTML =
         '<div class="book-title"></div>' +
-        `<div class="book-meta num">${Fmt.long(b.durationMs)} · ${b.chapterCount} chapter${b.chapterCount === 1 ? '' : 's'} · ${Fmt.int(b.sentenceCount)} sentences${b.configCount > 1 ? ` · ${b.configCount} split configs` : ''}</div>` +
+        `<div class="book-meta num">${Fmt.clock(b.durationMs)} · ${b.chapterCount} chapter${b.chapterCount === 1 ? '' : 's'} · ${Fmt.int(b.sentenceCount)} sentences${b.configCount > 1 ? ` · ${b.configCount} split configs` : ''}</div>` +
         `<div class="bar" style="margin-top:.6rem"><i style="width:${pct}%"></i></div>` +
         (busy
           ? `<div class="book-cursor"><span class="chip"><span class="dot pulse"></span> <span class="js-busy">${prog.text}</span></span></div>`

@@ -71,16 +71,13 @@ const Api = (() => {
 // ── small shared formatters ───────────────────────────────────────────────
 const Fmt = {
   int(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); },
+  // The one duration format. `long` ("11 min") is gone: it rounded a 10:35
+  // book to 11 minutes and a 7:06 one to 7, and the stored value is exact.
   clock(ms) {
     const s = Math.max(0, Math.round((ms || 0) / 1000));
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
     const pad = (v) => (v < 10 ? '0' + v : String(v));
     return h ? `${h}:${pad(m)}:${pad(x)}` : `${m}:${pad(x)}`;
-  },
-  long(ms) {
-    const s = Math.round((ms || 0) / 1000);
-    const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
-    return h ? `${h} t ${m < 10 ? '0' : ''}${m} min` : `${m} min`;
   },
   secs(ms) { return (Math.max(0, ms || 0) / 1000).toFixed(1) + ' s'; },
   bytes(n) {

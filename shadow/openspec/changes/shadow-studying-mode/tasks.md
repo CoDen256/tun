@@ -113,6 +113,14 @@ land before any UI reads progress**, and it must be verified before the old
       row anywhere.
 - [x] 8.2 Library rows: duration, chapters, progress, cursor as "Chapter N
       · sentence M of K"; upload drop zone; determinate analysing state.
+      *(CORRECTED 2026-11-16: duration was rendered with a whole-minute
+      formatter — "11 min" for a 10:35 book — and now reads `10:35`; the
+      determinate state timed itself from when the page first saw the book
+      rather than from the current operation, so a second operation opened
+      at "97% · ~0 s left", and now times against the server's `since` for
+      THAT operation and prints no number when it cannot. The Library also
+      refetches whenever it is shown, so an analysis started from Prepare is
+      polled.)*
 - [x] 8.3 **Remove** the upload time-range selector and the client-side
       decode/segmentation path it served.
 - [x] 8.4 No browser `alert` / `confirm` / `prompt` anywhere in shadow.
