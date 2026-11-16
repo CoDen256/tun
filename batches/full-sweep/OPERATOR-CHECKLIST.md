@@ -97,3 +97,106 @@ Oslo recordings stay capped at the old 180-word corpus.
   import — one recording silently vanished. Fixed by grouping take-numbering
   and surplus-marking by `word.casefold()`, matching the import's primary
   key; verified in the live corpus (both recordings of "i" now resolve).
+
+---
+
+## Shadow studying mode — `shadow-studying-mode` (shadow)
+
+**This change reverses a founding decision: shadow now stores audio.** One
+mono Opus master per book, transcoded once on upload. D162 records the
+reversal; D147 is annotated in place.
+
+### Deploy
+
+Standard pull / rebuild / restart — `shadow-backend` only.
+
+```bash
+git pull
+docker compose up -d --build shadow-backend
+```
+
+- The `shadow_audio` named volume is created by compose. Nothing to do.
+- **The migration runs itself at boot** (serve-before-migrate, D157). There
+  is no manual migration step.
+- **Read the migration's log line before using the app:**
+  ```bash
+  docker compose logs shadow-backend | grep -i "done sentences preserved"
+  ```
+  It must report your done sentences preserved and verified. It raises inside
+  the transaction on any mismatch, so a successful boot already means it
+  held — but read it once anyway, because this is the one irreversible step.
+- **`alembic downgrade` on shadow now REFUSES and exits 1.** Deliberate: a
+  downgrade would drop every progress range and then a re-upgrade would
+  silently rebuild month-old `done` flags while printing "verified
+  identical". If you ever truly need to go back, restore from a dump.
+
+### The first thing you will notice
+
+Your existing books (16, 19) show **no audio**. They kept every segment,
+every done flag and their place in the book, but there is no server-side
+master for them — the audio only ever lived in your browser. The row says
+so. **Re-upload those files** (same file, any name) to get audio features
+back; the split and progress reattach.
+
+### Data / storage verification
+
+- `docker compose exec shadow-backend ls -R /data/audio/books` — one
+  `master.opus` per book, plus a `chunks/` cache. **Nothing per sentence.**
+  If you ever see a file count that scales with sentences, that is a bug.
+- `docker compose exec postgres psql -U shadow -d shadow -c "select count(*) from shadowing_progress_ranges;"`
+  — this is your real progress now. `shadowing_segments.done` is a frozen
+  legacy column: never read, never written, kept only so the migration stays
+  auditable.
+- **The audio volume is NOT backed up, deliberately.** `shadow.sql` carries
+  split configs, boundaries, progress, cursor and transcripts — the
+  irreplaceable things. Masters are re-uploadable. Confirm after a backup run
+  that the repo did not grow by an audiobook.
+
+### Flows to test live
+
+1. **Upload a real audiobook.** Watch the determinate byte counter, then the
+   automatic transcode → analysis (you should not have to press anything).
+   Kill the tab mid-upload and re-drop the same file — it must resume, not
+   restart.
+2. **The loop, on the desktop.** Open Study. `Space` plays and must stop dead
+   at the sentence end. `Enter` marks and advances. `←`/`→` must move without
+   marking anything. `?` shows every binding.
+3. **Record and Compare — this is the part agents could not test.** There is
+   no microphone and no STT provider in dev, so criteria 27, 28, 29 and half
+   of 30 are unverified. Press `R`, speak, press `R`, then `C`: you should
+   hear the reference then your take, and see two pitch contours overlaid.
+   Reload and confirm your take is **gone** — it must never persist.
+4. **Transcribe.** Press `T` on a sentence. Needs a working smia STT
+   provider; in dev there was none, so this reported "unknown provider".
+5. **Formant Lab.** Press `F`. It must send the **audiobook's** sentence, not
+   your voice — even when you have just recorded.
+6. **The phone.** Open shadow on your actual phone. Record/Play/Compare and
+   the Done bar must sit under your thumb; `⋯` is at the top. Enter a chapter
+   and confirm it downloads once and then plays every sentence instantly —
+   put the phone in airplane mode afterwards to prove it.
+7. **Continuity.** Leave off mid-chapter on the desktop without marking
+   anything, then open the phone. It must land on that same sentence.
+8. **Split configs.** In Prepare, duplicate a config and re-analyse it with
+   different thresholds. Your progress must carry across by time coverage,
+   and the other config's manual edits must be untouched.
+9. **Lock the phone mid-sentence.** Playback must stop at the sentence end,
+   not run on into the chapter. (This failed before a review fix and the fix
+   is verified only with rAF suppressed in a desktop browser — your real
+   phone is the honest test.)
+
+### Known, not defects
+
+- Prepare's sliders cannot produce an inverted threshold pair by hand
+  (sentence max 1200 ms, chapter min 1200 ms); the API refuses one anyway.
+- A tester saw Study's tray "Merge with next" ignore one click on the label
+  text immediately after a tray re-render, then work on the next click. Not
+  reproduced reliably — worth one look if you hit it.
+- The per-upload lock is process-local, which is sound only because shadow
+  runs a single process. It carries an in-code note to become a Postgres
+  advisory lock if that ever changes.
+
+### Out of scope, needs your decision
+
+Commit `8c337e78` touches **`postgres/`** — shared infrastructure this
+package does not own. See the final report; it was not designed, not covered
+by any acceptance criterion, and not verified by this package's tester.
