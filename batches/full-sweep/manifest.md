@@ -23,7 +23,7 @@ All other packages are parallel-safe.
 | Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` |
 | Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
 | Stabbur merging & dict.cc translations | pending |
-| Shadow studying mode | building (shadow: `shadow-studying-mode`) |
+| Shadow studying mode | archived — `shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode` |
 | Calst/pygmalion audio consolidation | archived (smia: `2026-11-15-calst-audio-union`) |
 
 ## Packages
@@ -171,7 +171,7 @@ projects: stabbur, smia
 
 ### Shadow studying mode
 projects: shadow
-status: designed 2026-11-15 — change `shadow-studying-mode` (shadow)
+status: archived 2026-11-16 — `shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode`
 
 [OVERHAUL] shadow shadowing should support studying mode where i just press 3 buttons (one makes the audio play, the second compares, the third marks as completed and goes to the next one) RETHINK THE DESIGN
 
@@ -249,3 +249,22 @@ progress-display details.
 ## Dropped / deferred
 
 (none)
+
+## Out-of-package changes that rode along
+
+- **`8c337e78` — `postgres/compose.yaml` + `postgres/init/bootstrap.sh`**,
+  committed during the Shadow studying mode build. It fixes a real
+  socket-vs-TCP race in `postgres-init` (the health check probed the UNIX
+  socket while `bootstrap.sh` connects over TCP, so a probe landing while
+  the entrypoint runs its temporary `listen_addresses=''` server reported
+  healthy and bootstrap got "Connection refused"; the role guard then could
+  not distinguish "no such role" from "the query never ran" and took the
+  CREATE branch, exiting 1 — which eight services gate on).
+  **It is outside this package's scope** (projects: shadow), was not
+  designed, is covered by no acceptance criterion, and was not verified by
+  this package's tester. Acceptance criterion 50 ("nothing outside shadow/
+  and docs/ is modified") is therefore FAILED AS WRITTEN — the tester's PASS
+  was measured before this commit existed. Surfaced to the operator rather
+  than reverted, because the fix looks correct and reverting a boot-race fix
+  blind is worse than keeping it; it needs its own backlog item so it is
+  judged on its own merits.
