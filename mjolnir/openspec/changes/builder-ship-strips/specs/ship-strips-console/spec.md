@@ -112,11 +112,16 @@ while the detail view is open.
   content rather than what is currently installed on the device
 
 ### Requirement: Totals use one order and one vocabulary everywhere, with this run's deltas
-The system SHALL present cards minted, eventual occurrences, shipped, staged
-and pending in that same order, with the same labels and icons, both in the
-page's global totals and in every deck's own header, each accompanied by this
-run's delta rendered inline and smaller beside the figure in both places. A
-zero delta SHALL be rendered as absence rather than as an explicit zero.
+The system SHALL present cards minted, cards edited by this publish, eventual
+occurrences, shipped, staged and pending in that same order, with the same
+labels and icons, both in the page's global totals and in every deck's own
+header. Each figure other than edited SHALL be accompanied by this run's
+delta rendered inline and smaller beside the figure in both places. A zero
+delta SHALL be rendered as absence rather than as an explicit zero.
+
+The edited figure SHALL be the count of already-minted cards whose content
+this publish rewrites, rendered as a figure in its own right with no separate
+delta, and SHALL be rendered explicitly when it is zero.
 
 The global totals SHALL NOT repeat per-deck breakdowns, which the deck
 headers already carry.
@@ -130,3 +135,38 @@ headers already carry.
 - **WHEN** the operator reads a global total that changed this run
 - **THEN** the delta appears beside the figure rather than beneath it, and
   no per-deck breakdown is listed under the figure
+
+#### Scenario: A deck where nothing is being rewritten
+- **WHEN** no already-minted card in a deck has changed content
+- **THEN** that deck's edited figure reads zero explicitly, rather than being
+  omitted
+
+### Requirement: The page carries no run-summary line and no per-strip heading
+The system SHALL NOT render a condensed run-summary line in the page header,
+nor a heading above each deck's strip. The page's one legend SHALL sit at the
+bottom of the page, below the last deck.
+
+#### Scenario: Reading the page header
+- **WHEN** the operator looks at the page header
+- **THEN** it carries the page identity, the active logic bundle and the
+  publish action, and no glyph-shorthand summary of the run
+
+#### Scenario: Locating the legend
+- **WHEN** the operator scrolls the page
+- **THEN** exactly one legend appears, after the last deck's strip
+
+### Requirement: A deck's grid status is silent when correct and loud when faulted
+The system SHALL render no grid-status indication for a deck whose shipped
+occurrence count is a multiple of 5, and SHALL render a prominent fault
+indication for a deck whose shipped count is not, naming the condition as
+being off the 5-grid rather than as staleness.
+
+#### Scenario: A deck in the expected state
+- **WHEN** a deck's shipped occurrence count is a multiple of 5
+- **THEN** its header shows no grid-status indicator at all
+
+#### Scenario: A deck that has lost occurrences
+- **WHEN** a deck's shipped occurrence count is not a multiple of 5
+- **THEN** its header shows a prominent fault indicator identifying the
+  deck as off the 5-grid, distinct from any notion of how long it has been
+  since the deck last shipped

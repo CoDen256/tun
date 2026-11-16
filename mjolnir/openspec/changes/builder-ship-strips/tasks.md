@@ -26,14 +26,17 @@
 - [ ] 3.3 Implement the cell vocabulary: lifecycle fills including the staged-flushing / staged-held split, the new-this-run outline, the content-change marker, and the letter glyph
 - [ ] 3.4 Render the strip with no text inside the cell grid — rows of a fixed cell count, a divider every 5 throughout, row labels outside the grid
 - [ ] 3.5 Render each pending tier's countdown as that many filler cells, in ascending tier order, with no caption; render no pending zone at all for single-occurrence families
-- [ ] 3.6 Build the deck rail header: code, title, the five-figure readout in the shared order with deltas (absent at zero), and the grid-status chip
+- [ ] 3.6 Build the deck rail header: code, title, and the six-figure readout in the shared order with inline deltas (absent at zero); no grid chip when the deck is on grid
+- [ ] 3.6a Render the edited figure (already-minted cards this publish rewrites) beside minted in both the rail header and the global totals, with no delta and an explicit zero
+- [ ] 3.6b Render a prominent off-the-5-grid fault element only for a deck whose shipped count is not a multiple of 5, naming the grid fault rather than staleness; drop the "Stalled" label's conflation of the two
 - [ ] 3.7 Make the global totals use the same order, labels and icons as the rail readout, with the delta inline and smaller beside each figure, and no per-deck breakdown sub-lines
 - [ ] 3.8 Implement hover: index, card id, letter, and the changed-face readout from 1.3, with the no-card wording for open and filler cells
 - [ ] 3.9 Implement kin-highlight of the same card's other occurrence on hover and on focus
 - [ ] 3.10 Implement the detail view as a pushing panel that keeps the strip visible, carrying shipping build and timestamp, flush-or-hold, tier countdown, and the sibling occurrence's position
 - [ ] 3.11 Render the card in the detail view through the `card-preview` capability using the extracted style map produced by `assembly-tab-usability`; fail loudly if that style map is absent rather than silently falling back to invented values
 - [ ] 3.12 Label the preview as showing new content whenever the cell's card is being rewritten by this publish
-- [ ] 3.13 Add the legend with the new staged split and the info affordance carrying the cards-not-occurrences countdown fact
+- [ ] 3.13 Place the single legend at the bottom of the page, below the last rail, carrying the staged split and the info affordance with the cards-not-occurrences countdown fact
+- [ ] 3.13a Remove the per-strip heading and the header's condensed run-summary line; verify no "on hold" counter is re-homed anywhere, since the held fill and the staged figure already carry it
 - [ ] 3.14 Audit every user-visible string on the page for "occurrences"/"batches" phrasing of the countdown and change it to cards
 - [ ] 3.15 Make cells keyboard-walkable with a visible focus ring, and suppress any motion under `prefers-reduced-motion`
 - [ ] 3.16 Update the Builder nav entry's label in `hub/src/layout.js` and `builder/src/layout.js` to match the new page
@@ -54,7 +57,7 @@ its drawn state.
 
 ## 5. Verification
 
-- [ ] 5.1 Seed the deck shapes the acceptance criteria need (a deck carried past its next multiple of 5 by staged rows; a deck on the grid with nothing staged) and record the seeding
+- [ ] 5.1 Seed the deck shapes the acceptance criteria need (a deck carried past its next multiple of 5 by staged rows; a deck on the grid with nothing staged; a deck deliberately off the 5-grid, to prove the fault element renders) and record the seeding
 - [ ] 5.2 Capture a device-plane response (`current.json` and a bundle fetch) before and after the change and diff them byte for byte
 - [ ] 5.3 Run the full `mjolnir` test suite and `bin/check-standards.sh`
 - [ ] 5.4 Walk `acceptance.md` in the running UI and on a device/emulator, recording the observed end state per criterion

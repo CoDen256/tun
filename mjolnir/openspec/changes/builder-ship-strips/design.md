@@ -72,16 +72,34 @@ unchanged — only described accurately.
 
 ## D-SS3: One stat order, everywhere
 
-minted ◆ → occurrences eventual Σ → shipped ● → staged ◐ → pending ○.
-Identical sequence, glyphs and labels in the global totals and in every deck
-rail header, each with this run's `+N` delta rendered **inline, smaller, to
-the right of the figure** in both places (nothing rendered at zero, so
+minted ◆ → edited ✎ → occurrences eventual Σ → shipped ● → staged ◐ →
+pending ○. Identical sequence, glyphs and labels in the global totals and in
+every deck rail header, each with this run's `+N` delta rendered **inline,
+smaller, to the right of the figure** in both places (nothing rendered at zero, so
 "nothing moved" reads as silence and the five slots stay aligned across
 rails).
 
 The global totals carry **no per-deck breakdown sub-lines**. Those facts are
 on the deck rails a screen below; repeating them under every stat cell was
-the same duplication the rail header's banner paragraph was cut for. The rail header is deck code · title · that readout · on-grid chip,
+the same duplication the rail header's banner paragraph was cut for.
+
+**Edited** — already-minted cards whose content this publish rewrites, the
+same set the corner dot marks — sits beside minted because that is the
+question it answers: of the cards this deck holds, how many change tonight.
+It is a this-run quantity by nature, so it is rendered as a figure with no
+separate delta. Unlike the other five, a zero is rendered explicitly: here
+"nothing is being rewritten" is a reassuring answer, not an absent delta.
+
+The sticky header carries no run-summary line. An earlier iteration packed
+the run into glyph shorthand (`+6◆ · 5▲ · 6⏸ · 3✎`); it was unreadable
+without hovering and every figure in it is in the totals row. The "on hold"
+figure in particular is not re-homed anywhere: held staged occurrences are
+already legible twice over, as the held fill in the strip and inside the
+staged figure.
+
+The per-strip heading is likewise removed. The legend explains the cells,
+and it now sits once at the **bottom of the page**, below the last rail,
+rather than in the header. The rail header is deck code · title · that readout · on-grid chip,
 and nothing else — the sentence-form flush note and the per-deck banner
 paragraph are both removed as duplication of the readout.
 
@@ -252,6 +270,28 @@ building.
 Consequence recorded in the batch manifest: **`assembly-tab-usability`
 builds before this package**, and its extractor output must live somewhere
 this page can read.
+
+## D-SS11: On-grid is a canary, so it is silent until it fires
+
+`gridStatusForDeck` reports a deck as "on grid" iff its shipped count is a
+multiple of 5. Under correct operation that is **always** true:
+`flushShippable` only ever flushes a deck *to* a multiple of 5, because the
+app's own `5 × PullCounter` draw-offset math depends on it
+(`docs/findings.md`). Off-grid is therefore not a status — it is a
+data-integrity fault, reachable by lost occurrences (exactly what the
+atomicity defect produced) or a hand-edited database.
+
+A chip that permanently reads "On grid" is an indicator nobody reads, which
+is the same class of problem as the open-slot diagnostic that blamed the
+data: a reassuring signal that cannot be distinguished from a correct one.
+
+Settled: a deck on the grid shows **no chip at all**; a deck off the grid
+shows a loud error-styled chip. Absence means fine, presence means alarm.
+
+The off-grid chip is also **relabelled**. Today it reads "Stalled — N d",
+conflating two unrelated things: being off the 5-grid (a correctness fault)
+and days since the last shipment (slowness, which is not a fault at all).
+The chip names the grid fault; staleness is not a chip.
 
 ## Device-plane check
 

@@ -19,7 +19,7 @@
   --err: #d1453f; --err-soft: #d1453f1f;
   --new: #7aa2f7; --new-soft: #7aa2f726;
   --radius: 6px;
-  --header-h: 98px;
+  --header-h: 56px;
   --sans: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
 }
@@ -79,18 +79,14 @@ button:hover { border-color: var(--text-faint); }
 }
 .bundle-chip b { color: var(--text); font-weight: 650; }
 .bundle-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
-.run-line { font-size: 12.5px; color: var(--text-dim); }
-.run-line b { color: var(--text); font-weight: 650; }
-.run-line .plus { color: var(--ok); font-weight: 700; }
-.run-line .hold { color: var(--warn); font-weight: 700; }
-.run-line .chg { color: var(--accent-text); font-weight: 700; }
 .head-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 
 /* ── 4. the legend, once, in the header ─────────────────────────────── */
 .legend-bar {
   display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  padding: 7px 24px 8px; border-top: 1px solid var(--border-soft);
-  font-size: 11px; color: var(--text-dim); background: var(--bg-sunken);
+  padding: 10px 16px 11px; margin-top: 4px;
+  border: 1px solid var(--border); border-radius: 10px;
+  font-size: 11px; color: var(--text-dim); background: var(--bg-elevated);
 }
 .legend-bar .grp { display: inline-flex; align-items: center; gap: 9px; }
 .legend-bar .sw { display: inline-flex; align-items: center; gap: 5px; }
@@ -105,7 +101,7 @@ button:hover { border-color: var(--text-faint); }
 }
 .legend-bar .info.open > button { border-color: var(--accent); color: var(--accent-text); }
 .legend-bar .info .pop {
-  display: none; position: absolute; top: 22px; left: -10px; z-index: 50;
+  display: none; position: absolute; bottom: 24px; left: -10px; z-index: 50;
   width: 340px; white-space: normal; background: var(--bg-elevated);
   border: 1px solid var(--border); border-radius: 8px; padding: 10px 13px 11px;
   font-size: 11.5px; line-height: 1.65; color: var(--text-dim); box-shadow: 0 10px 30px #000a;
@@ -155,7 +151,18 @@ button:hover { border-color: var(--text-faint); }
   display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 650;
   padding: 4px 9px; border-radius: 999px; white-space: nowrap;
 }
-.flow-status-chip.ok { background: var(--ok-soft); color: var(--ok); }
+/* No chip at all when a deck is on the 5-grid. flushShippable only ever
+   flushes to a multiple of 5 (the app's 5 × PullCounter draw math depends
+   on it), so on-grid is true essentially always and a permanently-green
+   chip is an indicator nobody reads. Off-grid means lost or hand-edited
+   occurrences — a real alarm, and NOT the same thing as "stalled", which
+   is days since the last shipment. */
+.flow-status-chip.offgrid {
+  background: var(--err-soft); color: var(--err);
+  border: 1px solid var(--err); font-weight: 700;
+}
+.flow-deck.off { border-color: var(--err); }
+.flow-deck.off .deck-head { background: #241413; }
 .flow-status-chip .sdot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
 .deck-body { padding: 14px 18px 18px; }
@@ -201,7 +208,6 @@ button:hover { border-color: var(--text-faint); }
 
 .flow-batch-div { width: 1px; height: 21px; background: var(--border); margin: 0 5px; flex: none; }
 
-.flow-shape-wrap > h4 { margin: 0 0 9px; font-size: 11.5px; font-weight: 650; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
 .flow-shape-note { font-size: 11.5px; color: var(--text-faint); margin: 12px 0 2px; line-height: 1.7; max-width: 980px; }
 .flow-shape-note b { color: var(--text-dim); }
 .flow-pending-empty { font-size: 11.5px; color: var(--text-faint); margin-top: 10px; }
@@ -386,15 +392,23 @@ body.drawer-open .page { padding-right: 452px; }
         <span class="dot"></span>
         <b>logic bundle #3</b> · base 1.5.12 · patch rev 7
       </span>
-      <span class="run-line mono" title="this run: 6 new cards · 5 occurrences flush · 6 held · 3 cards' content rewritten">
-        <b>+6</b>◆ · <span class="plus">5</span>▲ · <span class="hold">6</span>⏸ · <span class="chg">3</span>✎
-      </span>
       <div class="head-right">
         <button class="btn-primary" id="publish-btn">Publish now</button>
       </div>
     </div>
+  </header>
 
-    <!-- 4. the legend — once, here, never repeated per deck -->
+  <!-- the run slot: progress while publishing, last run's outcome otherwise -->
+  <div class="run-slot" id="run-slot"></div>
+
+  <div class="content">
+    <!-- 2. global totals -->
+    <div class="flow-totals" id="totals"></div>
+
+    <!-- 3. one full-width rail per deck, all expanded -->
+    <div id="decks"></div>
+
+    <!-- 4. the legend — once, at the bottom, below the last rail -->
     <div class="legend-bar">
       <span class="grp">
         <span class="axis">fill</span>
@@ -424,17 +438,6 @@ body.drawer-open .page { padding-right: 452px; }
         <span class="sw"><span class="flow-u shipped is-changed">A</span>content rewritten</span>
       </span>
     </div>
-  </header>
-
-  <!-- the run slot: progress while publishing, last run's outcome otherwise -->
-  <div class="run-slot" id="run-slot"></div>
-
-  <div class="content">
-    <!-- 2. global totals -->
-    <div class="flow-totals" id="totals"></div>
-
-    <!-- 3. one full-width rail per deck, all expanded -->
-    <div id="decks"></div>
   </div>
 </div>
 
@@ -620,22 +623,67 @@ function buildC20() {
   return units;
 }
 
+/* C31 exists only to show the off-grid alarm. 7 cards, A+E, of which the
+   last two E's are still queued: 12 shipped — not a multiple of 5, which
+   is the fault condition. Nothing happens to it this run. */
+function buildC31() {
+  const units = [];
+  let idx = 0;
+  const seq = [];
+  for (let n = 1; n <= 7; n++) {
+    seq.push({ card: n, letter: "A" });
+    if (n >= 3) seq.push({ card: n - 2, letter: "E" });
+  }
+  for (const o of seq) {
+    idx++;
+    units.push({
+      kind: "cell", idx, cls: "shipped", letter: o.letter, card: o.card,
+      cardId: "C31" + pad3(o.card), deck: "C31", isNew: false, changed: false,
+      build: 40 + Math.ceil(idx / 5), flushing: false,
+    });
+  }
+  for (let i = 0; i < 3; i++) { // 15 − 12
+    idx++;
+    units.push({ kind: "cell", idx, cls: "open", letter: "?", card: null, cardId: null, deck: "C31", isNew: false, changed: false });
+  }
+  for (let n = 6; n <= 7; n++) {
+    idx++;
+    units.push({ kind: "cell", idx, cls: "pending", letter: "E", card: n, cardId: "C31" + pad3(n), deck: "C31", isNew: false, changed: false, remaining: 11, tierSize: 2 });
+  }
+  for (let i = 0; i < 11; i++) {
+    idx++;
+    units.push({ kind: "cell", idx, cls: "gap", letter: "?", card: null, cardId: null, deck: "C31", isNew: false, changed: false, remaining: 11, tierSize: 2 });
+  }
+  return units;
+}
+
 const DECKS = [
   {
     code: "C30", title: "Lexic", desc: "vocabulary — A + E pair per card",
-    occPerCard: 2, minted: 189, eventual: 378,
+    occPerCard: 2, minted: 189, edited: 3, eventual: 378,
     shipped: 245, staged: 9, pending: 124, open: 1,
     target: 250, wouldFlush: 5, held: 4, newCards: 4, newOcc: 10,
     stagedBefore: 2, pendingQueued: 4, pendingDrained: 3,
+    onGrid: true, openTarget: 255, heldText: "held — 4 staged sit past 250, waiting on 255 (1 more occurrence)",
     units: buildC30(),
   },
   {
     code: "C20", title: "Practice", desc: "single-occurrence drill cards",
-    occPerCard: 1, minted: 47, eventual: 47,
+    occPerCard: 1, minted: 47, edited: 0, eventual: 47,
     shipped: 45, staged: 2, pending: 0, open: 3,
     target: 50, wouldFlush: 0, held: 2, newCards: 2, newOcc: 2,
     stagedBefore: 0, pendingQueued: 0, pendingDrained: 0,
+    onGrid: true, openTarget: 50, heldText: "held — 47 staged against a target of 50, 3 occurrences short",
     units: buildC20(),
+  },
+  {
+    code: "C31", title: "Lexic II", desc: "vocabulary — A + E pair per card",
+    occPerCard: 2, minted: 7, edited: 0, eventual: 14,
+    shipped: 12, staged: 0, pending: 2, open: 3,
+    target: 15, wouldFlush: 0, held: 0, newCards: 0, newOcc: 0,
+    stagedBefore: 0, pendingQueued: 0, pendingDrained: 0,
+    onGrid: false, openTarget: 15, heldText: null,
+    units: buildC31(),
   },
 ];
 
@@ -644,18 +692,22 @@ const DECKS = [
    ══════════════════════════════════════════════════════════════════════ */
 // ONE order, ONE icon set, ONE label set — reused verbatim by the top
 // panel and by every deck rail header.
-const ORDER = ["minted", "eventual", "shipped", "staged", "pending"];
-const ICON = { minted: "◆", eventual: "Σ", shipped: "●", staged: "◐", pending: "○" };
+const ORDER = ["minted", "edited", "eventual", "shipped", "staged", "pending"];
+const ICON = { minted: "◆", edited: "✎", eventual: "Σ", shipped: "●", staged: "◐", pending: "○" };
 const LABEL = {
   minted: "Cards minted",
+  edited: "Cards edited",
   eventual: "Occurrences, eventual",
   shipped: "Shipped",
   staged: "Staged — short of next 5",
   pending: "Pending — 11-card spacing",
 };
-const TOTAL = { minted: 236, eventual: 425, shipped: 290, staged: 11, pending: 124 };
+const TOTAL = { minted: 243, edited: 3, eventual: 439, shipped: 302, staged: 11, pending: 126 };
+// `edited` counts already-minted cards whose content THIS run rewrites, so
+// the figure is already a this-run number — it never carries a delta.
 const DELTA = {
   minted: '<span class="plus">+6</span>',
+  edited: "",
   eventual: '<span class="plus">+10</span>',
   shipped: '<span class="plus">+5</span>',
   staged: '<span class="plus">+9</span>',
@@ -677,6 +729,8 @@ document.getElementById("totals").innerHTML = ORDER.map((k) => `<div class="flow
 //   pending  = queued this run − drained this run  (net)
 const deckDeltas = (d) => ({
   minted: d.newCards,
+  // no `edited`: the figure IS the this-run number
+
   eventual: d.newCards * d.occPerCard,
   shipped: d.wouldFlush,
   staged: d.staged - d.stagedBefore,
@@ -749,16 +803,15 @@ function renderStrip(deck) {
 }
 
 document.getElementById("decks").innerHTML = DECKS.map((d) => `
-  <section class="flow-deck">
+  <section class="flow-deck${d.onGrid ? "" : " off"}">
     <div class="deck-head">
       <span class="flow-deck-code">${d.code}</span>
       <span class="flow-deck-title">${d.title}</span>
       ${readout(d)}
-      <span class="flow-status-chip ok"><span class="sdot"></span>On grid</span>
+      ${d.onGrid ? "" : `<span class="flow-status-chip offgrid"><span class="sdot"></span>Off the 5-grid — ${d.shipped} shipped is not a multiple of 5</span>`}
     </div>
     <div class="deck-body">
       <div class="flow-shape-wrap">
-        <h4>Ship order — shipped → staged → open → pending</h4>
         <div class="flow-shape-box"><div class="flow-shape-rows">${renderStrip(d)}</div></div>
         ${d.occPerCard === 2 ? "" : `<p class="flow-pending-empty">No pending zone — single-occurrence deck.</p>`}
       </div>
@@ -785,15 +838,13 @@ function changeText(u) {
 
 function stateText(u) {
   if (u.cls === "shipped") return `shipped in ${buildId(u.build)}, ${buildDate(u.build)}`;
+  const deck = DECKS.find((x) => x.code === u.deck);
   if (u.cls === "staged") {
-    if (u.flushing) return "would flush this run";
     // held: this occurrence sits past the multiple of 5 this run reaches,
     // so it waits for the NEXT one.
-    return u.deck === "C30"
-      ? "held — 4 staged sit past 250, waiting on 255 (1 more occurrence)"
-      : "held — 47 staged against a target of 50, 3 occurrences short";
+    return u.flushing ? "would flush this run" : deck.heldText;
   }
-  if (u.cls === "open") return `open slot — not yet minted, counts toward ${u.deck === "C30" ? 255 : 50}`;
+  if (u.cls === "open") return `open slot — not yet minted, counts toward ${deck.openTarget}`;
   if (u.cls === "pending") return `pending — drains after ${u.remaining} more new cards into ${u.deck}`;
   return `filler — ${u.remaining} more new cards must land in ${u.deck} before this tier drains`;
 }

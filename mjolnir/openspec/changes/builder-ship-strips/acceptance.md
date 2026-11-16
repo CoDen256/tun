@@ -114,6 +114,25 @@ No stat cell in the global totals contains a per-deck list or a descriptive
 sentence beneath its figure. The per-deck figures appear only on the deck
 headers.
 
+### A16c. Edited sits beside minted in both places and shows an explicit zero
+Both the global totals and every deck header present the figures in the order
+minted, edited, eventual, shipped, staged, pending. The edited figure equals
+the number of already-minted cards whose content this publish rewrites — the
+same cards carrying the corner dot — and a deck with none shows `0`, not an
+empty slot. Edited carries no separate delta.
+
+### A16d. The header carries no run-summary line, and the legend is at the bottom
+The page header contains the page identity, the active-bundle chip and the
+publish action, and no condensed glyph summary of the run. Exactly one legend
+exists on the page, positioned after the last deck's strip. No heading
+appears above any deck's strip.
+
+### A16e. Grid status is silent when correct and loud when faulted
+For a deck whose shipped occurrence count is a multiple of 5, the rail header
+renders no grid-status element at all. For a deck seeded off the 5-grid, the
+rail header renders a prominent fault element whose text identifies the deck
+as off the 5-grid and does not call it stalled.
+
 ### A17. The open-slot count is correct for a deck carried past its multiple
 For the seeded deck at 245 shipped and 9 staged, the strip renders exactly
 **1** open cell, and that cell's detail view names 255 as the target. The
