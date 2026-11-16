@@ -43,7 +43,7 @@ from pyservice.migrate import upgrade_head
 
 from app import app  # the Flask app, routes already registered
 from db.session import get_engine
-from shadowing import start_upload_janitor
+from shadowing import start_janitor
 
 
 def main() -> None:
@@ -63,11 +63,18 @@ def main() -> None:
         db_errors=(OperationalError,),
     )
 
-    # Abandoned-upload cleanup (task 1.5). A daemon thread that blocks
-    # nothing and whose first pass is delayed, so serve-before-migrate is
-    # untouched and a database that is not up yet costs the sweep one pass
-    # of its orphan rule, never the boot.
-    start_upload_janitor()
+    # Stuck-state reconciliation and abandoned-upload cleanup (task 1.5).
+    # One daemon thread that blocks nothing and whose first pass is
+    # delayed, so serve-before-migrate is untouched and a database that is
+    # not up yet costs the janitor one pass, never the boot.
+    #
+    # The first pass IS the crash recovery: a process that died mid
+    # transcode or mid analysis left `audio_state='transcoding'` /
+    # `analysis_state='running'` in the database with no thread behind
+    # them, and the book polled "analysing…" for ever. It is deliberately
+    # here and not in `prepare`: recovery must not be able to delay the
+    # port binding (D157).
+    start_janitor()
 
     print("shadow — HTTP :5051", flush=True)
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"

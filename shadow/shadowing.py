@@ -322,22 +322,117 @@ def sweep_uploads() -> int:
     return audio.sweep_abandoned_uploads(live_ids=live, busy_ids=busy)
 
 
-def start_upload_janitor() -> None:
+def reconcile_working_states() -> int:
+    """Un-stick every row that says work is happening when nothing is.
+
+    THE DEFECT THIS EXISTS FOR (confirmed 2026-11-16): nothing reaped a
+    working state. `audio_state='transcoding'` and `analysis_state=
+    'running'` are written in one transaction and the thread that clears
+    them runs in another process-lifetime's worth of time, so a crash,
+    a `docker compose up --build`, or an OOM anywhere in between left a
+    book polling "analysing…" for ever, with no error, no retry and
+    nothing in the UI to act on. The window is real and narrow: the
+    transcode commits `analysis_state='running'` BEFORE `_start_analysis`
+    is called at all.
+
+    A state is stuck when the database says working and THIS interpreter
+    is not doing it — `_inflight_*` is the difference between "running"
+    and "was running when the process died". That test is only sound
+    because shadow is one process; the same note as `_upload_lock`.
+
+    Recovery, not just detection:
+
+      * a transcode whose complete source `.part` file is still on disk is
+        simply started again — it is idempotent, the master is written to
+        a `.partial` and renamed;
+      * anything else is marked `failed` with a reason the Library already
+        knows how to show, so the operator sees "transcode failed: …" and
+        a re-upload, instead of a spinner that never stops.
+
+    Returns how many rows it touched.
+    """
+    touched = 0
+    busy_uploads = _inflight_transcodes()
+    busy_configs = _inflight_analyses()
+    restart_transcodes: list[tuple[str, int]] = []
+    restart_analyses: list[int] = []
+
+    with get_sessionmaker()() as db:
+        for media in db.query(ShadowingMedia).filter_by(audio_state='transcoding').all():
+            upload = (db.query(ShadowingUpload)
+                      .filter_by(media_id=media.id, state='transcoding')
+                      .order_by(ShadowingUpload.updated_at.desc()).first())
+            if upload is not None and upload.id in busy_uploads:
+                continue                      # genuinely in flight
+            part = audio.upload_part_path(upload.id) if upload is not None else None
+            resumable = (part is not None and part.exists()
+                         and part.stat().st_size >= (upload.size_bytes or 0))
+            if resumable:
+                restart_transcodes.append((upload.id, media.id))
+                print(f'shadow — media {media.id}: transcode was interrupted; '
+                      'its source is still on disk, restarting it', flush=True)
+            else:
+                media.audio_state = 'failed'
+                media.audio_error = ('the transcode was interrupted (the service '
+                                     'restarted) and the uploaded file is no longer '
+                                     'on disk — upload the book again')
+                if upload is not None:
+                    upload.state = 'failed'
+                    upload.error = 'interrupted by a service restart'
+                print(f'shadow — media {media.id}: transcode was interrupted and '
+                      'cannot be resumed; marked failed', flush=True)
+            touched += 1
+
+        for config in db.query(ShadowingSplitConfig).filter_by(analysis_state='running').all():
+            if config.id in busy_configs:
+                continue
+            if config.media is not None and config.media.audio_state == 'ready':
+                restart_analyses.append(config.id)
+                print(f'shadow — config {config.id}: analysis was interrupted; '
+                      'the master is here, restarting it', flush=True)
+            else:
+                config.analysis_state = 'failed'
+                config.analysis_error = ('the analysis was interrupted (the service '
+                                         'restarted) and this book has no stored '
+                                         'audio to analyse')
+            touched += 1
+        db.commit()
+
+    for upload_id, media_id in restart_transcodes:
+        _start_transcode(upload_id, media_id)
+    for config_id in restart_analyses:
+        _start_analysis(config_id)
+    return touched
+
+
+def start_janitor() -> None:
     """One daemon thread, started by scripts/bootstrap.py after the port is
-    bound, sweeping every `SWEEP_INTERVAL_SEC`.
+    bound: it reconciles stuck working states and sweeps abandoned uploads
+    every `SWEEP_INTERVAL_SEC`.
 
     This is NOT a scheduler creeping in: shadow runs a single process with
-    one of these threads, and the work is a glob of one directory. The
-    earlier design (sweep only when a new upload starts) meant an operator
-    who abandoned an upload and never uploaded again kept the bytes
-    forever, which is exactly what was found on disk.
+    one of these threads, and the work is one glob and two indexed queries.
+    The earlier design (sweep only when a new upload starts) meant an
+    operator who abandoned an upload and never uploaded again kept the
+    bytes forever, which is exactly what was found on disk.
+
+    The reconciliation runs FIRST in each pass, and the first pass is the
+    crash recovery: a restart is exactly when a `transcoding` row is most
+    likely to be a lie, and the sweep must know about the transcodes it
+    restarts before it decides what is rubbish.
     """
     def loop():
-        # A short head start: the first sweep wants the uploads table, and
+        # A short head start: the first pass wants the uploads table, and
         # at boot the migration may still be running behind the readiness
         # flag (D157). Being early only costs this pass its orphan rule.
         time.sleep(15)
         while True:
+            try:
+                n = reconcile_working_states()
+                if n:
+                    print(f'shadow — reconciled {n} stuck working state(s)', flush=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f'shadow — state reconciliation failed: {exc}', flush=True)
             try:
                 n = sweep_uploads()
                 if n:
@@ -346,7 +441,12 @@ def start_upload_janitor() -> None:
                 print(f'shadow — upload sweep failed: {exc}', flush=True)
             time.sleep(audio.SWEEP_INTERVAL_SEC)
 
-    threading.Thread(target=loop, name='shadow-upload-janitor', daemon=True).start()
+    threading.Thread(target=loop, name='shadow-janitor', daemon=True).start()
+
+
+# The name scripts/bootstrap.py used before the janitor grew its second
+# chore. Kept so a stale import cannot silently leave the janitor unstarted.
+start_upload_janitor = start_janitor
 
 
 @shadowing_bp.route('/api/v1/shadowing/uploads', methods=['POST'])
@@ -569,14 +669,27 @@ def _complete_upload_locked(upload_id: str):
         db.commit()
         media_id = media.id
 
-    threading.Thread(target=_transcode_job, args=(upload_id, media_id), daemon=True).start()
+    _start_transcode(upload_id, media_id)
     return jsonify({'mediaId': media_id, 'state': 'transcoding'}), 202
+
+
+def _start_transcode(upload_id: str, media_id: int) -> None:
+    # Same reason as `_start_analysis`: the id is in flight from before the
+    # thread exists, so neither the janitor's reconciliation nor its disk
+    # sweep can act on the gap.
+    with _inflight_lock:
+        _inflight_transcode_ids.add(upload_id)
+    try:
+        threading.Thread(target=_transcode_job, args=(upload_id, media_id),
+                         daemon=True).start()
+    except Exception:  # noqa: BLE001
+        with _inflight_lock:
+            _inflight_transcode_ids.discard(upload_id)
+        raise
 
 
 def _transcode_job(upload_id: str, media_id: int) -> None:
     part = audio.upload_part_path(upload_id)
-    with _inflight_lock:
-        _inflight_transcode_ids.add(upload_id)
     try:
         info = audio.transcode_to_master(part, media_id)
         part.unlink(missing_ok=True)  # the original is discarded — design.md §1
@@ -741,11 +854,16 @@ def create_config(media_id):
         media = db.get(ShadowingMedia, media_id)
         if media is None:
             return _not_found()
+        sentence_ms = data.get('sentenceSilenceMs') or DEFAULT_SENTENCE_SILENCE_MS
+        chapter_ms = data.get('chapterSilenceMs') or DEFAULT_CHAPTER_SILENCE_MS
+        bad = _threshold_error(sentence_ms, chapter_ms)
+        if bad:
+            return jsonify({'error': bad}), 400
         config = ShadowingSplitConfig(
             media_id=media_id,
             name=(data.get('name') or f'Split {len(media.configs) + 1}').strip(),
-            sentence_silence_ms=int(data.get('sentenceSilenceMs') or DEFAULT_SENTENCE_SILENCE_MS),
-            chapter_silence_ms=int(data.get('chapterSilenceMs') or DEFAULT_CHAPTER_SILENCE_MS),
+            sentence_silence_ms=int(sentence_ms),
+            chapter_silence_ms=int(chapter_ms),
             is_active=False)
         db.add(config)
         db.commit()
@@ -760,6 +878,32 @@ def create_config(media_id):
         _start_analysis(config_id)
         out['analysisState'] = 'running'
     return jsonify(out), 201
+
+
+MIN_SILENCE_MS = 50
+
+
+def _threshold_error(sentence_ms, chapter_ms) -> str | None:
+    """Why this pair of thresholds is not a segmentation, or None.
+
+    Chapter cuts must be a SUBSET of sentence cuts — a chapter silence
+    shorter than the sentence one inverts that and cuts chapters inside
+    sentences, which makes a manifest whose offsetMs + durationMs runs
+    past the end of the chapter chunk. audio.segment_ranges refuses it
+    too; this is the same rule stated where the operator can still act on
+    it, as a 400 the page shows rather than an analysis that fails later.
+    """
+    try:
+        sentence_ms, chapter_ms = int(sentence_ms), int(chapter_ms)
+    except (TypeError, ValueError):
+        return 'the silence thresholds must be whole numbers of milliseconds'
+    if sentence_ms < MIN_SILENCE_MS or chapter_ms < MIN_SILENCE_MS:
+        return f'both silence thresholds must be at least {MIN_SILENCE_MS} ms'
+    if chapter_ms < sentence_ms:
+        return (f'the chapter silence threshold ({chapter_ms} ms) must be at least '
+                f'the sentence one ({sentence_ms} ms) — a shorter chapter threshold '
+                'would cut chapters inside sentences')
+    return None
 
 
 def _activate(db, media_id: int, config_id: int) -> None:
@@ -873,10 +1017,15 @@ def analyze_config(config_id):
             return _not_found()
         if config.media.audio_state != 'ready':
             return jsonify({'error': 'this book has no stored audio to analyse'}), 409
-        if 'sentenceSilenceMs' in data:
-            config.sentence_silence_ms = int(data['sentenceSilenceMs'])
-        if 'chapterSilenceMs' in data:
-            config.chapter_silence_ms = int(data['chapterSilenceMs'])
+        sentence_ms = data.get('sentenceSilenceMs', config.sentence_silence_ms)
+        chapter_ms = data.get('chapterSilenceMs', config.chapter_silence_ms)
+        bad = _threshold_error(sentence_ms, chapter_ms)
+        if bad:
+            # Refused before anything is written: the config keeps the
+            # thresholds and the boundaries it had.
+            return jsonify({'error': bad}), 400
+        config.sentence_silence_ms = int(sentence_ms)
+        config.chapter_silence_ms = int(chapter_ms)
         config.analysis_state = 'running'
         config.analysis_error = None
         db.commit()
@@ -885,7 +1034,17 @@ def analyze_config(config_id):
 
 
 def _start_analysis(config_id: int) -> None:
-    threading.Thread(target=_analysis_job, args=(config_id,), daemon=True).start()
+    # Registered BEFORE the thread exists: otherwise a janitor pass landing
+    # in the gap would see `analysis_state='running'` with nothing behind
+    # it and start a second analysis of the same config.
+    with _inflight_lock:
+        _inflight_analysis_ids.add(config_id)
+    try:
+        threading.Thread(target=_analysis_job, args=(config_id,), daemon=True).start()
+    except Exception:  # noqa: BLE001 — a thread that never started is not in flight
+        with _inflight_lock:
+            _inflight_analysis_ids.discard(config_id)
+        raise
 
 
 def _analysis_job(config_id: int) -> None:
@@ -938,6 +1097,9 @@ def _analysis_job(config_id: int) -> None:
                 config.analysis_state = 'failed'
                 config.analysis_error = str(exc)[:500]
                 db.commit()
+    finally:
+        with _inflight_lock:
+            _inflight_analysis_ids.discard(config_id)
 
 
 # ══════════════════════════════════════════════════════════════════════════
