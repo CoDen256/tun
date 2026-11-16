@@ -32,10 +32,19 @@ counts.
    has no audio, and whose count equals the number of such notes in the
    database.
 5. No note carrying audio appears in that queue's belt.
-6. A queue filtering `inflections: missing` includes **both** the note
-   whose `inflections` is `{}` and the one whose `inflections` is `null`.
+6. A queue filtering `inflections: missing` includes a note whose
+   `inflections` is `{}`, and excludes one with a populated paradigm.
+   (`inflections` is `NOT NULL` in the schema, so `{}` is the only empty
+   state that can exist — see DECISIONS-MADE.md. The filter must still
+   treat SQL `NULL` as missing, for the nullable columns below.)
 7. A queue filtering `translations: missing` includes a note whose
-   `translations` is `[]`.
+   `translations` is `[]`, and excludes one with a translation.
+   (`translations` is likewise `NOT NULL`.)
+7a. A queue filtering `transcription: missing` includes notes whose
+   `transcription` is SQL `NULL` **and** notes whose `transcription` is the
+   empty string `''` — this column is nullable, so both states are real.
+7b. A queue filtering `lemma: has` excludes a note whose `lemma` is `NULL`
+   and excludes one whose `lemma` is `''`.
 8. Two saved queues with different sorts, selected in turn, present their
    notes in their own orders; selecting one and returning to the other
    leaves the second one's order unchanged.

@@ -32,6 +32,12 @@ SHALL match a column that is SQL `NULL` **or** empty for its type (an empty
 string, an empty list, an empty object). A note whose `inflections` is `{}`
 SHALL be matched by `inflections: missing`.
 
+`inflections` and `translations` are `NOT NULL` columns, so for them the
+empty value is the only reachable missing state; `audio_blob`,
+`transcription`, `context_text` and `lemma` are nullable, so for those both
+`NULL` and the empty string SHALL be matched. The filter SHALL NOT rely on
+a column being nullable.
+
 A queue's sort SHALL be stored with the queue, not globally.
 
 The operator SHALL be able to create, rename, edit and delete their own
@@ -44,8 +50,13 @@ queues. The three built-in queues SHALL be neither editable nor deletable.
 - **AND** no note with an audio reference appears in it
 
 #### Scenario: An empty object counts as missing
-- **GIVEN** a note whose `inflections` is `{}` and another whose `inflections` is `null`
+- **GIVEN** a note whose `inflections` is `{}` and another with a populated paradigm
 - **WHEN** a queue filtering `inflections: missing` is selected
+- **THEN** the note with `{}` is in the belt and the populated one is not
+
+#### Scenario: A null and an empty string both count as missing
+- **GIVEN** a note whose `transcription` is `NULL` and another whose `transcription` is `''`
+- **WHEN** a queue filtering `transcription: missing` is selected
 - **THEN** both notes are in the belt
 
 #### Scenario: A queue carries its own order
