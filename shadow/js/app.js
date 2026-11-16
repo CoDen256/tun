@@ -54,7 +54,10 @@ const App = (() => {
       b.setAttribute('aria-selected', String(b.dataset.go === name));
     });
     state.screen = name;
-    if (name === 'library') Library.render();
+    // refresh, not render: a book may have entered a working state while
+    // another screen was open, and only a fetch can know that (it is also
+    // what restarts the progress poll).
+    if (name === 'library') Library.refresh();
     if (name === 'explore') Explore.render();
     if (name === 'study') Study.enter();
     if (name === 'prepare') Prepare.render();

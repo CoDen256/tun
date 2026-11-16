@@ -24,35 +24,60 @@ const Library = (() => {
 
   let upload = null;          // {id, file, sent, size, cancelled}
   let poll = 0;
-  const started = new Map();  // mediaId -> ms when we first saw it working
 
   // ── the determinate "working" states ──────────────────────────────────
   // The server exposes no percentage for a transcode or an analysis — both
-  // are one ffmpeg pass with no progress channel. Rather than show a
-  // spinner that tells the operator nothing, this estimates from the work's
-  // own size (bytes to transcode, playing time to scan) and SAYS it is an
-  // estimate; it never reaches 100% on a guess — the real state change does
-  // that. Tier-2 decision, recorded in DECISIONS-MADE.md.
-  function estimateSec(book) {
-    if (book.audioState === 'transcoding') {
+  // are one ffmpeg pass with no progress channel. So this estimates from
+  // the work's own size (bytes to transcode, playing time to scan), and
+  // says it is an estimate; it never reaches 100% on a guess — the real
+  // state change does that.
+  //
+  // The clock it estimates against is the server's own `since` for the
+  // CURRENT operation, not when this page first laid eyes on the book. The
+  // first version kept one start time per book, so a book that transcoded
+  // minutes ago showed "97% · ~0 s left" the instant a LATER analysis
+  // began. If the server gives no `since` — or the browser clock disagrees
+  // with the server's by more than the work could plausibly take — we say
+  // so and print no number at all. An honest "analysing…" beats a
+  // confident lie. Tier-2 decision, recorded in DECISIONS-MADE.md.
+  const WORK = {
+    transcoding: { label: 'transcoding', since: (b) => b.audioStateSince },
+    uploading: { label: 'uploading', since: (b) => b.audioStateSince },
+    analysing: { label: 'analysing', since: (b) => b.analysisSince },
+  };
+
+  function estimateSec(book, kind) {
+    if (kind === 'transcoding') {
       return Math.min(1800, Math.max(8, (book.fileSizeBytes || 50e6) / (8 * 1024 * 1024)));
     }
-    return Math.min(1200, Math.max(8, (book.durationMs || 600000) / 1000 / 60));
+    if (kind === 'analysing') {
+      return Math.min(1200, Math.max(8, (book.durationMs || 600000) / 1000 / 60));
+    }
+    return 0;  // an upload's bytes are counted by the uploader, not guessed here
   }
+
   function working(book) {
     if (book.audioState === 'transcoding') return 'transcoding';
     if (book.audioState === 'uploading') return 'uploading';
     if (book.analysisState === 'running') return 'analysing';
     return null;
   }
+
   function progressOf(book, kind) {
-    if (!started.has(book.id)) started.set(book.id, Date.now());
-    const elapsed = (Date.now() - started.get(book.id)) / 1000;
-    const est = estimateSec(book);
+    const label = WORK[kind].label;
+    const sinceTxt = WORK[kind].since(book);
+    const est = estimateSec(book, kind);
+    const t0 = sinceTxt ? Date.parse(sinceTxt) : NaN;
+    if (!est || !Number.isFinite(t0)) return { pct: null, text: `${label}…` };
+    const elapsed = (Date.now() - t0) / 1000;
+    // Negative means the browser clock is behind the server's; far past the
+    // estimate means the operation is simply taking longer than guessed.
+    // Both make a percentage dishonest.
+    if (elapsed < 0 || elapsed > est * 3) return { pct: null, text: `${label}…` };
     const pct = Math.min(97, Math.round((elapsed / est) * 100));
     const left = Math.max(0, Math.round(est - elapsed));
     const leftTxt = left > 90 ? `~${Math.ceil(left / 60)} min left` : `~${left} s left`;
-    return { pct, text: `${kind} — ${pct}% (estimated) · ${leftTxt}` };
+    return { pct, text: `${label} — ${pct}% (estimated) · ${leftTxt}` };
   }
 
   // ── rendering ─────────────────────────────────────────────────────────
@@ -199,6 +224,12 @@ const Library = (() => {
     clearTimeout(poll);
     if (App.state.books.some(working)) poll = setTimeout(refresh, 2500);
   }
+
+  // `refresh` — and so `schedulePoll` — is also called whenever the Library
+  // is shown and whenever another screen starts work on a book (app.js,
+  // prepare.js). The poll loop used to start only for a book that was
+  // already working the last time THIS screen fetched, so an analysis begun
+  // from Prepare normally finished before the Library ever polled.
 
   // ── upload ────────────────────────────────────────────────────────────
   function showUpload(on) { box.classList.toggle('hidden', !on); }

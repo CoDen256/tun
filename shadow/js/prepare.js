@@ -165,6 +165,8 @@ const Prepare = (() => {
                 });
                 ChapterAudio.clear();
                 await reload();
+                Library.refresh();  // start the Library's progress poll now,
+                                    // not when the operator happens to look
                 App.toast('Analysing — the sentence list refreshes when it finishes.');
               } catch (err) { App.toast(err.message, true); }
               return;
@@ -345,6 +347,7 @@ const Prepare = (() => {
         });
         newPanel.classList.add('hidden');
         await reload();
+        Library.refresh();
         App.toast('Analysing — the new config fills in when it finishes.');
       } catch (e) { App.toast(e.message, true); }
       btn.disabled = false;
