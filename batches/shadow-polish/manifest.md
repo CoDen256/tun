@@ -13,7 +13,7 @@ Single package. Nothing to order.
 
 | package | status |
 |---|---|
-| Shadow studying refinements | designed (shadow: `shadow-studying-refinements`) |
+| Shadow studying refinements | building (shadow: `shadow-studying-refinements`) |
 
 ## Packages
 
