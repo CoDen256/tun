@@ -82,6 +82,32 @@ DEFAULT_CHAPTER_SILENCE_MS = 2500
 # grind/caddy/), so this is purely a client/server choice.
 UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 
+# Upload states in which the `.part` file on disk is still CLAIMED by
+# something, and the subset in which the server itself may have it open.
+# The janitor reads both; getting this list wrong is how an in-flight
+# transcode lost its own source file (audio.sweep_abandoned_uploads).
+_CLAIMED_UPLOAD_STATES = ('receiving', 'transcoding')
+_BUSY_UPLOAD_STATES = ('transcoding',)
+
+# What THIS interpreter is actually working on. A row's state says what the
+# database believes; these say what a thread is doing, which is the thing
+# that distinguishes "running" from "was running when the process died".
+# Both the janitor (so it cannot delete a live source) and the stuck-state
+# reconciler (so it cannot restart a job that is still going) read them.
+_inflight_lock = threading.Lock()
+_inflight_transcode_ids: set[str] = set()
+_inflight_analysis_ids: set[int] = set()
+
+
+def _inflight_transcodes() -> set[str]:
+    with _inflight_lock:
+        return set(_inflight_transcode_ids)
+
+
+def _inflight_analyses() -> set[int]:
+    with _inflight_lock:
+        return set(_inflight_analysis_ids)
+
 
 # ── helpers ─────────────────────────────────────────────────────────────
 
@@ -268,15 +294,32 @@ def sweep_uploads() -> int:
 
     Returns the number of part files reclaimed. Every caller is allowed to
     fail: cleanup is never the reason a request or a boot goes wrong.
+
+    A part file counts as CLAIMED for every state in which something may
+    still need it — `receiving` (the client will append or resume) and
+    `transcoding` (ffmpeg has it open right now, and a failed transcode
+    must still have something to retry from). The first version of this
+    asked only for `receiving`, which made every in-flight transcode's own
+    source an orphan; see audio.sweep_abandoned_uploads.
+
+    `busy` goes further than `live`: an id in it is immune to the TTL rule
+    as well, because a transcode legitimately runs for longer than a
+    part file's mtime suggests it has been idle. The in-process set of
+    transcodes this interpreter actually started is unioned in, so a row
+    whose state write has not landed yet still protects its file.
     """
     live: set[str] | None = None
+    busy: set[str] = set(_inflight_transcodes())
     try:
         with get_sessionmaker()() as db:
             _sweep_upload_rows(db)
-            live = {r.id for r in db.query(ShadowingUpload).filter_by(state='receiving').all()}
+            rows = (db.query(ShadowingUpload)
+                    .filter(ShadowingUpload.state.in_(_CLAIMED_UPLOAD_STATES)).all())
+            live = {r.id for r in rows}
+            busy |= {r.id for r in rows if r.state in _BUSY_UPLOAD_STATES}
     except Exception:  # noqa: BLE001 — a database outage must not stop the disk sweep
         live = None
-    return audio.sweep_abandoned_uploads(live_ids=live)
+    return audio.sweep_abandoned_uploads(live_ids=live, busy_ids=busy)
 
 
 def start_upload_janitor() -> None:
@@ -371,6 +414,32 @@ def get_upload(upload_id):
         return jsonify(_upload_json(upload))
 
 
+_slice_locks_guard = threading.Lock()
+_slice_locks: dict[str, threading.Lock] = {}
+
+
+def _upload_lock(upload_id: str) -> threading.Lock:
+    """The one lock that serialises appends to ONE upload's part file.
+
+    Per upload, not global: two different books must still upload at the
+    same time. shadow is a single threaded process (scripts/bootstrap.py
+    runs Flask with `threaded=True`, one interpreter), so a process-local
+    lock is the whole mutual exclusion — there is no second worker to race
+    with. If shadow ever grows a second process this has to become an
+    advisory lock in Postgres, and that is the note to find here.
+    """
+    with _slice_locks_guard:
+        lock = _slice_locks.get(upload_id)
+        if lock is None:
+            lock = _slice_locks[upload_id] = threading.Lock()
+        return lock
+
+
+def _drop_upload_lock(upload_id: str) -> None:
+    with _slice_locks_guard:
+        _slice_locks.pop(upload_id, None)
+
+
 @shadowing_bp.route('/api/v1/shadowing/uploads/<upload_id>', methods=['PUT'])
 def append_upload_slice(upload_id):
     """Append one raw slice at `?offset=`. Streamed to disk, never buffered.
@@ -378,34 +447,66 @@ def append_upload_slice(upload_id):
     The offset is checked rather than trusted: a slice that does not start
     exactly where the file ends is refused with the real offset, so a
     confused client re-syncs instead of writing a corrupt book.
+
+    TWO THINGS THIS DOES NOT DO, both found by review on 2026-11-16:
+
+    1. It does not let two slices for one upload run at once. The check
+       and the append used to be separate steps with nothing between them,
+       so two concurrent PUTs both read `on_disk = N`, both passed, and
+       both opened the file for append: an interleaved, over-length file
+       that `complete_upload` happily accepted and transcoded to garbage.
+       A second slice for an upload that is already being written is
+       refused with 409 and the real offset rather than queued — a client
+       that sent it is out of sync by definition, and holding the request
+       would hold a connection for a multi-MB write.
+    2. It does not hold a database session across that write. A 1 GB book
+       is ~128 slices of several seconds each; a session per in-flight
+       slice is a connection per in-flight slice, against a pool whose
+       limit is 20. The row is read, released, and written again at the
+       end — three short transactions instead of one long one.
     """
     offset = request.args.get('offset', type=int)
-    with get_sessionmaker()() as db:
-        upload = db.get(ShadowingUpload, upload_id)
-        if upload is None:
-            return _not_found()
-        if upload.state != 'receiving':
-            return jsonify({'error': f'upload is {upload.state}'}), 409
-        part = audio.upload_part_path(upload.id)
+    lock = _upload_lock(upload_id)
+    if not lock.acquire(blocking=False):
+        part = audio.upload_part_path(upload_id)
+        on_disk = part.stat().st_size if part.exists() else 0
+        return jsonify({'error': 'another slice of this upload is still being written',
+                        'receivedBytes': on_disk}), 409
+    try:
+        with get_sessionmaker()() as db:
+            upload = db.get(ShadowingUpload, upload_id)
+            if upload is None:
+                return _not_found()
+            if upload.state != 'receiving':
+                return jsonify({'error': f'upload is {upload.state}'}), 409
+
+        part = audio.upload_part_path(upload_id)
         on_disk = part.stat().st_size if part.exists() else 0
         if offset is not None and offset != on_disk:
             return jsonify({'error': 'offset mismatch', 'receivedBytes': on_disk}), 409
 
         written = 0
         stream = request.stream
-        with open(part, 'ab') as fh:
+        with open(part, 'ab') as fh:       # no session is open across this
             while True:
                 block = stream.read(1024 * 1024)
                 if not block:
                     break
                 fh.write(block)
                 written += len(block)
-        upload.received_bytes = part.stat().st_size
-        db.commit()
-        db.refresh(upload)
-        out = _upload_json(upload)
+
+        with get_sessionmaker()() as db:
+            upload = db.get(ShadowingUpload, upload_id)
+            if upload is None:
+                return _not_found()
+            upload.received_bytes = part.stat().st_size
+            db.commit()
+            db.refresh(upload)
+            out = _upload_json(upload)
         out['writtenBytes'] = written
         return jsonify(out)
+    finally:
+        lock.release()
 
 
 @shadowing_bp.route('/api/v1/shadowing/uploads/<upload_id>/complete', methods=['POST'])
@@ -420,6 +521,19 @@ def complete_upload(upload_id):
     needed a trip to Prepare before it had any segmentation was never the
     designed flow (design.md §8).
     """
+    # Completing while a slice is mid-flight would size up a file that is
+    # still growing; the same per-upload lock answers that too.
+    lock = _upload_lock(upload_id)
+    if not lock.acquire(blocking=False):
+        return jsonify({'error': 'a slice of this upload is still being written'}), 409
+    try:
+        return _complete_upload_locked(upload_id)
+    finally:
+        lock.release()
+        _drop_upload_lock(upload_id)
+
+
+def _complete_upload_locked(upload_id: str):
     with get_sessionmaker()() as db:
         upload = db.get(ShadowingUpload, upload_id)
         if upload is None:
@@ -461,6 +575,8 @@ def complete_upload(upload_id):
 
 def _transcode_job(upload_id: str, media_id: int) -> None:
     part = audio.upload_part_path(upload_id)
+    with _inflight_lock:
+        _inflight_transcode_ids.add(upload_id)
     try:
         info = audio.transcode_to_master(part, media_id)
         part.unlink(missing_ok=True)  # the original is discarded — design.md §1
@@ -503,6 +619,9 @@ def _transcode_job(upload_id: str, media_id: int) -> None:
                 upload.state = 'failed'
                 upload.error = str(exc)[:500]
             db.commit()
+    finally:
+        with _inflight_lock:
+            _inflight_transcode_ids.discard(upload_id)
 
 
 @shadowing_bp.route('/api/v1/shadowing/uploads/<upload_id>', methods=['DELETE'])
@@ -514,6 +633,7 @@ def abandon_upload(upload_id):
         audio.upload_part_path(upload.id).unlink(missing_ok=True)
         db.delete(upload)
         db.commit()
+    _drop_upload_lock(upload_id)
     return jsonify({'ok': True})
 
 

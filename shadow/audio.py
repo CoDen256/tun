@@ -114,25 +114,38 @@ def delete_book_audio(media_id: int) -> None:
     shutil.rmtree(book_dir(media_id), ignore_errors=True)
 
 
-def sweep_abandoned_uploads(ttl_sec: int = UPLOAD_TTL_SEC, live_ids=None) -> int:
+def sweep_abandoned_uploads(ttl_sec: int = UPLOAD_TTL_SEC, live_ids=None,
+                            busy_ids=None) -> int:
     """Reclaim `.part` files. Returns how many were deleted.
 
-    Two kinds of rubbish, and only one of them is a matter of time:
+    THREE kinds of part file, and only one of them is rubbish on a timer:
 
-      * a part file with NO live `receiving` upload row is an orphan by
-        construction — nothing can ever append to it or complete it again,
-        because the resume path finds uploads through the table. It goes
-        immediately, whatever its age. (This is the case the first version
-        of this sweep missed: it looked only at mtime, so a part file whose
-        row had already been swept sat on the disk for a full day, and then
-        only if another upload happened to start.)
-      * a part file that still HAS a live row is a resumable upload. It
+      * a BUSY part file — one whose upload row is in a state where the
+        server itself may still open it, which today means `transcoding`.
+        It is never deleted here, at any age. (This is the defect the
+        reviewer found on 2026-11-16: `live_ids` was built from
+        `state='receiving'` ONLY, so the moment `complete_upload` flipped
+        the row to `transcoding` the source file became an "orphan" whose
+        mtime — the last slice, minutes or hours ago — was already past
+        every grace period. A ten-minute transcode of a 1 GB book had its
+        own input unlinked underneath it. The open fd kept THAT run alive,
+        so it looked fine, but a failed transcode had nothing to retry
+        from and a restart mid-transcode left the row `transcoding` with
+        the source gone. Narrower, same cause: between `complete_upload`'s
+        commit and ffmpeg's `open()` the file could vanish outright.)
+      * a part file with NO row claiming it is an orphan by construction —
+        nothing can ever append to it or complete it again, because the
+        resume path finds uploads through the table. It goes immediately,
+        whatever its age.
+      * a part file whose row is `receiving` is a resumable upload. It
         survives until nobody has touched it for `ttl_sec`.
 
-    `live_ids` is the set of upload ids still in state `receiving`. Passing
-    None means "the caller cannot reach the database", and then only the
-    TTL rule applies — a sweep that cannot tell an orphan from a resume
-    must not guess.
+    `live_ids` is the set of upload ids whose part file is still claimed by
+    a row (receiving OR busy); `busy_ids` is the subset that no rule may
+    delete. Passing `live_ids=None` means "the caller cannot reach the
+    database", and then only the TTL rule applies, with `busy_ids` still
+    honoured — a sweep that cannot tell an orphan from a resume must not
+    guess.
 
     A part file younger than ORPHAN_GRACE_SEC is never called an orphan:
     `live_ids` was read before this glob, so an upload that started in
@@ -141,8 +154,11 @@ def sweep_abandoned_uploads(ttl_sec: int = UPLOAD_TTL_SEC, live_ids=None) -> int
     removed = 0
     now = time.time()
     cutoff = now - ttl_sec
+    busy = set(busy_ids or ())
     for part in uploads_dir().glob('*.part'):
         try:
+            if part.stem in busy:
+                continue        # work in flight owns this file
             orphan = (live_ids is not None and part.stem not in live_ids
                       and part.stat().st_mtime < now - ORPHAN_GRACE_SEC)
             if orphan or part.stat().st_mtime < cutoff:
