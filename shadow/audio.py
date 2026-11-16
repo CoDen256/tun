@@ -323,7 +323,22 @@ def segment_ranges(media_id: int, duration_ms: int,
 
     Repeatable by construction: same master + same two thresholds = same
     ranges. Nothing is written.
+
+    THE ONE COMBINATION THAT IS NOT A SEGMENTATION (confirmed by review,
+    2026-11-16): a chapter threshold SHORTER than the sentence one. The
+    whole model rests on chapter cuts being a SUBSET of sentence cuts —
+    long silences are a subset of medium ones. Invert it and chapter cuts
+    become a superset: a chapter boundary lands inside a sentence, that
+    sentence straddles two chapters, and the manifest's `offsetMs +
+    durationMs` runs past the end of the chunk the phone downloaded. It is
+    rejected here, at the one place every analysis goes through, rather
+    than only at the endpoints that happen to be known today.
     """
+    if chapter_silence_ms < sentence_silence_ms:
+        raise AudioError(
+            f'the chapter silence threshold ({chapter_silence_ms} ms) must be at '
+            f'least the sentence one ({sentence_silence_ms} ms) — a shorter one '
+            'would cut chapters inside sentences')
     silences = detect_silences(media_id, min(sentence_silence_ms, chapter_silence_ms))
 
     def spans(cut_points: list[int]) -> list[tuple[int, int]]:
