@@ -43,6 +43,6 @@ before `stabbur-triage-queues`, which reads the `context` added in task 2.
 
 ## 4. Specs and docs
 
-- [ ] 4.1 Record in `smia/CLAUDE.md` or the adapter docstring that dict.cc
+- [x] 4.1 Record in `smia/CLAUDE.md` or the adapter docstring that dict.cc
       `/tts` candidates now carry `context`, and that part of speech is an
       ordering signal owned by the caller — smia never filters on it.

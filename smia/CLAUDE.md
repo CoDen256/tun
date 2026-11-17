@@ -34,3 +34,19 @@ in the project README.**
   - **UI / Visual Checks:** What key elements or changes to look for in the user interface (high-level, not overly detailed).
   - **Data / Storage Verification:** Where to poke around outside of the codebase (e.g., database tables, local storage, API endpoints, logs).
   - **Testing & Checkout:** Key terminal commands to run and specific UI flows/interactions to manually test.
+## Part of speech is an ordering signal, never a filter (dictcc-parsing-fixes)
+
+`/translations` and `/tts` return **every** candidate the provider gave.
+Neither accepts a `pos` parameter, and neither withholds a candidate on the
+basis of part of speech. The operator's diagnosis was that the right
+candidate was already in the response and simply was not first — so the
+ordering is the **caller's** (stabbur's), done client-side on the
+`context` string each candidate carries.
+
+dict.cc candidates carry `context` as `[type] phrase` — a leading
+bracketed part-of-speech tag. `/tts` candidates gained it so the caller can
+order audio the same way it orders translations; it is built by the one
+`_entry_context` helper, so both kinds stay identical. Other providers set
+no `context` and callers must treat it as optional.
+
+Do not "improve" this into a filter or a request parameter.
