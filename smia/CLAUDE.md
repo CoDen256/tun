@@ -46,7 +46,13 @@ ordering is the **caller's** (stabbur's), done client-side on the
 dict.cc candidates carry `context` as `[type] phrase` — a leading
 bracketed part-of-speech tag. `/tts` candidates gained it so the caller can
 order audio the same way it orders translations; it is built by the one
-`_entry_context` helper, so both kinds stay identical. Other providers set
-no `context` and callers must treat it as optional.
+`_entry_context` helper. Other providers set no `context` and callers must
+treat it as optional.
+
+The two kinds differ in exactly one way, deliberately: a `/tts` context
+names **what is read aloud in that recording**, so the phrase is dict.cc's
+verbatim (`[verb] å stille krav`), while `/translations` keeps its
+established stripped form (`[verb] stille krav`). Same helper, one
+`verbatim` flag.
 
 Do not "improve" this into a filter or a request parameter.

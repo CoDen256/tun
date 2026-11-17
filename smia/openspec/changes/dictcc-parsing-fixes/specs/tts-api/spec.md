@@ -19,8 +19,11 @@ language on its correct side — a self-lookup directed at the wrong side
 returns nothing and silently hides that pair's entire dataset.
 
 Each candidate SHALL carry a `context` naming the phrase the recording
-actually reads, together with its part-of-speech tag where dict.cc supplies
-one, so the operator can tell which sense they are hearing. Candidates SHALL
+actually reads — dict.cc's own source field verbatim, infinitive marker
+included — together with its part-of-speech tag where dict.cc supplies one,
+so the operator can tell which sense they are hearing. (`/translations`
+contexts keep their established stripped form; only `/tts` is verbatim,
+because only `/tts` is describing a sound.) Candidates SHALL
 dedupe on content hash only; two different recordings of the same phrase
 SHALL both survive.
 

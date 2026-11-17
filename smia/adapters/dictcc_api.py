@@ -90,15 +90,39 @@ _PAIRS = {
 # keep a single pair each — this service only cares about their Norwegian-
 # touching side.
 _LANG_SELF_LOOKUP_PAIRS: dict[str, list[tuple[str, int]]] = {
-    "nb": [("DENO", 2), ("ENNO", 1)],
+    # `dir` is which side of `lp` the LOOKED-UP language is on. Norwegian is
+    # the second language of BOTH `DENO` and `ENNO`, so both are dir=2.
+    #
+    # This read ("ENNO", 1) until 2026-11-16, which asks dict.cc for "stille
+    # as an ENGLISH word" and returns 0 entries — so every Norwegian word's
+    # EN<->NO-only data (audio AND inflections) was silently unreachable,
+    # exactly the gap `dictcc-norwegian-multi-pair` added this list to close.
+    # Measured live: `s=stille&lp=ENNO&dir=1` -> 0 entries, `dir=2` -> 14,
+    # including the only recordings of "å stille klokka"/"å stille ut".
+    "nb": [("DENO", 2), ("ENNO", 2)],
     "en": [("ENNO", 1)],
     "de": [("DEEN", 1)],
 }
 
-# Norwegian's human-voice recording is confirmed (api.md); other
-# languages' voice names aren't — skip the synthetic candidate rather than
-# guess one.
-_VOICE_FOR_LANG = {"nb": "Liv"}
+# dict.cc's own language ids, as they appear in the `_lid<N>_` field of a
+# recording key. Confirmed live against "stille": 81 Norwegian, 2 German,
+# 1 English.
+_LANG_RECORDING_LID = {"nb": "81", "de": "2", "en": "1"}
+
+_RECORDINGS_URL_TEMPLATE = "https://{host}.dict.cc/dict/ajax_get_audiorecordings.php"
+
+# The dict.cc synthetic voice ("Liv" for Norwegian) is NO LONGER REQUESTED.
+# The operator's rule: computer-generated audio must never be offered from
+# this provider. It is a separate request (`lang=NO&voice=Liv`) and is
+# simply not made — elevenlabs and any other dedicated synthesis provider
+# are untouched, since those are deliberately configured as synthesisers.
+#
+# Beware the trap this replaced: `lang=NO_rec_ip` returns audio bytes for
+# almost EVERY entry, falling back to synthesis when no human recording
+# exists. Probing it therefore cannot tell human from generated — measured
+# live, it answered for all 29 "stille" entries including ones with no
+# Norwegian recording at all. Availability must be read from
+# `ajax_get_audiorecordings.php` instead (see `_entries_with_recording`).
 _DICTCC_LANG_CODE = {"nb": "NO", "en": "EN", "de": "DE"}
 
 _POS_MAP = {
@@ -287,20 +311,99 @@ def _parse_inflection_blocks(inflections: str) -> list[dict]:
     return candidates
 
 
-def _entry_context(entry_type: str | None, source: str, query_norm: str) -> str | None:
-    """The bracketed `[type] phrase` context string, built identically for
-    `/translations` and `/tts` candidates so one parse rule in the caller
-    covers both kinds (dictcc-parsing-fixes D2).
+def _fetch_recording_lids(lp: str, entry_ids: list) -> dict:
+    """{entry_id: {lid, ...}} — which languages each entry has a real human
+    recording in, from dict.cc's own recordings endpoint.
+
+    This is the ONLY reliable signal for "does a human recording exist".
+    `speak.audio.v2.php?lang=<L>_rec_ip` returns audio bytes for almost
+    every entry, falling back to synthesis when no recording exists, so
+    probing it answers "can you make a sound" rather than "is there a
+    recording" (measured live: it answered for all 29 "stille" entries,
+    including ones with no Norwegian recording at all).
+
+    Live-confirmed request/response shape, taken from the phone app:
+
+        GET https://<lp>.dict.cc/dict/ajax_get_audiorecordings.php
+            ?id_str=0+<id>+<id>+...&appversioncode=...
+
+    The host is the pair, lowercased (`deno`, `enno`). `id_str` is a
+    SPACE-separated list with a leading `0`. The response is one
+    space-separated token per requested id, in the same order — the leading
+    `0` consumes the first token — and each token is a `|`-separated list of
+    recording keys shaped `<recId>_<user>_<country>_lid<N>_v`. An entry with
+    no recordings contributes an empty token.
+
+    `<N>` is dict.cc's language id: 81 Norwegian, 2 German, 1 English. One
+    entry commonly carries recordings on BOTH sides of the pair, which is
+    why the lid has to be matched rather than merely counted — "å stille
+    opp noe" has a German recording and no Norwegian one, and offering it
+    for a Norwegian note is exactly the complaint this closes.
+    """
+    if not entry_ids:
+        return {}
+    id_str = " ".join(["0"] + [str(i) for i in entry_ids])
+    url = _RECORDINGS_URL_TEMPLATE.format(host=lp.lower())
+    try:
+        resp = requests.get(
+            url, params={"id_str": id_str, "appversioncode": _APP_VERSION_CODE},
+            headers=_HEADERS, timeout=10,
+        )
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        raise ProviderLookupError(f"dict.cc recordings request failed: {exc}") from exc
+
+    tokens = resp.text.strip().split(" ")
+    # Drop the token belonging to the leading `0`. A response that does not
+    # line up with the request is not silently zipped short — a truncated
+    # alignment would mislabel one entry's recordings as another's.
+    if len(tokens) != len(entry_ids) + 1:
+        raise ProviderLookupError(
+            f"dict.cc recordings response has {len(tokens)} tokens for "
+            f"{len(entry_ids) + 1} requested ids — refusing to align them"
+        )
+
+    lids_by_entry = {}
+    for entry_id, token in zip(entry_ids, tokens[1:]):
+        lids = set()
+        for rec in token.split("|"):
+            m = re.search(r"_lid(\d+)_", rec)
+            if m:
+                lids.add(m.group(1))
+        lids_by_entry[entry_id] = lids
+    return lids_by_entry
+
+
+def _entry_context(
+    entry_type: str | None, source: str, query_norm: str, *, verbatim: bool = False
+) -> str | None:
+    """The bracketed `[type] phrase` context string, built by the one
+    helper for `/translations` and `/tts` candidates so one parse rule in
+    the caller covers both kinds (dictcc-parsing-fixes D2).
 
     `source` is the dict.cc field on the *queried* language's side — its
-    own notion of which exact phrase was matched. It is only surfaced
-    stripped of the infinitive marker when it differs from the bare query
-    word; a direct word match echoes the raw field (annotations and all).
+    own notion of which exact phrase was matched.
+
+    `verbatim` is the one place the two kinds differ, and it is deliberate:
+
+    - `/translations` (verbatim=False) keeps the established convention —
+      a phrase that differs from the bare query is shown through
+      `display_dictcc_phrase`, which strips the `å ` infinitive marker, so
+      the context reads `[verb] stille krav`. A direct word match echoes
+      the raw field (annotations and all).
+    - `/tts` (verbatim=True) must name **what is actually read aloud in
+      that recording**. The recording of entry 2226742 says *"å stille
+      krav"*, marker included, because `term2` is what was recorded. A
+      context that dropped the `å ` would mislabel the audio, so the
+      source field is passed through untouched.
     """
     parts = []
     if entry_type:
         parts.append(f"[{entry_type}]")
-    if normalize_dictcc_phrase(source) != query_norm:
+    if verbatim:
+        if source:
+            parts.append(source)
+    elif normalize_dictcc_phrase(source) != query_norm:
         parts.append(display_dictcc_phrase(source))
     elif source:
         parts.append(source)
@@ -432,15 +535,15 @@ class DictccApiTtsAdapter:
         # self-lookup applies no variant fan-out.
         variants = query_variants(word) if lang == "nb" else [word]
         triples = [(lp, dir_, variant) for lp, dir_ in pairs for variant in variants]
-        voice = _VOICE_FOR_LANG.get(lang)
+        wanted_lid = _LANG_RECORDING_LID.get(lang)
         query_norm = normalize_dictcc_phrase(word)
 
         candidates: list[dict] = []
         seen_sha: set[str] = set()
-        # Distinctness is per entry id, not per entry_type (dictcc-parsing-
-        # fixes D3) — several entries can share a type and still be
-        # different senses with different recordings. The id is scoped to
-        # the pair's own dataset, so the key carries `lp` too.
+        # Distinctness is per entry id, not per entry_type — several entries
+        # can share a type and still be different senses with different
+        # recordings. The id is scoped to the pair's own dataset, so the key
+        # carries `lp` too.
         seen_entries: set[tuple[str, object]] = set()
         errors: list[ProviderLookupError] = []
         with session_scope() as db:
@@ -461,27 +564,48 @@ class DictccApiTtsAdapter:
                 if not translations:
                     continue
 
-                # EVERY entry is asked for audio, not just translations[0]
-                # — a word whose first entry carries no human recording
-                # used to yield no audio at all even when a later entry,
-                # often the sense actually meant, had one.
-                entry_errors: list[ProviderLookupError] = []
-                entry_attempts = 0
+                new_entries = []
                 for entry in translations:
                     entry_id = entry.get("id")
                     entry_key = (lp, entry_id)
                     if entry_id is None or entry_key in seen_entries:
                         continue
                     seen_entries.add(entry_key)
+                    new_entries.append(entry)
+                if not new_entries:
+                    continue
+
+                # WHICH entries actually have a human recording in the
+                # target language — one batched call, not a probe per
+                # entry. This is the whole reason the adapter can honour
+                # "never offer computer-generated audio": `*_rec_ip`
+                # silently synthesises when no recording exists, so asking
+                # it is not a test of availability.
+                try:
+                    lids_by_entry = _fetch_recording_lids(lp, [e["id"] for e in new_entries])
+                except ProviderLookupError as exc:
+                    errors.append(exc)
+                    continue
+
+                entry_errors: list[ProviderLookupError] = []
+                entry_attempts = 0
+                for entry in new_entries:
+                    entry_id = entry["id"]
+                    if wanted_lid not in lids_by_entry.get(entry_id, ()):
+                        # No human recording in this language. Skipped
+                        # entirely rather than fetched — fetching would
+                        # return a synthesised clip and label it "human".
+                        continue
                     entry_attempts += 1
                     context = _entry_context(
-                        entry.get("entry_type") or None, entry.get(source_field) or "", query_norm
+                        entry.get("entry_type") or None, entry.get(source_field) or "",
+                        query_norm, verbatim=True,
                     )
                     try:
                         self._collect_entry_audio(
                             db, candidates, seen_sha,
                             entry_id=entry_id, lp=lp, variant=variant,
-                            dictcc_lang=dictcc_lang, voice=voice, context=context,
+                            dictcc_lang=dictcc_lang, context=context,
                         )
                     except ProviderLookupError as exc:
                         # An entry whose audio request fails is skipped,
@@ -489,9 +613,9 @@ class DictccApiTtsAdapter:
                         entry_errors.append(exc)
                         continue
 
-                # The triple only counts as failed when every entry under
-                # it failed — the pre-change rule, which wrapped the whole
-                # triple in one try, read the same way.
+                # The triple only counts as failed when every entry that
+                # HAD a recording failed to fetch. A triple where nothing
+                # had a recording is an empty result, not an error.
                 if entry_attempts and len(entry_errors) == entry_attempts:
                     errors.append(entry_errors[0])
 
@@ -502,34 +626,29 @@ class DictccApiTtsAdapter:
 
     def _collect_entry_audio(
         self, db, candidates: list[dict], seen_sha: set[str], *,
-        entry_id, lp: str, variant: str, dictcc_lang: str,
-        voice: str | None, context: str | None,
+        entry_id, lp: str, variant: str, dictcc_lang: str, context: str | None,
     ) -> None:
+        """Only reached for an entry already known to HAVE a recording in
+        the target language, so what comes back is the real thing rather
+        than a synthesised stand-in."""
         human = self._fetch_audio(
             {"id": entry_id, "lang": f"{dictcc_lang}_rec_ip", "lp": lp, "text": variant}
         )
-        if human is not None:
-            sha256 = store(db, human, "audio/mpeg")
-            if sha256 not in seen_sha:
-                seen_sha.add(sha256)
-                candidate = {"sha256": sha256, "source": "human"}
-                if context:
-                    candidate["context"] = context
-                candidates.append(candidate)
-
-        if voice:
-            synthetic = self._fetch_audio({"id": entry_id, "lang": dictcc_lang, "lp": lp, "voice": voice})
-            if synthetic is not None:
-                sha256 = store(db, synthetic, "audio/mpeg")
-                # Content-addressed identity (audio_cache.store) is enough
-                # dedup — two combinations resolving to byte-identical
-                # audio collapse naturally.
-                if sha256 not in seen_sha:
-                    seen_sha.add(sha256)
-                    candidate = {"sha256": sha256, "source": "synthetic", "voice": voice}
-                    if context:
-                        candidate["context"] = context
-                    candidates.append(candidate)
+        if human is None:
+            return
+        sha256 = store(db, human, "audio/mpeg")
+        # Content-addressed identity (audio_cache.store) is enough dedup —
+        # two combinations resolving to byte-identical audio collapse
+        # naturally. Two DIFFERENT recordings of the same phrase (dict.cc
+        # files several) both survive, deliberately: they are different
+        # takes and the operator picks by ear.
+        if sha256 in seen_sha:
+            return
+        seen_sha.add(sha256)
+        candidate = {"sha256": sha256, "source": "human"}
+        if context:
+            candidate["context"] = context
+        candidates.append(candidate)
 
     def _fetch_audio(self, params: dict) -> bytes | None:
         try:

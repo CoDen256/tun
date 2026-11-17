@@ -39,6 +39,21 @@ is the language rather than the user — read it before touching this.
       labelled "human".
 - [x] 2.9 Stop requesting the synthetic voice entirely; delete
       `_VOICE_FOR_LANG`. Dedicated synthesisers (elevenlabs) are untouched.
+- [x] 2.10 `/tts` context names what the recording actually READS: the
+      dict.cc source phrase verbatim, infinitive marker included
+      (`[verb] å stille krav`). `_entry_context` gained a `verbatim` flag
+      used only by the tts call site — `/translations` keeps its
+      established stripped convention (`[verb] stille krav`), which a test
+      now pins from both sides.
+- [x] 2.11 Tests for acceptance criteria 6-16, against a `stille` fixture
+      captured verbatim from the real backend (entries AND raw
+      `ajax_get_audiorecordings.php` tokens, both pairs): every candidate
+      human with no `voice` anywhere; a German-only entry (2240021) yields
+      no candidate and is never fetched; the EN<->NO-only recordings
+      (2016116, 1149015) are returned; one recordings call per
+      `(lp, variant)`; a misaligned response raises; context names the
+      phrase read plus its PoS tag; two different recordings of one phrase
+      both survive; `lid` matched as a language, not a user.
 
 ## 2b. Original per-entry work (superseded in part by 2.0/2.7-2.9)
 
