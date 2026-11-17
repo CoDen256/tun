@@ -187,3 +187,21 @@ content-addressed and immutable (`blob-storage`), so two notes referencing
 one recording is already a supported state, not a new one. No copy, no
 reference counting, and deleting one note must not delete the blob — which
 is already true, since nothing deletes blobs.
+
+## The mockup is a concept reference, NOT a layout specification
+
+Operator, during the build (2026-11-16): *"the mock you presented should
+only be used as a reference not a truth, because it didn't match the actual
+layout of the stabbur editing anyway, just the concepts that used there,
+not 1-1 layout."*
+
+So: take from `mockups/stabbur-merge-dictcc.html` **what things are and how
+they behave** — that a take button states adds/replaces, that PoS groups
+carry a heading with the note's own first, that variety is hover-only, that
+the pager shows a slice of a total, that a dirty form warns before a merge.
+
+Do **not** reproduce its layout, its DOM structure, its class names, or its
+arrangement of panels. The real editor's existing structure and `ui/ui.css`
+classes win every time they disagree with the mockup. A diff that
+restructures a working panel to look like the mockup is wrong even if it
+renders correctly.

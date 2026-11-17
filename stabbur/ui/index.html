@@ -85,13 +85,18 @@
             <thead>
               <tr>
                 <th><span class="sort-th" data-sort="text">Text <span class="sort-caret"></span></span></th>
-                <th>Type</th><th>PoS</th><th>Status</th><th>Audio</th><th>Translation</th>
+                <th>Type</th><th>PoS</th>
+                <th class="col-icon" title="Status" aria-label="Status">St</th>
+                <th class="col-icon" title="Audio" aria-label="Audio">♪</th>
+                <th>Translation</th>
                 <th><span class="sort-th" data-sort="updated">Updated <span class="sort-caret"></span></span></th>
               </tr>
             </thead>
             <tbody id="notesTableBody"></tbody>
           </table>
         </div>
+        <!-- stabbur-triage-queues task 2.5: filled by renderNotesPager. -->
+        <div class="pager" id="notesPager"></div>
       </div>
     </section>
 

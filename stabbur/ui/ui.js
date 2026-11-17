@@ -200,6 +200,22 @@ function statusPill(status) {
   return `<span class="pill ${status === 'ready' ? 'pill-ok' : 'pill-warn'}">${status}</span>`;
 }
 
+// stabbur-triage-queues task 2.4: Status and Audio were full-width text
+// columns over one-word values, which pushed the seven-column table past its
+// container. As glyphs they carry the same information in ~34px and give the
+// width back to Text. `title` plus `aria-label` so the meaning is reachable
+// by hover AND by a screen reader — a bare glyph would be neither.
+function statusGlyph(status) {
+  const ready = status === 'ready';
+  const label = ready ? 'ready' : 'draft';
+  return `<span class="glyph ${ready ? 'g-ok' : 'g-draft'}" title="${label}" aria-label="${label}" role="img">${ready ? '●' : '◐'}</span>`;
+}
+
+function audioGlyph(audioBlob) {
+  const label = audioBlob ? 'has audio' : 'no audio';
+  return `<span class="glyph ${audioBlob ? 'g-ok' : 'g-none'}" title="${label}" aria-label="${label}" role="img">${audioBlob ? '●' : '–'}</span>`;
+}
+
 function audioPill(audioBlob) {
   return audioBlob
     ? `<span class="pill pill-ok">✓ attached</span>`
@@ -405,7 +421,19 @@ window.addEventListener('DOMContentLoaded', router);
 
 // ------------------------------------------------------------ notes list --
 
-const notesListState = { status: '', type: '', origin: '', sortField: 'updated', sortDir: 'desc' };
+const NOTES_PAGE_SIZES = [20, 50, 100];
+const notesListState = {
+  status: '', type: '', origin: '', sortField: 'updated', sortDir: 'desc',
+  // Paging is server-side (design D4), so the page is state the client has
+  // to hold. `offset` resets to 0 on every filter change (task 2.5) — a
+  // filter change produces a different result set, and keeping the old
+  // offset would land the operator in the middle of it, or past its end.
+  limit: 50, offset: 0,
+};
+
+function notesListResetPage() {
+  notesListState.offset = 0;
+}
 
 function wireChipGroup(containerId, onChange) {
   const group = document.getElementById(containerId);
@@ -418,9 +446,9 @@ function wireChipGroup(containerId, onChange) {
   });
 }
 
-wireChipGroup('notesStatusChips', (value) => { notesListState.status = value; renderNotesList(); });
-wireChipGroup('notesTypeChips', (value) => { notesListState.type = value; renderNotesList(); });
-wireChipGroup('notesOriginChips', (value) => { notesListState.origin = value; renderNotesList(); });
+wireChipGroup('notesStatusChips', (value) => { notesListState.status = value; notesListResetPage(); renderNotesList(); });
+wireChipGroup('notesTypeChips', (value) => { notesListState.type = value; notesListResetPage(); renderNotesList(); });
+wireChipGroup('notesOriginChips', (value) => { notesListState.origin = value; notesListResetPage(); renderNotesList(); });
 
 function wireSortableHeaders(theadSelector, state, defaultDirs, onChange) {
   document.querySelectorAll(`${theadSelector} .sort-th`).forEach((th) => {
@@ -442,7 +470,7 @@ function wireSortableHeaders(theadSelector, state, defaultDirs, onChange) {
   });
 }
 
-wireSortableHeaders('#page-notes thead', notesListState, { text: 'asc', updated: 'desc' }, renderNotesList);
+wireSortableHeaders('#page-notes thead', notesListState, { text: 'asc', updated: 'desc' }, () => { notesListResetPage(); renderNotesList(); });
 document.querySelector('#page-notes thead .sort-th[data-sort="updated"]').classList.add('sort-active');
 document.querySelector('#page-notes thead .sort-th[data-sort="updated"] .sort-caret').textContent = '▼';
 
@@ -452,34 +480,44 @@ async function renderNotesList() {
   const origin = notesListState.origin;
   const sort = `${notesListState.sortField}_${notesListState.sortDir}`;
   const q = document.getElementById('notesSearch').value.trim();
+  const { limit, offset } = notesListState;
 
-  const { status: httpStatus, body } = await api(`/api/notes/authoring${qs({ status, type, origin, sort, q })}`);
+  const { status: httpStatus, body } = await api(
+    `/api/notes/authoring${qs({ status, type, origin, sort, q, limit, offset })}`
+  );
   const tbody = document.getElementById('notesTableBody');
   if (httpStatus !== 200) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="7">${escapeHtml(JSON.stringify(body))}</td></tr>`;
+    renderNotesPager(0);
     return;
   }
 
-  const total = body.length;
-  const readyCount = body.filter((n) => n.status === 'ready').length;
-  const draftCount = total - readyCount;
-  const missingAudio = body.filter((n) => !n.audio_blob).length;
+  // The route answers with a paged envelope (design D4): this page's rows,
+  // plus the total and the breakdown over the FILTERED set. The breakdown
+  // deliberately comes from the server — computing it from `rows` would
+  // silently turn "69 missing audio" into "however many of these 20 are".
+  const rows = body.notes || [];
+  const total = body.total || 0;
+  const counts = body.counts || { ready: 0, draft: 0, missing_audio: 0 };
   document.getElementById('notesSummary').textContent =
-    `${total} total · ${readyCount} ready · ${draftCount} draft · ${missingAudio} missing audio`;
+    `${total} total · ${counts.ready} ready · ${counts.draft} draft · ${counts.missing_audio} missing audio`;
 
-  if (total === 0) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">No notes match these filters.</td></tr>`;
+  if (!rows.length) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">${
+      total ? 'No notes on this page — the filters changed under it.' : 'No notes match these filters.'
+    }</td></tr>`;
+    renderNotesPager(total);
     return;
   }
 
-  tbody.innerHTML = body.map((n) => `
+  tbody.innerHTML = rows.map((n) => `
     <tr data-id="${n.id}">
-      <td><strong>${escapeHtml(n.text)}</strong></td>
+      <td class="trunc"><strong>${escapeHtml(n.text)}</strong></td>
       <td>${escapeHtml(n.type)}</td>
       <td>${escapeHtml(n.pos || '—')}</td>
-      <td>${statusPill(n.status)}</td>
-      <td>${audioPill(n.audio_blob)}</td>
-      <td class="wrap">${escapeHtml((n.translations && n.translations[0] && n.translations[0].text) || '—')}</td>
+      <td class="col-icon">${statusGlyph(n.status)}</td>
+      <td class="col-icon">${audioGlyph(n.audio_blob)}</td>
+      <td class="trunc">${escapeHtml((n.translations && n.translations[0] && n.translations[0].text) || '—')}</td>
       <td class="mono">${fmtDate(n.updated_at)}</td>
     </tr>
   `).join('');
@@ -487,12 +525,71 @@ async function renderNotesList() {
   tbody.querySelectorAll('tr[data-id]').forEach((row) => {
     row.addEventListener('click', () => { location.hash = `#/notes/${row.dataset.id}`; });
   });
+
+  renderNotesPager(total);
+}
+
+// task 2.5: the slice-of-total readout, page navigation and the page-size
+// choice. The readout is 1-indexed because it is prose for a human ("41-60
+// of 312"), while `offset` stays 0-indexed because it is an API parameter.
+function renderNotesPager(total) {
+  const pager = document.getElementById('notesPager');
+  if (!pager) return;
+  const { limit, offset } = notesListState;
+  const from = total === 0 ? 0 : offset + 1;
+  const to = Math.min(offset + limit, total);
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  const current = Math.floor(offset / limit) + 1;
+
+  const sizeOptions = NOTES_PAGE_SIZES
+    .map((n) => `<option value="${n}"${n === limit ? ' selected' : ''}>${n}</option>`)
+    .join('');
+
+  // Elide the middle of a long run rather than rendering 40 buttons: first,
+  // last, and a window around the current page.
+  const pages = [];
+  for (let p = 1; p <= pageCount; p += 1) {
+    if (p === 1 || p === pageCount || Math.abs(p - current) <= 2) pages.push(p);
+    else if (pages[pages.length - 1] !== '…') pages.push('…');
+  }
+
+  pager.innerHTML = `
+    <span class="pager-count">${total === 0 ? 'nothing to show' : `${from}–${to} of ${total}`}</span>
+    <label for="notesPageSize">Per page</label>
+    <select id="notesPageSize" aria-label="Rows per page">${sizeOptions}</select>
+    <div class="pager-pages">
+      <button type="button" class="btn-ghost" data-page-rel="-1" ${current <= 1 ? 'disabled' : ''}>‹ Prev</button>
+      ${pages.map((p) => (p === '…'
+        ? '<span class="pager-gap">…</span>'
+        : `<button type="button" data-page="${p}"${p === current ? ' aria-current="page"' : ''}>${p}</button>`)).join('')}
+      <button type="button" class="btn-ghost" data-page-rel="1" ${current >= pageCount ? 'disabled' : ''}>Next ›</button>
+    </div>`;
+
+  pager.querySelector('#notesPageSize').addEventListener('change', (e) => {
+    notesListState.limit = Number(e.target.value);
+    notesListResetPage();
+    renderNotesList();
+  });
+  pager.querySelectorAll('[data-page]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      notesListState.offset = (Number(btn.dataset.page) - 1) * notesListState.limit;
+      renderNotesList();
+    });
+  });
+  pager.querySelectorAll('[data-page-rel]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const next = current + Number(btn.dataset.pageRel);
+      if (next < 1 || next > pageCount) return;
+      notesListState.offset = (next - 1) * notesListState.limit;
+      renderNotesList();
+    });
+  });
 }
 
 let notesSearchDebounce;
 document.getElementById('notesSearch').addEventListener('input', () => {
   clearTimeout(notesSearchDebounce);
-  notesSearchDebounce = setTimeout(renderNotesList, 250);
+  notesSearchDebounce = setTimeout(() => { notesListResetPage(); renderNotesList(); }, 250);
 });
 
 // ----------------------------------------------------------- note detail --
@@ -1300,7 +1397,10 @@ async function renderGrammarDetail(id) {
     ? `Delete blocked: ${rule.usage_count} note(s) still reference this rule.`
     : '';
 
-  const { status: notesStatus, body: notes } = await api(`/api/notes/authoring${qs({ grammar_rule_id: id })}`);
+  const { status: notesStatus, body: usageBody } = await api(
+    `/api/notes/authoring${qs({ grammar_rule_id: id, limit: 200 })}`
+  );
+  const notes = (usageBody && usageBody.notes) || [];
   const list = document.getElementById('grammarUsageList');
   if (notesStatus === 200 && notes.length) {
     list.innerHTML = notes.map((n) => `
@@ -2991,8 +3091,13 @@ async function renderTriage() {
 async function loadTriageQueue() {
   triageDeferredCount = 0;
   const origin = triageOrigin();
-  const { status, body } = await api(`/api/notes/authoring${qs({ status: 'draft', origin, sort: 'updated_asc' })}`);
-  triageQueue = status === 200 ? body : [];
+  // The authoring route is paged now; the belt wants the whole queue, so it
+  // asks for the maximum page. A queue larger than that is already past the
+  // point where a notch track is rendered (TRIAGE_BELT_TRACK_MAX_NOTCHES).
+  const { status, body } = await api(
+    `/api/notes/authoring${qs({ status: 'draft', origin, sort: 'updated_asc', limit: 200 })}`
+  );
+  triageQueue = status === 200 ? (body.notes || []) : [];
   triageIndex = 0;
   triageBeltTrackTotal = -1; // force the notch track to rebuild for the new queue
   triageHistoryStack = []; // indices from the previous queue no longer mean anything

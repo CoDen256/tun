@@ -12,31 +12,31 @@ Order matters in two places inside this change:
 
 ## 1. Filters on the authoring route
 
-- [ ] 1.1 Add `source_lang` and an updated-since parameter to
+- [x] 1.1 Add `source_lang` and an updated-since parameter to
       `/api/notes/authoring`.
-- [ ] 1.2 Add three-state field-presence parameters for `audio_blob`,
+- [x] 1.2 Add three-state field-presence parameters for `audio_blob`,
       `transcription`, `inflections`, `context_text`, `translations`,
       `lemma`. `missing` matches SQL `NULL` **or** the column's empty value
       — `''`, `[]`, `{}`.
-- [ ] 1.3 Reject an unknown filter value with the route's existing 400
+- [x] 1.3 Reject an unknown filter value with the route's existing 400
       shape rather than ignoring it.
-- [ ] 1.4 Tests per filter, including the `{}` and `[]` empty cases
+- [x] 1.4 Tests per filter, including the `{}` and `[]` empty cases
       explicitly.
 
 ## 2. Paging
 
-- [ ] 2.1 Add `limit`/`offset` to `/api/notes/authoring`, with a bounded
+- [x] 2.1 Add `limit`/`offset` to `/api/notes/authoring`, with a bounded
       default page size and a 400 on an out-of-range value.
-- [ ] 2.2 Return rows and the matching total together. The total counts the
+- [x] 2.2 Return rows and the matching total together. The total counts the
       filters, not the page.
-- [ ] 2.3 Leave `/api/notes` — the read API mjolnir pulls (D44) — entirely
+- [x] 2.3 Leave `/api/notes` — the read API mjolnir pulls (D44) — entirely
       alone. Do not share a query builder between the two routes in a way
       that could ever change its behaviour.
-- [ ] 2.4 Notes table: `Status` and `Audio` become single indicators with
+- [x] 2.4 Notes table: `Status` and `Audio` become single indicators with
       accessible descriptions; `Text` takes the freed width.
-- [ ] 2.5 Pager: slice-of-total readout, page navigation, page-size choice.
+- [x] 2.5 Pager: slice-of-total readout, page navigation, page-size choice.
       Changing any filter resets to the first page.
-- [ ] 2.6 Tests: page boundaries, partial last page, total independent of
+- [x] 2.6 Tests: page boundaries, partial last page, total independent of
       page size, read API unchanged.
 
 ## 3. Saved queues

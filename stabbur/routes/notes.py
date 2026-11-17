@@ -72,6 +72,51 @@ SIMILAR_NOTES_SIGNAL_LABELS = {
     "semantic": "related",
 }
 
+# stabbur-triage-queues task 1.2: the fields a saved queue can filter on by
+# presence, mapped to their column. Three-state (`any` / `missing` / `has`).
+#
+# "missing" is deliberately NOT just `IS NULL`. `inflections` and
+# `translations` are NOT NULL columns, so their empty value (`{}` / `[]`) is
+# the only reachable missing state; the rest are nullable, so for those both
+# NULL and the empty string are real and both count. Keying off nullability
+# would make the sweep queues silently skip exactly the notes they exist to
+# find — a note whose `inflections` is `{}` is missing inflections by any
+# reading the operator would recognise (design D2).
+FIELD_PRESENCE_FILTERS = (
+    "audio_blob",
+    "transcription",
+    "inflections",
+    "context_text",
+    "translations",
+    "lemma",
+)
+FIELD_PRESENCE_STATES = ("any", "missing", "has")
+
+# Paging (design D4). A bounded default so the response stays small whatever
+# the note count, and a hard ceiling so a hand-typed limit cannot ask for
+# everything and undo the point of paging.
+DEFAULT_PAGE_LIMIT = 50
+MAX_PAGE_LIMIT = 200
+
+UPDATED_SINCE_WINDOWS = {
+    "24h": datetime.timedelta(hours=24),
+    "7d": datetime.timedelta(days=7),
+    "30d": datetime.timedelta(days=30),
+}
+
+
+def _is_missing(column):
+    """The `missing` predicate for one column: SQL NULL, or empty for its
+    type. JSONB columns compare against their own empty literal; text
+    columns against the empty string."""
+    name = column.key
+    if name in ("inflections",):
+        return or_(column.is_(None), cast(column, Text) == "{}")
+    if name in ("translations",):
+        return or_(column.is_(None), cast(column, Text) == "[]")
+    return or_(column.is_(None), column == "")
+
+
 AUTHORING_SORTS = {
     "updated_desc": Note.updated_at.desc(),
     "updated_asc": Note.updated_at.asc(),
@@ -535,11 +580,88 @@ def register_notes_routes(app):
                     cast(Note.translations, Text).ilike(needle),
                 )
             )
+
+        # stabbur-triage-queues task 1.1: two dimensions added beyond the
+        # operator's list, both free from columns that already exist.
+        source_lang = request.args.get("source_lang")
+        if source_lang:
+            stmt = stmt.where(Note.source_lang == source_lang)
+
+        updated_since = request.args.get("updated_since")
+        if updated_since:
+            window = UPDATED_SINCE_WINDOWS.get(updated_since)
+            if window is None:
+                return (
+                    jsonify({"error": f"updated_since must be one of {sorted(UPDATED_SINCE_WINDOWS)}"}),
+                    400,
+                )
+            cutoff = datetime.datetime.now(datetime.timezone.utc) - window
+            stmt = stmt.where(Note.updated_at >= cutoff)
+
+        # task 1.2/1.3: three-state field presence. An unknown state is a
+        # 400, never silently ignored — a queue that quietly stopped
+        # filtering would look like a queue with different contents.
+        for field in FIELD_PRESENCE_FILTERS:
+            state = request.args.get(f"{field}_presence")
+            if state is None or state == "any":
+                continue
+            if state not in FIELD_PRESENCE_STATES:
+                return (
+                    jsonify({"error": f"{field}_presence must be one of {list(FIELD_PRESENCE_STATES)}"}),
+                    400,
+                )
+            column = getattr(Note, field)
+            predicate = _is_missing(column)
+            stmt = stmt.where(predicate if state == "missing" else ~predicate)
+
+        # Paging (task 2.1). Bounded, and a bad value is a 400 rather than a
+        # silent clamp — a clamped page size makes the pager's own arithmetic
+        # lie about which slice is on screen.
+        try:
+            limit = int(request.args.get("limit", DEFAULT_PAGE_LIMIT))
+            offset = int(request.args.get("offset", 0))
+        except ValueError:
+            return jsonify({"error": "limit and offset must be integers"}), 400
+        if limit < 1 or limit > MAX_PAGE_LIMIT:
+            return jsonify({"error": f"limit must be between 1 and {MAX_PAGE_LIMIT}"}), 400
+        if offset < 0:
+            return jsonify({"error": "offset must not be negative"}), 400
+
         stmt = stmt.order_by(AUTHORING_SORTS[sort])
 
         with session_scope() as db:
-            notes = db.scalars(stmt).all()
-            return jsonify([_serialize_authoring(n) for n in notes]), 200
+            # The total counts the FILTERS, not the page (task 2.2) — it is
+            # what the pager divides into pages, so it is computed from the
+            # same statement with its ordering and window removed.
+            counted = stmt.order_by(None).subquery()
+            total = db.scalar(select(func.count()).select_from(counted))
+            # The summary line's breakdown must describe the FILTERED set,
+            # not the page — deriving it from the page (as the unpaged list
+            # did from the whole array) would quietly turn "69 missing audio"
+            # into "however many of these 20 are missing audio".
+            ready = db.scalar(
+                select(func.count()).select_from(counted).where(counted.c.status == "ready")
+            )
+            missing_audio = db.scalar(
+                select(func.count()).select_from(counted).where(counted.c.audio_blob.is_(None))
+            )
+            notes = db.scalars(stmt.limit(limit).offset(offset)).all()
+            return (
+                jsonify(
+                    {
+                        "notes": [_serialize_authoring(n) for n in notes],
+                        "total": total,
+                        "limit": limit,
+                        "offset": offset,
+                        "counts": {
+                            "ready": ready,
+                            "draft": total - ready,
+                            "missing_audio": missing_audio,
+                        },
+                    }
+                ),
+                200,
+            )
 
     @app.route("/api/notes/authoring/counts", methods=["GET"])
     def notes_authoring_counts():

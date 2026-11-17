@@ -15,11 +15,22 @@ def _create(client, **overrides):
     return resp.get_json()
 
 
+def _rows(resp):
+    """stabbur-triage-queues D4: the authoring list is paged, so it answers
+    with an object carrying the page's rows plus the total matching the
+    filters — not a bare array. The public read API (`/api/notes`) is a
+    different route and still answers with a bare array; it is deliberately
+    NOT unwrapped here."""
+    body = resp.get_json()
+    assert isinstance(body, dict), f"authoring list must be a paged object, got {type(body).__name__}"
+    return body["notes"]
+
+
 def test_draft_appears_in_authoring_but_never_in_public_read_api(client):
     draft = _create(client, text="barnevogn", status="draft")
 
     authoring = client.get("/api/notes/authoring?status=draft", headers=AUTH)
-    assert draft["id"] in [n["id"] for n in authoring.get_json()]
+    assert draft["id"] in [n["id"] for n in _rows(authoring)]
 
     public = client.get("/api/notes?source_lang=no", headers=AUTH)
     assert draft["id"] not in [n["id"] for n in public.get_json()]
@@ -31,7 +42,7 @@ def test_filters_by_status_type_pos(client):
     _create(client, text="i mellomtiden", type="expression", status="ready")
 
     resp = client.get("/api/notes/authoring?status=ready&type=word&pos=substantiv", headers=AUTH)
-    texts = {n["text"] for n in resp.get_json()}
+    texts = {n["text"] for n in _rows(resp)}
     assert texts == {"hus"}
 
 
@@ -40,10 +51,10 @@ def test_search_matches_text_lemma_and_translations(client):
     _create(client, text="bil", lemma="bil", translations=[{"lang": "en", "text": "car"}])
 
     resp = client.get("/api/notes/authoring?q=house", headers=AUTH)
-    assert {n["text"] for n in resp.get_json()} == {"hus"}
+    assert {n["text"] for n in _rows(resp)} == {"hus"}
 
     resp = client.get("/api/notes/authoring?q=bil", headers=AUTH)
-    assert {n["text"] for n in resp.get_json()} == {"bil"}
+    assert {n["text"] for n in _rows(resp)} == {"bil"}
 
 
 def test_sort_text_asc(client):
@@ -51,7 +62,7 @@ def test_sort_text_asc(client):
     _create(client, text="apekatt")
 
     resp = client.get("/api/notes/authoring?sort=text_asc", headers=AUTH)
-    texts = [n["text"] for n in resp.get_json()]
+    texts = [n["text"] for n in _rows(resp)]
     assert texts.index("apekatt") < texts.index("zebra")
 
 
@@ -61,7 +72,7 @@ def test_filters_by_grammar_rule_id(client):
     _create(client, text="unrelated")
 
     resp = client.get(f"/api/notes/authoring?grammar_rule_id={rule['id']}", headers=AUTH)
-    ids = [n["id"] for n in resp.get_json()]
+    ids = [n["id"] for n in _rows(resp)]
     assert ids == [note["id"]]
 
 
@@ -70,7 +81,7 @@ def test_tombstoned_notes_excluded_from_authoring_list(client):
     client.delete(f"/api/notes/{note['id']}", headers=AUTH)
 
     resp = client.get("/api/notes/authoring", headers=AUTH)
-    assert note["id"] not in [n["id"] for n in resp.get_json()]
+    assert note["id"] not in [n["id"] for n in _rows(resp)]
 
 
 def test_invalid_status_type_sort_are_rejected(client):
@@ -89,10 +100,10 @@ def test_filters_by_origin_alone(client):
     )
 
     resp = client.get("/api/notes/authoring?origin=manual", headers=AUTH)
-    assert {n["text"] for n in resp.get_json()} == {"hus"}
+    assert {n["text"] for n in _rows(resp)} == {"hus"}
 
     resp = client.get("/api/notes/authoring?origin=import", headers=AUTH)
-    assert {n["text"] for n in resp.get_json()} == {"katt"}
+    assert {n["text"] for n in _rows(resp)} == {"katt"}
 
 
 def test_filters_by_origin_combined_with_status(client):
@@ -100,7 +111,7 @@ def test_filters_by_origin_combined_with_status(client):
     _create(client, text="bil", status="draft")  # manual
 
     resp = client.get("/api/notes/authoring?origin=manual&status=ready", headers=AUTH)
-    assert {n["text"] for n in resp.get_json()} == {"hus"}
+    assert {n["text"] for n in _rows(resp)} == {"hus"}
 
 
 def test_invalid_origin_filter_is_rejected(client):
@@ -113,5 +124,5 @@ def test_no_origin_filter_returns_every_origin(client):
     _create(client, text="bil", capture_id="cap-1")
 
     resp = client.get("/api/notes/authoring", headers=AUTH)
-    texts = {n["text"] for n in resp.get_json()}
+    texts = {n["text"] for n in _rows(resp)}
     assert {"hus", "bil"} <= texts

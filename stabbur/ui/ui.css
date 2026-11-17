@@ -704,3 +704,32 @@ kbd {
   text-decoration: none;
 }
 .similar-note-goto:hover { text-decoration: underline; }
+
+/* stabbur-triage-queues task 2.4/2.5: the notes list's compact columns and
+   its pager. The two glyph columns replace full-width Status/Audio text
+   columns that pushed the seven-column table past its container. */
+.col-icon { width: 34px; text-align: center; }
+.glyph { display: inline-block; font-size: 13px; line-height: 1; cursor: help; }
+.g-ok { color: var(--ok); }
+.g-draft { color: var(--warn); }
+.g-none { color: var(--text-faint); }
+/* Truncate inside the cell rather than letting a long value widen the table.
+   `max-width: 1px` with table-layout auto is the idiom that makes
+   text-overflow work in a table cell at all. */
+.trunc { max-width: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pager {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; border-top: 1px solid var(--border);
+}
+.pager:empty { display: none; }
+.pager-count { font-size: 12.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.pager label { font-size: 12px; color: var(--text-dim); }
+.pager select { width: auto; padding: 3px 7px; font-size: 12px; }
+.pager-pages { display: flex; gap: 3px; margin-left: auto; flex-wrap: wrap; }
+.pager-pages button { padding: 3px 9px; font-size: 12px; min-width: 30px; }
+.pager-pages button[aria-current="page"] {
+  background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 650;
+}
+.pager-pages button[disabled] { opacity: .45; cursor: default; }
+.pager-gap { padding: 4px 2px; font-size: 12px; color: var(--text-faint); }
