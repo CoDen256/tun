@@ -1,35 +1,61 @@
 ## MODIFIED Requirements
 
 ### Requirement: Citation-form input resolves against the dict.cc audio provider
-The dict.cc `/tts` provider SHALL request audio for **every distinct entry**
-the underlying lookup returned, identified by entry id — never only the
-first. A word whose first entry carries no recording SHALL still yield the
-recordings of its later entries.
+The dict.cc `/tts` provider SHALL offer **only real human recordings**, and
+SHALL NEVER offer computer-generated audio.
 
-Each returned candidate SHALL carry an optional `context` string naming the
-sense the recording belongs to, using the same bracketed part-of-speech
-convention the `/translations` candidates use (for example `[noun] do {n}`).
-Providers other than dict.cc SHALL NOT be required to set `context`, and a
-consumer that does not read it SHALL be unaffected.
+Availability SHALL be determined from dict.cc's own recordings endpoint,
+batched once per lookup, NOT by probing the audio endpoint. The audio
+endpoint synthesises when no recording exists, so a successful fetch is not
+evidence of a recording.
 
-Candidates SHALL continue to dedupe on content hash, so byte-identical
-recordings reached through different entries collapse into one. An entry
-whose audio request fails SHALL be skipped; the lookup SHALL fail only when
-every attempt failed.
+An entry SHALL yield an audio candidate **iff** it has a recording whose
+language id matches the requested language. An entry with recordings only in
+the pair's other language SHALL yield no candidate and SHALL NOT be fetched.
+
+The provider SHALL ask for audio across **every** language pair that carries
+the requested language, and SHALL ask for each pair with the requested
+language on its correct side — a self-lookup directed at the wrong side
+returns nothing and silently hides that pair's entire dataset.
+
+Each candidate SHALL carry a `context` naming the phrase the recording
+actually reads, together with its part-of-speech tag where dict.cc supplies
+one, so the operator can tell which sense they are hearing. Candidates SHALL
+dedupe on content hash only; two different recordings of the same phrase
+SHALL both survive.
 
 The response SHALL NOT be filtered by part of speech, and the request SHALL
 NOT accept a part-of-speech parameter. Ordering by part of speech is the
-caller's, performed on the `context` this requirement supplies.
+caller's.
+
+#### Scenario: An entry with no recording in the requested language is skipped
+- **GIVEN** a dict.cc entry whose only recording is in the pair's other language
+- **WHEN** audio is requested for the queried language
+- **THEN** no candidate is returned for that entry
+- **AND** no audio request is made for it
+
+#### Scenario: Computer-generated audio is never offered
+- **WHEN** audio is requested for any word
+- **THEN** every returned candidate corresponds to a listed human recording
+- **AND** no candidate is produced by the provider's synthetic voice
 
 #### Scenario: A later entry's recording is reachable
 - **WHEN** a word's first dict.cc entry has no human recording and a later entry does
 - **THEN** the later entry's recording is returned as a candidate
-- **AND** the response is not empty
 
-#### Scenario: Candidates name their sense
-- **WHEN** a word has dict.cc entries of more than one part of speech, each with a recording
-- **THEN** each candidate carries a `context` whose leading bracketed tag is that entry's part of speech
+#### Scenario: Both language pairs are searched
+- **GIVEN** a Norwegian phrase whose only recording lives in the EN–NO pair
+- **WHEN** audio is requested for Norwegian
+- **THEN** that recording is returned
+
+#### Scenario: Candidates name the phrase being read
+- **WHEN** a word has entries of more than one part of speech, each with a recording
+- **THEN** each candidate's `context` carries that entry's phrase and its bracketed part-of-speech tag
 - **AND** no candidate is omitted on the basis of its part of speech
+
+#### Scenario: A misaligned recordings response is refused
+- **WHEN** the recordings endpoint returns a different number of tokens than ids requested
+- **THEN** the lookup raises rather than pairing recordings with the wrong entries
 
 ### Requirement: Manual-link response for providers with no accessible API
 A provider with no accessible API SHALL answer with a link a human can

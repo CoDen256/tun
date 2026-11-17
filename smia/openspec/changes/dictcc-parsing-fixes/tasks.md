@@ -17,7 +17,30 @@ before `stabbur-triage-queues`, which reads the `context` added in task 2.
       Norwegian noun, and the German `Haus` table — asserting the last two
       are byte-identical to today's output.
 
-## 2. Per-entry dict.cc audio
+## 2. Per-entry dict.cc audio — HUMAN ONLY
+
+Reworked 2026-11-16 after the operator supplied the recordings endpoint and
+his worked `stille` example. `smia/providers/dict/api.md` documents the
+request/response shape, the `lid` language ids and the evidence that `lid`
+is the language rather than the user — read it before touching this.
+
+- [x] 2.0 `_LANG_SELF_LOOKUP_PAIRS["nb"]`: `("ENNO", 1)` -> `("ENNO", 2)`.
+      Norwegian is the SECOND language of both `DENO` and `ENNO`; `dir=1`
+      asks for "stille as an English word" and returns 0 entries, hiding
+      that pair's whole dataset (audio AND inflections).
+- [x] 2.7 `_fetch_recording_lids(lp, ids)`: ONE batched call to
+      `https://<lp>.dict.cc/dict/ajax_get_audiorecordings.php` per
+      `(lp, variant)`, parsing the space-aligned tokens into
+      `{entry_id: {lid, ...}}`. Refuse to align a response whose token
+      count does not match the request rather than zipping it short.
+- [x] 2.8 Emit a candidate only for an entry carrying a recording whose
+      `lid` matches the requested language. Skip the rest WITHOUT fetching
+      — `*_rec_ip` synthesises, so fetching would produce a synthetic clip
+      labelled "human".
+- [x] 2.9 Stop requesting the synthetic voice entirely; delete
+      `_VOICE_FOR_LANG`. Dedicated synthesisers (elevenlabs) are untouched.
+
+## 2b. Original per-entry work (superseded in part by 2.0/2.7-2.9)
 
 - [x] 2.1 In `DictccApiTtsAdapter.lookup`, iterate every entry in
       `translations` by entry id instead of reading `translations[0]`.
