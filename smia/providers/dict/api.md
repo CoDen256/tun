@@ -66,3 +66,121 @@ GET https://audio.dict.cc/speak.audio.v2.php?error_as_text=1&type=mp3&id=528676&
 GET https://audio.dict.cc/speak.audio.v2.php?error_as_text=1&type=mp3&id=1335801&lang=rec&lp=ENNO&appversioncode=260804 (human the same as previous)
 
 GET https://audio.dict.cc/speak.audio.v2.php?error_as_text=1&type=mp3&id=528676&lang=NO&lp=ENNO&appversioncode=260804&voice=Liv (robot)
+
+# Which entries actually HAVE a human recording — `ajax_get_audiorecordings.php`
+
+Added 2026-11-16 (`dictcc-parsing-fixes`), after the operator pointed at the
+request the phone app makes. **This endpoint is the only reliable way to tell
+a human recording from a computer-generated one.**
+
+## The trap it replaces
+
+`speak.audio.v2.php?...&lang=<L>_rec_ip` returns **audio bytes for almost
+every entry**, synthesising when no human recording exists. So probing it
+answers "can you make a sound for this", not "is there a recording". Measured
+live: it answered for **all 29** `stille` entries in DE↔NO, including ones
+with no Norwegian recording at all. Reading `source: "human"` off that probe
+is wrong, and was the defect behind "dict_cc audios not everyone is present"
+and "ignore computer generated ones".
+
+Nor is there a signal in the entry payload. Its keys are exactly
+`{id, term1, term2, entry_type, subj_ids, vt_usage, sort_num}` — no recording
+flag. `vt_usage` looks promising on one example (9 for a human entry, 0 for a
+synthetic-only one) and then **collapses on the full set**: `å stille krav`,
+`å stille om`, `å stille klokka` and `å stille ut` are all `vt_usage: 0` and
+all have real Norwegian recordings.
+
+## Request
+
+```
+GET https://<lp>.dict.cc/dict/ajax_get_audiorecordings.php
+    ?id_str=0+<id>+<id>+...&appversioncode=260804
+```
+
+- **Host is the pair, lowercased** — `deno.dict.cc`, `enno.dict.cc`. Not
+  `www.dict.cc`.
+- `id_str` is a **space-separated** list of entry ids with a **leading `0`**,
+  in the order `app_translations.php` returned them. The preceding request is
+  the ordinary one, e.g.
+  `app_translations.php?s=stille&dir=2&lp=ENNO&appversioncode=260804`.
+- One batched call covers every entry of a lookup — not one call per entry.
+
+## Response
+
+A single line, **space-separated, one token per requested id, in order**. The
+leading `0` consumes the first token. Each token is a `|`-separated list of
+recording keys; an entry with no recordings contributes an **empty** token.
+
+A recording key is shaped:
+
+```
+<recordingId>_<username>_<country>_lid<N>_v
+     1334012_  mtbboy1993 _   no   _ lid81 _v
+      123211_  Artists    _   usr  _ lid1  _v
+```
+
+### `lid<N>` is the LANGUAGE of the recording — not the user, not the country
+
+This was verified explicitly, because the whole filter depends on it:
+
+| lid | language |
+|---|---|
+| `81` | Norwegian |
+| `2` | German |
+| `1` | English |
+
+- **Two different users carry `lid81` for the same word**: `hus` in EN↔NO has
+  recordings from `55S55` (country `noch`) *and* `mtbboy1993` (country `no`),
+  both `lid81`. So it is not a user id.
+- A dozen distinct users share `lid1`; another dozen share `lid2`.
+- `lid2` appears only under `DENO`, `lid1` only under `ENNO`, `lid81` under
+  both — a clean partition by language pair.
+- `scabaret` (country `deusr`) carries `lid1`: a German-registered user who
+  recorded the **English** side. The lid follows the recording's language,
+  not the speaker's nationality.
+
+One entry commonly carries recordings on **both** sides of the pair, which is
+why the lid must be *matched* rather than merely counted.
+
+## The rule
+
+An entry has real human audio in language `L` **iff** it has a recording whose
+`lid` is `L`'s id. Fetch `speak.audio.v2.php` only for those entries; skip the
+rest entirely rather than fetching a synthesised stand-in.
+
+**The `voice=Liv` request is never made at all** — that is dict.cc's
+synthesiser (shown as "Liv" in its own UI) and is a separate request, not
+something that needs filtering out of a response.
+
+## Worked example — `stille`, Norwegian
+
+Entries with no Norwegian recording, correctly yielding **no audio** while
+still appearing in `/translations`:
+
+| entry | lids | phrase |
+|---|---|---|
+| 2240021 | `2` only | `å stille opp noe` |
+| 2266223 | `2` only | `å gå stille i dørene [idiom]` |
+| 1223599 | `2` only | `Stille vann har dypest grunn.` |
+| 1849840 | `1` only | `Stille vann har dypest grunn.` (EN↔NO) |
+
+Result after the fix: **22 human candidates, 0 synthetic, ~3.5s** — against
+103 candidates in 12.6s when every entry was probed for audio and the
+synthetic voice was requested too.
+
+## `lp`/`dir` for a self-lookup — a corrected trap
+
+`_LANG_SELF_LOOKUP_PAIRS` read `("ENNO", 1)` for Norwegian until 2026-11-16.
+`dir=1` means the queried word is on the **first** language of `lp`, i.e. it
+asked dict.cc for *stille as an English word*. Measured:
+
+```
+s=stille&lp=ENNO&dir=1  ->  0 entries
+s=stille&lp=ENNO&dir=2  -> 14 entries
+```
+
+Norwegian is the second language of **both** `DENO` and `ENNO`, so both are
+`dir=2`. The wrong value made every Norwegian word's EN↔NO-only data — audio
+*and* inflection tables — silently unreachable, which is the exact gap the
+multi-pair list was added to close. `å stille klokka`, `å stille klokken` and
+`å stille ut` exist only in that pair.
