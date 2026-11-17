@@ -37,6 +37,116 @@ DEFAULT_TRIAGE_NAVIGATE_SAVE = "autosave"
 DEFAULT_EXAMPLES_COUNT = 3
 DEFAULT_EXAMPLES_MAX_PROVIDERS = 1
 
+# --------------------------------------------------------- triage queues --
+# stabbur-triage-queues D1. A queue is a named filter set plus its own sort.
+#
+# The three origin queues are SYNTHESISED, not stored: they reproduce exactly
+# what the origin dropdown did before this change, and keeping them out of
+# storage is what makes them impossible to edit, delete, or drift from that
+# definition. `builtin: True` is what the API refuses writes against.
+BUILTIN_QUEUE_ORIGINS = ("import", "manual", "capture")
+
+# The filter keys a queue may carry. Anything else is rejected rather than
+# stored and silently ignored — a queue that quietly dropped a filter would
+# look like a queue with different contents, which is worse than an error.
+QUEUE_FILTER_KEYS = (
+    "status",
+    "type",
+    "origin",
+    "pos",
+    "source_lang",
+    "updated_since",
+    "q",
+    "audio_blob_presence",
+    "transcription_presence",
+    "inflections_presence",
+    "context_text_presence",
+    "translations_presence",
+    "lemma_presence",
+)
+
+QUEUE_SORTS = ("updated_asc", "updated_desc", "created_asc", "created_desc", "text_asc", "text_desc")
+DEFAULT_QUEUE_SORT = "updated_asc"
+MAX_QUEUE_NAME_LENGTH = 60
+
+
+def builtin_queues() -> list[dict]:
+    """The three origin queues, exactly as the dropdown behaved: draft notes
+    of one origin, oldest updated first."""
+    return [
+        {
+            "id": f"builtin:{origin}",
+            "name": origin,
+            "builtin": True,
+            "filters": {"status": "draft", "origin": origin},
+            "sort": DEFAULT_QUEUE_SORT,
+        }
+        for origin in BUILTIN_QUEUE_ORIGINS
+    ]
+
+
+def read_queues(db) -> list[dict]:
+    """Built-ins first, then the operator's own in stored order."""
+    row = _row(db)
+    stored = (row.triage_queues if row else None) or []
+    own = []
+    for q in stored:
+        if not isinstance(q, dict):
+            continue
+        own.append(
+            {
+                "id": q.get("id"),
+                "name": q.get("name") or "(unnamed)",
+                "builtin": False,
+                "filters": q.get("filters") or {},
+                "sort": q.get("sort") or DEFAULT_QUEUE_SORT,
+            }
+        )
+    return builtin_queues() + own
+
+
+def validate_queue(payload: dict) -> str | None:
+    """Returns an error message, or None when the queue is acceptable."""
+    if not isinstance(payload, dict):
+        return "a queue must be an object"
+    name = (payload.get("name") or "").strip()
+    if not name:
+        return "a queue needs a name"
+    if len(name) > MAX_QUEUE_NAME_LENGTH:
+        return f"a queue name must be at most {MAX_QUEUE_NAME_LENGTH} characters"
+
+    sort = payload.get("sort") or DEFAULT_QUEUE_SORT
+    if sort not in QUEUE_SORTS:
+        return f"sort must be one of {list(QUEUE_SORTS)}"
+
+    filters = payload.get("filters") or {}
+    if not isinstance(filters, dict):
+        return "filters must be an object"
+    unknown = sorted(set(filters) - set(QUEUE_FILTER_KEYS))
+    if unknown:
+        return f"unknown filter(s): {unknown}"
+    return None
+
+
+def write_queues(db, queues: list[dict]) -> None:
+    row = _row(db)
+    if row is None:
+        row = Settings(id=1)
+        db.add(row)
+    # Reassigned as a new list, not mutated in place — this is a plain
+    # (non-Mutable) JSONB column, so an in-place mutation is not tracked as
+    # dirty and would be silently dropped. Same reason `provider_prefs` is
+    # reassigned in `write` below.
+    row.triage_queues = [
+        {
+            "id": q["id"],
+            "name": q["name"],
+            "filters": q.get("filters") or {},
+            "sort": q.get("sort") or DEFAULT_QUEUE_SORT,
+        }
+        for q in queues
+    ]
+
 
 def _row(db) -> Settings | None:
     return db.get(Settings, 1)

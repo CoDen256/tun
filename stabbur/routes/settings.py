@@ -9,6 +9,8 @@ preference was last written.
 
 from __future__ import annotations
 
+import uuid
+
 from flask import jsonify, request
 
 import settings_store
@@ -39,6 +41,9 @@ def _serialize(db) -> dict:
     scalars = settings_store.read_scalars(db)
     catalogue = _fetch_catalogue()
     scalars["providers"] = settings_store.resolve_providers(db, catalogue, ENRICHABLE_KINDS)
+    # stabbur-triage-queues D1: the triage selector reads its queues from
+    # here, so they ride along with every settings read.
+    scalars["triage_queues"] = settings_store.read_queues(db)
     return scalars
 
 
@@ -101,7 +106,86 @@ def _validate_patch_body(body: dict) -> str | None:
     return None
 
 
+def _own_queues(db) -> list[dict]:
+    """The operator's own queues only — the built-ins are synthesised and
+    must never be written back into storage."""
+    return [q for q in settings_store.read_queues(db) if not q.get("builtin")]
+
+
 def register_settings_routes(app):
+    # ----------------------------------------------------- triage queues --
+    # A queue is a named filter set plus its own sort (D1). The three origin
+    # queues are synthesised by settings_store and are refused by every
+    # write below — that is what makes them undeletable rather than merely
+    # hidden from the delete control.
+
+    @app.route("/api/settings/triage_queues", methods=["GET"])
+    def list_triage_queues():
+        with session_scope() as db:
+            return jsonify(settings_store.read_queues(db)), 200
+
+    @app.route("/api/settings/triage_queues", methods=["POST"])
+    def create_triage_queue():
+        body = request.get_json(silent=True)
+        if body is None:
+            return jsonify({"error": "JSON body required"}), 400
+        error = settings_store.validate_queue(body)
+        if error:
+            return jsonify({"error": error}), 400
+
+        with session_scope() as db:
+            queues = _own_queues(db)
+            queue = {
+                "id": str(uuid.uuid4()),
+                "name": body["name"].strip(),
+                "filters": body.get("filters") or {},
+                "sort": body.get("sort") or settings_store.DEFAULT_QUEUE_SORT,
+            }
+            queues.append(queue)
+            settings_store.write_queues(db, queues)
+            return jsonify(settings_store.read_queues(db)), 201
+
+    @app.route("/api/settings/triage_queues/<queue_id>", methods=["PATCH"])
+    def patch_triage_queue(queue_id):
+        body = request.get_json(silent=True)
+        if body is None:
+            return jsonify({"error": "JSON body required"}), 400
+
+        with session_scope() as db:
+            if queue_id.startswith("builtin:"):
+                return jsonify({"error": "a built-in queue cannot be edited"}), 400
+            queues = _own_queues(db)
+            target = next((q for q in queues if q["id"] == queue_id), None)
+            if target is None:
+                return jsonify({"error": "not found"}), 404
+
+            merged = {
+                "name": body.get("name", target["name"]),
+                "filters": body.get("filters", target.get("filters") or {}),
+                "sort": body.get("sort", target.get("sort")),
+            }
+            error = settings_store.validate_queue(merged)
+            if error:
+                return jsonify({"error": error}), 400
+
+            target["name"] = merged["name"].strip()
+            target["filters"] = merged["filters"]
+            target["sort"] = merged["sort"]
+            settings_store.write_queues(db, queues)
+            return jsonify(settings_store.read_queues(db)), 200
+
+    @app.route("/api/settings/triage_queues/<queue_id>", methods=["DELETE"])
+    def delete_triage_queue(queue_id):
+        with session_scope() as db:
+            if queue_id.startswith("builtin:"):
+                return jsonify({"error": "a built-in queue cannot be deleted"}), 400
+            queues = _own_queues(db)
+            remaining = [q for q in queues if q["id"] != queue_id]
+            if len(remaining) == len(queues):
+                return jsonify({"error": "not found"}), 404
+            settings_store.write_queues(db, remaining)
+            return jsonify(settings_store.read_queues(db)), 200
+
     @app.route("/api/settings", methods=["GET"])
     def get_settings():
         with session_scope() as db:

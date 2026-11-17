@@ -243,3 +243,10 @@ class Settings(Base):
     # answers, exactly 3 sentences" walk before this.
     examples_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     examples_max_providers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # stabbur-triage-queues D1: the operator's own saved triage queues, each
+    # a named filter set with its own sort. Stored here rather than in the
+    # browser because a queue is most useful on the phone and localStorage
+    # does not travel. Shape: [{id, name, filters: {...}, sort}]. The three
+    # built-in origin queues are NOT stored — they are synthesised, so they
+    # cannot be edited or deleted and cannot drift from their definition.
+    triage_queues: Mapped[list | None] = mapped_column(JSONB, nullable=True)

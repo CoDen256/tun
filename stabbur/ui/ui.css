@@ -758,3 +758,49 @@ kbd {
   border-bottom: 1px dotted var(--text-faint);
   cursor: help;
 }
+
+/* stabbur-triage-queues D1/D2: the saved-queue selector and its filter
+   editor, replacing the origin dropdown. A built-in queue is marked with a
+   leading dot and offers no delete control — it is synthesised server-side,
+   so the API refuses to edit or delete it either way. */
+.queue-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.queue-pick { display: flex; gap: 4px; flex-wrap: wrap; }
+.qchip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); background: var(--bg-elevated);
+  border-radius: 99px; padding: 4px 11px; font-size: 12.5px; color: var(--text-dim);
+}
+.qchip:hover { color: var(--text); }
+.qchip[aria-pressed="true"] {
+  border-color: var(--accent); background: var(--accent-soft);
+  color: var(--accent-text); font-weight: 600;
+}
+.qchip .qn { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--text-faint); }
+.qchip[aria-pressed="true"] .qn { color: var(--accent-text); }
+.qchip.builtin::before { content: "●"; font-size: 7px; color: var(--text-faint); }
+
+.filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.field-presence { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Three-state, because "this queue does not care about audio" and "this
+   queue wants notes WITH audio" are different queues (design D2). */
+.tri { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.tri > span {
+  font-size: 11px; padding: 3px 7px; color: var(--text-faint);
+  border-right: 1px solid var(--border); background: var(--bg-sunken);
+}
+.tri > button {
+  border: none; border-radius: 0; padding: 3px 8px; font-size: 11px;
+  background: transparent; color: var(--text-faint);
+  border-right: 1px solid var(--border-soft);
+}
+.tri > button:last-child { border-right: none; }
+.tri > button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); font-weight: 650; }
+
+/* stabbur-triage-queues D9: the audio-reuse search, inside the tts panel.
+   Searches the operator's own notes (a blob has no text of its own), and
+   attaching stores the same content hash — no copy, no new blob. */
+.audio-reuse { border-bottom: 1px solid var(--border-soft); padding: 9px 12px; }
+.audio-reuse-head { display: flex; gap: 7px; align-items: center; }
+.audio-reuse-input { flex: 1; }
+.audio-reuse-results { margin-top: 6px; }
+.audio-reuse-results .candidate-row { padding-left: 0; padding-right: 0; }

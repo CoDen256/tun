@@ -10,23 +10,50 @@ stay autouse — every test needs a blank slate) would truncate `notes`/
 resolve to, which defaults to the same local dev Postgres `/ui` points at.
 That's exactly what happened before this guard existed: running the suite
 with a dev `DATABASE_URL` still exported in the shell silently wiped real
-hand-authored notes."""
+hand-authored notes.
+
+CORRECTION, 2026-11-16: it happened a SECOND time, because the guard
+compared `DATABASE_URL` against one hardcoded pre-monorepo string and D155
+changed the real URL out from under it. The guard is now structural — the
+database NAME must end in `_test` — which no change of host, port, user or
+password can defeat. See the comment on the guard itself."""
 
 from __future__ import annotations
 
 import os
 
-_DEV_DATABASE_URL = "postgresql+psycopg2://stabbur:stabbur@localhost:5434/stabbur"
 _TEST_DATABASE_URL = "postgresql+psycopg2://stabbur:stabbur@localhost:5434/stabbur_test"
 
+# The guard is STRUCTURAL, not a list of known-bad URLs.
+#
+# It used to compare `DATABASE_URL` against one hardcoded string, the
+# pre-monorepo dev URL `...@localhost:5434/stabbur`. D155 moved every
+# service onto the shared cluster, so the real URL became
+# `...@postgres:5432/stabbur` — a different string. The guard stopped
+# matching anything, and the incident its own docstring describes happened
+# again: running this suite with that URL set (inside the container, where
+# it is set for you) truncated the real `notes` table.
+#
+# So the rule is now "the database NAME must look like a test database",
+# which cannot go stale when a host, port, user or password changes. An
+# explicit opt-out exists for the one legitimate case — a throwaway
+# database that happens not to be named `*_test`.
 _resolved = os.environ.get("DATABASE_URL", _TEST_DATABASE_URL)
-if _resolved == _DEV_DATABASE_URL:
+_db_name = _resolved.rsplit("/", 1)[-1].split("?")[0]
+if not _db_name.endswith("_test") and os.environ.get("STABBUR_ALLOW_UNSAFE_TEST_DB") != "1":
     raise RuntimeError(
-        "DATABASE_URL is set to the real dev database "
-        f"({_DEV_DATABASE_URL}) — tests/conftest.py's clean_db fixture "
-        "truncates notes/grammar_rule before every test and would wipe it. "
-        "Unset DATABASE_URL (tests default to stabbur_test) or point it at "
-        "a dedicated test database."
+        f"DATABASE_URL points at the database {_db_name!r}, whose name does "
+        "not end in '_test' — tests/conftest.py's clean_db fixture DELETES "
+        "every row in notes/captures/grammar_rule/settings before every "
+        "test, so this would wipe real data.\n"
+        "  Unset DATABASE_URL (the suite then defaults to stabbur_test), or "
+        "point it at a '*_test' database.\n"
+        "  Note: inside the stabbur container DATABASE_URL is already set to "
+        "the REAL database, so `docker compose exec stabbur-backend pytest` "
+        "needs an override:\n"
+        "    DATABASE_URL=postgresql+psycopg2://stabbur:$PW@postgres:5432/stabbur_test\n"
+        "  Set STABBUR_ALLOW_UNSAFE_TEST_DB=1 only for a database you are "
+        "willing to lose."
     )
 os.environ["DATABASE_URL"] = _resolved
 

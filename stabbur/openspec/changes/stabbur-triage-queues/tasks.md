@@ -41,20 +41,20 @@ Order matters in two places inside this change:
 
 ## 3. Saved queues
 
-- [ ] 3.1 Add a queues list to the settings row: name, filters, sort.
-- [ ] 3.2 Three built-in queues (`import`/`manual`/`capture`, `draft`,
+- [x] 3.1 Add a queues list to the settings row: name, filters, sort.
+- [x] 3.2 Three built-in queues (`import`/`manual`/`capture`, `draft`,
       oldest-updated first), not deletable and not editable. Migrate the
       stored origin preference to a queue selection.
-- [ ] 3.3 Settings API: create, rename, edit, delete, reorder the
+- [x] 3.3 Settings API: create, rename, edit, delete, reorder the
       operator's own queues; reject any write touching a built-in.
-- [ ] 3.4 Triage page: the queue selector replaces the origin dropdown, with
+- [x] 3.4 Triage page: the queue selector replaces the origin dropdown, with
       a per-queue remaining count.
-- [ ] 3.5 Queue editor: every filter dimension from task 1 plus the queue's
+- [x] 3.5 Queue editor: every filter dimension from task 1 plus the queue's
       own sort.
-- [ ] 3.6 Notes browser: "triage these results" opens the belt over the
+- [x] 3.6 Notes browser: "triage these results" opens the belt over the
       current filters as an unsaved queue, nameable and savable from there.
-- [ ] 3.7 The rail badge counts drafts across every queue, as it does today.
-- [ ] 3.8 Tests: a field-presence queue holds exactly the right notes; a
+- [x] 3.7 The rail badge counts drafts across every queue, as it does today.
+- [x] 3.8 Tests: a field-presence queue holds exactly the right notes; a
       queue's sort does not leak to another; built-ins reject edits.
 
 ## 4. Part-of-speech ordering
@@ -93,23 +93,23 @@ Order matters in two places inside this change:
 
 ## 6. Audio search
 
-- [ ] 6.1 An endpoint (or an existing-route parameter) returning notes
+- [x] 6.1 An endpoint (or an existing-route parameter) returning notes
       matching `q` that carry a recording, with enough to identify and play
       each one.
-- [ ] 6.2 A search control in the audio suggest panel with per-result
+- [x] 6.2 A search control in the audio suggest panel with per-result
       playback.
-- [ ] 6.3 Choosing a result stores the same `sha256` on the note being
+- [x] 6.3 Choosing a result stores the same `sha256` on the note being
       edited. No new blob, no copy. Works on the new-note form (staged) and
       on an existing note (immediate), matching `attachAudioToNote`.
-- [ ] 6.4 Tests: both notes end up on one hash; the source note is
+- [x] 6.4 Tests: both notes end up on one hash; the source note is
       unchanged; notes without audio are not offered.
 
 ## 7. Specs and docs
 
-- [ ] 7.1 Record in `stabbur/CLAUDE.md` that part of speech is an ordering
+- [x] 7.1 Record in `stabbur/CLAUDE.md` that part of speech is an ordering
       signal only, with the operator's reasoning, so it is not "improved"
       into a filter.
-- [ ] 7.2 Record the asymmetry with `stabbur-merge-fixes`: merge's Take IPA
+- [x] 7.2 Record the asymmetry with `stabbur-merge-fixes`: merge's Take IPA
       replaces, the suggest panel's Use appends.
 
 ## Out of scope — do not implement

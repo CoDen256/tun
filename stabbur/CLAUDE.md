@@ -62,3 +62,27 @@ consistent is undoing a decision, not fixing a bug.
 Related: part of speech **orders** candidates and never filters them, and
 the ordering is stabbur's own, done on the `context` string smia returns.
 See `smia/CLAUDE.md` for smia's half.
+
+## Part of speech orders candidates; it never filters them
+
+`stabbur-triage-queues` D5. The operator's complaint was that dict.cc
+"picks the wrong PoS", and his diagnosis was more precise than that: **the
+right candidate was already in the response and simply was not first**, and
+`walkProviders` takes `candidates[0]`.
+
+So nothing is ever withheld. Candidates matching the note's part of speech
+sort to the top — which is what makes automatic prefill pick the right
+sense — and the panel groups them with the note's own group first and
+labelled. This applies to translations **and** audio.
+
+- The tag is read from a **leading bracketed** `context` (`[verb] å komme
+  i vei`). `dictcc_static`'s unbracketed `noun Br.` is deliberately
+  **untagged**, grouped last, never parsed by a word list that could drift.
+- Tags are normalised on both sides: dict.cc is English (`noun`), stabbur
+  stores Norwegian (`substantiv`).
+- With no part of speech on the note, or no candidate matching it, the
+  provider's order is left **completely alone** and no preference is
+  invented.
+- No `pos` parameter is ever sent to smia. The ordering is stabbur's own.
+
+Do not turn this into a filter.

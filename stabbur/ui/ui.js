@@ -586,6 +586,28 @@ function renderNotesPager(total) {
   });
 }
 
+// stabbur-triage-queues D3: the second entry point. The notes browser's
+// filters and a queue's filters are the same vocabulary, so this hands over
+// an UNSAVED queue rather than building a parallel one — the operator can
+// then name and save it from the belt, or not. A queue is just a filter set
+// that was given a name.
+document.getElementById('notesTriageTheseBtn').addEventListener('click', () => {
+  const filters = {};
+  if (notesListState.status) filters.status = notesListState.status;
+  if (notesListState.type) filters.type = notesListState.type;
+  if (notesListState.origin) filters.origin = notesListState.origin;
+  const q = document.getElementById('notesSearch').value.trim();
+  if (q) filters.q = q;
+
+  triageQueueState.adhoc = {
+    adhoc: true,
+    name: 'These results',
+    filters,
+    sort: `${notesListState.sortField}_${notesListState.sortDir}`,
+  };
+  location.hash = '#/triage';
+});
+
 let notesSearchDebounce;
 document.getElementById('notesSearch').addEventListener('input', () => {
   clearTimeout(notesSearchDebounce);
@@ -2967,12 +2989,86 @@ async function openSuggestPanel(panelEl, { forceRefresh = false } = {}) {
   }
 
   panelEl.appendChild(enrichEl(`<div class="suggest-head"><span>${providers.length} provider(s) configured</span><span>editable per-provider</span></div>`));
+  // stabbur-triage-queues D9: a recording already stored for one note can be
+  // attached to another. Searching the operator's own NOTES, not the blob
+  // store — a blob has no text of its own and is findable only through the
+  // notes referencing it, so a blob browser would be a notes search wearing
+  // a different hat plus the failure mode of surfacing orphans.
+  if (kind === 'tts') {
+    panelEl.appendChild(buildAudioReuseSearch(prefix));
+  }
   const defaultQuery = suggestControlQueryValue(panelEl.id, prefix);
   const renderCandidate = kind === 'ipa' ? renderIpaCandidate(prefix)
     : kind === 'examples' ? renderExamplesCandidate(prefix)
     : renderTtsCandidate(prefix);
   const limit = kind === 'examples' ? examplesLimitValue(prefix) : undefined;
   providers.forEach((p) => panelEl.appendChild(buildEnrichProviderRow(kind, p, prefix, defaultQuery, renderCandidate, undefined, forceRefresh, limit)));
+}
+
+// The audio-reuse search. Reuses the paged authoring route with `q` plus
+// `audio_blob_presence=has` rather than adding an endpoint — the route
+// already filters on exactly these two things, and the design left the
+// choice to the builder provided results can be identified and played.
+function buildAudioReuseSearch(prefix) {
+  const wrap = enrichEl(`
+    <div class="audio-reuse">
+      <div class="audio-reuse-head">
+        <input type="search" class="audio-reuse-input" placeholder="Reuse audio from another note — text, lemma or translation…" aria-label="Search your notes' audio">
+        <button type="button" class="btn-ghost audio-reuse-btn">Search</button>
+      </div>
+      <div class="audio-reuse-results"></div>
+    </div>
+  `);
+  const input = wrap.querySelector('.audio-reuse-input');
+  const results = wrap.querySelector('.audio-reuse-results');
+
+  async function run() {
+    const q = input.value.trim();
+    if (!q) { results.innerHTML = ''; return; }
+    results.innerHTML = '<div class="suggest-skel"></div>';
+    const { status, body } = await api(
+      `/api/notes/authoring${qs({ q, audio_blob_presence: 'has', limit: 20, sort: 'updated_desc' })}`
+    );
+    const rows = (status === 200 && body && body.notes) || [];
+    if (!rows.length) {
+      results.innerHTML = `<div class="suggest-error">No note with a recording matches "${escapeHtml(q)}".</div>`;
+      return;
+    }
+    results.innerHTML = '';
+    rows.forEach((n) => {
+      const translation = (n.translations && n.translations[0] && n.translations[0].text) || '';
+      const row = enrichEl(`
+        <div class="candidate-row">
+          <span class="candidate-text">${escapeHtml(n.text)}</span>
+          <span class="candidate-meta">${escapeHtml([n.status, n.origin, translation].filter(Boolean).join(' · '))}</span>
+          <span class="candidate-spacer"></span>
+          <button class="use-btn" type="button">Attach</button>
+        </div>
+      `);
+      // Playable before it is chosen — the operator is picking a recording,
+      // and the text alone does not tell them which one it is.
+      row.querySelector('.candidate-text').after(buildAudioPreviewButton(`${API_BASE}/blob/${n.audio_blob}`));
+      row.querySelector('.use-btn').addEventListener('click', async (e) => {
+        // The SAME content hash is stored on this note. Blobs are
+        // content-addressed and immutable (blob-storage), so two notes
+        // referencing one recording is an already-supported state: no copy,
+        // no new blob, and the source note is not touched.
+        const ok = await attachAudioToNote(prefix, n.audio_blob, `note "${n.text}"`);
+        if (!ok) { alert('Could not attach that recording.'); return; }
+        markSuggestUsed(e.target);
+        enrichToast(`Attached the recording from "${n.text}"`);
+      });
+      results.appendChild(row);
+    });
+  }
+
+  wrap.querySelector('.audio-reuse-btn').addEventListener('click', run);
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    run();
+  });
+  return wrap;
 }
 
 function closeSuggestPanel(panelEl) {
@@ -3224,13 +3320,244 @@ let triageDeferredCount = 0;
 // commits it, same as every other field's edits.
 let triageStagedAudio = null;
 
-function triageOrigin() {
-  return document.getElementById('triageOriginSelect').value;
+// stabbur-triage-queues D1/D3: the belt's queue. `queues` is what the API
+// returned (built-ins first, then the operator's own); `selectedId` is which
+// one is live; `adhoc` holds an unsaved filter set handed over from the
+// notes browser's "Triage these results", which is nameable and savable
+// from here but is not a queue until it is saved.
+const triageQueueState = { queues: [], selectedId: null, adhoc: null, counts: {} };
+
+const TRIAGE_QUEUE_STORAGE_KEY = 'stabbur_triage_queue_id';
+
+const QUEUE_FILTER_FIELDS = [
+  'audio_blob', 'transcription', 'inflections', 'context_text', 'translations', 'lemma',
+];
+const QUEUE_FIELD_LABELS = {
+  audio_blob: 'audio',
+  transcription: 'IPA',
+  inflections: 'inflections',
+  context_text: 'context',
+  translations: 'translations',
+  lemma: 'lemma',
+};
+const QUEUE_SORT_LABELS = {
+  updated_asc: 'oldest updated first',
+  updated_desc: 'newest updated first',
+  created_asc: 'oldest created first',
+  created_desc: 'newest created first',
+  text_asc: 'A–Z by text',
+  text_desc: 'Z–A by text',
+};
+const QUEUE_UPDATED_SINCE_LABELS = {
+  '': 'any time',
+  '24h': 'last 24 hours',
+  '7d': 'last 7 days',
+  '30d': 'last 30 days',
+};
+
+function activeTriageQueue() {
+  if (triageQueueState.adhoc) return triageQueueState.adhoc;
+  return triageQueueState.queues.find((q) => q.id === triageQueueState.selectedId) || null;
 }
 
-document.getElementById('triageOriginSelect').addEventListener('change', () => {
-  localStorage.setItem(TRIAGE_ORIGIN_STORAGE_KEY, triageOrigin());
-  loadTriageQueue();
+// The ONE place a queue becomes request parameters, so the selector, the
+// editor and the notes browser's hand-off cannot drift apart.
+function triageQueueParams(queue) {
+  const filters = (queue && queue.filters) || {};
+  const params = { limit: 200, sort: (queue && queue.sort) || 'updated_asc' };
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value === '' || value === null || value === undefined || value === 'any') return;
+    params[key] = value;
+  });
+  return params;
+}
+
+async function loadTriageQueues() {
+  const { status, body } = await api('/api/settings/triage_queues');
+  triageQueueState.queues = status === 200 ? body : [];
+  if (!triageQueueState.selectedId) {
+    const saved = localStorage.getItem(TRIAGE_QUEUE_STORAGE_KEY)
+      // Migrates the old origin preference (D1): the origin the operator
+      // last worked is now a built-in queue id.
+      || (localStorage.getItem(TRIAGE_ORIGIN_STORAGE_KEY)
+        ? `builtin:${localStorage.getItem(TRIAGE_ORIGIN_STORAGE_KEY)}`
+        : null);
+    const exists = triageQueueState.queues.some((q) => q.id === saved);
+    triageQueueState.selectedId = exists ? saved : (triageQueueState.queues[0] || {}).id || null;
+  }
+}
+
+function renderTriageQueuePicker() {
+  const pick = document.getElementById('triageQueuePick');
+  if (!pick) return;
+  const adhoc = triageQueueState.adhoc;
+  const chips = triageQueueState.queues.map((q) => {
+    const count = triageQueueState.counts[q.id];
+    const active = !adhoc && q.id === triageQueueState.selectedId;
+    return `<button type="button" class="qchip${q.builtin ? ' builtin' : ''}" data-queue-id="${escapeHtml(q.id)}" aria-pressed="${active}">${escapeHtml(q.name)}${
+      count === undefined ? '' : ` <span class="qn">${count}</span>`
+    }</button>`;
+  });
+  if (adhoc) {
+    chips.push(`<button type="button" class="qchip" data-queue-id="__adhoc__" aria-pressed="true">${escapeHtml(adhoc.name)} <span class="qn">unsaved</span></button>`);
+  }
+  pick.innerHTML = chips.join('');
+  pick.querySelectorAll('.qchip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const id = chip.dataset.queueId;
+      if (id === '__adhoc__') return;
+      triageQueueState.adhoc = null;
+      triageQueueState.selectedId = id;
+      localStorage.setItem(TRIAGE_QUEUE_STORAGE_KEY, id);
+      document.getElementById('triageQueueEditor').style.display = 'none';
+      loadTriageQueue();
+    });
+  });
+}
+
+function triageQueueEditorHtml(queue) {
+  const f = queue.filters || {};
+  const opt = (value, label, current) =>
+    `<option value="${escapeHtml(value)}"${String(current || '') === value ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+  const presence = QUEUE_FILTER_FIELDS.map((field) => {
+    const key = `${field}_presence`;
+    const current = f[key] || 'any';
+    return `<span class="tri" data-presence-field="${key}">
+      <span>${escapeHtml(QUEUE_FIELD_LABELS[field])}</span>
+      ${['any', 'missing', 'has'].map((state) =>
+        `<button type="button" data-state="${state}"${state === current ? ' aria-pressed="true"' : ''}>${state}</button>`).join('')}
+    </span>`;
+  }).join('');
+
+  return `
+    <div class="toolbar" style="justify-content:space-between;">
+      <div class="toolbar" style="margin:0;">
+        <span class="eyebrow">Editing</span>
+        <input id="queueName" value="${escapeHtml(queue.name || '')}" style="width:220px;" aria-label="Queue name">
+      </div>
+      <div class="toolbar" style="margin:0;">
+        ${queue.builtin ? '<span class="inline-note">a built-in queue cannot be edited — save it as a new queue to change it</span>' : ''}
+        ${queue.builtin || queue.adhoc ? '' : '<button type="button" class="btn-ghost" id="queueDeleteBtn">Delete queue</button>'}
+        <button type="button" class="btn-primary" id="queueSaveBtn">${queue.builtin || queue.adhoc ? 'Save as new queue' : 'Save queue'}</button>
+      </div>
+    </div>
+    <div class="filter-grid" style="margin-bottom:14px;">
+      <div class="field"><label for="qf_status">Status</label>
+        <select id="qf_status" data-filter-key="status">${opt('', 'any', f.status)}${opt('draft', 'draft', f.status)}${opt('ready', 'ready', f.status)}</select></div>
+      <div class="field"><label for="qf_type">Type</label>
+        <select id="qf_type" data-filter-key="type">${opt('', 'any', f.type)}${['word', 'expression', 'listening', 'pronunciation', 'grammar'].map((t) => opt(t, t, f.type)).join('')}</select></div>
+      <div class="field"><label for="qf_origin">Origin</label>
+        <select id="qf_origin" data-filter-key="origin">${opt('', 'any', f.origin)}${['manual', 'capture', 'import'].map((o) => opt(o, o, f.origin)).join('')}</select></div>
+      <div class="field"><label for="qf_pos">Part of speech</label>
+        <select id="qf_pos" data-filter-key="pos">${opt('', 'any', f.pos)}${['substantiv', 'adjektiv', 'verb', 'adverb', 'preposisjon', 'konjunksjon'].map((p) => opt(p, p, f.pos)).join('')}</select></div>
+      <div class="field"><label for="qf_source_lang">Source language</label>
+        <select id="qf_source_lang" data-filter-key="source_lang">${opt('', 'any', f.source_lang)}${['no', 'de', 'en'].map((l) => opt(l, l, f.source_lang)).join('')}</select></div>
+      <div class="field"><label for="qf_updated_since">Updated since</label>
+        <select id="qf_updated_since" data-filter-key="updated_since">${Object.entries(QUEUE_UPDATED_SINCE_LABELS).map(([v, l]) => opt(v, l, f.updated_since)).join('')}</select></div>
+      <div class="field" style="grid-column: 1 / -1;"><label for="qf_q">Text search — matches text, lemma or translation</label>
+        <input id="qf_q" data-filter-key="q" value="${escapeHtml(f.q || '')}"></div>
+    </div>
+    <div class="eyebrow" style="margin-bottom:7px;">Field presence</div>
+    <div class="field-presence">${presence}</div>
+    <div class="toolbar" style="margin-top:14px; margin-bottom:0;">
+      <label for="qf_sort" style="font-size:12px; color:var(--text-dim);">Order the belt by</label>
+      <select id="qf_sort" style="width:auto;">${Object.entries(QUEUE_SORT_LABELS).map(([v, l]) => opt(v, l, queue.sort || 'updated_asc')).join('')}</select>
+      <span class="inline-note">— stored with the queue, not globally</span>
+    </div>`;
+}
+
+function readQueueEditor() {
+  const editor = document.getElementById('triageQueueEditor');
+  const filters = {};
+  editor.querySelectorAll('[data-filter-key]').forEach((el) => {
+    const value = el.value.trim();
+    if (value) filters[el.dataset.filterKey] = value;
+  });
+  editor.querySelectorAll('[data-presence-field]').forEach((group) => {
+    const pressed = group.querySelector('button[aria-pressed="true"]');
+    const state = pressed ? pressed.dataset.state : 'any';
+    if (state !== 'any') filters[group.dataset.presenceField] = state;
+  });
+  return {
+    name: editor.querySelector('#queueName').value.trim(),
+    filters,
+    sort: editor.querySelector('#qf_sort').value,
+  };
+}
+
+function openTriageQueueEditor() {
+  const queue = activeTriageQueue();
+  if (!queue) return;
+  const editor = document.getElementById('triageQueueEditor');
+  editor.style.display = '';
+  editor.innerHTML = triageQueueEditorHtml(queue);
+
+  editor.querySelectorAll('[data-presence-field] button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      btn.parentElement.querySelectorAll('button').forEach((b) => b.removeAttribute('aria-pressed'));
+      btn.setAttribute('aria-pressed', 'true');
+    });
+  });
+
+  editor.querySelector('#queueSaveBtn').addEventListener('click', async () => {
+    const payload = readQueueEditor();
+    if (!payload.name) { alert('A queue needs a name.'); return; }
+    // A built-in or an ad-hoc set is saved as a NEW queue — built-ins are
+    // synthesised and the server refuses to edit them.
+    const isNew = queue.builtin || queue.adhoc;
+    const { status, body } = isNew
+      ? await api('/api/settings/triage_queues', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      })
+      : await api(`/api/settings/triage_queues/${queue.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+    if (status !== 200 && status !== 201) {
+      alert(`Could not save the queue: ${(body && body.error) || status}`);
+      return;
+    }
+    triageQueueState.queues = body;
+    triageQueueState.adhoc = null;
+    if (isNew) {
+      const saved = body.filter((q) => !q.builtin).slice(-1)[0];
+      if (saved) triageQueueState.selectedId = saved.id;
+    }
+    localStorage.setItem(TRIAGE_QUEUE_STORAGE_KEY, triageQueueState.selectedId);
+    editor.style.display = 'none';
+    await loadTriageQueue();
+  });
+
+  const deleteBtn = editor.querySelector('#queueDeleteBtn');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async () => {
+      if (!confirm(`Delete the queue "${queue.name}"? The notes in it are not affected.`)) return;
+      const { status, body } = await api(`/api/settings/triage_queues/${queue.id}`, { method: 'DELETE' });
+      if (status !== 200) { alert(`Could not delete: ${(body && body.error) || status}`); return; }
+      triageQueueState.queues = body;
+      triageQueueState.selectedId = (body[0] || {}).id || null;
+      localStorage.setItem(TRIAGE_QUEUE_STORAGE_KEY, triageQueueState.selectedId);
+      editor.style.display = 'none';
+      await loadTriageQueue();
+    });
+  }
+}
+
+document.getElementById('triageQueueEditBtn').addEventListener('click', () => {
+  const editor = document.getElementById('triageQueueEditor');
+  if (editor.style.display === 'none') openTriageQueueEditor();
+  else editor.style.display = 'none';
+});
+
+document.getElementById('triageQueueSaveNewBtn').addEventListener('click', () => {
+  const queue = activeTriageQueue();
+  triageQueueState.adhoc = {
+    adhoc: true,
+    name: queue && queue.adhoc ? queue.name : '',
+    filters: (queue && queue.filters) || {},
+    sort: (queue && queue.sort) || 'updated_asc',
+  };
+  renderTriageQueuePicker();
+  openTriageQueueEditor();
 });
 
 async function refreshTriageRailBadge() {
@@ -3244,24 +3571,36 @@ async function refreshTriageRailBadge() {
 refreshTriageRailBadge();
 
 async function renderTriage() {
-  const saved = localStorage.getItem(TRIAGE_ORIGIN_STORAGE_KEY);
-  if (saved) document.getElementById('triageOriginSelect').value = saved;
+  await loadTriageQueues();
+  renderTriageQueuePicker();
   await loadTriageQueue();
 }
 
 async function loadTriageQueue() {
   triageDeferredCount = 0;
-  const origin = triageOrigin();
+  const queue = activeTriageQueue();
+  if (!queue) {
+    triageQueue = [];
+    triageIndex = 0;
+    updateTriageBelt();
+    await showTriageNote();
+    return;
+  }
   // The authoring route is paged now; the belt wants the whole queue, so it
   // asks for the maximum page. A queue larger than that is already past the
   // point where a notch track is rendered (TRIAGE_BELT_TRACK_MAX_NOTCHES).
-  const { status, body } = await api(
-    `/api/notes/authoring${qs({ status: 'draft', origin, sort: 'updated_asc', limit: 200 })}`
-  );
+  const { status, body } = await api(`/api/notes/authoring${qs(triageQueueParams(queue))}`);
   triageQueue = status === 200 ? (body.notes || []) : [];
   triageIndex = 0;
   triageBeltTrackTotal = -1; // force the notch track to rebuild for the new queue
   triageHistoryStack = []; // indices from the previous queue no longer mean anything
+  // Per-queue remaining count (task 3.4). Only the live queue's is known
+  // without fetching every queue, which is the point — the chips show what
+  // they can and omit the rest rather than guessing.
+  if (status === 200) {
+    triageQueueState.counts[queue.id] = (body && body.total) || triageQueue.length;
+  }
+  renderTriageQueuePicker();
   refreshTriageRailBadge();
   updateTriageBelt();
   await showTriageNote();
