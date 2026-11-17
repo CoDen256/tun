@@ -109,7 +109,16 @@ GET https://<lp>.dict.cc/dict/ajax_get_audiorecordings.php
 
 A single line, **space-separated, one token per requested id, in order**. The
 leading `0` consumes the first token. Each token is a `|`-separated list of
-recording keys; an entry with no recordings contributes an **empty** token.
+recording keys.
+
+An entry with no recordings contributes a literal **`0`** token — *not* an
+empty string. (This paragraph first said "an empty token"; corrected
+2026-11-17 by probing a bogus id alongside a real one, which returned
+`'0 0 917015_krautteich_der_lid2_v|...  '`.) The response also ends with a
+**trailing space**. Both details matter for the alignment check: `strip()`
+then `split(" ")` yields exactly `len(ids) + 1` tokens, so a short response
+is a genuine misalignment rather than an artefact of parsing, and the `0`
+token simply parses to an empty lid set — the correct outcome.
 
 A recording key is shaped:
 
