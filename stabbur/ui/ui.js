@@ -846,6 +846,41 @@ const similarNotesState = {
   t: { matches: [], absorb: new Set(), take: {} },
 };
 
+// stabbur-merge-fixes D2/D4: which operation each take performs, stated on
+// the control itself and in the merge summary. Only translations and context
+// are additive; everything else replaces. NOTE the deliberate asymmetry with
+// the enrichment panel, which must not be "made consistent": merge's Take IPA
+// REPLACES, while the suggest panel's Use on an IPA candidate APPENDS. Taking
+// a field from another note is a swap; using a suggestion is assembly.
+const SIMILAR_TAKE_OPS = {
+  translations: 'adds',
+  context_text: 'adds',
+  inflections: 'replaces',
+  transcription: 'replaces',
+  audio_blob: 'replaces',
+  text: 'replaces',
+  lemma: 'replaces',
+};
+
+// What the operation does, spelled out for the merge summary rather than the
+// one-word button label.
+const SIMILAR_TAKE_OP_DETAIL = {
+  translations: 'adds to yours, per language',
+  context_text: 'adds on a new line',
+  inflections: 'replaces yours, and brings its part of speech',
+  transcription: 'replaces yours',
+  audio_blob: 'replaces yours',
+  text: 'replaces yours',
+  lemma: 'replaces yours',
+};
+
+function similarTakeOpHtml(field) {
+  const op = SIMILAR_TAKE_OPS[field];
+  if (!op) return '';
+  const extra = field === 'inflections' ? ' + PoS' : '';
+  return ` <span class="take-op take-op-${op}">${op}${extra}</span>`;
+}
+
 const SIMILAR_FIELD_LABELS = {
   text: 'text',
   lemma: 'lemma',
@@ -976,6 +1011,12 @@ function similarNoteFieldPreviewHtml(m) {
   return lines.join('');
 }
 
+// task 5.1: the goto link is rendered on EVERY row, including a match whose
+// status is "ready" and whose other controls are therefore disabled — those
+// rows were dead ends before. It opens in a new tab (D5) so the operator's
+// queue position and unsaved edits survive going to look at it, and it sits
+// OUTSIDE the row's label element, or clicking it would toggle the absorb
+// checkbox the label wraps.
 function similarNoteRowHtml(m) {
   const reasonsHtml = m.reasons
     .map((r) => `<span class="pill${r.signal === 'spelling' ? ' pill-spelling' : ''}">${escapeHtml(r.label)}</span>`)
@@ -991,12 +1032,17 @@ function similarNoteRowHtml(m) {
   if (m.has_inflections) takeButtons.push(['inflections', 'Take inflections']);
   if (m.has_context) takeButtons.push(['context_text', 'Take context']);
   if (m.has_translations) takeButtons.push(['translations', 'Take translations']);
+  // task 3.1: both already permitted server-side (MERGE_TAKE_FIELDS); the UI
+  // simply never offered them. `text` is always present on a note; `lemma`
+  // only when the match actually has one.
+  takeButtons.push(['text', 'Take text']);
+  if (m.has_lemma) takeButtons.push(['lemma', 'Take lemma']);
 
   const canAbsorb = m.status === 'draft';
   const takeButtonsHtml = takeButtons
     .map(
       ([field, label]) =>
-        `<button type="button" class="btn-ghost similar-take-btn" data-take-field="${field}" data-take-note="${m.id}" ${canAbsorb ? '' : 'disabled title="only a draft can be absorbed"'}>${label}</button>`
+        `<button type="button" class="btn-ghost similar-take-btn" data-take-field="${field}" data-take-note="${m.id}" ${canAbsorb ? '' : 'disabled title="only a draft can be absorbed"'}>${label}${similarTakeOpHtml(field)}</button>`
     )
     .join(' ');
 
@@ -1008,10 +1054,11 @@ function similarNoteRowHtml(m) {
         ${statusPill(m.status)}
         <span class="pill">${originLabel(m)}</span>
       </label>
+      <a class="similar-note-goto" href="#/notes/${m.id}" target="_blank" rel="noopener">Open in new tab ↗</a>
       <div class="similar-note-reasons">${reasonsHtml}</div>
       <div class="similar-note-fields">${similarNoteFieldPreviewHtml(m)}</div>
       <div class="similar-note-actions" data-note-id="${m.id}">${takeButtonsHtml}</div>
-      ${canAbsorb ? '' : '<div class="inline-note">ready — cannot be absorbed by a merge; its fields can’t be taken either, since taking one commits a merge</div>'}
+      ${canAbsorb ? '' : '<div class="inline-note">ready — cannot be absorbed by a merge, and its fields can’t be taken either, since taking one commits a merge. Open it in a new tab to edit it directly.</div>'}
     </div>`;
 }
 
@@ -1128,9 +1175,15 @@ function updateSimilarMergeBar(prefix) {
     const m = state.matches.find((x) => x.id === id);
     return m ? m.text : id;
   });
+  // task 4.2: each staged take names what it will DO, not just where it
+  // comes from — the additive/replacive split is per field and invisible
+  // otherwise, and this is the last screen before a destructive commit.
   const takeBits = Object.entries(state.take).map(([field, sourceId]) => {
     const m = state.matches.find((x) => x.id === sourceId);
-    return `${SIMILAR_FIELD_LABELS[field] || field} from "${m ? m.text : sourceId}"`;
+    const label = SIMILAR_FIELD_LABELS[field] || field;
+    const detail = SIMILAR_TAKE_OP_DETAIL[field];
+    const from = `from "${m ? m.text : sourceId}"`;
+    return detail ? `${label} ${from} (${detail})` : `${label} ${from}`;
   });
   summary.textContent = `Absorb: ${names.join(', ')}` + (takeBits.length ? ` — taking ${takeBits.join(', ')}` : '');
   bar.style.display = 'flex';

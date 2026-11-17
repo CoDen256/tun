@@ -38,29 +38,29 @@ state both loses unsaved edits and alters merge semantics at once.
 
 ## 3. Take buttons for text and lemma
 
-- [ ] 3.1 Add "Take text" and "Take lemma" controls to the similar-note
+- [x] 3.1 Add "Take text" and "Take lemma" controls to the similar-note
       row, shown only when the match has a value for that field.
-- [ ] 3.2 Both behave as replacive takes; no server change is needed, both
+- [x] 3.2 Both behave as replacive takes; no server change is needed, both
       are already in `MERGE_TAKE_FIELDS`.
 
 ## 4. Operation labelling
 
-- [ ] 4.1 Each take control carries its operation inline — *adds* for
+- [x] 4.1 Each take control carries its operation inline — *adds* for
       translations and context, *replaces* for the rest, *replaces + PoS*
       for inflections.
-- [ ] 4.2 The merge bar's summary names, per staged take, what it will do.
-- [ ] 4.3 Keep the labels legible when a control is active/pressed.
+- [x] 4.2 The merge bar's summary names, per staged take, what it will do.
+- [x] 4.3 Keep the labels legible when a control is active/pressed.
 
 ## 5. Open a related note
 
-- [ ] 5.1 Each similar-note row gets a link to that note's editor opening
+- [x] 5.1 Each similar-note row gets a link to that note's editor opening
       in a new tab, with `rel="noopener"`.
-- [ ] 5.2 Present on every row, including `ready` matches whose other
+- [x] 5.2 Present on every row, including `ready` matches whose other
       controls are disabled. Update the "ready — cannot be absorbed" note
       so it no longer reads as a dead end.
 
 ## 6. Specs
 
-- [ ] 6.1 Record the deliberate asymmetry — merge's Take IPA replaces while
+- [x] 6.1 Record the deliberate asymmetry — merge's Take IPA replaces while
       the enrichment panel's Use appends — where a later reader meets it,
       so it is not "made consistent" by a future change.

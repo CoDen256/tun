@@ -42,3 +42,23 @@ exists as its own table (`captures-provenance-and-promote`): `POST
 making `origin=capture` a reachable, referentially-backed state for the first
 time. Relevant docs: `docs/03-data-model.md`, `02-services.md`,
 `06-smia.md`, and **D74** for why `item` became `note`.
+
+## The IPA asymmetry between merge and the suggest panel — do not "fix" it
+
+Two controls touch `transcription` and they behave **deliberately
+differently**. Both are the operator's explicit choice, made in one design
+session (`stabbur-merge-fixes` D2, `stabbur-triage-queues` D6):
+
+- **Merge's "Take IPA" REPLACES.** Taking a field from another note is a
+  swap — you are choosing that note's value over your own.
+- **The suggest panel's "Use" on an IPA candidate APPENDS**, separated by a
+  single space. Using a suggestion is assembly — the operator is building
+  one transcription of a multiword expression out of its tokens, which is
+  why the separator is a space and not `" / "`.
+
+Same column, two gestures, two intents. A change that makes them
+consistent is undoing a decision, not fixing a bug.
+
+Related: part of speech **orders** candidates and never filters them, and
+the ordering is stabbur's own, done on the `context` string smia returns.
+See `smia/CLAUDE.md` for smia's half.

@@ -677,3 +677,30 @@ kbd {
   background: var(--accent-soft); border: 1px solid var(--accent);
   margin-bottom: -6px; /* the merge bar below keeps its own 14px */
 }
+
+/* stabbur-merge-fixes task 4.1/4.3: the operation each take performs, stated
+   on the control. Semantic colours (not the accent) because they mean
+   "safe / destructive", and the `.active` rule below inherits the pressed
+   control's own colour so the label stays legible once staged — a label that
+   vanishes on press would be worse than no label at all. */
+.take-op {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  font-weight: 650;
+}
+.take-op-adds { color: var(--ok); }
+.take-op-replaces { color: var(--err); }
+.similar-note-actions .btn-ghost.active .take-op { color: inherit; opacity: .85; }
+
+/* task 5.1: the go-to-note link. Sits outside the row's <label>, so it never
+   toggles the absorb checkbox, and is present even when every other control
+   on the row is disabled. */
+.similar-note-goto {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--accent-text);
+  text-decoration: none;
+}
+.similar-note-goto:hover { text-decoration: underline; }

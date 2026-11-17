@@ -290,6 +290,10 @@ def _serialize_similar_match(note: Note, signals: dict) -> dict:
         "has_context": note.context_text is not None,
         "has_translations": bool(note.translations),
         "has_pos": note.pos is not None,
+        # stabbur-merge-fixes task 3.1: `lemma` gained a take control, which
+        # is shown only when the match actually has one. `text` needs no
+        # such flag — every note has a text by construction.
+        "has_lemma": note.lemma is not None and note.lemma != "",
         # triage-editor-ux-fixes D4: the actual values, not just presence —
         # reading fields already loaded on `note` to compute the booleans
         # above, not an extra query. The booleans stay too; existing UI
@@ -300,6 +304,7 @@ def _serialize_similar_match(note: Note, signals: dict) -> dict:
         "transcription": note.transcription,
         "audio_blob": note.audio_blob,
         "pos": note.pos,
+        "lemma": note.lemma,
     }
 
 
