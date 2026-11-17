@@ -18,6 +18,13 @@
   --rec-soft: rgba(180,50,46,.12);
   --ref: #0d7f72;
   --usr: #a65a06;
+  /* A contour is drawn ON TOP of its lane's waveform, so it must not share
+     that waveform's hue — the operator reported the two reading as one. The
+     reference lane is teal and its contour indigo; the take lane is amber
+     and its contour rose. Each contour contrasts with the bars beneath it
+     AND with the other contour, in both themes. */
+  --ref-contour: #4f33e0;
+  --usr-contour: #c2185b;
   --wave: #9aa6ab;
   --wave-done: #c3c9cc;
   --radius: 14px;
@@ -42,6 +49,8 @@
     --rec-soft: rgba(255,107,99,.14);
     --ref: #2fd4bd;
     --usr: #f3b53f;
+    --ref-contour: #a99bff;
+    --usr-contour: #ff7aa8;
     --wave: #4d555c;
     --wave-done: #343a40;
   }
@@ -52,6 +61,7 @@
   --accent: #0d7f72; --accent-ink: #ffffff; --accent-soft: rgba(13,127,114,.12);
   --rec: #b4322e; --rec-soft: rgba(180,50,46,.12);
   --ref: #0d7f72; --usr: #a65a06; --wave: #9aa6ab; --wave-done: #c3c9cc;
+  --ref-contour: #4f33e0; --usr-contour: #c2185b;
 }
 :root[data-theme="dark"] {
   --bg: #0b0c0e; --surface: #141619; --surface-2: #1b1e22; --text: #e9ebee;
@@ -59,6 +69,7 @@
   --accent: #2fd4bd; --accent-ink: #06231f; --accent-soft: rgba(47,212,189,.14);
   --rec: #ff6b63; --rec-soft: rgba(255,107,99,.14);
   --ref: #2fd4bd; --usr: #f3b53f; --wave: #4d555c; --wave-done: #343a40;
+  --ref-contour: #a99bff; --usr-contour: #ff7aa8;
 }
 
 * { box-sizing: border-box; }
@@ -246,6 +257,21 @@ h1 { font-size: clamp(1.5rem, 3.4vw, 2.1rem); font-weight: 600; letter-spacing: 
   pointer-events: none; opacity: 0; transition: opacity var(--dur) var(--ease);
 }
 .lanes.contours .wave-wrap .contour-over { opacity: 1; }
+/* While a contour is ACTUALLY drawn over a lane, that lane's bars are pushed
+   back — a slight blur and a drop in opacity — so the line reads cleanly on
+   top. Gated on .has-contour, not merely on contours being enabled: a lane
+   with no contour over it must stay perfectly crisp. `P` brings the waveform
+   straight back to full clarity. It is a state change, not an animation: the
+   reduced-motion rule at the end of this file already collapses the
+   transition, and nothing here moves on its own. */
+.lane .js-wave, .lane .js-userwave {
+  transition: filter var(--dur) var(--ease), opacity var(--dur) var(--ease);
+}
+.lanes.contours .lane.has-contour .js-wave,
+.lanes.contours .lane.has-contour .js-userwave {
+  filter: blur(1.6px);
+  opacity: .52;
+}
 .wave-wrap .playhead {
   position: absolute; top: 0; bottom: 0; width: 2px; left: 0;
   background: var(--accent); opacity: 0; border-radius: 2px;

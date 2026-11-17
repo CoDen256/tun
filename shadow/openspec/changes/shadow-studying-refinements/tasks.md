@@ -30,57 +30,57 @@ sentence, and measuring that against an inaccurate cut bakes the error in.
 - [x] 2.3 Playback and waveform drawing use the speech window; **marking
       done still covers the FULL stored span**. Nothing in `progress.py`
       changes.
-- [ ] 2.4 Trim the learner's take in the browser, on bytes discarded with
+- [x] 2.4 Trim the learner's take in the browser, on bytes discarded with
       the session. No take reaches the server for storage.
-- [ ] 2.5 One setting, default on, governing both lanes, living with the
+- [x] 2.5 One setting, default on, governing both lanes, living with the
       application settings — not in the Study control row and not in the
       phone's `⋯` sheet. Off restores full spans for both.
-- [ ] 2.6 Prove by observation that the done set is identical with trimming
+- [x] 2.6 Prove by observation that the done set is identical with trimming
       on and off (acceptance criteria 12–14).
 
 ## 3. The two lanes
 
-- [ ] 3.1 Replace the single waveform with two stacked, horizontally aligned
+- [x] 3.1 Replace the single waveform with two stacked, horizontally aligned
       lanes — sentence above, take below — sharing one time axis.
-- [ ] 3.2 The take lane keeps its height when empty; the controls beneath it
+- [x] 3.2 The take lane keeps its height when empty; the controls beneath it
       must not move when a take appears or disappears.
-- [ ] 3.3 The live recording waveform occupies the take lane's position,
+- [x] 3.3 The live recording waveform occupies the take lane's position,
       between the sentence lane and the controls.
-- [ ] 3.4 Draw each pitch contour on its own lane; **delete the separate
+- [x] 3.4 Draw each pitch contour on its own lane; **delete the separate
       contour panel**.
-- [ ] 3.5 `P` toggles both contours; the preference survives moving between
+- [x] 3.5 `P` toggles both contours; the preference survives moving between
       sentences.
-- [ ] 3.6 Guard against a late pitch result painting onto a sentence already
+- [x] 3.6 Guard against a late pitch result painting onto a sentence already
       left.
 
 ## 4. Study: legibility, navigation, replay
 
-- [ ] 4.1 Done vs not-done ticks differ in fill treatment, not only
+- [x] 4.1 Done vs not-done ticks differ in fill treatment, not only
       lightness; the current sentence is distinct from both.
-- [ ] 4.2 Chapter stepping on `Shift+←` / `Shift+→`, with controls beside
+- [x] 4.2 Chapter stepping on `Shift+←` / `Shift+→`, with controls beside
       the chapter name. Ends of the book must not break.
-- [ ] 4.3 Pressing play while playing **restarts** the sentence and returns
+- [x] 4.3 Pressing play while playing **restarts** the sentence and returns
       the playhead to 0.
-- [ ] 4.4 `←`/`→` still change sentence without touching any done state.
-- [ ] 4.5 Shortcut overlay lists `P` and the chapter bindings; still no `S`.
+- [x] 4.4 `←`/`→` still change sentence without touching any done state.
+- [x] 4.5 Shortcut overlay lists `P` and the chapter bindings; still no `S`.
 
 ## 5. Explore
 
-- [ ] 5.1 Activating a sentence cell anywhere opens Study on it; the preview
+- [x] 5.1 Activating a sentence cell anywhere opens Study on it; the preview
       control is its own target and does not navigate.
-- [ ] 5.2 Selection moves behind an explicit select mode; chapter-header
+- [x] 5.2 Selection moves behind an explicit select mode; chapter-header
       selection works in either mode.
-- [ ] 5.3 Cells are comfortably hittable at 360 px.
+- [x] 5.3 Cells are comfortably hittable at 360 px.
 
 ## 6. Phone
 
-- [ ] 6.1 Hide the top navigation during study; reveal by a pull from the
+- [x] 6.1 Hide the top navigation during study; reveal by a pull from the
       top edge; auto-hide on the next action.
-- [ ] 6.2 Four equal-size primary buttons — play, record, compare,
+- [x] 6.2 Four equal-size primary buttons — play, record, compare,
       done&next. Play is not larger. The full-width done bar is removed.
-- [ ] 6.3 **Do not render the chapter tick strip at phone viewports.**
+- [x] 6.3 **Do not render the chapter tick strip at phone viewports.**
       Deliberate; see design.md §6.
-- [ ] 6.4 Both lanes present and aligned at phone width; no horizontal
+- [x] 6.4 Both lanes present and aligned at phone width; no horizontal
       scroll at 360 px.
 
 ## 7. Standards and regression

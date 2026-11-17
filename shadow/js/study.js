@@ -162,6 +162,7 @@ const Study = (() => {
     if (!take) {
       host.innerHTML = '';
       Pitch.clear(q('.js-contour-usr'));
+      markContour('.js-lane-usr', false);
       q('.js-userplayhead').style.left = '0%';
       q('.js-userwrap').classList.remove('playing');
       return;
@@ -196,6 +197,19 @@ const Study = (() => {
       b.addEventListener('click', () => go(App.globalIndexOf(k.id), false));
       host.appendChild(b);
     });
+  }
+
+  /** A lane carries .has-contour only while a contour is really drawn over
+      it — that is what pushes its waveform back. */
+  function markContour(laneSel, on) {
+    const el = q(laneSel);
+    if (el) el.classList.toggle('has-contour', !!on);
+  }
+  function clearContours() {
+    Pitch.clear(q('.js-contour-ref'));
+    Pitch.clear(q('.js-contour-usr'));
+    markContour('.lane-ref', false);
+    markContour('.js-lane-usr', false);
   }
 
   /** `P`'s state, applied to both lanes at once (task 3.5). */
@@ -290,8 +304,7 @@ const Study = (() => {
     st.segId = all[i].id;
     st.pos = 0;
     hidePanels();
-    Pitch.clear(q('.js-contour-ref'));
-    Pitch.clear(q('.js-contour-usr'));
+    clearContours();
     const box = q('.js-sentbox');
     if (box && !App.reduced) { box.classList.add('swap'); setTimeout(() => box.classList.remove('swap'), 170); }
     render();
@@ -458,6 +471,7 @@ const Study = (() => {
     q('.js-lane-usr').classList.add('recording');
     q('.js-userwave').innerHTML = '';
     Pitch.clear(q('.js-contour-usr'));
+    markContour('.js-lane-usr', false);
     qa('.js-rec').forEach((b) => b.classList.add('armed'));
     setState('recording');
 
@@ -556,7 +570,7 @@ const Study = (() => {
     stopRecording();
     qa('.js-cmp').forEach((b) => b.classList.add('on'));
     const refSvg = q('.js-contour-ref'), usrSvg = q('.js-contour-usr');
-    Pitch.clear(refSvg); Pitch.clear(usrSvg);
+    clearContours();
 
     // the generation guard: this is the sentence the analysis belongs to
     const mine = st.gen;
@@ -588,8 +602,11 @@ const Study = (() => {
       // Task 3.6 — a late result must never paint onto a sentence already
       // left. Both the generation and the identity have to still match.
       if (mine !== st.gen || mineId !== st.segId) return;
-      const a = Pitch.renderOne(refSvg, r.refPitch, refMs, 'var(--ref)', false);
-      const b = Pitch.renderOne(usrSvg, r.takePitch, takeMs, 'var(--usr)', true);
+      // the CONTOUR hues, deliberately not the lane waveform hues
+      const a = Pitch.renderOne(refSvg, r.refPitch, refMs, 'var(--ref-contour)', false);
+      const b = Pitch.renderOne(usrSvg, r.takePitch, takeMs, 'var(--usr-contour)', true);
+      markContour('.lane-ref', a);
+      markContour('.js-lane-usr', b);
       if (!a && !b) App.toast('No pitch was detected in either clip.');
     } catch (e) {
       if (mine === st.gen) App.toast('Pitch analysis failed: ' + e.message, true);
@@ -744,13 +761,20 @@ const Study = (() => {
   }
 
   // ── the phone's hidden navigation (task 6.1) ───────────────────────────
-  let navTimer = 0;
+  // Revealed by a short downward pull from the top edge, hidden again on the
+  // NEXT action — every bound control calls revealNav(false), and so does a
+  // press anywhere outside the navigation itself. There is deliberately no
+  // idle timer: "the next action" is an observable event, a stopwatch is not.
   function revealNav(on) {
-    document.body.classList.toggle('nav-open', !!on);
-    clearTimeout(navTimer);
-    // auto-hide: on the next action (every bound control calls revealNav(false))
-    // or after a few idle seconds, whichever comes first.
-    if (on) navTimer = setTimeout(() => document.body.classList.remove('nav-open'), 3600);
+    const want = !!on;
+    if (document.body.classList.contains('nav-open') === want) return;
+    document.body.classList.toggle('nav-open', want);
+    if (want) document.addEventListener('pointerdown', outsidePress, true);
+    else document.removeEventListener('pointerdown', outsidePress, true);
+  }
+  function outsidePress(e) {
+    if (e.target.closest && (e.target.closest('.nav') || e.target.closest('.js-pull'))) return;
+    revealNav(false);
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────────
@@ -815,20 +839,40 @@ const Study = (() => {
     }));
     q('.js-scrim').addEventListener('click', closeSheet);
 
-    // the pull-tab: a short downward drag, or a plain tap, reveals the nav
+    // The pull-tab: a short downward drag, or a plain tap, reveals the nav.
+    //
+    // The move and the release are tracked on the WINDOW, not on the tab. A
+    // pull of the 16 px this gesture asks for leaves a 30 px-tall tab almost
+    // immediately — a finger does, and so does an automated drag — and a
+    // listener bound to the tab alone simply stops hearing the gesture it is
+    // supposed to recognise. Confirmed by instrumenting the element: only
+    // the pointerdown ever arrived.
     const pull = q('.js-pull');
     if (pull) {
       let py = null;
-      pull.addEventListener('pointerdown', (e) => { py = e.clientY; });
-      pull.addEventListener('pointermove', (e) => {
-        if (py !== null && e.clientY - py > 16) { revealNav(true); py = null; }
-      });
-      pull.addEventListener('pointerup', () => {
+      const onMove = (e) => {
+        if (py === null) return;
+        if (e.clientY - py > 16) { revealNav(true); endGesture(); }
+      };
+      const onUp = () => {
+        // a tap with no travel toggles, so the tab works for a thumb that
+        // does not drag and for the keyboard
         if (py !== null) revealNav(!document.body.classList.contains('nav-open'));
+        endGesture();
+      };
+      function endGesture() {
         py = null;
+        window.removeEventListener('pointermove', onMove, true);
+        window.removeEventListener('pointerup', onUp, true);
+        window.removeEventListener('pointercancel', endGesture, true);
+      }
+      pull.addEventListener('pointerdown', (e) => {
+        py = e.clientY;
+        window.addEventListener('pointermove', onMove, true);
+        window.addEventListener('pointerup', onUp, true);
+        window.addEventListener('pointercancel', endGesture, true);
       });
-      pull.addEventListener('pointercancel', () => { py = null; });
-      // keyboard and synthetic activation still work
+      // keyboard activation (Enter/Space) reports no pointer at all
       pull.addEventListener('click', (e) => {
         if (e.detail === 0) revealNav(!document.body.classList.contains('nav-open'));
       });
