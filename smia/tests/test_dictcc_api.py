@@ -558,3 +558,224 @@ def test_translate_from_en_or_de_applies_no_variant_fan_out():
         DictccApiTranslateAdapter().lookup({"text": "komme", "from": "de", "to": "nb"})
 
     assert seen == ["komme"]
+
+
+# ---------------------------------------------------------------------------
+# dictcc-parsing-fixes: two-gender article slots, per-entry audio
+# ---------------------------------------------------------------------------
+
+# Captured live during the design session against
+# `app_translations.php?s=do&dir=2&lp=ENNO`: "do" is a TWO-GENDER noun
+# ("en do" AND "et do"), and dict.cc writes both genders' alternatives into
+# every slot, the article slot included. The old `seg.split(maxsplit=1)`
+# read article="en" and sg_indef="/ et do".
+_DO_RESPONSE = {
+    "translations": [
+        {"id": 100, "term1": "loo [Br.] [coll.]", "term2": "do {n}", "entry_type": "noun",
+         "subj_ids": "", "vt_usage": 0, "sort_num": 16},
+    ],
+    "dir": 2,
+    "inflections": (
+        '<tr title="article indefinite.sg | definite.sg | indefinite.pl | definite.pl">'
+        '<td valign="top"></td><td valign="top"><b>NOUN</b>&nbsp;&nbsp;</td>'
+        '<td width="95%" > en / et do <span class="infl_pipe">|</span> doen / doet '
+        '<span class="infl_pipe">|</span> doer / do '
+        '<span class="infl_pipe">|</span> doene / doa </td></tr>'
+    ),
+    "inflections_repl": "",
+    "inflections_info": "<br><b>NOUN</b> &nbsp; article indefinite.sg | definite.sg | indefinite.pl | definite.pl",
+}
+
+
+def test_inflect_two_gender_noun_keeps_both_articles_in_one_candidate():
+    with patch("adapters.dictcc_api.requests.get", return_value=_mock_response(_DO_RESPONSE)):
+        result = DictccApiInflectAdapter().lookup({"word": "do", "lang": "nb"})
+
+    # ONE candidate, never one per gender (design D1).
+    assert len(result["candidates"]) == 1
+    assert result["candidates"] == [{
+        "lemma": "do", "pos": "substantiv",
+        "paradigm": {
+            "article": "en/et",
+            "sg_indef": "do",
+            "sg_def": "doen / doet",
+            "pl_indef": "doer / do",
+            "pl_def": "doene / doa",
+        },
+    }]
+    assert "/ et do" not in str(result)
+
+
+def test_inflect_single_gender_noun_article_split_unchanged():
+    # Byte-identical to the pre-change output for a one-article slot.
+    with patch("adapters.dictcc_api.requests.get", return_value=_mock_response(_KALV_RESPONSE)):
+        result = DictccApiInflectAdapter().lookup({"word": "kalv", "lang": "nb"})
+    assert result["candidates"] == [{
+        "lemma": "kalv", "pos": "substantiv",
+        "paradigm": {"article": "en", "sg_indef": "kalv", "sg_def": "kalven",
+                     "pl_indef": "kalver", "pl_def": "kalvene"},
+    }]
+
+
+def test_inflect_german_two_slot_table_byte_identical_to_pre_change():
+    # The German 2-slot path: each slot carries its own article word, only
+    # the first slot's is kept as canonical.
+    with patch("adapters.dictcc_api.requests.get", return_value=_mock_response(_HAUS_RESPONSE)):
+        result = DictccApiInflectAdapter().lookup({"word": "Haus", "lang": "de"})
+    assert result["candidates"] == [{
+        "lemma": "Haus", "pos": "substantiv",
+        "paradigm": {"article": "das", "sg_indef": "Haus", "pl_indef": "Häuser"},
+    }]
+
+
+def test_inflect_unidentifiable_article_run_leaves_whole_segment_and_no_article():
+    # An article-marked slot whose leading words are not article forms:
+    # the whole segment stays in the inflected slot, with NO article — a
+    # visible gap, never a guessed split (task 1.2).
+    response = {
+        "translations": [],
+        "dir": 2,
+        "inflections": (
+            '<tr title="article indefinite.sg | definite.sg">'
+            '<td valign="top"></td><td valign="top"><b>NOUN</b>&nbsp;&nbsp;</td>'
+            '<td width="95%" > sju&nbsp;ting <span class="infl_pipe">|</span> tingen </td></tr>'
+        ),
+        "inflections_repl": "", "inflections_info": "",
+    }
+    with patch("adapters.dictcc_api.requests.get", return_value=_mock_response(response)):
+        result = DictccApiInflectAdapter().lookup({"word": "ting", "lang": "nb"})
+    paradigm = result["candidates"][0]["paradigm"]
+    assert paradigm["sg_indef"] == "sju ting"
+    assert "article" not in paradigm
+
+
+# Two entries of different parts of speech for one Norwegian word; the
+# FIRST has no human recording at all (task 2.6).
+_MULTI_ENTRY_RESPONSE = {
+    "translations": [
+        {"id": 100, "term1": "loo", "term2": "do {n}", "entry_type": "noun",
+         "subj_ids": "", "vt_usage": 0, "sort_num": 16},
+        {"id": 200, "term1": "to do", "term2": "å do", "entry_type": "verb",
+         "subj_ids": "", "vt_usage": 0, "sort_num": 24},
+    ],
+    "dir": 2, "inflections": "", "inflections_repl": "", "inflections_info": "",
+}
+
+
+def _audio_response(content: bytes | None):
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    if content is None:
+        resp.headers = {"Content-Type": "text/plain"}
+        resp.content = b"no audio"
+    else:
+        resp.headers = {"Content-Type": "audio/mpeg"}
+        resp.content = content
+    return resp
+
+
+def test_tts_walks_every_entry_so_a_later_entry_audio_is_reachable():
+    # Entry 100 has NO human recording; entry 200 does. Reading only
+    # translations[0] yielded no human audio at all.
+    audio_calls = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "app_translations" in url:
+            return _mock_response(_MULTI_ENTRY_RESPONSE)
+        audio_calls.append(params)
+        human = "_rec_ip" in params["lang"]
+        if human and params["id"] == 100:
+            return _audio_response(None)
+        kind = "human" if human else "synthetic"
+        return _audio_response(f"mp3-{params['id']}-{kind}".encode())
+
+    with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
+        result = DictccApiTtsAdapter().lookup({"text": "do", "lang": "nb"})
+
+    assert {p["id"] for p in audio_calls} == {100, 200}
+    humans = [c for c in result["candidates"] if c["source"] == "human"]
+    assert humans, "a later entry's recording must still be returned"
+    assert all(c["context"] for c in humans)
+
+
+def test_tts_candidates_carry_their_entry_context():
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "app_translations" in url:
+            return _mock_response(_MULTI_ENTRY_RESPONSE)
+        return _audio_response(f"mp3-{params['lp']}-{params['id']}-{params['lang']}".encode())
+
+    with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
+        result = DictccApiTtsAdapter().lookup({"text": "do", "lang": "nb"})
+
+    contexts = {c["context"] for c in result["candidates"]}
+    # The bracketed part-of-speech tag leads, same convention as
+    # /translations; the Norwegian-side phrase follows. That convention
+    # echoes the source field RAW when its normalised form equals the
+    # query — `display_dictcc_phrase` (which strips the `å ` infinitive
+    # marker and `{n}`-style annotations) is applied only on the branch
+    # where the source differs from the query. So "å do" stays "å do"
+    # here, exactly as /translations renders it.
+    assert "[noun] do {n}" in contexts
+    assert "[verb] å do" in contexts
+    assert all(c["context"].startswith("[") for c in result["candidates"])
+    # No candidate is withheld on the basis of part of speech.
+    assert len({c["sha256"] for c in result["candidates"]}) == len(result["candidates"])
+
+
+def test_tts_identical_bytes_across_entries_dedupe_to_one_candidate():
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "app_translations" in url:
+            return _mock_response(_MULTI_ENTRY_RESPONSE)
+        # every entry, every voice, every pair returns the same bytes
+        return _audio_response(b"identical-mp3")
+
+    with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
+        result = DictccApiTtsAdapter().lookup({"text": "do", "lang": "nb"})
+
+    assert len(result["candidates"]) == 1
+
+
+def test_tts_one_failing_entry_is_skipped_not_fatal():
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "app_translations" in url:
+            return _mock_response(_MULTI_ENTRY_RESPONSE)
+        if params["id"] == 100:
+            raise requests.RequestException("boom")
+        return _audio_response(f"mp3-{params['lp']}-{params['lang']}".encode())
+
+    with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
+        result = DictccApiTtsAdapter().lookup({"text": "do", "lang": "nb"})
+
+    assert result["candidates"]
+
+
+def test_tts_every_entry_failing_raises():
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "app_translations" in url:
+            return _mock_response(_MULTI_ENTRY_RESPONSE)
+        raise requests.RequestException("boom")
+
+    with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
+        with pytest.raises(ProviderLookupError):
+            DictccApiTtsAdapter().lookup({"text": "do", "lang": "nb"})
+
+
+def test_tts_no_pos_filtering_is_applied():
+    # A `pos` key on the input is ignored outright — part of speech is an
+    # ordering signal owned by the caller; smia never filters on it and no
+    # pos parameter reaches dict.cc.
+    seen_params = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        seen_params.append(params)
+        if "app_translations" in url:
+            return _mock_response(_MULTI_ENTRY_RESPONSE)
+        return _audio_response(f"mp3-{params['lp']}-{params['id']}-{params['lang']}".encode())
+
+    with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
+        filtered = DictccApiTtsAdapter().lookup({"text": "do", "lang": "nb", "pos": "substantiv"})
+    with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
+        unfiltered = DictccApiTtsAdapter().lookup({"text": "do", "lang": "nb"})
+
+    assert filtered == unfiltered
+    assert all("pos" not in p for p in seen_params)

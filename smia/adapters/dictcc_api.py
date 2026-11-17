@@ -146,6 +146,40 @@ def _get_json(params: dict) -> dict:
         raise ProviderLookupError(f"dict.cc request failed: {exc}") from exc
 
 
+# The article words dict.cc writes into an article-marked slot, for the
+# three languages this adapter covers. Used to find the *leading run* of
+# article forms in a slot, which can be several alternatives joined by "/"
+# — a two-gender Norwegian noun ("en / et do") writes both genders into
+# the article slot, and the old "first whitespace token" read turned the
+# singular indefinite of "do" into the string "/ et do"
+# (dictcc-parsing-fixes).
+_ARTICLE_WORDS = ("en", "et", "ei", "der", "die", "das")
+_ARTICLE_RUN_RE = re.compile(
+    r"^\s*((?:%s)(?:\s*/\s*(?:%s))*)\s+(\S.*)$" % ("|".join(_ARTICLE_WORDS), "|".join(_ARTICLE_WORDS)),
+    re.IGNORECASE,
+)
+
+
+def _split_article(seg: str) -> tuple[str | None, str]:
+    """Split an article-marked noun slot into (article, inflected form).
+
+    Every article form the slot carries is lifted, joined with "/" as
+    dict.cc joins alternatives: `"en / et do"` -> `("en/et", "do")`,
+    `"en kalv"` -> `("en", "kalv")`, `"das Haus"` -> `("das", "Haus")`.
+    When no article run can be identified — or nothing would be left for
+    the inflected form — returns `(None, seg)` so the caller keeps the
+    whole segment and sets no article.
+    """
+    m = _ARTICLE_RUN_RE.match(seg)
+    if not m:
+        return None, seg
+    article = re.sub(r"\s*/\s*", "/", m.group(1).strip())
+    rest = m.group(2).strip()
+    if not article or not rest:
+        return None, seg
+    return article, rest
+
+
 def _parse_inflection_blocks(inflections: str) -> list[dict]:
     if not inflections:
         return []
@@ -228,17 +262,21 @@ def _parse_inflection_blocks(inflections: str) -> list[dict]:
                 continue
 
             if pos_tag == "NOUN" and has_article:
-                tokens = seg.split(maxsplit=1)
-                if len(tokens) > 1:
+                article, rest = _split_article(seg)
+                if article is None:
+                    # No article run could be identified — the whole
+                    # segment stays in the inflected slot and no
+                    # `article` is set. A visible gap, never a guessed
+                    # split (dictcc-parsing-fixes D1).
+                    paradigm[key] = rest
+                else:
                     # The first slot's article is the canonical one (it's
                     # what the Norwegian shape's single `article` key
                     # means too); a later slot's own article word (e.g.
                     # German plural "die") is discarded, not stored.
                     if "article" not in paradigm:
-                        paradigm["article"] = tokens[0]
-                    paradigm[key] = tokens[1]
-                else:
-                    paradigm[key] = seg
+                        paradigm["article"] = article
+                    paradigm[key] = rest
             elif pos_tag == "VERB" and key == "infinitiv":
                 paradigm[key] = re.sub(r'^å\s+', '', seg)
             else:
@@ -247,6 +285,26 @@ def _parse_inflection_blocks(inflections: str) -> list[dict]:
         candidates.append({"pos": _POS_MAP[pos_tag], "paradigm": paradigm})
 
     return candidates
+
+
+def _entry_context(entry_type: str | None, source: str, query_norm: str) -> str | None:
+    """The bracketed `[type] phrase` context string, built identically for
+    `/translations` and `/tts` candidates so one parse rule in the caller
+    covers both kinds (dictcc-parsing-fixes D2).
+
+    `source` is the dict.cc field on the *queried* language's side — its
+    own notion of which exact phrase was matched. It is only surfaced
+    stripped of the infinitive marker when it differs from the bare query
+    word; a direct word match echoes the raw field (annotations and all).
+    """
+    parts = []
+    if entry_type:
+        parts.append(f"[{entry_type}]")
+    if normalize_dictcc_phrase(source) != query_norm:
+        parts.append(display_dictcc_phrase(source))
+    elif source:
+        parts.append(source)
+    return " ".join(parts) if parts else None
 
 
 class DictccApiTranslateAdapter:
@@ -304,21 +362,9 @@ class DictccApiTranslateAdapter:
             # the same translation shouldn't repeat).
             texts = list(dict.fromkeys(groups[(entry_type, source)]))
             candidate = {"text": "/".join(texts)}
-            context_parts = []
-            if entry_type:
-                context_parts.append(f"[{entry_type}]")
-            # Only surface the source phrase when it's more than the bare
-            # Only surface the source phrase when it's more than the bare
-            # query word (stripped of dict.cc's own grammar annotations
-            # like "{m}" and the verb infinitive marker "å ") — a direct
-            # word match doesn't need its own text echoed back.
-            if normalize_dictcc_phrase(source) != query_norm:
-                context_parts.append(display_dictcc_phrase(source))
-            elif source:
-                context_parts.append(f"{source}")
-
-            if context_parts:
-                candidate["context"] = " ".join(context_parts)
+            context = _entry_context(entry_type, source, query_norm)
+            if context:
+                candidate["context"] = context
             candidates.append(candidate)
         return {"candidates": candidates}
 
@@ -386,47 +432,104 @@ class DictccApiTtsAdapter:
         # self-lookup applies no variant fan-out.
         variants = query_variants(word) if lang == "nb" else [word]
         triples = [(lp, dir_, variant) for lp, dir_ in pairs for variant in variants]
+        voice = _VOICE_FOR_LANG.get(lang)
+        query_norm = normalize_dictcc_phrase(word)
 
         candidates: list[dict] = []
         seen_sha: set[str] = set()
+        # Distinctness is per entry id, not per entry_type (dictcc-parsing-
+        # fixes D3) — several entries can share a type and still be
+        # different senses with different recordings. The id is scoped to
+        # the pair's own dataset, so the key carries `lp` too.
+        seen_entries: set[tuple[str, object]] = set()
         errors: list[ProviderLookupError] = []
         with session_scope() as db:
             for lp, dir_, variant in triples:
+                # Which `term` field holds the queried language's own
+                # phrase is fixed by the pair's ORDER, not by `dir` — and
+                # a self-lookup's `dir` doesn't describe the query's side
+                # anyway (`_LANG_SELF_LOOKUP_PAIRS` picks any valid
+                # combination). `lp` is two 2-letter codes concatenated.
+                source_field = "term1" if lp[:2] == dictcc_lang else "term2"
                 try:
                     data = _get_json({"s": variant, "dir": dir_, "lp": lp})
-                    translations = data.get("translations", [])
-                    if not translations:
-                        continue
-                    entry_id = translations[0]["id"]
-
-                    human = self._fetch_audio(
-                        {"id": entry_id, "lang": f"{dictcc_lang}_rec_ip", "lp": lp, "text": variant}
-                    )
-                    if human is not None:
-                        sha256 = store(db, human, "audio/mpeg")
-                        if sha256 not in seen_sha:
-                            seen_sha.add(sha256)
-                            candidates.append({"sha256": sha256, "source": "human"})
-
-                    voice = _VOICE_FOR_LANG.get(lang)
-                    if voice:
-                        synthetic = self._fetch_audio({"id": entry_id, "lang": dictcc_lang, "lp": lp, "voice": voice})
-                        if synthetic is not None:
-                            sha256 = store(db, synthetic, "audio/mpeg")
-                            # Content-addressed identity (audio_cache.store)
-                            # is enough dedup — two combinations resolving
-                            # to byte-identical audio collapse naturally.
-                            if sha256 not in seen_sha:
-                                seen_sha.add(sha256)
-                                candidates.append({"sha256": sha256, "source": "synthetic", "voice": voice})
                 except ProviderLookupError as exc:
                     errors.append(exc)
                     continue
+
+                translations = data.get("translations", [])
+                if not translations:
+                    continue
+
+                # EVERY entry is asked for audio, not just translations[0]
+                # — a word whose first entry carries no human recording
+                # used to yield no audio at all even when a later entry,
+                # often the sense actually meant, had one.
+                entry_errors: list[ProviderLookupError] = []
+                entry_attempts = 0
+                for entry in translations:
+                    entry_id = entry.get("id")
+                    entry_key = (lp, entry_id)
+                    if entry_id is None or entry_key in seen_entries:
+                        continue
+                    seen_entries.add(entry_key)
+                    entry_attempts += 1
+                    context = _entry_context(
+                        entry.get("entry_type") or None, entry.get(source_field) or "", query_norm
+                    )
+                    try:
+                        self._collect_entry_audio(
+                            db, candidates, seen_sha,
+                            entry_id=entry_id, lp=lp, variant=variant,
+                            dictcc_lang=dictcc_lang, voice=voice, context=context,
+                        )
+                    except ProviderLookupError as exc:
+                        # An entry whose audio request fails is skipped,
+                        # not fatal.
+                        entry_errors.append(exc)
+                        continue
+
+                # The triple only counts as failed when every entry under
+                # it failed — the pre-change rule, which wrapped the whole
+                # triple in one try, read the same way.
+                if entry_attempts and len(entry_errors) == entry_attempts:
+                    errors.append(entry_errors[0])
 
         if errors and len(errors) == len(triples):
             raise errors[0]
 
         return {"candidates": candidates}
+
+    def _collect_entry_audio(
+        self, db, candidates: list[dict], seen_sha: set[str], *,
+        entry_id, lp: str, variant: str, dictcc_lang: str,
+        voice: str | None, context: str | None,
+    ) -> None:
+        human = self._fetch_audio(
+            {"id": entry_id, "lang": f"{dictcc_lang}_rec_ip", "lp": lp, "text": variant}
+        )
+        if human is not None:
+            sha256 = store(db, human, "audio/mpeg")
+            if sha256 not in seen_sha:
+                seen_sha.add(sha256)
+                candidate = {"sha256": sha256, "source": "human"}
+                if context:
+                    candidate["context"] = context
+                candidates.append(candidate)
+
+        if voice:
+            synthetic = self._fetch_audio({"id": entry_id, "lang": dictcc_lang, "lp": lp, "voice": voice})
+            if synthetic is not None:
+                sha256 = store(db, synthetic, "audio/mpeg")
+                # Content-addressed identity (audio_cache.store) is enough
+                # dedup — two combinations resolving to byte-identical
+                # audio collapse naturally.
+                if sha256 not in seen_sha:
+                    seen_sha.add(sha256)
+                    candidate = {"sha256": sha256, "source": "synthetic", "voice": voice}
+                    if context:
+                        candidate["context"] = context
+                    candidates.append(candidate)
 
     def _fetch_audio(self, params: dict) -> bytes | None:
         try:

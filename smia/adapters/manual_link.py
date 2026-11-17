@@ -28,7 +28,12 @@ all.
   hitting filmot's CAPTCHA on the search UI and fell back to a bare
   `/search/<query>` path with no `/1?gridView=1&lang=` suffix). `<query>`
   is the text with spaces as `+` (`quote_plus`, not `quote`); `<code>` uses
-  the same `nb`->`no` mapping as Forvo.
+  the same `nb`->`no` mapping as Forvo. A query of two or more
+  whitespace-separated tokens is wrapped in literal double quotes before
+  encoding, so filmot searches the phrase and not its separate words
+  (`https://filmot.com/search/%22fastsatt+av%22/1?...`); a single word is
+  left unquoted. `hideDeleted=1` is deliberately NOT added
+  (dictcc-parsing-fixes D4).
 """
 
 from __future__ import annotations
@@ -50,7 +55,18 @@ def _forvo_url(text: str, lang: str) -> str:
 
 def _filmot_url(text: str, lang: str) -> str:
     code = _MANUAL_LINK_LANG_CODES.get(lang, lang)
-    return f"https://filmot.com/search/{quote_plus(text)}/1?gridView=1&lang={code}"
+    return f"https://filmot.com/search/{quote_plus(_filmot_query(text))}/1?gridView=1&lang={code}"
+
+
+def _filmot_query(text: str) -> str:
+    """A multiword query is wrapped in literal double quotes so filmot
+    searches the phrase rather than its separate words — the encoded form
+    carries `%22` at both ends. A single word is left alone: quoting it
+    changes nothing about what filmot matches while making the visible URL
+    noisier (dictcc-parsing-fixes D4)."""
+    if len(text.split()) > 1:
+        return f'"{text}"'
+    return text
 
 
 class ManualLinkAdapter:

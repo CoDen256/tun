@@ -50,14 +50,30 @@ def test_forvo_url_encodes_special_characters():
 
 
 def test_filmot_url_construction():
+    # A single word is NOT quoted — this URL is unchanged by
+    # dictcc-parsing-fixes.
     assert _filmot_url("hus", "nb") == "https://filmot.com/search/hus/1?gridView=1&lang=no"
+    assert '"' not in _filmot_url("hus", "nb")
+    assert "%22" not in _filmot_url("hus", "nb")
 
 
-def test_filmot_url_joins_multi_word_query_with_plus():
+def test_filmot_url_quotes_multi_word_query_as_a_phrase():
+    # dictcc-parsing-fixes: two or more whitespace-separated tokens are
+    # wrapped in literal double quotes before percent-encoding, so filmot
+    # searches the phrase rather than its separate words.
     assert (
         _filmot_url("jeg er norsk", "nb")
-        == "https://filmot.com/search/jeg+er+norsk/1?gridView=1&lang=no"
+        == "https://filmot.com/search/%22jeg+er+norsk%22/1?gridView=1&lang=no"
     )
+
+
+def test_filmot_url_phrase_carries_percent22_at_both_ends():
+    url = _filmot_url("fastsatt av", "nb")
+    path = url.split("/search/", 1)[1].split("/1?", 1)[0]
+    assert path.startswith("%22")
+    assert path.endswith("%22")
+    # hideDeleted is deliberately not added (D4).
+    assert "hideDeleted" not in url
 
 
 def test_manual_link_adapter_returns_empty_candidates_and_url():

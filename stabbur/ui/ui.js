@@ -982,9 +982,9 @@ function similarNoteRowHtml(m) {
     .join(' ');
 
   // No standalone "Take PoS" button — a pos is only ever useful here as the
-  // shape a taken inflections paradigm renders into, and onSimilarTakeClick
-  // already stages it automatically alongside "Take inflections" when
-  // needed (never a separate operator decision).
+  // shape a taken inflections paradigm renders into, and "Take inflections"
+  // brings the source's pos with it unconditionally, server-side
+  // (stabbur-merge-fixes D2). Never a separate operator decision.
   const takeButtons = [];
   if (m.has_audio) takeButtons.push(['audio_blob', 'Take audio']);
   if (m.has_transcription) takeButtons.push(['transcription', 'Take IPA']);
@@ -1091,32 +1091,15 @@ function onSimilarTakeClick(prefix, noteId, btn) {
   const matchId = btn.dataset.takeNote;
   if (state.take[field] === matchId) {
     delete state.take[field];
-    // Undoing an inflections take also undoes the pos it auto-staged —
-    // but only the pairing this take created, never a pos the operator
-    // separately chose to take themselves.
-    if (field === 'inflections' && state._autoPosFor === matchId && state.take.pos === matchId) {
-      delete state.take.pos;
-      delete state._autoPosFor;
-    }
   } else {
     state.take[field] = matchId;
     state.absorb.add(matchId);
-    // Inflection field shapes are keyed by pos (INFLECTION_SHAPES) — taking
-    // inflections while the note being edited has no pos of its own leaves
-    // nothing to render them into, so the take would silently look like it
-    // did nothing. Auto-pairs a "take pos" from the same match in that case
-    // only (never overrides a pos the operator already staged to take from
-    // elsewhere), so the fields actually show up once committed.
-    if (field === 'inflections' && !state.take.pos) {
-      const ids = posFieldIdsFor(prefix);
-      const currentPos = getPosValue(ids.select, ids.custom);
-      const match = state.matches.find((m) => m.id === matchId);
-      if (!currentPos && match && match.pos) {
-        state.take.pos = matchId;
-        state._autoPosFor = matchId;
-      }
-    }
   }
+  // No pos pairing here any more (stabbur-merge-fixes D2): taking
+  // inflections now always carries the source's pos across, and the server
+  // does that as part of the take itself. The old client-side auto-pair —
+  // staged only when the survivor had no pos of its own, with
+  // `_autoPosFor` bookkeeping to undo it again — is gone with it.
   syncSimilarNoteControls(prefix);
   updateSimilarMergeBar(prefix);
 }

@@ -34,6 +34,16 @@ MERGE_TAKE_FIELDS = (
     "audio_sel_ms",
 )
 
+# stabbur-merge-fixes D2: a take is either additive or replacive, fixed per
+# field. `translations` and `context_text` add — the survivor's own value is
+# never discarded, because combining two drafts' knowledge is the point of a
+# merge. Everything else replaces: an inflection paradigm is one coherent
+# object (unioning it slot-by-slot across two notes describes no actual
+# word), and the remaining fields are single-valued. Declared here so the
+# distinction is readable without tracing the merge loop; the loop below is
+# what enforces it.
+MERGE_ADDITIVE_FIELDS = ("translations", "context_text")
+
 # stabbur-merge-fixes D1: the fields the merge request may carry as the
 # survivor's current (unsaved) form state. The same set `patch_note` accepts
 # — a merge saves the open form exactly the way Save would, then applies the
@@ -193,6 +203,26 @@ def _merge_translation_lists(existing: list | None, incoming: list | None, merge
         else:
             merged.append({"lang": lang, "text": text})
     return merged
+
+
+# stabbur-merge-fixes D3: context is sentence-length, so the two sentences
+# join on a single newline — `" / "` would build one unreadable line and a
+# blank line wastes height in the tallest field on the card. An exact
+# (trimmed) duplicate is skipped: appending the same sentence twice is pure
+# noise. Compared line by line, so absorbing a third note that repeats a
+# sentence an earlier merge already brought across doesn't re-add it either.
+# Near-duplicates are deliberately left alone — deciding two sentences are
+# "the same enough" is a judgement this route has no business making
+# silently.
+def _merge_context_texts(existing: str | None, incoming: str | None) -> str | None:
+    if incoming is None or not incoming.strip():
+        return existing
+    if existing is None or not existing.strip():
+        return incoming
+    incoming_trimmed = incoming.strip()
+    if incoming_trimmed in {line.strip() for line in existing.split("\n")}:
+        return existing
+    return f"{existing.rstrip()}\n{incoming_trimmed}"
 
 
 def _validate_survivor_values(values: dict, survivor: Note) -> str | None:
@@ -724,10 +754,25 @@ def register_notes_routes(app):
                     # values — stripped here too, so a merge never reintroduces
                     # it onto the survivor.
                     value = _normalize_inflections(value)
-                elif field == "translations" and source is not survivor:
-                    merge_mode = settings_store.read_scalars(db).get("translation_merge_mode", "append")
-                    value = _merge_translation_lists(survivor.translations, value, merge_mode)
+                elif field in MERGE_ADDITIVE_FIELDS and source is not survivor:
+                    if field == "translations":
+                        merge_mode = settings_store.read_scalars(db).get("translation_merge_mode", "append")
+                        value = _merge_translation_lists(survivor.translations, value, merge_mode)
+                    else:
+                        value = _merge_context_texts(survivor.context_text, value)
                 setattr(survivor, field, value)
+                if field == "inflections" and source is not survivor and source.pos is not None:
+                    # D2: the paradigm's part of speech comes with it, always
+                    # — INFLECTION_SHAPES is keyed by pos, so a paradigm
+                    # landing on a note with a different pos renders into
+                    # fields that do not exist and the take looks like it did
+                    # nothing. Unconditional, and server-side, so the client
+                    # has no pairing bookkeeping of its own to get wrong.
+                    # A source with no pos of its own is the one exception:
+                    # there is nothing to carry, and clearing the survivor's
+                    # pos would leave the paradigm just taken with no shape
+                    # to render into at all — the opposite of the point.
+                    survivor.pos = source.pos
 
             # Hard-deleted, never tombstoned — every absorbed note was just
             # asserted to be a draft above, and a draft has never been

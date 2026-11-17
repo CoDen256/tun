@@ -26,13 +26,13 @@ state both loses unsaved edits and alters merge semantics at once.
 
 ## 2. Additive vs replacive takes
 
-- [ ] 2.1 `context_text` merges instead of replacing: append on a single
+- [x] 2.1 `context_text` merges instead of replacing: append on a single
       newline, skip an exact (trimmed) duplicate.
-- [ ] 2.2 `inflections` always carries the source's `pos` across. Remove
+- [x] 2.2 `inflections` always carries the source's `pos` across. Remove
       the conditional auto-pair and its `_autoPosFor` bookkeeping from the
       client — the pairing is now unconditional and belongs server-side.
-- [ ] 2.3 Leave `translations` merging exactly as it is.
-- [ ] 2.4 Tests: context append, context duplicate skipped, inflections
+- [x] 2.3 Leave `translations` merging exactly as it is.
+- [x] 2.4 Tests: context append, context duplicate skipped, inflections
       replace wholesale, pos follows inflections even when the survivor
       already had one.
 
