@@ -69,6 +69,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import threading
 import time
 import uuid
 
@@ -90,10 +91,31 @@ SWEEP_INTERVAL_SEC = 900      # the janitor's period; shadow runs one process
 PROBE_TIMEOUT_SEC = 60
 CUT_TIMEOUT_SEC = 120         # a sentence: seconds of audio, a fraction of a
                               # second of work
-CHUNK_CUT_TIMEOUT_SEC = 3600  # a chapter: a real re-encode, ~20-30 s for 45
-                              # minutes. It runs in the background, so the
-                              # ceiling is generous on purpose — a chunk that
-                              # times out is a chapter that cannot be studied.
+CHUNK_CUT_TIMEOUT_SEC = 3600  # a chapter, IN THE BACKGROUND: a real re-encode,
+                              # ~20-30 s for 45 minutes. Nobody is waiting on
+                              # this thread, so the ceiling is generous on
+                              # purpose — a chunk that times out is a chapter
+                              # that cannot be studied.
+CHUNK_REQUEST_CUT_TIMEOUT_SEC = 90
+                              # the same chapter on the SYNCHRONOUS request
+                              # path, where a web worker IS being held.
+                              # Confirmed defect, 2026-11-17: the background
+                              # ceiling was used here too, so a handful of
+                              # cold chapter entries could occupy every
+                              # worker for an hour each while the gateway
+                              # timed the operator out and ffmpeg kept
+                              # running. 90 s is ~3x the measured 45-minute
+                              # encode; past it the request gives up and says
+                              # "still being prepared", and the BACKGROUND
+                              # pre-cut that the endpoint started first keeps
+                              # going, so the retry is cheap and finite.
+CHUNK_PARTIAL_GRACE_SEC = 1800
+                              # a `.partial` chunk encode whose file has not
+                              # been written to for this long is abandoned.
+                              # ffmpeg writes continuously, so a live encode's
+                              # mtime is always fresh; only a killed one goes
+                              # quiet. Well past CHUNK_CUT_TIMEOUT_SEC/2 and
+                              # well past any real encode's stall.
 
 # The precise cut (shadow-studying-refinements task 1.1).
 #
@@ -122,6 +144,21 @@ TRIM_MIN_SPEECH_MS = 300      # a window shorter than this is not believed;
 
 class AudioError(RuntimeError):
     """ffmpeg/ffprobe refused to do the thing, with its own message attached."""
+
+
+class AudioTimeout(AudioError):
+    """The tool ran past its ceiling. Distinguished from a refusal because a
+    timeout is "not yet", which the caller may want to answer differently
+    from "never" — see `ChunkPending`."""
+
+
+class ChunkPending(AudioError):
+    """The chapter's chunk is not ready and this caller's budget ran out.
+
+    Not a failure: the encode is still running (or is queued behind the
+    background pre-cut) and a later request will find the file. The chunk
+    endpoint turns this into 503 + Retry-After rather than an error.
+    """
 
 
 # ── Paths ───────────────────────────────────────────────────────────────
@@ -161,8 +198,8 @@ def chunk_path(media_id: int, segment_id: int, start_ms: int, end_ms: int) -> pa
 
     Putting start/end in the name is the whole invalidation strategy: a
     boundary edit changes the key, so the old file is simply never asked
-    for again. It is garbage, not a stale answer, and `drop_chunk_cache`
-    clears it. Correctness does not depend on remembering to invalidate.
+    for again. It is garbage, not a stale answer, and `drop_chunks_for`
+    (plus the janitor's `purge_stale_chunks`) clears it. Correctness does not depend on remembering to invalidate.
 
     CHUNK_CUT_VERSION extends that to a change in HOW the bytes are made.
     The boundaries of a chapter cut before 2026-11-16 are still valid, so
@@ -174,29 +211,94 @@ def chunk_path(media_id: int, segment_id: int, start_ms: int, end_ms: int) -> pa
             / f'ch-{CHUNK_CUT_VERSION}-{int(segment_id)}-{int(start_ms)}-{int(end_ms)}.opus')
 
 
-def drop_chunk_cache(media_id: int) -> None:
-    shutil.rmtree(chunks_dir(media_id), ignore_errors=True)
+def drop_chunks_for(media_id: int, segment_ids) -> int:
+    """Delete the cached chunks of THESE chapter segments, and no others.
+
+    CORRECTION, 2026-11-17. This was `drop_chunk_cache(media_id)`, an
+    `rmtree` of the whole book's `chunks/`, and its justification was that
+    a re-cut cost milliseconds. It does not any more: a chapter is a
+    precise re-encode, ~20-30 s. Wiping the book therefore threw away
+    every OTHER split config's chapters as well — configs whose boundaries
+    had not moved at all — and charged the operator 20-30 s per chapter to
+    rebuild them.
+
+    Narrowing it is safe for exactly the reason `chunk_path` gives: the
+    filename carries the segment id, the boundaries and the cut version, so
+    a chunk whose key changed is already unaddressable. Deleting is only
+    ever about reclaiming disk, so deleting LESS can never serve a stale
+    answer — it can only leave garbage, which `purge_stale_chunks` sweeps.
+    """
+    removed = 0
+    for segment_id in {int(s) for s in segment_ids}:
+        for chunk in chunks_dir(media_id).glob(f'ch-*-{segment_id}-*.opus'):
+            try:
+                chunk.unlink()
+                removed += 1
+            except OSError:
+                pass
+    return removed
 
 
-def purge_stale_chunks() -> int:
-    """Delete every cached chunk not cut by the CURRENT cut (task 1.4).
+def purge_stale_chunks(live_chunk_names: dict[int, set[str]] | None = None) -> int:
+    """Reclaim cache files nothing can address any more (task 1.4).
 
     Addressability alone already makes a stale chunk harmless — nothing
     asks for it. This only reclaims the disk, and it is a sweep rather
     than a migration because the cache is pure derivation: being wrong
     here costs a re-cut, never a wrong answer.
+
+    THREE kinds of rubbish, and the last two were found on 2026-11-17:
+
+      * a chunk cut by an OLDER cut version — the pre-2026-11-16 stream
+        copy. Unaddressable because the version is in the name.
+      * a chunk of a segment id that NO LONGER EXISTS. Re-analysis deletes
+        a config's rows and writes new ones with new ids, so a pre-cut
+        that was still running wrote chunks for ids that are now gone;
+        they carry the CURRENT version prefix, so the rule above skips
+        them forever. `live_chunk_names` maps media_id to the set of
+        filenames that are still addressable; passing None means "the
+        caller could not reach the database", and then this rule is
+        skipped entirely rather than guessed at (D157 — a janitor must
+        survive a dead database). A file younger than ORPHAN_GRACE_SEC is
+        never judged dead: the live set was read before this glob, so a
+        chapter created in between would otherwise lose its fresh chunk.
+      * an abandoned `.partial` encode. `cut` writes
+        `<name>.<pid>-<hex>.partial` and renames it into place, so a
+        pre-cut killed by a container restart — a realistic 20-minute
+        window per analysis now — leaves one behind that the old
+        `ch-*.opus` glob could not even see.
     """
     removed = 0
     books = AUDIO_ROOT / 'books'
     if not books.is_dir():
         return 0
     prefix = f'ch-{CHUNK_CUT_VERSION}-'
+    now = time.time()
     for chunk in books.glob('*/chunks/ch-*.opus'):
-        if chunk.name.startswith(prefix):
+        dead = not chunk.name.startswith(prefix)
+        if not dead and live_chunk_names is not None:
+            try:
+                media_id = int(chunk.parent.parent.name)
+            except ValueError:
+                continue
+            live = live_chunk_names.get(media_id)
+            if live is not None and chunk.name not in live:
+                try:
+                    dead = chunk.stat().st_mtime < now - ORPHAN_GRACE_SEC
+                except OSError:
+                    dead = False
+        if not dead:
             continue
         try:
             chunk.unlink()
             removed += 1
+        except OSError:
+            pass
+    for partial in books.glob('*/chunks/*.partial'):
+        try:
+            if partial.stat().st_mtime < now - CHUNK_PARTIAL_GRACE_SEC:
+                partial.unlink()
+                removed += 1
         except OSError:
             pass
     return removed
@@ -270,7 +372,7 @@ def _run(args: list[str], timeout: int) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
-        raise AudioError(f'{args[0]} timed out after {timeout}s') from exc
+        raise AudioTimeout(f'{args[0]} timed out after {timeout}s') from exc
     except FileNotFoundError as exc:
         raise AudioError(f'{args[0]} is not installed in this image') from exc
 
@@ -386,19 +488,69 @@ def cut(media_id: int, start_ms: int, end_ms: int, dest: pathlib.Path,
     return dest
 
 
-def chapter_chunk(media_id: int, segment_id: int, start_ms: int, end_ms: int) -> pathlib.Path:
-    """The cached chapter chunk.
+# One lock per chunk FILE, so the background pre-cutter and a live request
+# never encode the same chapter twice at once. Before this (2026-11-17) they
+# could, and the request path's own deadline made it likely: the endpoint
+# starts the pre-cut and then cuts the same chapter itself. `cut` is still
+# safe under concurrency — each writer has its own `.partial` — but doing a
+# 25-second encode twice on one box is exactly the cost this change exists to
+# avoid. The dict only grows by chapter count and holds nothing but Locks.
+_chunk_locks_guard = threading.Lock()
+_chunk_locks: dict[str, threading.Lock] = {}
+
+
+def _chunk_lock(key: str) -> threading.Lock:
+    with _chunk_locks_guard:
+        lock = _chunk_locks.get(key)
+        if lock is None:
+            lock = _chunk_locks[key] = threading.Lock()
+        return lock
+
+
+def _chunk_ready(path: pathlib.Path) -> bool:
+    try:
+        return path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def chapter_chunk(media_id: int, segment_id: int, start_ms: int, end_ms: int,
+                  *, budget_sec: int = CHUNK_CUT_TIMEOUT_SEC) -> pathlib.Path:
+    """The cached chapter chunk, within a wall-clock budget.
 
     Normally already on disk: `shadowing.py` pre-cuts a configuration's
     chapters in the background as soon as its analysis finishes, which is
     what buys accuracy without making the operator wait for an encode on
     entering a chapter. Cutting here is the fallback for a chapter entered
     before the pre-cut reached it — slower, never wrong, never an error.
+
+    `budget_sec` bounds the WHOLE wait, including time spent queued behind
+    whoever is already encoding this exact chunk. The background pre-cutter
+    passes the generous CHUNK_CUT_TIMEOUT_SEC; the request path passes
+    CHUNK_REQUEST_CUT_TIMEOUT_SEC, because a web worker is being held.
+    Running out raises `ChunkPending`, which means "not yet", not "no" —
+    the encode that is already running carries on.
     """
     path = chunk_path(media_id, segment_id, start_ms, end_ms)
-    if path.exists() and path.stat().st_size > 0:
+    if _chunk_ready(path):
         return path
-    return cut(media_id, start_ms, end_ms, path, timeout=CHUNK_CUT_TIMEOUT_SEC)
+    deadline = time.monotonic() + max(1, int(budget_sec))
+    pending = ChunkPending('this chapter is still being prepared — '
+                           'it is cut in the background; try again shortly')
+    if not _chunk_lock(str(path)).acquire(timeout=max(0.1, deadline - time.monotonic())):
+        raise pending
+    try:
+        if _chunk_ready(path):      # whoever held the lock just finished it
+            return path
+        remaining = int(deadline - time.monotonic())
+        if remaining < 1:
+            raise pending
+        try:
+            return cut(media_id, start_ms, end_ms, path, timeout=remaining)
+        except AudioTimeout as exc:
+            raise pending from exc
+    finally:
+        _chunk_lock(str(path)).release()
 
 
 # ── Silence analysis — ranges only, never audio ─────────────────────────
@@ -559,7 +711,8 @@ def speech_window(start_ms: int, end_ms: int, silences) -> tuple[int, int]:
     return speech_start, speech_end
 
 
-def local_speech_window(media_id: int, start_ms: int, end_ms: int) -> tuple[int, int]:
+def local_speech_window(media_id: int, start_ms: int, end_ms: int,
+                        min_silence_ms: int) -> tuple[int, int]:
     """`speech_window` for ONE span, when no analysis silence list exists.
 
     Used after a manual split or merge, where the new boundary was chosen
@@ -567,6 +720,22 @@ def local_speech_window(media_id: int, start_ms: int, end_ms: int) -> tuple[int,
     span alone — seconds of audio, not a book — and feeds the result to the
     same rule, so a manually-edited sentence trims by exactly the same
     arithmetic as an analysed one.
+
+    CORRECTION, 2026-11-17. "Exactly the same arithmetic" was a claim this
+    function did not keep, and the claim was the bug rather than the code
+    around it. Two differences, both now closed:
+
+      * it ran `silencedetect` at `d=TRIM_MIN_SILENCE_MS` (120 ms) while
+        analysis runs it at the CONFIG'S sentence threshold (400 ms by
+        default). A split sentence therefore saw — and trimmed — short
+        edge pauses that an analysed one never even detected, which is the
+        opposite of conservative at onsets. The threshold is now passed in
+        by the caller, from the config that owns the row.
+      * it probed the span ALONE, so a boundary silence was clipped to the
+        half that fell inside the span and could fail its own length test.
+        The probe now extends `min_silence_ms` past each edge — still
+        under a second of extra audio — so an edge silence is measured at
+        its true length exactly as the whole-book pass measured it.
 
     Degrades to the full span on any ffmpeg trouble: no trim is always a
     correct answer, and this must never be able to fail a split.
@@ -577,14 +746,17 @@ def local_speech_window(media_id: int, start_ms: int, end_ms: int) -> tuple[int,
     src = master_path(media_id)
     if not src.exists():
         return start_ms, end_ms
-    coarse_ms = max(0, start_ms - CUT_SEEK_PAD_MS)
+    pad_ms = max(0, int(min_silence_ms))
+    probe_start_ms = max(0, start_ms - pad_ms)
+    probe_end_ms = end_ms + pad_ms          # past EOF is harmless: -t just ends
+    coarse_ms = max(0, probe_start_ms - CUT_SEEK_PAD_MS)
     try:
         proc = _run(['ffmpeg', '-nostdin',
                      '-ss', f'{coarse_ms / 1000:.3f}', '-i', str(src),
-                     '-ss', f'{(start_ms - coarse_ms) / 1000:.3f}',
-                     '-t', f'{(end_ms - start_ms) / 1000:.3f}',
+                     '-ss', f'{(probe_start_ms - coarse_ms) / 1000:.3f}',
+                     '-t', f'{(probe_end_ms - probe_start_ms) / 1000:.3f}',
                      '-af', f'silencedetect=noise={SILENCE_NOISE_DB}dB:'
-                            f'd={TRIM_MIN_SILENCE_MS / 1000:.3f}',
+                            f'd={max(int(min_silence_ms), 1) / 1000:.3f}',
                      '-f', 'null', '-'],
                     CUT_TIMEOUT_SEC)
     except AudioError:
@@ -592,6 +764,6 @@ def local_speech_window(media_id: int, start_ms: int, end_ms: int) -> tuple[int,
     if proc.returncode != 0:
         return start_ms, end_ms
     # The sub-cut's clock starts at 0; shift it back onto the book's.
-    local = _parse_silences(proc.stderr or '', duration_ms=end_ms - start_ms)
+    local = _parse_silences(proc.stderr or '', duration_ms=probe_end_ms - probe_start_ms)
     return speech_window(start_ms, end_ms,
-                         [(a + start_ms, b + start_ms) for a, b in local])
+                         [(a + probe_start_ms, b + probe_start_ms) for a, b in local])

@@ -104,10 +104,13 @@ _BUSY_UPLOAD_STATES = ('transcoding',)
 _inflight_lock = threading.Lock()
 _inflight_transcode_ids: set[str] = set()
 _inflight_analysis_ids: set[int] = set()
-# Configs whose chapter chunks are being pre-cut right now (task 1.3). Not a
-# database state: a pre-cut produces nothing but cache files, so losing the
-# knowledge in a restart costs a re-cut and never a wrong answer.
-_inflight_prechunk_ids: set[int] = set()
+# Configs whose chapter chunks are being pre-cut right now (task 1.3), by id,
+# each mapped to the RUN that is doing it. Not a database state: a pre-cut
+# produces nothing but cache files, so losing the knowledge in a restart
+# costs a re-cut and never a wrong answer. The value is a run object rather
+# than a bare flag so a superseded pre-cut can be cancelled — see
+# _PrechunkRun.
+_inflight_prechunks: dict[int, '_PrechunkRun'] = {}
 
 
 def _inflight_transcodes() -> set[str]:
@@ -427,6 +430,35 @@ def reconcile_working_states() -> int:
     return touched
 
 
+def _live_chunk_names() -> dict[int, set[str]] | None:
+    """Every chunk filename that is still addressable, per book.
+
+    A chapter row's id and boundaries ARE the cache key, so this is simply
+    the set of names `audio.chunk_path` would mint for the rows that exist
+    right now — across every config of every book, because another config's
+    chapters are just as live as this one's. Books with no chapters map to
+    an empty set, so their leftovers are reclaimed too; a book the database
+    does not know about is absent from the dict and is left alone.
+
+    Returns None if the database cannot be read. The janitor must survive a
+    dead database without killing the process (D157), and a sweep that
+    cannot tell live from dead must not guess.
+    """
+    try:
+        with get_sessionmaker()() as db:
+            live: dict[int, set[str]] = {
+                int(row.id): set() for row in db.query(ShadowingMedia.id).all()}
+            rows = (db.query(ShadowingSegment.media_id, ShadowingSegment.id,
+                             ShadowingSegment.start_ms, ShadowingSegment.end_ms)
+                    .filter(ShadowingSegment.kind == 'chapter').all())
+        for media_id, segment_id, start_ms, end_ms in rows:
+            live.setdefault(int(media_id), set()).add(
+                audio.chunk_path(media_id, segment_id, start_ms, end_ms).name)
+        return live
+    except Exception:  # noqa: BLE001 — no database means no opinion, not a crash
+        return None
+
+
 def start_janitor() -> None:
     """One daemon thread, started by scripts/bootstrap.py after the port is
     bound: it reconciles stuck working states and sweeps abandoned uploads
@@ -462,12 +494,15 @@ def start_janitor() -> None:
             except Exception as exc:  # noqa: BLE001
                 print(f'shadow — upload sweep failed: {exc}', flush=True)
             try:
-                # Chunks cut the OLD, inaccurate way (task 1.4). They are
-                # already unreachable — the cut version is part of the cache
-                # key — so this only reclaims the disk, and it is in the
-                # janitor rather than in a migration because the chunk cache
-                # is derivation, not data.
-                n = audio.purge_stale_chunks()
+                # Chunks cut the OLD, inaccurate way (task 1.4), and chunks
+                # of chapters that no longer exist. Both are already
+                # unreachable — the cut version and the segment id are part
+                # of the cache key — so this only reclaims the disk, and it
+                # is in the janitor rather than in a migration because the
+                # chunk cache is derivation, not data. `_live_chunk_names`
+                # returns None when the database cannot be read, and then
+                # the second rule is skipped rather than guessed (D157).
+                n = audio.purge_stale_chunks(_live_chunk_names())
                 if n:
                     print(f'shadow — purged {n} chapter chunk(s) cut the old, '
                           f'inaccurate way', flush=True)
@@ -988,6 +1023,16 @@ def duplicate_config(config_id):
     Chapters are copied first so a sentence's `parent_segment_id` can be
     remapped to the copy's chapter rather than pointing back at the
     original's.
+
+    The SPEECH WINDOW is copied too (confirmed defect, 2026-11-17: it was
+    not). It is a pure function of the span and the silence pass that
+    produced it, so the copy's correct window is the source's, byte for
+    byte. Leaving it NULL meant the duplicate played and drew untrimmed
+    everywhere while the Settings switch still read "On", and the only way
+    to get a window back was a re-analysis — which destroys exactly the
+    hand-fixed boundaries the duplicate was made to preserve. Copying a
+    window is not copying a boundary: start_ms/end_ms are carried across
+    unchanged either way, and doneness is not in a config at all.
     """
     data = request.get_json(silent=True) or {}
     with get_sessionmaker()() as db:
@@ -1005,7 +1050,8 @@ def duplicate_config(config_id):
             row = ShadowingSegment(
                 media_id=s.media_id, config_id=copy.id, kind=s.kind,
                 parent_segment_id=id_map.get(s.parent_segment_id),
-                order_index=s.order_index, start_ms=s.start_ms, end_ms=s.end_ms, text=s.text)
+                order_index=s.order_index, start_ms=s.start_ms, end_ms=s.end_ms, text=s.text,
+                speech_start_ms=s.speech_start_ms, speech_end_ms=s.speech_end_ms)
             db.add(row)
             db.flush()
             id_map[s.id] = row.id
@@ -1098,6 +1144,13 @@ def _analysis_job(config_id: int) -> None:
 
         with get_sessionmaker()() as db:
             config = db.get(ShadowingSplitConfig, config_id)
+            # The ids about to stop existing. Their chunks — and ONLY
+            # theirs — become garbage; another config's chapters over the
+            # same book are untouched by this analysis and must keep the
+            # ~20-30 s each that their chunks cost to make.
+            superseded_chapter_ids = [
+                row.id for row in db.query(ShadowingSegment)
+                .filter_by(config_id=config_id, kind='chapter').all()]
             db.query(ShadowingSegment).filter_by(config_id=config_id).delete()
             db.flush()
             chapters = []
@@ -1129,14 +1182,18 @@ def _analysis_job(config_id: int) -> None:
             config.analysis_state = 'idle'
             config.analysis_error = None
             db.commit()
-        # Chapter boundaries moved, so every cached chunk is keyed on a
-        # boundary that no longer exists. Dropping it is free (task 2.2).
-        audio.drop_chunk_cache(media_id)
+        # This config's chapter rows are gone, so their chunks are keyed on
+        # segment ids that no longer exist. Only those are dropped: the book
+        # may hold other configs whose chapters did not move, and wiping the
+        # whole book's cache (which this did until 2026-11-17) charged them
+        # a full re-encode each for nothing.
+        audio.drop_chunks_for(media_id, superseded_chapter_ids)
         # ...and immediately cut the new ones, in the background. A precise
         # cut is a real re-encode (task 1.1); doing it here is what keeps
         # "enter a chapter" instant without going back to a cut that starts
-        # at the wrong millisecond.
-        _start_prechunk(config_id)
+        # at the wrong millisecond. SUPERSEDE: any pre-cut still running for
+        # this config is working on the ids deleted above.
+        _start_prechunk(config_id, supersede=True)
     except Exception as exc:  # noqa: BLE001
         with get_sessionmaker()() as db:
             config = db.get(ShadowingSplitConfig, config_id)
@@ -1153,7 +1210,39 @@ def _analysis_job(config_id: int) -> None:
 # Chapter chunks — the phone's unit of download (design.md §3)
 # ══════════════════════════════════════════════════════════════════════════
 
-def _start_prechunk(config_id: int) -> None:
+class _PrechunkRun:
+    """One background pre-cut of one config's chapters.
+
+    It exists so a pre-cut can be SUPERSEDED. The old code de-duplicated on
+    `config_id` alone, and re-analysis reuses the same config id, so a
+    second analysis two minutes into a 45-chapter pre-cut returned from
+    `_start_prechunk` immediately and left the first thread encoding
+    chapters of segment ids it had just deleted — into files nothing could
+    ever address — while the NEW boundaries got no pre-cut at all, and
+    every chapter entered meanwhile paid a full synchronous re-encode
+    because the same guard swallowed the warm fallback too. That is the
+    exact case split configs exist for, and it defeated design.md §1's one
+    guarantee.
+
+    `cancelled` is checked between chapters, not inside one: a chapter
+    already being encoded is allowed to finish (≤30 s) rather than be
+    killed mid-write, and the at most one stale file that leaves is
+    reclaimed by `purge_stale_chunks`, which since 2026-11-17 also deletes
+    chunks of segment ids that no longer exist.
+
+    `priority` lets a cold chapter REQUEST jump the queue of an already
+    running pre-cut, so the chapter the operator is actually waiting on is
+    not cut forty-fourth.
+    """
+
+    def __init__(self, config_id: int):
+        self.config_id = config_id
+        self.cancelled = False
+        self.priority: list[int] = []
+
+
+def _start_prechunk(config_id: int, *, supersede: bool = False,
+                    first_segment_id: int | None = None) -> None:
     """Cut every chapter of a config in the background (task 1.3).
 
     WHY THIS EXISTS AT ALL. A chapter chunk used to be a stream copy:
@@ -1168,19 +1257,35 @@ def _start_prechunk(config_id: int) -> None:
 
     Everything here is cache. It takes no row, writes no state, and a crash
     mid-way costs exactly one re-cut.
+
+    `supersede=True` means the config's boundaries have just CHANGED: any
+    run still going is cutting rows that no longer exist and is cancelled.
+    `supersede=False` keeps the de-duplication — a warm fallback must not
+    restart a healthy pre-cut — but may push `first_segment_id` to the
+    front of its queue.
     """
     with _inflight_lock:
-        if config_id in _inflight_prechunk_ids:
+        run = _inflight_prechunks.get(config_id)
+        if run is not None and not supersede:
+            if first_segment_id is not None and first_segment_id not in run.priority:
+                run.priority.insert(0, int(first_segment_id))
             return
-        _inflight_prechunk_ids.add(config_id)
+        if run is not None:
+            run.cancelled = True
+        run = _PrechunkRun(config_id)
+        if first_segment_id is not None:
+            run.priority.append(int(first_segment_id))
+        _inflight_prechunks[config_id] = run
     try:
-        threading.Thread(target=_prechunk_job, args=(config_id,), daemon=True).start()
+        threading.Thread(target=_prechunk_job, args=(run,), daemon=True).start()
     except Exception:  # noqa: BLE001 — a thread that never started is not in flight
         with _inflight_lock:
-            _inflight_prechunk_ids.discard(config_id)
+            if _inflight_prechunks.get(config_id) is run:
+                del _inflight_prechunks[config_id]
 
 
-def _prechunk_job(config_id: int) -> None:
+def _prechunk_job(run: _PrechunkRun) -> None:
+    config_id = run.config_id
     try:
         with get_sessionmaker()() as db:
             config = db.get(ShadowingSplitConfig, config_id)
@@ -1190,10 +1295,28 @@ def _prechunk_job(config_id: int) -> None:
             chapters = sorted(
                 [(c.id, c.start_ms, c.end_ms) for c in config.segments if c.kind == 'chapter'],
                 key=lambda c: c[1])
-        # One chapter at a time, in reading order: the operator starts at the
-        # front of the book, and a single worker leaves the box responsive
-        # for the request that is actually being waited on.
-        for segment_id, start_ms, end_ms in chapters:
+        pending = {c[0]: (c[1], c[2]) for c in chapters}
+        order = [c[0] for c in chapters]
+        # One chapter at a time, in reading order unless a request asked for
+        # one by name: the operator starts at the front of the book, and a
+        # single worker leaves the box responsive for the request that is
+        # actually being waited on.
+        while True:
+            with _inflight_lock:
+                if run.cancelled:
+                    return
+                segment_id = None
+                while run.priority and segment_id is None:
+                    candidate = run.priority.pop(0)
+                    if candidate in pending:
+                        segment_id = candidate
+                if segment_id is None:
+                    while order and order[0] not in pending:
+                        order.pop(0)
+                    if not order:
+                        return
+                    segment_id = order.pop(0)
+            start_ms, end_ms = pending.pop(segment_id)
             try:
                 audio.chapter_chunk(media_id, segment_id, start_ms, end_ms)
             except audio.AudioError:
@@ -1204,7 +1327,8 @@ def _prechunk_job(config_id: int) -> None:
         pass
     finally:
         with _inflight_lock:
-            _inflight_prechunk_ids.discard(config_id)
+            if _inflight_prechunks.get(config_id) is run:
+                del _inflight_prechunks[config_id]
 
 
 @shadowing_bp.route('/api/v1/shadowing/chapters/<int:segment_id>/manifest')
@@ -1264,11 +1388,16 @@ def chapter_chunk(segment_id):
     cut version, so neither a boundary edit nor a change in how the bytes
     are made can serve a stale chunk: either one addresses a different file.
 
-    When the chunk is NOT there yet it is cut here, synchronously. That is
-    the slow path and it is deliberate — entering a chapter the pre-cut has
-    not reached must work rather than fail. The rest of the config is then
-    warmed in the background, which is also how a book analysed before this
-    change acquires its chunks.
+    When the chunk is NOT there yet it is cut here, synchronously, under a
+    MUCH smaller ceiling than the background one (90 s, not an hour). That
+    is the slow path and it is deliberate — entering a chapter the pre-cut
+    has not reached must work rather than fail — but a web worker is being
+    held, so the wait is bounded and a request that runs out answers 503
+    `state: preparing` with a Retry-After. The background pre-cut, started
+    before the attempt and told to take this chapter first, carries on
+    regardless, so a retry is cheap and finite. Warming the rest of the
+    config is also how a book analysed before this change acquires its
+    chunks.
     """
     with get_sessionmaker()() as db:
         chapter = db.get(ShadowingSegment, segment_id)
@@ -1280,12 +1409,26 @@ def chapter_chunk(segment_id):
             return jsonify({'error': 'this book has no stored audio'}), 409
     cached = audio.chunk_path(media_id, segment_id, start_ms, end_ms)
     warm = not (cached.exists() and cached.stat().st_size > 0)
+    if warm:
+        # BEFORE the synchronous attempt, and naming this chapter: the
+        # background run is what finishes the job if this request gives up,
+        # and `chapter_chunk`'s per-chunk lock means the two never encode
+        # the same chapter twice.
+        _start_prechunk(config_id, first_segment_id=segment_id)
     try:
-        path = audio.chapter_chunk(media_id, segment_id, start_ms, end_ms)
+        path = audio.chapter_chunk(media_id, segment_id, start_ms, end_ms,
+                                   budget_sec=audio.CHUNK_REQUEST_CUT_TIMEOUT_SEC)
+    except audio.ChunkPending as exc:
+        # Not an error: a bounded wait expired while the encode continues
+        # in the background. Confirmed defect, 2026-11-17 — this path used
+        # the BACKGROUND ceiling (an hour), so consecutive cold chapters
+        # could hold every web worker while the gateway timed the operator
+        # out and ffmpeg kept running.
+        resp = jsonify({'error': str(exc), 'state': 'preparing'})
+        resp.headers['Retry-After'] = '15'
+        return resp, 503
     except audio.AudioError as exc:
         return jsonify({'error': str(exc)}), 503
-    if warm:
-        _start_prechunk(config_id)
     return send_file(path, mimetype='audio/ogg', conditional=True)
 
 
@@ -1463,7 +1606,18 @@ def patch_shadowing_segment(segment_id):
 def split_shadowing_segment(segment_id):
     """Split at `atMs`. Doneness is PRESERVED for free: both halves lie
     inside the span that was covered, so both read as done without touching
-    the progress record at all."""
+    the progress record at all.
+
+    THREE STEPS, AND THE ORDER IS THE POINT (confirmed defect, 2026-11-17):
+    read and validate, then measure the two speech windows with ffmpeg
+    OUTSIDE any transaction, then apply. The windows used to be measured
+    after `seg.end_ms = at_ms` was staged and before the commit, which held
+    write locks on `shadowing_segments` for up to two ffmpeg timeouts —
+    four minutes — while nothing but a cache-like derivation was happening.
+    The third step re-reads the row and refuses with 409 if the span moved
+    underneath it, because a window measured over a span that no longer
+    exists must not be written.
+    """
     data = request.get_json(silent=True) or {}
     at_ms = data.get('atMs')
     if at_ms is None:
@@ -1475,6 +1629,28 @@ def split_shadowing_segment(segment_id):
             return _not_found()
         if not (seg.start_ms < at_ms < seg.end_ms):
             return jsonify({'error': 'atMs must fall strictly inside the segment'}), 400
+        kind, media_id = seg.kind, seg.media_id
+        span = (seg.start_ms, seg.end_ms)
+        # The threshold the CONFIG was analysed with, so a manual split
+        # measures silence by the same rule the analysis did (finding 12).
+        min_silence_ms = seg.config.sentence_silence_ms
+
+    first_window = second_window = (None, None)
+    if kind == 'sentence':
+        # The new boundary was chosen by the operator, not by a silence, so
+        # there is no analysis silence list that describes it. Both halves
+        # get a fresh window measured over their own span. NO TRANSACTION IS
+        # OPEN HERE. STORED SPANS ARE NOT TOUCHED — only the window.
+        first_window = audio.local_speech_window(media_id, span[0], at_ms, min_silence_ms)
+        second_window = audio.local_speech_window(media_id, at_ms, span[1], min_silence_ms)
+
+    with get_sessionmaker()() as db:
+        seg = db.get(ShadowingSegment, segment_id)
+        if seg is None:
+            return _not_found()
+        if (seg.start_ms, seg.end_ms) != span:
+            return jsonify({'error': 'this segment changed while the split was being '
+                                     'prepared — reload and try again'}), 409
         siblings = db.query(ShadowingSegment).filter(
             ShadowingSegment.config_id == seg.config_id, ShadowingSegment.kind == seg.kind,
             ShadowingSegment.parent_segment_id == seg.parent_segment_id,
@@ -1489,19 +1665,16 @@ def split_shadowing_segment(segment_id):
         seg.end_ms = at_ms
         db.add(new_seg)
         if seg.kind == 'sentence':
-            # The new boundary was chosen by the operator, not by a silence,
-            # so there is no analysis silence list that describes it. Both
-            # halves get a fresh window measured over their own span.
-            # STORED SPANS ARE NOT TOUCHED — only the window.
-            seg.speech_start_ms, seg.speech_end_ms = audio.local_speech_window(
-                seg.media_id, seg.start_ms, seg.end_ms)
-            new_seg.speech_start_ms, new_seg.speech_end_ms = audio.local_speech_window(
-                new_seg.media_id, new_seg.start_ms, new_seg.end_ms)
+            seg.speech_start_ms, seg.speech_end_ms = first_window
+            new_seg.speech_start_ms, new_seg.speech_end_ms = second_window
         db.commit()
         db.refresh(seg)
         db.refresh(new_seg)
         if seg.kind == 'chapter':
-            audio.drop_chunk_cache(seg.media_id)
+            # Only THIS chapter's chunk: its end moved, so its key changed.
+            # The new half has a new id and no chunk yet, and every other
+            # chapter of every config over this book is untouched.
+            audio.drop_chunks_for(seg.media_id, [seg.id])
         ranges = _ranges_for(db, seg.media_id, seg.media.user_id)
         return jsonify({'first': _segment_json(seg, ranges),
                         'second': _segment_json(new_seg, ranges)})
@@ -1530,30 +1703,63 @@ def _renumber_children(db, parent: ShadowingSegment) -> int:
 def merge_shadowing_segments():
     """Merge two adjacent segments. Doneness becomes CONJUNCTIVE for free:
     the merged span reads as done only if the union of ranges covers all of
-    it, which happens exactly when both halves were done."""
+    it, which happens exactly when both halves were done.
+
+    Like split, and for the same reason: validate, then measure the merged
+    span's speech window with ffmpeg OUTSIDE any transaction, then apply
+    and re-check that neither row moved meanwhile.
+    """
     data = request.get_json(silent=True) or {}
     id_a, id_b = data.get('segmentIdA'), data.get('segmentIdB')
     if not id_a or not id_b:
         return jsonify({'error': 'segmentIdA and segmentIdB are required'}), 400
+
+    def _pair_error(a, b):
+        if a.config_id != b.config_id or a.kind != b.kind \
+                or a.parent_segment_id != b.parent_segment_id:
+            return ('segments must be the same kind and same parent '
+                    'within one split config')
+        first, second = (a, b) if a.start_ms <= b.start_ms else (b, a)
+        if second.order_index != first.order_index + 1:
+            return 'segments must be adjacent'
+        return None
+
     with get_sessionmaker()() as db:
         a, b = db.get(ShadowingSegment, id_a), db.get(ShadowingSegment, id_b)
         if a is None or b is None:
             return _not_found()
-        if a.config_id != b.config_id or a.kind != b.kind or a.parent_segment_id != b.parent_segment_id:
-            return jsonify({'error': 'segments must be the same kind and same parent '
-                                     'within one split config'}), 400
+        bad = _pair_error(a, b)
+        if bad:
+            return jsonify({'error': bad}), 400
         first, second = (a, b) if a.start_ms <= b.start_ms else (b, a)
-        if second.order_index != first.order_index + 1:
-            return jsonify({'error': 'segments must be adjacent'}), 400
+        kind, media_id = first.kind, first.media_id
+        # The merged span's edges are the OUTER edges of the pair, so the
+        # window is re-measured rather than inherited. The span itself is
+        # the union of two stored spans and loses nothing.
+        merged_span = (first.start_ms, second.end_ms)
+        min_silence_ms = first.config.sentence_silence_ms
+
+    merged_window = (None, None)
+    if kind == 'sentence':
+        merged_window = audio.local_speech_window(
+            media_id, merged_span[0], merged_span[1], min_silence_ms)
+
+    with get_sessionmaker()() as db:
+        a, b = db.get(ShadowingSegment, id_a), db.get(ShadowingSegment, id_b)
+        if a is None or b is None:
+            return _not_found()
+        bad = _pair_error(a, b)
+        if bad:
+            return jsonify({'error': bad}), 400
+        first, second = (a, b) if a.start_ms <= b.start_ms else (b, a)
+        if (first.start_ms, second.end_ms) != merged_span:
+            return jsonify({'error': 'these segments changed while the merge was being '
+                                     'prepared — reload and try again'}), 409
 
         first.end_ms = second.end_ms
         first.text = ' '.join(t for t in [first.text, second.text] if t) or None
         if first.kind == 'sentence':
-            # The merged span's edges are the OUTER edges of the pair, so the
-            # window is re-measured rather than inherited. The span itself is
-            # the union of two stored spans and loses nothing.
-            first.speech_start_ms, first.speech_end_ms = audio.local_speech_window(
-                first.media_id, first.start_ms, first.end_ms)
+            first.speech_start_ms, first.speech_end_ms = merged_window
         db.query(ShadowingSegment).filter_by(parent_segment_id=second.id).update(
             {'parent_segment_id': first.id})
         db.flush()
@@ -1573,9 +1779,13 @@ def merge_shadowing_segments():
         ).all()
         for sib in later:
             sib.order_index -= 1
+        merged_ids = [first.id, second.id]
         db.delete(second)
         db.commit()
         db.refresh(first)
         if first.kind == 'chapter':
-            audio.drop_chunk_cache(first.media_id)
+            # The two chapters that took part, and nothing else: first's end
+            # moved and second is gone. Other configs over this book keep
+            # their chunks (each worth ~20-30 s of encoding).
+            audio.drop_chunks_for(first.media_id, merged_ids)
         return jsonify(_segment_json(first, _ranges_for(db, first.media_id, first.media.user_id)))

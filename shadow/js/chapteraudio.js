@@ -59,6 +59,40 @@ const ChapterAudio = (() => {
     }
   }
 
+  // A cold chapter is cut on demand, and since 2026-11-17 that cut has a
+  // BOUNDED budget on the request path (holding a web worker for an hour was
+  // a confirmed defect). When the budget expires the server answers 503 with
+  // `state: 'preparing'` and a Retry-After — the encode it started in the
+  // background is still running — so the honest client behaviour is to wait
+  // and ask again rather than to report the chapter unavailable.
+  const PREPARING_TRIES = 5;
+  const PREPARING_MAX_WAIT_SEC = 30;
+
+  async function fetchChunk(url) {
+    for (let attempt = 0; ; attempt += 1) {
+      const res = await fetch(url);
+      if (res.ok) return res.arrayBuffer();
+      let preparing = false;
+      let wait = 15;
+      if (res.status === 503) {
+        const after = parseInt(res.headers.get('Retry-After') || '', 10);
+        if (!isNaN(after)) wait = Math.min(after, PREPARING_MAX_WAIT_SEC);
+        try {
+          const body = await res.clone().json();
+          preparing = body && body.state === 'preparing';
+        } catch (e) { preparing = false; }
+      }
+      if (!preparing || attempt >= PREPARING_TRIES - 1) {
+        if (preparing) {
+          throw new Error('this chapter is still being cut — it is running in '
+            + 'the background, try again in a minute');
+        }
+        throw new Error('chapter audio unavailable (HTTP ' + res.status + ')');
+      }
+      await new Promise((r) => setTimeout(r, wait * 1000));
+    }
+  }
+
   /** Fetch (once) everything needed to study a chapter. */
   async function ensure(chapterId, userId) {
     const hit = cache.get(chapterId);
@@ -67,9 +101,7 @@ const ChapterAudio = (() => {
     const entry = { id: chapterId, manifest: null, audio: null, url: null, peaks: null };
     entry.promise = (async () => {
       const manifest = await Api.chapterManifest(chapterId, userId);
-      const res = await fetch(Api.chunkUrl(manifest));
-      if (!res.ok) throw new Error('chapter audio unavailable (HTTP ' + res.status + ')');
-      const bytes = await res.arrayBuffer();
+      const bytes = await fetchChunk(Api.chunkUrl(manifest));
       entry.manifest = manifest;
       entry.url = URL.createObjectURL(new Blob([bytes], { type: 'audio/ogg' }));
       entry.audio = new Audio(entry.url);

@@ -14,6 +14,7 @@ and about the shape of the code, which is what a careless edit would break.
     cd shadow && python -m pytest
 """
 
+import ast
 import pathlib
 import re
 import sys
@@ -127,14 +128,29 @@ def test_doneness_reads_the_full_span_and_not_the_window():
     assert progress.covers([SPAN], seg.start_ms, seg.end_ms)
 
 
-def test_nothing_assigns_a_speech_window_into_a_stored_boundary():
-    """The tier-3 tripwire, as a shape test.
+GUARDED_SOURCES = ('shadowing.py', 'audio.py')
+
+
+def test_no_single_line_assigns_a_speech_window_into_a_stored_boundary():
+    """The tier-3 tripwire, as a shape test — ON ONE LINE ONLY.
 
     A future edit that "simplifies" trimming by writing the window back
     into start_ms/end_ms would pass every numeric test above and break the
-    whole progress model. It would have to write one of these lines.
+    whole progress model.
+
+    THE LIMIT OF THIS TEST, STATED PLAINLY (it was presented as the guard
+    on a tier-3 tripwire and is not one on its own): it is a regex over
+    source text, so it sees only the single-line form. Split the same
+    write across two lines —
+
+        w = audio.speech_window(seg.start_ms, seg.end_ms, silences)
+        seg.start_ms = w[0]                      # this test says nothing
+
+    — and it passes happily. The test below, which follows the value
+    instead of the characters, is the real guard; this one is kept because
+    when it does fire it names the offending line verbatim.
     """
-    source = (ROOT / 'shadowing.py').read_text() + (ROOT / 'audio.py').read_text()
+    source = ''.join((ROOT / f).read_text() for f in GUARDED_SOURCES)
     # A STORED boundary taking its value from anything about speech. The
     # lookbehind demands a WHOLE identifier, which is what keeps the
     # legitimate `speech_start_ms=...` and `cut_end_ms=...` out of the net:
@@ -142,6 +158,93 @@ def test_nothing_assigns_a_speech_window_into_a_stored_boundary():
     offender = re.search(r'(?<!\w)(start_ms|end_ms)\s*=\s*[^,\n]*speech', source)
     assert offender is None, \
         f'a stored boundary is being set from a window: {offender.group(0)!r}'
+
+
+# ── the same tripwire, following the VALUE rather than the line ─────────
+
+BOUNDARY_NAMES = ('start_ms', 'end_ms')
+
+
+def _is_boundary(target) -> bool:
+    """`start_ms`/`end_ms` themselves — never `speech_start_ms`, never
+    `cut_end_ms`, never `at_ms`."""
+    if isinstance(target, ast.Attribute):
+        return target.attr in BOUNDARY_NAMES
+    if isinstance(target, ast.Name):
+        return target.id in BOUNDARY_NAMES
+    return False
+
+
+def _targets(node):
+    for target in getattr(node, 'targets', []) or [getattr(node, 'target', None)]:
+        if target is None:
+            continue
+        if isinstance(target, (ast.Tuple, ast.List)):
+            yield from target.elts
+        else:
+            yield target
+
+
+def _speech_tainted(value, tainted: set[str]) -> bool:
+    """Does this expression carry anything derived from a speech window?"""
+    for sub in ast.walk(value):
+        if isinstance(sub, ast.Attribute) and 'speech' in sub.attr:
+            return True
+        if isinstance(sub, ast.Name) and ('speech' in sub.id or sub.id in tainted):
+            return True
+    return False
+
+
+def test_no_value_from_a_speech_window_ever_reaches_a_stored_boundary():
+    """The tier-3 tripwire, following the value across statements.
+
+    A speech window may be stored (`speech_start_ms`), returned, compared,
+    or cut with — but the moment anything derived from one is assigned
+    into `start_ms`/`end_ms`, the silence between two sentences stops
+    belonging to any sentence and can never be marked done (design.md §2).
+    Names that take a value from a window are tainted, and so is anything
+    computed from them, which is what catches the two-line form the regex
+    above cannot see.
+    """
+    for filename in GUARDED_SOURCES:
+        tree = ast.parse((ROOT / filename).read_text(), filename)
+        statements = sorted(
+            (n for n in ast.walk(tree) if isinstance(n, (ast.Assign, ast.AnnAssign,
+                                                         ast.AugAssign))),
+            key=lambda n: (n.lineno, n.col_offset))
+        tainted: set[str] = set()
+        for node in statements:
+            value = node.value
+            if value is None:
+                continue
+            carries = _speech_tainted(value, tainted)
+            for target in _targets(node):
+                assert not (carries and _is_boundary(target)), (
+                    f'{filename}:{node.lineno} writes a speech-derived value into a '
+                    'stored boundary — that is the tier-3 tripwire')
+                if carries and isinstance(target, ast.Name):
+                    tainted.add(target.id)
+
+
+def test_the_value_following_tripwire_actually_fires(tmp_path):
+    """The guard above is only worth having if it catches the two-line
+    form, so here is that form, in a file of its own."""
+    offender = tmp_path / 'offender.py'
+    offender.write_text('def f(seg, silences):\n'
+                        '    w = audio.speech_window(seg.start_ms, seg.end_ms, silences)\n'
+                        '    seg.start_ms = w[0]\n')
+    tree = ast.parse(offender.read_text())
+    tainted: set[str] = set()
+    caught = False
+    for node in sorted((n for n in ast.walk(tree) if isinstance(n, ast.Assign)),
+                       key=lambda n: n.lineno):
+        carries = _speech_tainted(node.value, tainted)
+        for target in _targets(node):
+            if carries and _is_boundary(target):
+                caught = True
+            if carries and isinstance(target, ast.Name):
+                tainted.add(target.id)
+    assert caught, 'the AST tripwire does not catch the two-line form it exists for'
 
 
 def test_the_migration_adds_columns_and_touches_no_boundary():
@@ -163,3 +266,66 @@ def test_a_silence_that_never_ends_is_closed_at_the_duration():
     log = 'silence_start: 3.100\n'
     assert audio._parse_silences(log) == []
     assert audio._parse_silences(log, duration_ms=4000) == [(3100, 4000)]
+
+
+# ── the two paths really do agree now (2026-11-17) ─────────────────────
+
+def test_the_local_window_measures_silence_at_the_configs_own_threshold():
+    """`local_speech_window` claimed "exactly the same arithmetic" as the
+    analysed path while running silencedetect at 120 ms, where analysis
+    runs it at the config's sentence threshold (400 ms by default). A
+    split sentence therefore trimmed edge pauses an analysed one never
+    detected — the opposite of conservative at onsets."""
+    import inspect  # noqa: PLC0415
+
+    signature = inspect.signature(audio.local_speech_window)
+    assert 'min_silence_ms' in signature.parameters, \
+        'the threshold must come from the config, not from a trim constant'
+    body = (ROOT / 'audio.py').read_text().split('def local_speech_window(')[1]
+    body = body.split('\ndef ')[0]
+    assert 'd={max(int(min_silence_ms), 1) / 1000:.3f}' in body
+    assert 'TRIM_MIN_SILENCE_MS' not in body.split('"""')[2], \
+        'the local pass is back on the trim constant instead of the threshold'
+
+
+def test_the_local_probe_looks_past_the_span_so_an_edge_silence_is_whole():
+    """A boundary silence is half inside the span. Probing the span alone
+    measured half its length and could fail its own length test; the
+    whole-book pass measures it whole."""
+    body = (ROOT / 'audio.py').read_text().split('def local_speech_window(')[1].split('\ndef ')[0]
+    assert 'probe_start_ms = max(0, start_ms - pad_ms)' in body
+    assert 'probe_end_ms = end_ms + pad_ms' in body
+
+
+def test_split_and_merge_pass_the_configs_threshold():
+    source = (ROOT / 'shadowing.py').read_text()
+    assert source.count('min_silence_ms = ') >= 2
+    assert 'config.sentence_silence_ms' in source
+    for call in re.findall(r'audio\.local_speech_window\([^)]*\)', source):
+        assert 'min_silence_ms' in call, f'{call} does not carry a threshold'
+
+
+def test_a_duplicated_config_carries_its_speech_windows():
+    """A duplicate exists to preserve hand-fixed boundaries. Leaving its
+    windows NULL meant the only way to get them back was a re-analysis,
+    which destroys exactly those boundaries."""
+    duplicate = (ROOT / 'shadowing.py').read_text().split('def duplicate_config(')[1]
+    duplicate = duplicate.split('\n@shadowing_bp')[0]
+    assert 'speech_start_ms=s.speech_start_ms' in duplicate
+    assert 'speech_end_ms=s.speech_end_ms' in duplicate
+
+
+def test_split_and_merge_measure_their_windows_outside_the_transaction():
+    """ffmpeg inside an open write transaction held row locks on
+    shadowing_segments for up to two CUT_TIMEOUT_SEC (four minutes)."""
+    source = (ROOT / 'shadowing.py').read_text()
+    for name in ('def split_shadowing_segment(', 'def merge_shadowing_segments('):
+        body = source.split(name)[1].split('\n@shadowing_bp')[0]
+        before, after = body.split('audio.local_speech_window', 1)
+        # The measurement happens between two sessions, not inside one: the
+        # session that was open when it started must have been closed.
+        opens = before.count('with get_sessionmaker()() as db:')
+        assert opens >= 1, 'nothing was read before measuring'
+        assert 'db.commit()' not in before, 'the window is measured mid-transaction'
+        assert 'with get_sessionmaker()() as db:' in after, \
+            'the window is not applied in its own fresh transaction'
