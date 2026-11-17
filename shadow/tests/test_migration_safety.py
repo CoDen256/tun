@@ -23,10 +23,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 MIGRATION = ROOT / 'alembic' / 'versions' / 'c7a2f41b9e30_studying_mode.py'
+SPEECH_MIGRATION = ROOT / 'alembic' / 'versions' / 'd3f81c5a2e17_speech_window.py'
 
 
-def _load():
-    spec = importlib.util.spec_from_file_location('c7a2f41b9e30_studying_mode', MIGRATION)
+def _load(path=MIGRATION):
+    spec = importlib.util.spec_from_file_location(path.stem, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -101,3 +102,38 @@ def test_upgrade_skips_a_book_that_already_holds_progress_ranges():
         'the upgrade overwrote live progress with the frozen done flags'
     assert not any('shadowing_segments s' in sql for sql, _ in writes), \
         'the upgrade re-ran its losslessness check against a book it skipped'
+
+
+# ── the chain, not just the revision (2026-11-17) ──────────────────────
+
+def test_the_refusal_warns_that_a_newer_revision_may_already_have_run():
+    """`alembic downgrade base` commits every step above this one before
+    reaching it, so "it refused" does not mean "nothing happened"."""
+    message = str(pytest.raises(RuntimeError, _load().downgrade).value)
+    assert 'ALREADY HAVE RUN' in message
+    assert 'alembic current' in message
+
+
+def test_the_speech_window_downgrade_refuses_unless_asked_for_on_purpose(monkeypatch):
+    """THE DEFECT: it dropped its columns and committed, and only THEN did
+    c7a2f41b9e30 refuse — leaving a live service selecting columns that no
+    longer existed (D157: shadow serves before it migrates)."""
+    module = _load(SPEECH_MIGRATION)
+    monkeypatch.delenv(module.DOWNGRADE_OPT_IN, raising=False)
+    message = str(pytest.raises(RuntimeError, module.downgrade).value)
+    assert 'Nothing has been dropped' in message
+    assert 'c7a2f41b9e30' in message
+    assert module.DOWNGRADE_OPT_IN in message
+
+
+def test_the_speech_window_downgrade_drops_nothing_before_it_refuses():
+    import ast  # noqa: PLC0415
+
+    tree = ast.parse(SPEECH_MIGRATION.read_text())
+    body = next(n for n in tree.body
+                if isinstance(n, ast.FunctionDef) and n.name == 'downgrade')
+    # The guard must be the first statement after the docstring; a drop
+    # that happens before it is exactly the defect.
+    statements = [n for n in body.body if not (isinstance(n, ast.Expr)
+                                               and isinstance(n.value, ast.Constant))]
+    assert isinstance(statements[0], ast.If), 'downgrade() does not check the opt-in first'
