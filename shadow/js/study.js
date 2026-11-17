@@ -452,7 +452,12 @@ const Study = (() => {
       const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
       const take = { blob, buffer: null, peaks: null, trim: null };
       takes.set(s.id, take);
-      setState('take held in memory — C to compare');
+      // Guarded like paintTake() below: stopping a recording by navigating
+      // away fires onstop AFTER st.gen moved on, and an unguarded setState
+      // labelled the NEXT sentence with this take's status (confirmed
+      // defect, 2026-11-17). The take itself is still kept — it is stored
+      // under ITS OWN sentence id and is found again on the way back.
+      if (mine === st.gen) setState('take held in memory — C to compare');
       try {
         const Ctx = window.AudioContext || window.webkitAudioContext;
         const ctx = new Ctx();
@@ -931,5 +936,20 @@ const Study = (() => {
     }
   }
 
-  return { init, enter, adopt, leaveQuietly, openAt, key, render, paintContourState };
+  /** The trim switch moved, so both lanes are being REWINDOWED.
+
+      A contour describes the window it was computed over, in that window's
+      own duration — flip the switch and every path on screen describes a
+      span that is no longer drawn beneath it (confirmed defect,
+      2026-11-17: `App.setTrim` repainted the waveforms and left the
+      contours, so both lanes stayed dimmed under paths that corresponded
+      to nothing until the operator changed sentence or pressed P). The
+      contour is cheap to lose and wrong to keep: clear it, then repaint.
+      `P`'s own on/off state is untouched — the next C redraws. */
+  function retrim() {
+    clearContours();
+    render();
+  }
+
+  return { init, enter, adopt, leaveQuietly, openAt, key, render, retrim, paintContourState };
 })();

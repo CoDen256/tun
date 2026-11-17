@@ -69,7 +69,10 @@ const App = (() => {
   function setTrim(on) {
     state.trim = !!on;
     paintTrim();
-    if (typeof Study !== 'undefined' && state.screen === 'study') Study.render();
+    // retrim(), not render(): the lanes are being rewindowed, and a contour
+    // drawn over the old window describes a duration that is about to stop
+    // being on screen.
+    if (typeof Study !== 'undefined' && state.screen === 'study') Study.retrim();
     if (state.userId == null) return;
     fetch(`${API_BASE}/api/v1/settings/${TRIM_KEY}?userId=${state.userId}`, {
       method: 'PUT',
