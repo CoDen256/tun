@@ -1908,12 +1908,136 @@ function enrichCopy(text) {
   enrichToast(`Copied "${text}"`);
 }
 
+// ---------------------------------------------------------------------------
+// stabbur-triage-queues D5: part of speech ORDERS candidates, it never
+// filters them.
+//
+// The operator's diagnosis, which is more precise than "it picks the wrong
+// PoS": the right candidate was already in the response and simply was not
+// first — and `walkProviders` takes `candidates[0]`. So nothing is withheld
+// here; the matching candidates just sort to the top, and the display groups
+// them under headings with the note's own group first.
+//
+// The tag has to be normalised on BOTH sides to compare at all: dict.cc tags
+// entries in English (`noun`, `verb`, `adj`) while stabbur stores Norwegian
+// (`substantiv`, `adjektiv`). This is the same mapping smia's own `_POS_MAP`
+// applies to inflection blocks, kept deliberately small — an unrecognised
+// tag is not forced into a bucket, it keeps its own identity and groups
+// with its like.
+const POS_TAG_ALIASES = {
+  noun: 'substantiv',
+  substantiv: 'substantiv',
+  verb: 'verb',
+  adj: 'adjektiv',
+  adjective: 'adjektiv',
+  adjektiv: 'adjektiv',
+  adv: 'adverb',
+  adverb: 'adverb',
+  prep: 'preposisjon',
+  preposisjon: 'preposisjon',
+  conj: 'konjunksjon',
+  konjunksjon: 'konjunksjon',
+};
+
+function normalizePosTag(raw) {
+  if (!raw) return null;
+  const key = String(raw).trim().toLowerCase().replace(/\.$/, '');
+  return POS_TAG_ALIASES[key] || key || null;
+}
+
+// Only a LEADING BRACKETED tag counts (D5). `dictcc_api` emits
+// "[verb] å komme i vei"; `dictcc_static` emits "noun Br." with no brackets
+// and is deliberately treated as untagged rather than parsed by a word list
+// that could drift. Returns null for untagged.
+function candidatePosTag(candidate) {
+  const context = candidate && candidate.context;
+  if (!context) return null;
+  const m = /^\s*\[([^\]]+)\]/.exec(context);
+  return m ? normalizePosTag(m[1]) : null;
+}
+
+// A STABLE partition: matching tag first, then every other tagged group in
+// first-appearance order, then untagged. Array.prototype.sort is stable in
+// every engine this targets, but partitioning says the intent plainly and
+// cannot be undone by a comparator mistake.
+function orderCandidatesByPos(candidates, notePos) {
+  const wanted = normalizePosTag(notePos);
+  if (!wanted) return candidates.slice();
+  const matching = [];
+  const rest = [];
+  candidates.forEach((c) => {
+    (candidatePosTag(c) === wanted ? matching : rest).push(c);
+  });
+  // No candidate matches -> the provider's order is left completely alone,
+  // and no preference is invented (D5's explicit fallback).
+  if (!matching.length) return candidates.slice();
+  return matching.concat(rest);
+}
+
+// Groups for display, in the order they should appear: the note's own tag
+// first and identified as such, then the other tagged groups in
+// first-appearance order, then untagged last.
+function groupCandidatesByPos(candidates, notePos) {
+  const wanted = normalizePosTag(notePos);
+  const byTag = new Map();
+  const untagged = [];
+  candidates.forEach((c) => {
+    const tag = candidatePosTag(c);
+    if (!tag) { untagged.push(c); return; }
+    if (!byTag.has(tag)) byTag.set(tag, []);
+    byTag.get(tag).push(c);
+  });
+  const groups = [];
+  if (wanted && byTag.has(wanted)) {
+    groups.push({ tag: wanted, isNotePos: true, candidates: byTag.get(wanted) });
+    byTag.delete(wanted);
+  }
+  byTag.forEach((list, tag) => groups.push({ tag, isNotePos: false, candidates: list }));
+  if (untagged.length) groups.push({ tag: null, isNotePos: false, candidates: untagged });
+  return groups;
+}
+
+function notePosFor(prefix) {
+  const ids = posFieldIdsFor(prefix);
+  if (!ids) return null;
+  try {
+    return getPosValue(ids.select, ids.custom) || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Renders candidates grouped by part of speech when there is more than one
+// group to show; a single group renders bare, because a lone heading over
+// every candidate is noise.
+function appendGroupedCandidates(resultBox, candidates, providerName, renderCandidate, notePos) {
+  const groups = groupCandidatesByPos(candidates, notePos);
+  if (groups.length <= 1) {
+    candidates.forEach((c) => resultBox.appendChild(renderCandidate(c, providerName)));
+    return;
+  }
+  groups.forEach((g) => {
+    const head = enrichEl(`
+      <div class="pos-group-head">
+        <span>${escapeHtml(g.tag || 'untagged')}</span>
+        ${g.isNotePos ? '<span class="pill pill-accent">this note\u2019s PoS</span>' : ''}
+        ${g.tag ? '' : '<span class="pos-group-note">no bracketed tag from this provider</span>'}
+      </div>`);
+    resultBox.appendChild(head);
+    g.candidates.forEach((c) => resultBox.appendChild(renderCandidate(c, providerName)));
+  });
+}
+
 // Exclusive within a language group (translations — one chosen translation
 // per target language) or the whole panel (ipa/tts — single-value field) —
 // never global, so picking an EN translation doesn't un-mark a DE one.
+// stabbur-triage-queues D6: marks ACCUMULATE. They used to be exclusive
+// within a language group or panel, which made them lie the moment a field
+// became additive — after assembling a transcription from two candidates,
+// only the second showed as used even though both were in the field. The
+// operator chose accumulation everywhere rather than special-casing IPA,
+// since append-mode translations already concatenate within a language.
 function markSuggestUsed(btn) {
-  const scope = btn.closest('.lang-group') || btn.closest('.suggest-panel') || document;
-  scope.querySelectorAll('.use-btn.used').forEach((b) => { if (b !== btn) { b.classList.remove('used'); b.textContent = 'Use'; } });
   btn.classList.add('used');
   btn.textContent = '✓ Used';
 }
@@ -2139,7 +2263,16 @@ function buildEnrichProviderRow(kind, provider, prefix, defaultQuery, renderCand
       return;
     }
     resultBox.innerHTML = '';
-    body.candidates.forEach((c) => resultBox.appendChild(renderCandidate(c, provider)));
+    // D5: ordered, grouped, never filtered. Applies to translations and
+    // audio alike — audio candidates carry the same bracketed `context`
+    // since smia's dictcc-parsing-fixes added it.
+    if (kind === 'translations' || kind === 'tts') {
+      const notePos = notePosFor(prefix);
+      const ordered = orderCandidatesByPos(body.candidates, notePos);
+      appendGroupedCandidates(resultBox, ordered, provider, renderCandidate, notePos);
+    } else {
+      body.candidates.forEach((c) => resultBox.appendChild(renderCandidate(c, provider)));
+    }
   }
 
   editBtn.addEventListener('click', async () => {
@@ -2170,23 +2303,51 @@ function buildEnrichProviderRow(kind, provider, prefix, defaultQuery, renderCand
   return row;
 }
 
+// stabbur-triage-queues D6: appends with a SPACE, not " / ". The operator is
+// assembling one transcription of a multiword expression out of its tokens —
+// " / " would mean "these are alternatives", a space means "these are
+// consecutive". An empty field is simply filled, and the same candidate used
+// twice does not duplicate.
+//
+// This is the deliberate counterpart to merge's "Take IPA", which REPLACES.
+// Using a suggestion is assembly; taking a field from another note is a swap.
+// See stabbur/CLAUDE.md — do not make them consistent.
+function appendTranscription(prefix, value) {
+  const field = document.getElementById(`${prefix}_transcription`);
+  const current = field.value.trim();
+  if (current) {
+    const parts = current.split(/\s+/);
+    if (parts[parts.length - 1] === value) return field;
+    field.value = `${current} ${value}`;
+  } else {
+    field.value = value;
+  }
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  return field;
+}
+
 function renderIpaCandidate(prefix) {
   return (c, providerName) => {
     const value = c.ipa || c.phonemic || c.phonetic || '';
+    // D8: the variety is reachable on HOVER over the transcription and is
+    // never rendered as visible text. `nst`/`kaikki_ipa`/`leipzig` populate
+    // it, `ipadict` and the dict.cc providers do not — as a visible column
+    // it was permanently blank for the providers at the top of the
+    // operator's order, which reads as broken. `routes/ipa.py` joins several
+    // varieties under one transcription, so this may be a merged string.
+    const variety = c.variety || '';
+    const titleAttr = variety ? ` title="Variety: ${escapeHtml(variety)}"` : '';
     const r = enrichEl(`
       <div class="candidate-row">
-        <span class="candidate-text">${escapeHtml(value)}</span>
-        <span class="candidate-meta">${escapeHtml(c.variety || '')}</span>
+        <span class="candidate-text${variety ? ' has-variety' : ''}"${titleAttr}>${escapeHtml(value)}</span>
         <span class="candidate-spacer"></span>
         <button class="use-btn" type="button">Use</button>
       </div>
     `);
     r.querySelector('.use-btn').addEventListener('click', (e) => {
-      const field = document.getElementById(`${prefix}_transcription`);
-      field.value = value;
-      field.dispatchEvent(new Event('input', { bubbles: true }));
+      appendTranscription(prefix, value);
       markSuggestUsed(e.target);
-      enrichToast(`Transcription set from ${providerName}`);
+      enrichToast(`Transcription extended from ${providerName}`);
     });
     return r;
   };
@@ -3151,10 +3312,12 @@ function triageProvenanceSrcId(fieldKey) {
   }[fieldKey];
 }
 
-function markTriageFieldProvenance(fieldKey, provider) {
+function markTriageFieldProvenance(fieldKey, provider, note) {
   const el = document.getElementById(triageProvenanceSrcId(fieldKey));
   if (!el) return;
-  el.textContent = provider;
+  // task 5.4: an assembled value is NOT a real lookup, and must not read as
+  // one (D3 of smia-ipa-multiword-response, which this change keeps).
+  el.textContent = note ? `${provider} (${note})` : provider;
   el.style.display = '';
 }
 
@@ -3594,6 +3757,24 @@ document.addEventListener('keydown', (e) => {
 // configured provider order client-side (design D4 — routes/enrich.py
 // gains no chain logic of its own) ────────────────────────────────────────
 
+// The gap marker for a token smia resolved no candidate for. Visible by
+// construction: an assembled transcription with a hole in it must LOOK like
+// one, or the operator accepts a value that silently dropped a word.
+const TRANSCRIPTION_GAP = '…';
+
+function assembleTranscriptionFromTokens(tokens) {
+  if (!Array.isArray(tokens) || !tokens.length) return null;
+  const parts = tokens.map((t) => {
+    const first = Array.isArray(t.candidates) && t.candidates.length ? t.candidates[0] : null;
+    if (!first) return TRANSCRIPTION_GAP;
+    return first.ipa || first.phonemic || first.phonetic || TRANSCRIPTION_GAP;
+  });
+  // Every token unresolved means there is nothing to assemble from, which is
+  // a miss, not a string of gap markers.
+  if (parts.every((p) => p === TRANSCRIPTION_GAP)) return null;
+  return parts.join(' ');
+}
+
 async function walkProviders(kind, prefix, queryValue, lang, limit) {
   const settings = await fetchSettings();
   const info = (settings.providers && settings.providers[kind]) || {};
@@ -3605,10 +3786,32 @@ async function walkProviders(kind, prefix, queryValue, lang, limit) {
     if (status !== 200 || !body) continue;
     if (kind === 'ipa' && body.mode === 'per_word') {
       if (body.joined) return { provider, value: body.joined };
+      // D7, superseding D2 of the archived `smia-ipa-multiword-response`:
+      // smia omits `joined` whenever ANY token has zero or more than one
+      // candidate, which for Norwegian multiword phrases is the common case
+      // (one token with two dialect varieties is enough). The old `continue`
+      // here meant prefill left the transcription empty far more often than
+      // the operator expected, so the restraint cost more than it protected.
+      //
+      // Bounded, deliberately: each token's FIRST candidate only, in smia's
+      // own token order (stabbur never re-tokenises — smia's tokenizer stays
+      // authoritative), a visible gap marker where a token has nothing, and
+      // flagged as assembled so D3 of that change still holds. Do not
+      // restore the `continue` as a bug fix.
+      const assembled = assembleTranscriptionFromTokens(body.tokens);
+      if (assembled) return { provider, value: assembled, assembled: true };
       continue;
     }
     if (Array.isArray(body.candidates) && body.candidates.length > 0) {
-      return { provider, candidate: body.candidates[0], candidates: body.candidates };
+      // D5: prefill takes candidates[0], so the ordering has to happen
+      // BEFORE that pick or the whole point is lost. `prefillTriagePos`
+      // already runs before translations/inflections/audio, so the note's
+      // part of speech is in place by the time this reads it — preserve
+      // that ordering if the prefill walk is ever rearranged.
+      const ordered = (kind === 'translations' || kind === 'tts')
+        ? orderCandidatesByPos(body.candidates, notePosFor(prefix))
+        : body.candidates;
+      return { provider, candidate: ordered[0], candidates: ordered };
     }
   }
   return null;
@@ -3661,7 +3864,7 @@ async function prefillTriageTranscription(sourceLang) {
   if (!value) return false;
   transcriptionEl.value = value;
   flashPrefilled(transcriptionEl);
-  markTriageFieldProvenance('transcription', result.provider);
+  markTriageFieldProvenance('transcription', result.provider, result.assembled ? 'assembled from single words' : null);
   return true;
 }
 

@@ -733,3 +733,28 @@ kbd {
 }
 .pager-pages button[disabled] { opacity: .45; cursor: default; }
 .pager-gap { padding: 4px 2px; font-size: 12px; color: var(--text-faint); }
+
+/* stabbur-triage-queues D5: part-of-speech group headings in the suggest
+   panel. The note's own group leads and says so — the point is that the
+   candidate prefill will take is visibly the right one, while every other
+   candidate is still present below. */
+.pos-group-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 5px 10px; margin-top: 4px;
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--text-faint); font-weight: 650;
+}
+.pos-group-head .pill-accent {
+  background: var(--accent-soft); color: var(--accent-text);
+  border-color: transparent; text-transform: none; letter-spacing: 0;
+}
+.pos-group-note { text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+/* D8: a transcription carrying a variety gets a hover affordance — the
+   variety itself lives in the title attribute and is never visible text. */
+.candidate-text.has-variety {
+  border-bottom: 1px dotted var(--text-faint);
+  cursor: help;
+}

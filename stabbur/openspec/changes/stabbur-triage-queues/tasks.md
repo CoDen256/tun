@@ -59,36 +59,36 @@ Order matters in two places inside this change:
 
 ## 4. Part-of-speech ordering
 
-- [ ] 4.1 Parse a leading bracketed tag out of a candidate's `context`.
+- [x] 4.1 Parse a leading bracketed tag out of a candidate's `context`.
       Only the bracketed form counts; everything else is untagged.
-- [ ] 4.2 Order candidates so the note's part of speech comes first; with
+- [x] 4.2 Order candidates so the note's part of speech comes first; with
       no note part of speech or no match, leave the provider's order alone.
       **Never filter.**
-- [ ] 4.3 Group candidates under part-of-speech headings, the note's own
+- [x] 4.3 Group candidates under part-of-speech headings, the note's own
       first and identified as such; untagged last.
-- [ ] 4.4 Apply the same ordering to audio candidates, reading the `context`
+- [x] 4.4 Apply the same ordering to audio candidates, reading the `context`
       that `dictcc-parsing-fixes` adds to dict.cc `/tts` candidates.
-- [ ] 4.5 `walkProviders` takes the first candidate **after** ordering.
+- [x] 4.5 `walkProviders` takes the first candidate **after** ordering.
       Preserve the existing guarantee that `prefillTriagePos` runs before
       anything that orders on the part of speech.
-- [ ] 4.6 Tests: matching sense sorts first and the non-matching one is
+- [x] 4.6 Tests: matching sense sorts first and the non-matching one is
       still present; untagged grouping; no-part-of-speech leaves order
       untouched.
 
 ## 5. Transcription assembling, additive use, hover variety
 
-- [ ] 5.1 Mark decision D2 of the archived `smia-ipa-multiword-response`
+- [x] 5.1 Mark decision D2 of the archived `smia-ipa-multiword-response`
       superseded, **in place**, with the reason and a pointer here. Keep D3.
-- [ ] 5.2 When the service supplies no assembled value, assemble from each
+- [x] 5.2 When the service supplies no assembled value, assemble from each
       token's first candidate joined by a single space, in the service's
       token order. stabbur never re-tokenises.
-- [ ] 5.3 A token with no candidate leaves a visible gap marker.
-- [ ] 5.4 The provenance badge records that the value was assembled.
-- [ ] 5.5 Using a transcription candidate appends with a single space; an
+- [x] 5.3 A token with no candidate leaves a visible gap marker.
+- [x] 5.4 The provenance badge records that the value was assembled.
+- [x] 5.5 Using a transcription candidate appends with a single space; an
       empty field is filled; the same candidate twice does not duplicate.
-- [ ] 5.6 The assembled-from-single-words row keeps replacing.
-- [ ] 5.7 `markSuggestUsed` accumulates instead of clearing its scope.
-- [ ] 5.8 Variety moves to a tooltip on the transcription; no visible text,
+- [x] 5.6 The assembled-from-single-words row keeps replacing.
+- [x] 5.7 `markSuggestUsed` accumulates instead of clearing its scope.
+- [x] 5.8 Variety moves to a tooltip on the transcription; no visible text,
       no empty slot. Merged varieties show merged.
 
 ## 6. Audio search
