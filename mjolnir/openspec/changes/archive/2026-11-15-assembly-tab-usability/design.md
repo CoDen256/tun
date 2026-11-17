@@ -61,6 +61,16 @@ The current CSS was hand-copied once; its own design doc flagged the
 approximation as an open question, and this item is that question coming
 back. Hand-transcription would drift again at the next APK rebase.
 
+> **CORRECTED 2026-11-17 by `card-preview-popup`** (operator rejected this
+> preview live; see that change's `research/render-research.md`). Wrong in
+> the table below: faces are **0.29 / 0.29 / 0.40**, not 0.28/0.28/0.44;
+> card height is `max(normalize(260), H − insets − normalize(185))`; the
+> base font is **15** (user-adjustable 10–22), not 16; the study card has
+> **no background** (`cardBackground` is unused — the screen shows
+> through); text is **left-aligned** by default; `.center`'s SemiBold is
+> dropped by the renderer (not in `systemFonts`), so `.center` is never
+> bold; `normalize` uses the screen's short side.
+
 Values confirmed against `base/smali.mjolnir.merged/assets/
 index.android.bundle` during this session:
 

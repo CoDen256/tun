@@ -19,6 +19,14 @@ Batch opened 2026-11-15 from all triaged packages.
   the smia change adds to dict.cc `/tts` candidates. A DATA dependency only;
   both are inside the same package, so one build session takes them in order.
 
+- **Card preview redo before Builder UI rehaul & data versioning** — added
+  2026-11-17. `builder-ship-strips` task 3.11 renders cards from "the
+  extracted style map produced by `assembly-tab-usability`"; that map is
+  wrong and is corrected and widened by `card-preview-popup`. Read 3.11 as
+  "the style map produced by `card-preview-popup`". Data dependency only;
+  the two also share the occurrence-cell look (one definition, see
+  `card-preview-popup/design.md` §7).
+
 All other packages are parallel-safe.
 
 ## Status
@@ -26,7 +34,8 @@ All other packages are parallel-safe.
 | package | status |
 |---|---|
 | Builder UI rehaul & data versioning | building — mjolnir: `flush-record-atomicity` then `builder-ship-strips` |
-| Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` |
+| Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` (item 3 redone by "Card preview redo") |
+| Card preview redo | designed (mjolnir: `card-preview-popup`) |
 | Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
 | Stabbur merging & dict.cc translations | building — smia `dictcc-parsing-fixes` first, then stabbur `stabbur-merge-fixes` + `stabbur-triage-queues` |
 | Shadow studying mode | archived — `shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode` |
@@ -124,6 +133,66 @@ Deferred to the builder's judgement (tier 2, not guesses):
 [UX] assembly tab: label and patch rev should also be as env vars there, and it should be really preffiled with values, it does not, it say e.g. for logic rev that it is autoincremented to 17, but it doesn't prefill it, and it should suggest it, so the text field with already written value there
 [UX] assembly tab should allow search by module number
 [UX] card preview should be better reflecting the actuall css used in mjolnir so that i don't need to publish and view it in the app to see how it looks like, we need to use exactly the design in mjolnir to render the cards
+
+### Card preview redo
+projects: mjolnir
+status: designed 2026-11-17 — change `card-preview-popup` (mjolnir)
+
+Added 2026-11-16 from live feedback on the archived "Assembly tab
+usability" item 3, which passed its own criteria and was rejected by the
+operator. A redo, not a fix: an independent read of the stock bundle
+(`card-preview-popup/research/render-research.md`) showed the old
+preview's foundations were false. `.center` was drawn semibold, but on the
+device its SemiBold font is dropped because it is not in `systemFonts`;
+that is the "bold words" complaint. Text was centred, but the device
+left-aligns. The card had a background, but the device has none. The face
+ratios and base size were wrong. Every class colour was hand-typed, and the
+catalogue showed none of them.
+
+Operator decisions over six mockup iterations, all in the change:
+- **Popup preview.** The card is shown alone: the operator removed the
+  phone chrome. The tools drawer is resizable and remembered. There is an
+  N|E direction switch with no A option, since A is a hidden N or E
+  resolved through the card's `A` field. ←/→ steps across pages.
+- **Editor.** Kept, minus its throwaway banner.
+- **Classes/tags and symbols tables.** The Kind column is dropped, and
+  clicking a row copies it.
+- **Cards page.** One flat paged table: Card · Deck · Front · Back ·
+  Occurrences · ↗.
+- **Source picker.** Minted ledger, or any **published** build. The
+  operator declined the stock `base/` bundle and unpublished assembled
+  bundles as sources.
+- **Occurrence cell.** Drawn in the **`builder-ship-strips`** cell
+  vocabulary, as three fixed N·E·A slots, with a small dimmed ✕ for an
+  absent letter.
+- **Filters and views.** A structured filter bar (not a query language),
+  sort, pages of 25/50/100, two saved views.
+- **Settings store.** Server-side in a new hub table rather than browser
+  storage.
+
+The operator locked the final mockup with "lock exactly the design you
+showing now, this is to be exactly implemented as you proposed it". The
+mockup is the look-and-interaction reference; its rows are sample data
+(design.md §1).
+
+Deferred to the builder's judgement (tier 2, not guesses):
+- simulated-device pixel densities and the status/bottom insets in the
+  card-height formula (the mockup's are assumptions)
+- the editor library, provided highlighting, wrapping and auto-grow behave
+  as in the mockup
+- how the occurrence-cell look is shared with `builder-ship-strips`,
+  provided it is one definition
+- server-side vs client-side filtering/paging, provided the page carries no
+  per-row preview payload
+- the settings table's name and key scheme, and the write debounce
+- caching of parsed published bundles (per build id)
+
+Not verified against a real phone yet: line metrics, Android font padding,
+whether long `.flex` children wrap (B01047). The operator will compare a
+screenshot after the build; mismatches become new backlog items.
+
+[ux] mjolnir cards the row is too wide, preview should be on click of the card and source note should be just a link symol. the front and back side should be truncated those are too wide as well
+[ux] mjolnir preview should display a popup of that card dimming out the background. Currently the preview is nothing like the mockup 2026-11-15-assembly-tab-usability/mockups/assembly-tab-usability.html. the colors are different, the class and tag map has to colors, the words are bold, but they shouldn't be. the editor is not that good and flexible. the long divs are not being wrapped, like in the phone. It should be redone, but we still have to use that mockup(only card preview part), maybe improve it a little. Make another independent research on how those are really displayed in the phone and come up with a new mock and design but reuse some of the ideas like the table of avaliable css classes from the previous mack. Maybe i can make a screen and you can verify against it, but later, now let's explore it
 
 ### Device sync & userdata storage
 projects: mjolnir, backup
