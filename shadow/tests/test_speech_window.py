@@ -329,3 +329,16 @@ def test_split_and_merge_measure_their_windows_outside_the_transaction():
         assert 'db.commit()' not in before, 'the window is measured mid-transaction'
         assert 'with get_sessionmaker()() as db:' in after, \
             'the window is not applied in its own fresh transaction'
+
+
+def test_the_local_probes_clock_is_shifted_by_the_COARSE_seek():
+    """`-ss` after `-i` drops frames silencedetect has already seen, so the
+    filter's clock counts from the coarse seek point — half a second
+    earlier than the span. Shifting by the span's start reported every
+    silence 500 ms late and skewed every window a split or merge wrote.
+    Measured in the container: a silence the whole-book pass puts at
+    (4199, 4500) came back as (4699, 5000)."""
+    body = (ROOT / 'audio.py').read_text().split('def local_speech_window(')[1].split('\ndef ')[0]
+    shift = body.split('return speech_window(')[1]
+    assert '(a + coarse_ms, b + coarse_ms)' in shift
+    assert 'probe_start_ms' not in shift

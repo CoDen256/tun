@@ -763,7 +763,14 @@ def local_speech_window(media_id: int, start_ms: int, end_ms: int,
         return start_ms, end_ms
     if proc.returncode != 0:
         return start_ms, end_ms
-    # The sub-cut's clock starts at 0; shift it back onto the book's.
-    local = _parse_silences(proc.stderr or '', duration_ms=probe_end_ms - probe_start_ms)
+    # The sub-cut's clock starts at 0 AT THE COARSE SEEK POINT, not at the
+    # output seek's target: `-ss` after `-i` drops frames the filter has
+    # already seen, so `silencedetect` counts from `coarse_ms`. Shifting by
+    # the span's own start — which this did until 2026-11-17 — therefore
+    # reported every silence CUT_SEEK_PAD_MS (500 ms) late, and a window
+    # measured after a split or a merge was skewed by half a second.
+    # Measured, not reasoned: a silence the whole-book pass puts at
+    # (4199, 4500) came back as (4699, 5000).
+    local = _parse_silences(proc.stderr or '', duration_ms=probe_end_ms - coarse_ms)
     return speech_window(start_ms, end_ms,
-                         [(a + probe_start_ms, b + probe_start_ms) for a, b in local])
+                         [(a + coarse_ms, b + coarse_ms) for a, b in local])

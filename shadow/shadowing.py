@@ -504,8 +504,9 @@ def start_janitor() -> None:
                 # the second rule is skipped rather than guessed (D157).
                 n = audio.purge_stale_chunks(_live_chunk_names())
                 if n:
-                    print(f'shadow — purged {n} chapter chunk(s) cut the old, '
-                          f'inaccurate way', flush=True)
+                    print(f'shadow — purged {n} unaddressable chunk cache '
+                          f'file(s): old cut version, deleted chapter, or '
+                          f'abandoned partial encode', flush=True)
             except Exception as exc:  # noqa: BLE001
                 print(f'shadow — stale chunk purge failed: {exc}', flush=True)
             time.sleep(audio.SWEEP_INTERVAL_SEC)
