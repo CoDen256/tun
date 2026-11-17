@@ -19,9 +19,18 @@ rather than impressionistic.
 
 1. Take a book whose sentence N is a tone of frequency A and sentence N−1 is
    a clearly different frequency B. Fetch `GET /segments/<N>/audio` and
-   analyse the returned audio: **no component of frequency B is present**,
-   and the clip's first 50 ms already contains frequency A. (Before this
-   change the clip began with audible B.)
+   analyse the returned audio: **no component of frequency B is present**.
+   (Before this change the clip began with audible B.)
+
+   **CORRECTED 2026-11-17, during verification.** This criterion originally
+   added "and the clip's first 50 ms already contains frequency A". That
+   clause is unsatisfiable by construction and was wrong when written: a
+   stored span legitimately begins with silence (the segmenter cuts at
+   silence), and the speech detector deliberately keeps an onset guard ahead
+   of the first sound, so the first 50 ms of a correct clip is silent in the
+   master too. Cut accuracy is instead measured as **onset error against the
+   master**, which criterion 3 already does properly. Measured: 0.00–0.06 ms.
+   The clause is corrected rather than deleted so the mistake stays readable.
 2. The returned clip's duration equals the sentence's stored span within
    **±15 ms**.
 3. Fetch a chapter chunk and compare its first audio content against the
