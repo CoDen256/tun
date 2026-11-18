@@ -54,13 +54,20 @@ describe("builder's HTTP server: forecast, schedule, and run-log pages all rende
   await new Promise((resolve) => server.listen(0, resolve));
   const port = server.address().port;
 
-  await t.test("GET /builder renders the forecast page with stat-row and empty-state tables", async () => {
+  // builder-ship-strips: the forecast page was REPLACED by the ship-strips
+  // console, so this asserts the new page's identity AND the two sections
+  // that were deliberately removed — the 5-stage pipeline rail (it restated
+  // numerically what the strip shows spatially) and the past-batches list
+  // (the run log and hub's publish history own that). Asserting the
+  // absences matters: without them a silent re-introduction would pass.
+  await t.test("GET /builder renders the ship-strips console, without the rail or past batches", async () => {
     const res = await fetch(`http://localhost:${port}/builder`);
     assert.equal(res.status, 200);
     const html = await res.text();
-    assert.match(html, /Forecast/);
+    assert.match(html, /Ship strips/);
     assert.match(html, /Publish now/);
-    assert.match(html, /Past batches/);
+    assert.doesNotMatch(html, /Past batches/);
+    assert.doesNotMatch(html, /This run, end to end/);
   });
 
   await t.test("GET /builder warns when no logic bundle is active yet", async () => {
