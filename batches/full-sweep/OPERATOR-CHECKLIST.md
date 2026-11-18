@@ -200,3 +200,102 @@ back; the split and progress reattach.
 Commit `8c337e78` touches **`postgres/`** — shared infrastructure this
 package does not own. See the final report; it was not designed, not covered
 by any acceptance criterion, and not verified by this package's tester.
+
+---
+
+## Stabbur merging & dict.cc translations
+
+Three changes: smia `dictcc-parsing-fixes`, stabbur `stabbur-merge-fixes`,
+stabbur `stabbur-triage-queues`.
+
+### Deploy
+
+Standard pull / rebuild / restart, **plus one schema migration**.
+
+```
+git pull
+docker compose build smia-backend stabbur-backend
+docker compose up -d smia-backend stabbur-backend
+```
+
+**One-time migration — `stabbur`, revision `e91c7b35a2df` (saved triage
+queues).** It adds one nullable JSONB column and seeds nothing:
+
+```
+docker compose exec stabbur-backend alembic upgrade head
+docker compose exec stabbur-backend alembic current     # e91c7b35a2df (head)
+```
+
+Verify the column exists before using the Triage page — without it every
+queue request 500s:
+
+```
+docker compose exec postgres psql -U stabbur -d stabbur -c "\d settings" | grep triage_queues
+```
+
+Rollback is `alembic downgrade c3f8a0d2e5b1`; it drops the column and with
+it any saved queues. The three built-in origin queues are synthesised in
+code, so they survive a downgrade — you lose only your own named queues.
+
+**Hard-refresh the browser** (Ctrl-Shift-R) after deploying. `ui.js` and
+`ui.css` revalidate by etag, and a stale asset reads exactly like an
+unimplemented feature.
+
+### Test live
+
+**dict.cc audio — the headline fix.** Open any Norwegian note and the audio
+suggest panel.
+- Recordings are **human only** now. The dict.cc synthetic voice ("Liv") is
+  never requested, and an entry with no human recording in your language is
+  skipped rather than fetched — it used to return a synthesised clip
+  labelled "human".
+- Each candidate names the phrase it actually reads plus its part of speech:
+  `[verb] å stille krav`.
+- Candidates matching the note's part of speech sort first, so automatic
+  prefill picks the right sense. **Nothing is hidden** — the other senses are
+  still listed under their own headings.
+- Worth a direct check on `stille`: you should get ~22 recordings including
+  `å stille klokka`, `å stille klokken` and `å stille ut` (EN↔NO only, and
+  unreachable before this), and you should NOT get `å stille opp noe`,
+  `å gå stille i dørene` or `Stille vann har dypest grunn` — those have no
+  Norwegian recording. All three still appear under **translations**.
+
+**Merging.** Open a note with related notes.
+- Type into a field, do **not** save, then merge. Your typing survives — the
+  merge saves it first, then applies the takes. This is the data-loss fix.
+- Each take button says what it does: translations and context **add**,
+  everything else **replaces**, inflections **replaces + PoS**.
+- New "Take text" and "Take lemma" buttons.
+- Every related row has an "Open in new tab" link, including `ready` rows
+  whose other controls are disabled.
+
+**Triage queues.** The origin dropdown is gone.
+- `import` / `manual` / `capture` are now built-in queues; they behave
+  exactly as the dropdown did and cannot be edited or deleted.
+- Build a filter set (status, type, origin, PoS, source language, updated
+  since, text search, and has/missing per field) and save it as a named
+  queue. Queues live in the database, so they reach any device.
+- Each chip shows its remaining count.
+- From the Notes page, "Triage these results" opens the belt over whatever
+  you have filtered, as an unsaved queue you can then name.
+
+**Notes list.** Status and audio are single glyphs (hover for the label),
+and the list is paged with a slice-of-total readout.
+
+**IPA.** "Use" now **appends with a space** instead of overwriting, so you
+can assemble a multiword transcription token by token; ticks accumulate.
+Prefill also assembles when smia cannot supply a whole-phrase value, marked
+"assembled from single words" — and a token it could not resolve leaves a
+visible gap rather than silently vanishing. Variety is **hover-only** now.
+
+**Audio reuse.** In the audio panel, search your own notes and attach an
+existing recording. Both notes then reference the same blob — nothing is
+copied, and the source note is untouched.
+
+### Known gaps
+
+- **Phone portrait is NOT in this batch.** It was designed and then
+  deliberately deferred; the settled design is in the root `BACKLOG.md`.
+- A short, very common word can still produce a long audio list (`do` has
+  ~50 dict.cc entries). The human-only filter cut this a lot, but there is
+  no cap — tell me if it is still unwieldy.
