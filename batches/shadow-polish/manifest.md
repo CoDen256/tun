@@ -13,13 +13,13 @@ Single package. Nothing to order.
 
 | package | status |
 |---|---|
-| Shadow studying refinements | building (shadow: `shadow-studying-refinements`) |
+| Shadow studying refinements | archived — `shadow/openspec/changes/archive/2026-11-18-shadow-studying-refinements` |
 
 ## Packages
 
 ### Shadow studying refinements
 projects: shadow
-status: designed 2026-11-16 — change `shadow-studying-refinements` (shadow)
+status: archived 2026-11-18 — `shadow/openspec/changes/archive/2026-11-18-shadow-studying-refinements`
 
 Operator findings, verbatim:
 
@@ -108,3 +108,51 @@ Deferred to the builder's judgement (tier 2, not guesses):
   only. The contour therefore stays as slow as it is today; making it
   hidable (`P`) and drawing it inline is what reduces the annoyance. Recorded
   so the latency is not later read as a regression.
+
+## Build notes (2026-11-18)
+
+**Verification result: 44 of 45 acceptance criteria observed passing, 0
+failed.** Criterion 45 (shadow serves while the Postgres cluster is down)
+was NOT re-verified and is deliberately left so: verifying it means stopping
+the shared cluster while other sessions build against it. It passed in the
+previous cycle and nothing here touches the boot path.
+
+**Criterion 1 was wrong when written and is corrected in place** (commit
+`8a994c24`): it demanded the clip's first 50 ms contain the sentence's tone,
+which is unsatisfiable — a stored span legitimately begins with silence,
+because the segmenter cuts AT silence, and the detector keeps a deliberate
+onset guard. Cut accuracy is onset error against the master, which criterion
+3 already measures properly (observed 0.00–0.06 ms).
+
+**The reviewer confirmed seven defects after the tester had passed
+everything** — a reminder that the two stages catch different classes. The
+worst, and the one no test session could have caught because it unfolds over
+twenty minutes: re-analysing a split config **silently cancelled its own
+pre-cutting**, because the guard de-duplicated on config id and re-analysis
+reuses that id. The orphaned thread kept encoding deleted segments while the
+new boundaries were never pre-cut, and the on-demand fallback was swallowed
+by the same guard — so every chapter entered paid a full ~25 s encode, in
+exactly the workflow split configs exist for. Also fixed: duplicating a
+config lost its speech windows (the copy played untrimmed while the switch
+read "On", recoverable only by a re-analysis that would destroy the
+hand-fixed boundaries the duplicate existed to preserve), a book-wide chunk
+invalidation that destroyed every other config's chunks, an hour-long
+timeout on the synchronous request path, ffmpeg running inside an open write
+transaction, and a janitor that could not reclaim its own `.partial` files.
+
+**A latent clock bug was found while fixing, not by the review**: detected
+silences landed `CUT_SEEK_PAD_MS` (500 ms) late, which would have skewed
+every locally-probed speech window. Commit `a7775628`.
+
+Tests 62 → **80**. The tier-3 tripwire guarding "trimming must never become
+a boundary change" was upgraded from a one-line regex to an AST check, with
+a test that proves the guard catches the two-line form it exists for.
+
+Verification limits worth carrying into the next cycle:
+- **no microphone on the host** — the tester substituted only the input
+  device, so shadow's own record/trim/compare code ran for real, but a real
+  mic remains the operator's test
+- **the compositor ignores window resizing** — the phone criteria were
+  verified by hosting the app in a same-origin iframe sized to a true
+  390×844 and 360×800, which is genuine media-query width rather than
+  emulation
