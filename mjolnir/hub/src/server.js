@@ -55,9 +55,17 @@ import { runForecast } from "../../builder/src/pipeline.js";
 import { recentBuildJobs, getBuildJob } from "../../builder/src/buildJobs.js";
 import { getSchedule } from "../../builder/src/schedulerConfig.js";
 import { jobLogLines } from "../../builder/src/jobLogs.js";
-import { recentBatches, occurrencesForBuild } from "../../builder/src/batchHistory.js";
+import { describeLastRun } from "../../builder/src/runStatus.js";
 import { getActiveMeta } from "../../builder/src/logicBundle.js";
-import { buildForecastBody, buildScheduleBody, buildLogsBody, loadDeckMeta, loadShipOrders } from "../../builder/src/server.js";
+import {
+  buildShipStripsBody,
+  shipStripsPageExtras,
+  emptyForecast,
+  buildScheduleBody,
+  buildLogsBody,
+  loadDeckMeta,
+  loadShipOrders,
+} from "../../builder/src/server.js";
 import { checkOccurrenceIntegrity } from "../../builder/src/integrity.js";
 import { buildInsights } from "./insights.js";
 import { renderInsightsPage } from "./insightsPage.js";
@@ -1188,36 +1196,40 @@ export function createServer(pool, config, boot) {
           console.error(`[mjolnir-workbench] forecast unavailable: ${err.message}`);
           return null;
         });
-        const [forecastRaw, jobs, batches, activeLogicBundle] = await Promise.all([
+        const [forecastRaw, jobs, activeLogicBundle] = await Promise.all([
           forecastOrNull,
           recentBuildJobs(pool),
-          recentBatches(pool, 5),
           getActiveMeta(pool),
         ]);
-        // Shape must match runForecast's exactly or the renderers throw and
-        // we are back to a 500 by another route (builder's note, same rule).
-        const forecast = forecastRaw || {
-          wouldShip: [],
-          wouldQueue: [],
-          byDeck: [],
-          wouldUpdate: [],
-          totalPulled: 0,
-          totalAlreadyMinted: 0,
-          degraded: true,
-          reason: forecastError?.message || "stabbur unavailable",
-        };
-        const batchDetails = new Map();
-        for (const b of batches) batchDetails.set(b.buildId, await occurrencesForBuild(pool, b.buildId));
-        const [deckMeta, shipOrders, integrity] = await Promise.all([
+        // The empty shape comes from builder's own module (one definition,
+        // two servers) — hub's private copy of it was a second place for
+        // `runForecast`'s shape to be got wrong.
+        const forecast = forecastRaw || emptyForecast(forecastError?.message);
+        const [deckMeta, shipOrders, integrity, runState] = await Promise.all([
           loadDeckMeta(pool, forecast.byDeck.map((d) => d.deckCode)),
           loadShipOrders(pool, forecast),
           // D-FA4: the same check builder's own page renders — one
           // implementation, imported, never a second copy (D109).
           checkOccurrenceIntegrity(pool),
+          describeLastRun(pool, { jobs }),
         ]);
-        const body = buildForecastBody(forecast, jobs, batches, batchDetails, activeLogicBundle, deckMeta, shipOrders, integrity);
+        // D109: builder's own body function, hub's own shell — identical
+        // markup at both routes. The job-detail links point at hub's copy
+        // of the run log; the POST actions stay on `/builder/api/*`, which
+        // the gateway routes to builder's container whichever service
+        // rendered the page.
+        const body =
+          buildShipStripsBody({
+            forecast,
+            deckMeta,
+            shipOrders,
+            activeLogicBundle,
+            integrity,
+            runState,
+            logsBase: "/mjolnir/builder/logs",
+          }) + shipStripsPageExtras();
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        return res.end(renderShell({ title: "mjolnir / hub — forecast & publish", activeHref: "/mjolnir/builder/forecast", body }));
+        return res.end(renderShell({ title: "mjolnir / hub — ship strips", activeHref: "/mjolnir/builder/forecast", body }));
       }
       if (req.method === "GET" && url.pathname === "/mjolnir/builder/schedule") {
         const body = buildScheduleBody(await getSchedule(pool));

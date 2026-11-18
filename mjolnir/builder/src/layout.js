@@ -12,7 +12,7 @@ const NAV = [
   {
     group: "Builder",
     items: [
-      { href: "/builder", label: "Forecast & publish" },
+      { href: "/builder", label: "Ship strips" },
       { href: "/builder/schedule", label: "Schedule" },
       { href: "/builder/logs", label: "Run log" },
     ],
