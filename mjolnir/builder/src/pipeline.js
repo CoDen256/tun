@@ -668,7 +668,7 @@ export async function runPublish(
     saveDeckCardModel(scratchPath, model);
 
     const cardAudio = await allCardAudio(pool);
-    const finalCardAudio = await ensureBlobsPresent(cardAudio, { stabburBaseUrl, dataDir, selMsByCardId });
+    const finalCardAudio = await ensureBlobsPresent(cardAudio, { stabburBaseUrl, internalToken, dataDir, selMsByCardId });
     await log(buildJobId, `snapshot: audio manifest covers ${Object.keys(finalCardAudio).length} card(s)`);
 
     // D-L6: base_version/patch_rev now come from the logic bundle this run

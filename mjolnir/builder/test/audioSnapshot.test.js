@@ -79,6 +79,7 @@ describe("audioSnapshot: D-F1 trims a card's audio to its note's audio_sel_ms", 
     const cardAudio = { CARDTRIM: originalSha };
     const result = await ensureBlobsPresent(cardAudio, {
       stabburBaseUrl,
+      internalToken: fake.authToken,
       dataDir,
       selMsByCardId: { CARDTRIM: [500, 1500] },
     });
@@ -97,7 +98,7 @@ describe("audioSnapshot: D-F1 trims a card's audio to its note's audio_sel_ms", 
 
   await t.test("a card with no audio_sel_ms keeps the original hash unchanged", async () => {
     const cardAudio = { CARDPLAIN: originalSha };
-    const result = await ensureBlobsPresent(cardAudio, { stabburBaseUrl, dataDir, selMsByCardId: {} });
+    const result = await ensureBlobsPresent(cardAudio, { stabburBaseUrl, internalToken: fake.authToken, dataDir, selMsByCardId: {} });
     assert.equal(result.CARDPLAIN, originalSha);
   });
 
@@ -105,6 +106,7 @@ describe("audioSnapshot: D-F1 trims a card's audio to its note's audio_sel_ms", 
     const cardAudio = { CARDCLAMP: originalSha };
     const result = await ensureBlobsPresent(cardAudio, {
       stabburBaseUrl,
+      internalToken: fake.authToken,
       dataDir,
       selMsByCardId: { CARDCLAMP: [1800, 10000] },
     });
@@ -117,6 +119,7 @@ describe("audioSnapshot: D-F1 trims a card's audio to its note's audio_sel_ms", 
     const cardAudio = { CARDPAST: originalSha };
     const result = await ensureBlobsPresent(cardAudio, {
       stabburBaseUrl,
+      internalToken: fake.authToken,
       dataDir,
       selMsByCardId: { CARDPAST: [5000, 9000] },
     });
@@ -127,6 +130,7 @@ describe("audioSnapshot: D-F1 trims a card's audio to its note's audio_sel_ms", 
     const cardAudio = { CARDNAN: originalSha };
     const result = await ensureBlobsPresent(cardAudio, {
       stabburBaseUrl,
+      internalToken: fake.authToken,
       dataDir,
       selMsByCardId: { CARDNAN: [NaN, NaN] },
     });
@@ -173,6 +177,7 @@ describe("audioSnapshot: D-F1 trims a capture whose container declares no durati
   await t.test("trims to the selection, recovering the duration by decoding", async () => {
     const result = await ensureBlobsPresent({ CARDWEBM: originalSha }, {
       stabburBaseUrl,
+      internalToken: fake.authToken,
       dataDir,
       selMsByCardId: { CARDWEBM: [500, 1500] },
     });
@@ -184,6 +189,7 @@ describe("audioSnapshot: D-F1 trims a capture whose container declares no durati
   await t.test("still clamps a stale over-long selection against the decoded duration", async () => {
     const result = await ensureBlobsPresent({ CARDWEBMCLAMP: originalSha }, {
       stabburBaseUrl,
+      internalToken: fake.authToken,
       dataDir,
       selMsByCardId: { CARDWEBMCLAMP: [1800, 10000] },
     });
@@ -224,6 +230,7 @@ describe("audioSnapshot: a non-mp3 blob is normalized to mp3 whatever its select
   await t.test("with no selection at all, it is still transcoded rather than passed through", async () => {
     const result = await ensureBlobsPresent({ CARDRAW: originalSha }, {
       stabburBaseUrl,
+      internalToken: fake.authToken,
       dataDir,
       selMsByCardId: {},
     });
@@ -237,6 +244,7 @@ describe("audioSnapshot: a non-mp3 blob is normalized to mp3 whatever its select
   await t.test("a selection too broken to trim by still yields mp3, not the untouched source", async () => {
     const result = await ensureBlobsPresent({ CARDBAD: originalSha }, {
       stabburBaseUrl,
+      internalToken: fake.authToken,
       dataDir,
       selMsByCardId: { CARDBAD: [NaN, NaN] },
     });
@@ -247,6 +255,7 @@ describe("audioSnapshot: a non-mp3 blob is normalized to mp3 whatever its select
   await t.test("an mp3 with no selection is left byte-identical — no needless re-encode", async () => {
     const result = await ensureBlobsPresent({ CARDMP3: mp3Sha }, {
       stabburBaseUrl,
+      internalToken: fake.authToken,
       dataDir,
       selMsByCardId: {},
     });
@@ -264,6 +273,7 @@ describe("audioSnapshot: a non-mp3 blob is normalized to mp3 whatever its select
     fake.addBlob(junkSha, junk);
     const result = await ensureBlobsPresent({ CARDJUNK: junkSha }, {
       stabburBaseUrl,
+      internalToken: fake.authToken,
       dataDir,
       selMsByCardId: {},
     });

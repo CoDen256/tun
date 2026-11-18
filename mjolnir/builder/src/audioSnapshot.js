@@ -177,7 +177,7 @@ function trimToRange(srcPath, destPath, [startMs, endMs]) {
 // Returns `{cardId: finalSha256}` — the derived hash wherever a trim or a
 // transcode happened, the original hash otherwise — for the caller to hand
 // to `writeAudioManifest`.
-export async function ensureBlobsPresent(cardAudio, { stabburBaseUrl, dataDir, selMsByCardId = {} } = {}) {
+export async function ensureBlobsPresent(cardAudio, { stabburBaseUrl, internalToken, dataDir, selMsByCardId = {} } = {}) {
   const blobDir = path.join(dataDir, "blob");
   fs.mkdirSync(blobDir, { recursive: true });
 
@@ -189,7 +189,16 @@ export async function ensureBlobsPresent(cardAudio, { stabburBaseUrl, dataDir, s
     // nightly pipeline rather than a page render, so the bound is BLOB_MS,
     // not JSON_MS — long, but finite. A paused stabbur used to hang this
     // loop forever with no log line and a healthy container.
-    const res = await fetchWithTimeout(new URL(`/blob/${sha256}`, stabburBaseUrl), { timeoutMs: BLOB_MS, label: `stabbur /blob/${sha256}` });
+    //
+    // D159 deleted stabbur's own `/blob/<sha256>` carve-out — every route
+    // needs the shared bearer now, this one included. Unauthenticated here
+    // 401ed starting with the first run after that cutover (job #65).
+    if (!internalToken) throw new Error("ensureBlobsPresent requires internalToken (D159 — /blob/ is no longer exempt)");
+    const res = await fetchWithTimeout(new URL(`/blob/${sha256}`, stabburBaseUrl), {
+      timeoutMs: BLOB_MS,
+      label: `stabbur /blob/${sha256}`,
+      headers: { Authorization: `Bearer ${internalToken}` },
+    });
     if (!res.ok) {
       throw new Error(`could not fetch blob ${sha256} from stabbur: ${res.status} ${res.statusText}`);
     }

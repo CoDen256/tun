@@ -5,10 +5,14 @@ import crypto from "node:crypto";
 // `GET /api/notes` and `GET /blob/<sha256>` for builder's pipeline tests to
 // run against something real-ish rather than mocking `fetch` module-wide.
 //
-// D85: enforces the same shared-bearer-token auth stabbur's real `auth.py`
-// does on `/api/notes`/`/api/grammar_rules` (never on `/blob/`) — the
-// original D85 bug (`pullNotes` sending no `Authorization` header at all)
-// was invisible precisely because this fake didn't check it either.
+// D85/D159: enforces the same shared-bearer-token auth stabbur's real
+// `libs/pyservice/auth.py` does on every route, `/blob/` included —
+// D159 deleted `/blob/<sha256>`'s carve-out. The original D85 bug
+// (`pullNotes` sending no `Authorization` header at all) was invisible
+// precisely because this fake didn't check it either; the follow-on bug
+// (`ensureBlobsPresent` never sending one for `/blob/`) stayed invisible for
+// the same reason — this fake exempted `/blob/` after D159 removed stabbur's
+// own exemption.
 export function startFakeStabbur({ notes = [], blobs = {}, grammarRules = [], authToken = "fake-token" } = {}) {
   let currentNotes = notes;
   let currentGrammarRules = grammarRules;
@@ -19,7 +23,7 @@ export function startFakeStabbur({ notes = [], blobs = {}, grammarRules = [], au
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
-    if (!url.pathname.startsWith("/blob/")) {
+    {
       const header = req.headers.authorization || "";
       const provided = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : null;
       if (provided !== authToken) {
