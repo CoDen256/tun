@@ -622,6 +622,17 @@ const EDIT_FIELD_IDS = [
 ];
 
 let currentNote = null;
+
+// The stored note is assigned from several places (load, save, audio
+// attach, selection edit). The similar-notes dirty strip compares the open
+// form against it, so EVERY one of those has to refresh the strip — and the
+// strip went stale after a save precisely because the save sites did not
+// know it existed. Routing the assignment through one setter makes that
+// structural instead of a convention each new call site has to remember.
+function setCurrentNote(note) {
+  currentNote = note;
+  updateSimilarDirtyStrip('e');
+}
 let waveformState = null; // { durationMs, selStart, selEnd, dragging }
 
 async function renderNoteDetail(id) {
@@ -631,7 +642,7 @@ async function renderNoteDetail(id) {
     document.getElementById('noteDetailSub').textContent = '';
     return;
   }
-  currentNote = note;
+  setCurrentNote(note);
 
   document.getElementById('noteDetailTitle').textContent = note.text;
   document.getElementById('noteDetailSub').innerHTML =
@@ -750,7 +761,7 @@ document.getElementById('noteSaveBtn').addEventListener('click', async () => {
   });
   const result = document.getElementById('noteSaveResult');
   if (status === 200) {
-    currentNote = body;
+    setCurrentNote(body);
     result.textContent = 'Saved.';
     document.getElementById('noteDetailSub').innerHTML =
       `${escapeHtml(body.type)} · ${escapeHtml(body.pos || '—')} · ${statusPill(body.status)} · ` +
@@ -799,7 +810,7 @@ document.getElementById('uploadAudioBtn').addEventListener('click', async () => 
     body: JSON.stringify({ audio_blob: uploadBody.sha256, audio_sel_ms: null }),
   });
   if (status === 200) {
-    currentNote = body;
+    setCurrentNote(body);
     fileInput.value = '';
     document.getElementById('noteSaveResult').textContent = 'Audio replaced.';
     updateNoAudioWarning();
@@ -923,7 +934,7 @@ function wireTrimHandle(handleEl, which) {
       body: JSON.stringify({ audio_sel_ms: sel }),
     });
     if (status === 200) {
-      currentNote = body;
+      setCurrentNote(body);
       updateNoteJsonView();
     }
   });
@@ -2337,13 +2348,22 @@ function buildEnrichProviderRow(kind, provider, prefix, defaultQuery, renderCand
 function appendTranscription(prefix, value) {
   const field = document.getElementById(`${prefix}_transcription`);
   const current = field.value.trim();
-  if (current) {
-    const parts = current.split(/\s+/);
-    if (parts[parts.length - 1] === value) return field;
-    field.value = `${current} ${value}`;
-  } else {
+  if (!current) {
     field.value = value;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    return field;
   }
+  // Already present anywhere in the field, not merely as the trailing
+  // token: using candidate A, then B, then A again used to yield
+  // "A B A", because the guard only looked at the last token. A candidate
+  // can itself be several tokens (an assembled phrase), so this matches a
+  // contiguous run of tokens rather than a single one.
+  const parts = current.split(/\s+/);
+  const wanted = value.trim().split(/\s+/);
+  const alreadyPresent = parts.some((_, i) =>
+    wanted.every((w, j) => parts[i + j] === w));
+  if (alreadyPresent) return field;
+  field.value = `${current} ${value}`;
   field.dispatchEvent(new Event('input', { bubbles: true }));
   return field;
 }
@@ -2485,7 +2505,7 @@ async function attachAudioToNote(prefix, sha256, providerName, meta) {
     body: JSON.stringify({ audio_blob: sha256, audio_sel_ms: null }),
   });
   if (patch.status !== 200) return false;
-  currentNote = patch.body;
+  setCurrentNote(patch.body);
   updateNoteJsonView();
   updateNoAudioWarning();
   renderAudioSection(currentNote);
@@ -3311,6 +3331,12 @@ async function renderSettings() {
 
 const TRIAGE_ORIGIN_STORAGE_KEY = 'stabbur_triage_origin';
 let currentTriageNote = null;
+
+// Same reasoning as setCurrentNote — see there.
+function setCurrentTriageNote(note) {
+  currentTriageNote = note;
+  updateSimilarDirtyStrip('t');
+}
 let triageQueue = [];
 let triageIndex = 0;
 let triageDeferredCount = 0;
@@ -3370,6 +3396,27 @@ function triageQueueParams(queue) {
     params[key] = value;
   });
   return params;
+}
+
+// Every queue's remaining count, not just the selected one's. The counts
+// used to be filled in only as a queue was selected, so a fresh load showed
+// four of five chips with no number — and "how much is left in each queue"
+// is the whole point of the selector.
+//
+// Each count is one `limit=1` request whose `total` is the answer, fired in
+// parallel: the server computes the total over the filters anyway, so this
+// asks for the count without transferring a single row. A queue whose count
+// cannot be fetched simply shows none rather than a wrong number.
+async function refreshTriageQueueCounts() {
+  const queues = triageQueueState.queues;
+  await Promise.all(queues.map(async (q) => {
+    const params = { ...triageQueueParams(q), limit: 1 };
+    const { status, body } = await api(`/api/notes/authoring${qs(params)}`);
+    if (status === 200 && body && typeof body.total === 'number') {
+      triageQueueState.counts[q.id] = body.total;
+    }
+  }));
+  renderTriageQueuePicker();
 }
 
 async function loadTriageQueues() {
@@ -3574,6 +3621,9 @@ async function renderTriage() {
   await loadTriageQueues();
   renderTriageQueuePicker();
   await loadTriageQueue();
+  // After the belt, so the queue being opened is not kept waiting on the
+  // other queues' counts.
+  refreshTriageQueueCounts();
 }
 
 async function loadTriageQueue() {
@@ -3774,7 +3824,7 @@ async function showTriageNote() {
   const verdictBar = document.getElementById('triageVerdictBar');
 
   if (triageIndex >= triageQueue.length) {
-    currentTriageNote = null;
+    setCurrentTriageNote(null);
     empty.style.display = 'block';
     cardWrap.style.display = 'none';
     verdictBar.style.display = 'none';
@@ -3786,7 +3836,7 @@ async function showTriageNote() {
   verdictBar.style.display = 'block';
 
   const note = triageQueue[triageIndex];
-  currentTriageNote = note;
+  setCurrentTriageNote(note);
   triageStagedAudio = null;
 
   document.getElementById('triageHeadword').textContent = note.text;

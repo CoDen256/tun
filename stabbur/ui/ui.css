@@ -714,9 +714,31 @@ kbd {
 .g-draft { color: var(--warn); }
 .g-none { color: var(--text-faint); }
 /* Truncate inside the cell rather than letting a long value widen the table.
-   `max-width: 1px` with table-layout auto is the idiom that makes
-   text-overflow work in a table cell at all. */
-.trunc { max-width: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+   CORRECTED 2026-11-17: this was `max-width: 1px` with table-layout auto —
+   the usual idiom for making text-overflow work in a table cell, and here it
+   overshot badly. Auto layout treats that max-width as the column's
+   preferred size, so the text column collapsed to ~109px (ellipsising most
+   note texts at 5-6 characters) while ~180px of the table sat unused.
+   `table-layout: fixed` below gives the column a real share of the width and
+   makes truncation the exception rather than the rule. */
+.trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Fixed layout so the columns are allocated by these shares rather than by
+   content — which is what keeps the table inside its container without
+   starving the one column the operator actually reads. The two icon columns
+   take a fixed 38px; the rest divide what is left. */
+#page-notes table { table-layout: fixed; width: 100%; }
+#page-notes th:nth-child(1), #page-notes td:nth-child(1) { width: 30%; }
+/* 12%, not 10%: `pronunciation` is the longest type value and clipped below that. */
+#page-notes th:nth-child(2), #page-notes td:nth-child(2) { width: 12%; }
+#page-notes th:nth-child(3), #page-notes td:nth-child(3) { width: 11%; }
+#page-notes th:nth-child(4), #page-notes td:nth-child(4) { width: 38px; }
+#page-notes th:nth-child(5), #page-notes td:nth-child(5) { width: 38px; }
+#page-notes th:nth-child(6), #page-notes td:nth-child(6) { width: 22%; }
+/* Updated is a fixed-format timestamp ("Nov 17, 07:40 PM" measures 168px),
+   so it gets a measured px width rather than a share — at 13% it was 134px
+   and overflowed the wrapper by exactly its shortfall. */
+#page-notes th:nth-child(7), #page-notes td:nth-child(7) { width: 172px; }
 
 .pager {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
