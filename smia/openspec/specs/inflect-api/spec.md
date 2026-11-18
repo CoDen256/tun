@@ -1,9 +1,7 @@
 ## Purpose
 
 `POST /inflections` looks up Norwegian inflection candidates for a surface form, following the `lookup-cache` contract. Returns candidates, never a single auto-picked answer, because Norwegian surface forms are often genuinely ambiguous.
-
 ## Requirements
-
 ### Requirement: Inflection lookup returns candidates, never one answer
 `POST /inflections` SHALL accept `{word, lang, provider}` (required: more than one provider is configured — see Requirement: Provider set) and return `{provider, candidates: [{lemma, pos, paradigm}]}`. The system SHALL NOT auto-select a single candidate when a surface form maps to more than one lemma/paradigm; all matches are returned for the caller (stabbur's triage UI) to pick from.
 
@@ -20,25 +18,34 @@
 - **THEN** the system returns `{provider, candidates: []}` (a valid, cacheable negative result, not an error)
 
 ### Requirement: Paradigm shape matches stabbur's storage model
-Each candidate's `paradigm` field SHALL use the per-part-of-speech shape already expected by stabbur's item storage: `substantiv {article, sg_indef, sg_def, pl_indef, pl_def}`, `adjektiv {positiv, nøytrum, flertall, komparativ, superlativ}`, `verb {infinitiv, presens, preteritum, perfektum}`, `adverb {form, komparativ?, superlativ?}`, and `{}` for parts of speech with no inflection.
+A `/inflections` candidate SHALL carry `lemma`, `pos`, and a `paradigm`
+whose keys are exactly the slot names stabbur stores for that part of
+speech. A slot the source has no form for SHALL be absent rather than
+empty.
 
-`komparativ`/`superlativ` on `adverb` are present only when the source paradigm itself defines degree inflection (Norsk Ordbank's `adjektiv, adverbtype` paradigm group, e.g. `fort`/`fortere`/`fortest`); plain invariable adverbs (Norsk Ordbank's `adverb` paradigm group) omit them.
+Where a source expresses **several forms for one slot** — a Norwegian noun
+that takes more than one gender, or a slot with alternative inflected
+forms — every form SHALL be preserved in that slot, joined as the source
+joined them. A slot SHALL NOT be reduced to one form, and a table SHALL
+NOT be split into one candidate per gender.
 
-#### Scenario: Noun candidate shape
-- **WHEN** a candidate's `pos` is `substantiv`
-- **THEN** its `paradigm` object has exactly the keys `article, sg_indef, sg_def, pl_indef, pl_def`
+Where a source marks an article on a slot, the article SHALL be lifted into
+the `article` key and SHALL comprise **every** article form that slot
+carries, not only the first. When the article forms cannot be told apart
+from the inflected form, the whole segment SHALL remain in the inflected
+slot and `article` SHALL be absent — a visible gap, never a guessed split.
 
-#### Scenario: Verb candidate shape
-- **WHEN** a candidate's `pos` is `verb`
-- **THEN** its `paradigm` object has exactly the keys `infinitiv, presens, preteritum, perfektum`
+#### Scenario: A two-gender noun keeps both articles
+- **WHEN** dict.cc returns the table `en / et do | doen / doet | doer / do | doene / doa` for the Norwegian noun `do`
+- **THEN** exactly one candidate is returned
+- **AND** its `paradigm.article` is `en/et`
+- **AND** its `paradigm.sg_indef` is `do` — not `/ et do`, and not absent
+- **AND** `sg_def`, `pl_indef` and `pl_def` carry `doen / doet`, `doer / do` and `doene / doa` respectively
 
-#### Scenario: Degree-inflecting adverb
-- **WHEN** a candidate's `pos` is `adverb` and its source paradigm defines degree inflection
-- **THEN** its `paradigm` object includes `form`, `komparativ`, and `superlativ`
-
-#### Scenario: Invariable adverb
-- **WHEN** a candidate's `pos` is `adverb` and its source paradigm has no degree inflection
-- **THEN** its `paradigm` object includes only `form`
+#### Scenario: A single-gender noun is unaffected
+- **WHEN** dict.cc returns a table whose article slot carries one article word
+- **THEN** `paradigm.article` is that word
+- **AND** the inflected slot carries the rest of the segment, exactly as before this change
 
 ### Requirement: Provider set
 `/inflections` SHALL be backed by three providers: `ordbank` (the Norsk Ordbank import — primary, matches the paradigm shape directly, full coverage), `kaikki` (the kaikki.org/Wiktionary dump's `forms[]` field, secondary), and `dictcc_api` (dict.cc's mobile-app `inflections_repl` field, secondary, best-effort). Because more than one provider is configured, `provider` is a required request field per the `lookup-cache` contract.
@@ -113,3 +120,4 @@ The request and response shapes of `POST /inflections` are unchanged.
 #### Scenario: A single lowercase word behaves exactly as before
 - **WHEN** `POST /inflections` is called with a single already-lowercase word
 - **THEN** the provider performs the same lookups it performed before this change, and the response is unchanged
+

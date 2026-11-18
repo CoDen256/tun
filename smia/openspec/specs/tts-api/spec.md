@@ -47,19 +47,21 @@ Because dict.cc has no monolingual Norwegian dictionary, a `lang=nb` lookup agai
 - **THEN** the `tts` kind lists `pygmalion` and reports its current recording count, per the `provider-catalog` capability
 
 ### Requirement: Manual-link response for providers with no accessible API
-Providers with no free or otherwise accessible API (`forvo`, `filmot`) SHALL NOT be called over HTTP. Instead, `POST /tts` for these providers SHALL return `{provider, candidates: [], url}`, where `url` is a link to that provider's own website with the requested word/phrase and language pre-filled, for the caller to open and check manually. This is not an error — `candidates: []` combined with a present `url` is this adapter type's normal, successful response.
+A provider with no accessible API SHALL answer with a link a human can
+open, never with audio bytes.
 
-#### Scenario: Forvo manual link
-- **WHEN** `provider=forvo` is used with a given `text`/`lang`
-- **THEN** the response is `{provider: "forvo", candidates: [], url}`, where `url` opens Forvo's page for that word/language
+The filmot link SHALL wrap a **multiword** query in literal double quotes
+before percent-encoding, so filmot searches the phrase rather than its
+separate words. A single-word query SHALL NOT be quoted. The link's query
+parameters SHALL be otherwise unchanged.
 
-#### Scenario: filmot manual link
-- **WHEN** `provider=filmot` is used with a given `text`/`lang`
-- **THEN** the response is `{provider: "filmot", candidates: [], url}`, where `url` opens filmot's caption search pre-filled with that phrase/language
+#### Scenario: A phrase is searched as a phrase
+- **WHEN** a filmot link is built for the Norwegian query `fastsatt av`
+- **THEN** the URL path segment is the percent-encoded form of `"fastsatt av"`, carrying `%22` at both ends
 
-#### Scenario: Manual-link responses are cacheable like any other result
-- **WHEN** the same `(forvo|filmot, text, lang)` request repeats
-- **THEN** the cached `{candidates: [], url}` response is served, per the `lookup-cache` contract — no repeated URL construction needed, since the URL is deterministic from the input
+#### Scenario: A single word is not quoted
+- **WHEN** a filmot link is built for the Norwegian query `hus`
+- **THEN** the URL is exactly what it was before this change, with no quote characters
 
 ### Requirement: Audio bytes served by content hash
 The system SHALL expose `GET /tts/{sha256}` returning the raw audio bytes for a previously created clip, independent of the `lookup-cache` metadata-only `GET /<kind>/{id}` contract.
@@ -76,43 +78,64 @@ Per the ecosystem's audio ownership rule, smia's `/tts` cache SHALL be treated a
 - **THEN** no other service's canonical audio is affected, because canonical copies live elsewhere
 
 ### Requirement: Citation-form input resolves against the dict.cc audio provider
-`POST /tts` SHALL resolve a `lang=nb` input supplied in Norwegian citation form — an indefinite article plus noun (`en kalv`, `ei bok`, `et hus`) or the infinitive marker plus verb (`å komme`) — against the `dictcc_api` provider, not only the bare lemma. The provider SHALL apply the `norwegian-input` capability's query-variant rules, crossing the variant list with the two Norwegian-touching dict.cc pairs it already queries, and SHALL deduplicate the merged audio candidates by `sha256` as it does today.
+The dict.cc `/tts` provider SHALL offer **only real human recordings**, and
+SHALL NEVER offer computer-generated audio.
 
-Because audio candidates are deduplicated by content hash, a recording reachable through more than one (pair, variant) combination SHALL appear exactly once.
+Availability SHALL be determined from dict.cc's own recordings endpoint,
+batched once per lookup, NOT by probing the audio endpoint. The audio
+endpoint synthesises when no recording exists, so a successful fetch is not
+evidence of a recording.
 
-The request and response shapes of `POST /tts`, and the behaviour of `GET /tts/{sha256}`, are unchanged.
+An entry SHALL yield an audio candidate **iff** it has a recording whose
+language id matches the requested language. An entry with recordings only in
+the pair's other language SHALL yield no candidate and SHALL NOT be fetched.
 
-#### Scenario: An indefinite noun phrase returns the noun's audio
-- **WHEN** `POST /tts` is called with `{text: "en kalv", lang: "nb"}` and `provider=dictcc_api`
-- **THEN** the response's `candidates` contains the recordings dict.cc has for `kalv`, rather than being empty
+The provider SHALL ask for audio across **every** language pair that carries
+the requested language, and SHALL ask for each pair with the requested
+language on its correct side — a self-lookup directed at the wrong side
+returns nothing and silently hides that pair's entire dataset.
 
-#### Scenario: An infinitive returns the verb's audio
-- **WHEN** `POST /tts` is called with `{text: "å komme", lang: "nb"}` and `provider=dictcc_api`
-- **THEN** the response's `candidates` contains the recordings dict.cc has for `komme`, rather than being empty
+Each candidate SHALL carry a `context` naming the phrase the recording
+actually reads — dict.cc's own source field verbatim, infinitive marker
+included — together with its part-of-speech tag where dict.cc supplies one,
+so the operator can tell which sense they are hearing. (`/translations`
+contexts keep their established stripped form; only `/tts` is verbatim,
+because only `/tts` is describing a sound.) Candidates SHALL
+dedupe on content hash only; two different recordings of the same phrase
+SHALL both survive.
 
-#### Scenario: Variants cross the existing pair fan-out
-- **WHEN** `provider=dictcc_api`, `lang=nb` is used with a two-variant input
-- **THEN** each (pair, variant) combination is queried for its entry id and audio
+The response SHALL NOT be filtered by part of speech, and the request SHALL
+NOT accept a part-of-speech parameter. Ordering by part of speech is the
+caller's.
 
-#### Scenario: The same recording reached twice appears once
-- **WHEN** two (pair, variant) combinations resolve to byte-identical audio
-- **THEN** the response's `candidates` includes that recording once, identified by its `sha256`
+#### Scenario: An entry with no recording in the requested language is skipped
+- **GIVEN** a dict.cc entry whose only recording is in the pair's other language
+- **WHEN** audio is requested for the queried language
+- **THEN** no candidate is returned for that entry
+- **AND** no audio request is made for it
 
-#### Scenario: One combination failing does not fail the lookup
-- **WHEN** one (pair, variant) combination's request fails while another succeeds
-- **THEN** the successful combination's candidates are returned rather than the whole request failing
+#### Scenario: Computer-generated audio is never offered
+- **WHEN** audio is requested for any word
+- **THEN** every returned candidate corresponds to a listed human recording
+- **AND** no candidate is produced by the provider's synthetic voice
 
-#### Scenario: Every combination failing fails the lookup
-- **WHEN** every (pair, variant) combination's request fails
-- **THEN** the lookup returns the provider's failure, as it does today
+#### Scenario: A later entry's recording is reachable
+- **WHEN** a word's first dict.cc entry has no human recording and a later entry does
+- **THEN** the later entry's recording is returned as a candidate
 
-#### Scenario: A single lowercase word behaves exactly as before
-- **WHEN** `POST /tts` is called with a single already-lowercase Norwegian word
-- **THEN** `dictcc_api` makes the same requests it made before this change, and the response is unchanged
+#### Scenario: Both language pairs are searched
+- **GIVEN** a Norwegian phrase whose only recording lives in the EN–NO pair
+- **WHEN** audio is requested for Norwegian
+- **THEN** that recording is returned
 
-#### Scenario: Other audio providers are unaffected
-- **WHEN** a provider other than `dictcc_api` is used
-- **THEN** it receives the caller's text unchanged, with no variant fan-out
+#### Scenario: Candidates name the phrase being read
+- **WHEN** a word has entries of more than one part of speech, each with a recording
+- **THEN** each candidate's `context` carries that entry's phrase and its bracketed part-of-speech tag
+- **AND** no candidate is omitted on the basis of its part of speech
+
+#### Scenario: A misaligned recordings response is refused
+- **WHEN** the recordings endpoint returns a different number of tokens than ids requested
+- **THEN** the lookup raises rather than pairing recordings with the wrong entries
 
 ### Requirement: Pygmalion dialect recordings
 `POST /tts` with `provider=pygmalion` and `lang=nb` SHALL look up the casefolded, whitespace-trimmed `text` as an exact match against the imported Pygmalion recording table, and SHALL return one candidate per recording of that word across all dialects. Each candidate SHALL be `{sha256, source: "human", voice}`, where `voice` is the speaker's dialect area (e.g. `Oslo`, `Bergen`, `Sandnessjøen`). The provider SHALL reuse the existing candidate metadata fields and SHALL NOT introduce any new field. Candidates SHALL be ordered with `Oslo` first, then the remaining dialects alphabetically, then by recording order within a dialect, and SHALL be deduplicated by `sha256`. The provider SHALL NOT apply the `norwegian-input` query-variant fan-out or any inflection or fuzzy matching. A word with no recording SHALL yield `{provider, candidates: []}`, which is a successful response and not an error. A `lang` other than `nb` SHALL yield `candidates: []`.
