@@ -130,7 +130,7 @@ const PROJECTORS = {
   }),
   pronunciation: (note) => ({
     N: `<div class="center">Read out:<br><span class="lg">${note.text}</span></div>`,
-    E: `<div class="center"><div class="arialFont supWrap">${transcriptionHtml(note)}</div></div>`,
+    E: `<div class="center"><div class="lg arialFont supWrap">${transcriptionHtml(note)}</div></div>`,
     X: "",
     A: "E",
     occurrences: ["N"],
