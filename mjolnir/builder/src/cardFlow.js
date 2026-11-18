@@ -84,7 +84,7 @@ export async function gridStatusForDeck(pool, deckCode, shippedCount) {
 export async function shipOrderForDeck(pool, deckCode) {
   const [{ rows: shippedRows }, { rows: stagedRows }] = await Promise.all([
     pool.query(
-      `SELECT os.card_id, os.letter, cc.n
+      `SELECT os.card_id, os.letter, os.build_id, os.shipped_at, cc.n
        FROM occurrence_shipments os
        JOIN card_slots cs ON cs.id = os.card_id
        LEFT JOIN card_content cc ON cc.card_id = os.card_id
@@ -102,7 +102,12 @@ export async function shipOrderForDeck(pool, deckCode) {
     ),
   ]);
   const toEntry = (r) => ({ cardId: r.card_id, letter: r.letter, noteText: stripHtml(r.n) });
-  const shipped = shippedRows.map(toEntry);
+  // builder-ship-strips 3.10: a shipped cell's drawer names the build that
+  // shipped it and when. Both come from `occurrence_shipments`' own columns
+  // (D93 — written once, at the moment the occurrence actually shipped), so
+  // the strip reads the shipment log rather than inferring a build from a
+  // cell's position in the grid.
+  const shipped = shippedRows.map((r) => ({ ...toEntry(r), buildId: r.build_id, shippedAt: r.shipped_at }));
   const staged = stagedRows.map(toEntry);
 
   const total = shipped.length + staged.length;
