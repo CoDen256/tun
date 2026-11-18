@@ -2064,13 +2064,28 @@ function appendGroupedCandidates(resultBox, candidates, providerName, renderCand
 // Exclusive within a language group (translations — one chosen translation
 // per target language) or the whole panel (ipa/tts — single-value field) —
 // never global, so picking an EN translation doesn't un-mark a DE one.
-// stabbur-triage-queues D6: marks ACCUMULATE. They used to be exclusive
-// within a language group or panel, which made them lie the moment a field
-// became additive — after assembling a transcription from two candidates,
-// only the second showed as used even though both were in the field. The
-// operator chose accumulation everywhere rather than special-casing IPA,
-// since append-mode translations already concatenate within a language.
-function markSuggestUsed(btn) {
+// stabbur-triage-queues D6: marks accumulate for a field that ACCUMULATES,
+// and stay exclusive for one that does not.
+//
+// They were exclusive everywhere, which made them lie the moment IPA became
+// additive: after assembling a transcription from two candidates, only the
+// second showed as used though both were in the field. Making them
+// accumulate everywhere traded that for the opposite lie — audition three
+// dict.cc recordings and all three read "✓ Used" while the note carries
+// only the last, which matters precisely because this change surfaces many
+// more human recordings per word.
+//
+// So the caller says which it is. `accumulate` is true only where using a
+// second candidate genuinely adds to the first: the IPA candidate rows, and
+// translations in append mode (one chosen translation per language group).
+function markSuggestUsed(btn, { accumulate = false } = {}) {
+  if (!accumulate) {
+    const scope = btn.closest('.lang-group') || btn.closest('.suggest-panel') || document;
+    scope.querySelectorAll('.use-btn.used').forEach((b) => {
+      if (b !== btn) { b.classList.remove('used'); b.textContent = b.dataset.useLabel || 'Use'; }
+    });
+  }
+  if (!btn.dataset.useLabel) btn.dataset.useLabel = btn.textContent;
   btn.classList.add('used');
   btn.textContent = '✓ Used';
 }
@@ -2388,7 +2403,8 @@ function renderIpaCandidate(prefix) {
     `);
     r.querySelector('.use-btn').addEventListener('click', (e) => {
       appendTranscription(prefix, value);
-      markSuggestUsed(e.target);
+      // Accumulates: the field holds every candidate used so far.
+      markSuggestUsed(e.target, { accumulate: true });
       enrichToast(`Transcription extended from ${providerName}`);
     });
     return r;
@@ -2474,7 +2490,10 @@ function renderTranslationCandidate(prefix, lang) {
       const settings = await fetchSettings();
       useTranslationCandidate(`${prefix}_translations_list`, lang, c.text, settings.translation_merge_mode, onChange);
       if (onChange) onChange();
-      markSuggestUsed(e.target);
+      // Accumulates within its language group — append mode concatenates
+      // into the existing row, separate mode adds another row; either way
+      // both candidates are in the note.
+      markSuggestUsed(e.target, { accumulate: true });
       enrichToast(`Added ${lang.toUpperCase()} translation from ${providerName}`);
     });
     return r;
@@ -2632,7 +2651,8 @@ function renderExamplesCandidate(prefix) {
       // replacing whatever's already there.
       field.value = existing ? `${existing}\n${c.text || ''}` : (c.text || '');
       field.dispatchEvent(new Event('input', { bubbles: true }));
-      markSuggestUsed(e.target);
+      // Accumulates: each example is appended on its own line.
+      markSuggestUsed(e.target, { accumulate: true });
       enrichToast(`Context ${existing ? 'appended' : 'set'} from ${providerName}`);
     });
     return r;
@@ -3340,6 +3360,9 @@ function setCurrentTriageNote(note) {
 let triageQueue = [];
 let triageIndex = 0;
 let triageDeferredCount = 0;
+// True only when a queue exceeded TRIAGE_QUEUE_MAX. Surfaced in the belt
+// rather than swallowed — a silently short queue reads as a finished one.
+let triageQueueTruncated = false;
 // Audio (unlike every other field) normally attaches with an immediate
 // PATCH (attachAudioToNote's 'e' path) — staged here instead, so "skip"
 // genuinely saves nothing (design D8) and a verdict is what actually
@@ -3388,9 +3411,23 @@ function activeTriageQueue() {
 
 // The ONE place a queue becomes request parameters, so the selector, the
 // editor and the notes browser's hand-off cannot drift apart.
+// The authoring route is paged, but the belt is a queue the operator works
+// to the end — so it fetches EVERY page, not just the first.
+//
+// This used to pass a bare `limit: 200` (the route's maximum) with a comment
+// claiming a larger queue was "past the point where a notch track is
+// rendered". That was simply false — the track renders up to 500 — and the
+// result was a silent truncation: a 287-note sweep showed `287` on its chip
+// and 200 in the belt, then declared itself finished with 87 left that no
+// amount of scrolling could reach.
+const TRIAGE_QUEUE_PAGE = 200;
+// A backstop against pathological queues, not a product limit. Reaching it
+// is reported to the operator rather than hidden.
+const TRIAGE_QUEUE_MAX = 5000;
+
 function triageQueueParams(queue) {
   const filters = (queue && queue.filters) || {};
-  const params = { limit: 200, sort: (queue && queue.sort) || 'updated_asc' };
+  const params = { limit: TRIAGE_QUEUE_PAGE, sort: (queue && queue.sort) || 'updated_asc' };
   Object.entries(filters).forEach(([key, value]) => {
     if (value === '' || value === null || value === undefined || value === 'any') return;
     params[key] = value;
@@ -3636,11 +3673,24 @@ async function loadTriageQueue() {
     await showTriageNote();
     return;
   }
-  // The authoring route is paged now; the belt wants the whole queue, so it
-  // asks for the maximum page. A queue larger than that is already past the
-  // point where a notch track is rendered (TRIAGE_BELT_TRACK_MAX_NOTCHES).
-  const { status, body } = await api(`/api/notes/authoring${qs(triageQueueParams(queue))}`);
-  triageQueue = status === 200 ? (body.notes || []) : [];
+  const base = triageQueueParams(queue);
+  let status = 200;
+  let body = null;
+  const collected = [];
+  let total = 0;
+  let truncated = false;
+  for (let offset = 0; offset < TRIAGE_QUEUE_MAX; offset += TRIAGE_QUEUE_PAGE) {
+    const page = await api(`/api/notes/authoring${qs({ ...base, offset })}`);
+    status = page.status;
+    body = page.body;
+    if (status !== 200 || !body) break;
+    collected.push(...(body.notes || []));
+    total = body.total || 0;
+    if (collected.length >= total || !(body.notes || []).length) break;
+    if (offset + TRIAGE_QUEUE_PAGE >= TRIAGE_QUEUE_MAX) truncated = true;
+  }
+  triageQueueTruncated = truncated;
+  triageQueue = status === 200 ? collected : [];
   triageIndex = 0;
   triageBeltTrackTotal = -1; // force the notch track to rebuild for the new queue
   triageHistoryStack = []; // indices from the previous queue no longer mean anything
@@ -3648,7 +3698,9 @@ async function loadTriageQueue() {
   // without fetching every queue, which is the point — the chips show what
   // they can and omit the rest rather than guessing.
   if (status === 200) {
-    triageQueueState.counts[queue.id] = (body && body.total) || triageQueue.length;
+    // The chip's number and the belt's length are now the same thing by
+    // construction, unless the backstop tripped — in which case say so.
+    triageQueueState.counts[queue.id] = total || triageQueue.length;
   }
   renderTriageQueuePicker();
   refreshTriageRailBadge();

@@ -642,8 +642,12 @@ def register_notes_routes(app):
             ready = db.scalar(
                 select(func.count()).select_from(counted).where(counted.c.status == "ready")
             )
+            # The SAME predicate the `audio_blob_presence=missing` filter
+            # uses — NULL *or* empty. Counting only NULL here would let a
+            # note sit in the queue without being in the number that sent
+            # the operator to it.
             missing_audio = db.scalar(
-                select(func.count()).select_from(counted).where(counted.c.audio_blob.is_(None))
+                select(func.count()).select_from(counted).where(_is_missing(counted.c.audio_blob))
             )
             notes = db.scalars(stmt.limit(limit).offset(offset)).all()
             return (

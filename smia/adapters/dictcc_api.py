@@ -332,7 +332,10 @@ def _fetch_recording_lids(lp: str, entry_ids: list) -> dict:
     space-separated token per requested id, in the same order — the leading
     `0` consumes the first token — and each token is a `|`-separated list of
     recording keys shaped `<recId>_<user>_<country>_lid<N>_v`. An entry with
-    no recordings contributes an empty token.
+    no recordings contributes a literal **`0`** token — NOT an empty string
+    (verified; see providers/dict/api.md). That distinction is load-bearing:
+    `.strip().split(" ")` below would swallow a genuinely empty trailing
+    token, and the length check would then raise and fail the whole pair.
 
     `<N>` is dict.cc's language id: 81 Norwegian, 2 German, 1 English. One
     entry commonly carries recordings on BOTH sides of the pair, which is

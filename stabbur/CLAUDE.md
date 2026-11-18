@@ -59,6 +59,14 @@ session (`stabbur-merge-fixes` D2, `stabbur-triage-queues` D6):
 Same column, two gestures, two intents. A change that makes them
 consistent is undoing a decision, not fixing a bug.
 
+There is a **second, smaller asymmetry inside the suggest panel itself**,
+also deliberate: a candidate row's Use *appends*, while the
+"assembled from single words" row's Use *replaces*. A candidate is one
+token of a phrase; the assembled row is a transcription of the whole
+phrase, so appending it to the tokens it was built from would duplicate
+them. `stabbur-triage-queues` D6 and the `smia-enrichment` spec both state
+it.
+
 Related: part of speech **orders** candidates and never filters them, and
 the ordering is stabbur's own, done on the `context` string smia returns.
 See `smia/CLAUDE.md` for smia's half.
