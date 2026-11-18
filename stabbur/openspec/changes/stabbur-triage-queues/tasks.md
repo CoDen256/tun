@@ -114,7 +114,10 @@ Order matters in two places inside this change:
 
 ## Out of scope — do not implement
 
-- [ ] 8.1 **No phone-portrait or responsive work.** It was designed in the
+- [x] 8.1 **No phone-portrait or responsive work.** VERIFIED ABSENT, not done:
+      no `@media` query was added to `ui.css` or `index.html` anywhere in
+      this package's range (confirmed independently by the acceptance run,
+      criterion 55). It was designed in the
       same session and deliberately deferred by the operator to the root
       `BACKLOG.md`. The mockup's "Portrait" blocks are reference for that
       later item, not a requirement of this change.
