@@ -83,47 +83,73 @@ sentences is not meaningful.
 - **THEN** no spelling-based similarity is reported for it
 
 ### Requirement: Individual fields can be taken from a related note
-The system SHALL let the operator copy any single field from a related note
-into the note being edited, without copying the rest of that note. The
-related-notes panel SHALL show each field's actual content next to its
-"Take" action — not merely whether the field is present — so the operator
-can see what a take would bring in before taking it. Audio SHALL be
-previewable (playable) directly in the panel, the same way an audio
-suggestion's own candidate can be previewed, without that preview
-requiring the field to already be taken.
+A related note's fields SHALL be offerable individually, each next to a
+preview of the value that would be taken. Staging a take SHALL NOT change
+anything on its own; only committing the merge applies it.
 
-#### Scenario: Taking audio from a related note
-- **WHEN** the operator takes the audio from a related note
-- **THEN** the edited note references the same audio, and no second copy of
-  the recording is stored
+Takeable fields SHALL include `text`, `lemma`, `translations`,
+`transcription`, `inflections`, `context_text` and the audio reference.
+`status`, `origin` and `import_ref` SHALL remain untakeable.
 
-#### Scenario: Taking one field and leaving the others
-- **WHEN** the operator takes only the transcription from a related note
-- **THEN** every other field of the edited note is unchanged
+Each take SHALL be **additive** or **replacive**, fixed per field:
 
-#### Scenario: Previewing a related note's content before taking it
-- **WHEN** a related note has translations, context text, inflections, a
-  transcription, or audio
-- **THEN** that field's actual value is shown next to its "Take" action,
-  not only a presence indicator
+- `translations` and `context_text` are **additive** — the survivor's own
+  value is never discarded.
+- `inflections`, `transcription`, `text`, `lemma` and the audio reference
+  are **replacive**.
 
-#### Scenario: Previewing a related note's audio before taking it
-- **WHEN** a related note has audio attached
-- **THEN** the operator can play that audio directly in the related-notes
-  panel before deciding whether to take it
+Taking `inflections` SHALL also take the source's part of speech, always —
+not only when the survivor has none. A paradigm whose part of speech does
+not reach the survivor renders into fields that do not exist on it.
+
+Each take control SHALL state its operation where the operator reads it,
+both on the control itself and in the summary shown before committing.
+
+#### Scenario: Taking context keeps the survivor's own
+- **GIVEN** the survivor has a context sentence and the related note has a different one
+- **WHEN** "take context" is staged and the merge is committed
+- **THEN** the survivor's context contains both sentences, the taken one appended on a new line below the survivor's own
+
+#### Scenario: Identical context is not duplicated
+- **GIVEN** the survivor's context and the related note's context are the same text
+- **WHEN** "take context" is staged and the merge is committed
+- **THEN** the survivor's context is unchanged and the sentence appears once
+
+#### Scenario: Taking inflections replaces the paradigm and the part of speech
+- **GIVEN** the survivor has a filled paradigm and a part of speech
+- **WHEN** "take inflections" is staged from a related note with a different paradigm and part of speech, and the merge is committed
+- **THEN** the survivor's paradigm is the related note's, with no slot surviving from its own
+- **AND** the survivor's part of speech is the related note's
+
+#### Scenario: Each control says what it will do
+- **WHEN** the take controls are shown
+- **THEN** the controls for translations and context are labelled as adding
+- **AND** the controls for inflections, IPA, audio, text and lemma are labelled as replacing
 
 ### Requirement: Merging is many-to-one and never automatic
-The system SHALL allow one note to absorb several related notes in a single
-action, and SHALL NOT merge, resolve, or delete any note without an explicit
-operator action.
+A merge SHALL be an explicit operator action in which one survivor absorbs
+one or more related notes. It SHALL never be triggered by viewing,
+staging, or editing.
 
-#### Scenario: Absorbing two notes at once
-- **WHEN** the operator merges two related notes into the one being edited
-- **THEN** both are absorbed by that one action
+Committing a merge SHALL first persist the survivor's **currently edited
+values** — the state of the open form, not the stored row — and SHALL then
+apply the staged takes on top of them, within one transaction. An edit the
+operator had not separately saved SHALL NOT be lost to a merge.
 
-#### Scenario: No automatic resolution
-- **WHEN** any pair of notes is reported as related, at any similarity
-- **THEN** nothing is merged or deleted until the operator acts
+The confirmation shown before committing SHALL state both that the
+absorbed notes will be permanently deleted and that the operator's
+unsaved edits will be saved.
+
+#### Scenario: Unsaved edits survive a merge
+- **GIVEN** the operator has typed a new IPA value into the open note and not saved it
+- **WHEN** a related draft is absorbed without taking IPA
+- **THEN** the surviving note carries the typed IPA value
+
+#### Scenario: A take wins over an unsaved edit of the same field
+- **GIVEN** the operator has typed a value into a field and not saved it
+- **WHEN** that same field is staged to be taken from a related note and the merge is committed
+- **THEN** the surviving note carries the taken value for a replacive field
+- **AND** for an additive field, carries the typed value with the taken value added to it
 
 ### Requirement: Only a draft may be absorbed by a merge
 The system SHALL permit a merge only where the absorbed note has status
@@ -174,4 +200,18 @@ result.
 #### Scenario: A ready note absorbs a draft
 - **WHEN** a `ready` note absorbs a draft and takes a field from it
 - **THEN** its modification timestamp is updated
+
+### Requirement: Every related note can be opened directly
+Each related-note suggestion SHALL offer a link that opens that note's own
+editor. The link SHALL open in a new browser tab, leaving the operator's
+current note, queue position and unsaved edits untouched.
+
+The link SHALL be present on every suggestion, including one whose status
+prevents it from being absorbed or having its fields taken.
+
+#### Scenario: A ready match can still be opened
+- **GIVEN** a related note whose status is `ready`, so its absorb control and take controls are disabled
+- **WHEN** the operator uses its link
+- **THEN** that note's editor opens in a new tab
+- **AND** the originally open note is still shown, unchanged, in the original tab
 
