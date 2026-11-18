@@ -39,6 +39,10 @@
 [ux] the shadow website constantly has icon of using my mic, even if record not pressed. 
 [ux] phone ui , put pull for nav/name of book, chapter nav, "more", exit and sentence on one/two lines to make it more compact
 [ux] phone shadow  should provide installable "app", if that's easy to do?
+
+
+[ux] stabbur duplicate note
+[idea] stabbur tonelag exercises and pronounciation/hear exercises(i/y, li/ly) type (that will produce special cards in mjolnir)
 ## Triage & Planned Packages
 
 > Last triaged 2026-11-15. All packages batched into `batches/full-sweep/`.
