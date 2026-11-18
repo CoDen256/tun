@@ -37,7 +37,7 @@ All other packages are parallel-safe.
 | Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` (item 3 redone by "Card preview redo") |
 | Card preview redo | designed (mjolnir: `card-preview-popup`) |
 | Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
-| Stabbur merging & dict.cc translations | building — smia `dictcc-parsing-fixes` first, then stabbur `stabbur-merge-fixes` + `stabbur-triage-queues` |
+| Stabbur merging & dict.cc translations | archived — smia `2026-11-18-dictcc-parsing-fixes`; stabbur `2026-11-18-stabbur-merge-fixes`, `2026-11-18-stabbur-triage-queues` |
 | Shadow studying mode | archived — `shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode` |
 | Calst/pygmalion audio consolidation | archived (smia: `2026-11-15-calst-audio-union`) |
 

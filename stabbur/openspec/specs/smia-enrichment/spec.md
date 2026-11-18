@@ -98,18 +98,13 @@ down their own list with every step visible, which is permitted.
   provider in the operator's order on its own initiative
 
 ### Requirement: Using a TTS candidate stores real stabbur-owned audio
-The system SHALL, when an operator selects a `/tts` candidate to use for a
-note, fetch that candidate's audio bytes from smia server-side and store them
-through stabbur's own blob storage — never write a note's `audio_blob` as a
-reference into smia's cache, per stabbur owning the canonical learning audio.
+Using an audio candidate SHALL store the bytes as a stabbur-owned blob and
+reference it by content hash. Audio reached through the notes search above
+is already stored and SHALL be referenced directly, without re-storing it.
 
-#### Scenario: Operator uses a TTS candidate
-- **WHEN** the operator clicks "Use" on a `/tts` candidate in the audio
-  suggestion panel
-- **THEN** stabbur fetches the selected candidate's audio bytes from smia,
-  uploads them through its existing blob-upload path, and returns the
-  resulting stabbur `sha256` so the client can attach it as the note's
-  `audio_blob`
+#### Scenario: A provider candidate is stored
+- **WHEN** a provider's audio candidate is used
+- **THEN** the bytes are stored by stabbur and the note references their hash
 
 ### Requirement: An audio transcription can be proxied to smia's speech-to-text
 The system SHALL provide a stabbur backend endpoint that, given a provider
@@ -162,4 +157,48 @@ pass-through and does not acquire a caching policy of its own.
 - **WHEN** stabbur proxies any enrichment request the client did not mark
   for re-run
 - **THEN** no cache-bypass flag is added by stabbur
+
+### Requirement: Using a transcription candidate adds to the field
+Using a transcription suggestion SHALL **append** it to the transcription
+field, separated from the existing value by a single space, so a multiword
+transcription can be assembled from its tokens. An empty field SHALL simply
+be filled. Using the same candidate twice SHALL NOT duplicate it.
+
+The assembled-from-single-words row SHALL continue to **replace** the
+field: it is a transcription of the whole phrase, not one more token.
+
+Where a suggestion panel's field accumulates values, the "used" marks on
+its candidates SHALL accumulate too, so the marks describe what the field
+actually holds rather than only the most recent action.
+
+#### Scenario: Two tokens assemble
+- **GIVEN** an empty transcription field
+- **WHEN** one candidate is used, then a second
+- **THEN** the field holds both values separated by a single space
+- **AND** both candidates are marked as used
+
+#### Scenario: The whole-phrase row replaces
+- **GIVEN** a transcription field holding an assembled value
+- **WHEN** the assembled-from-single-words row is used
+- **THEN** the field holds exactly that row's value
+
+### Requirement: A transcription's variety is available on hover only
+A transcription candidate's variety SHALL be reachable by hovering the
+transcription itself, and SHALL NOT be rendered as visible text in the
+candidate row. Where several varieties were merged under one transcription,
+the merged value SHALL be shown.
+
+A candidate whose provider supplies no variety SHALL show no indicator at
+all, and SHALL NOT leave an empty slot in the row.
+
+#### Scenario: Variety on hover
+- **GIVEN** a candidate carrying a variety
+- **WHEN** its transcription is hovered
+- **THEN** the variety is shown
+- **AND** it appears nowhere in the row otherwise
+
+#### Scenario: No variety, no empty slot
+- **GIVEN** a candidate from a provider that supplies no variety
+- **WHEN** the panel is shown
+- **THEN** the row carries no variety indicator and no blank space where one would be
 
