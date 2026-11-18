@@ -122,7 +122,7 @@ const PROJECTORS = {
     occurrences: ["A", "E"],
   }),
   listening: (note) => ({
-    N: `<div class="center">${note.text}</div>`,
+    N: `<div class="center">${note.text}<br><div class="lg arialFont supWrap">${transcriptionHtml(note)}</div></div>`,
     E: translationsHtml(note),
     X: "",
     A: "N",
