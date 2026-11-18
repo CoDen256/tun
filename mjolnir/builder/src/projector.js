@@ -100,7 +100,7 @@ function transcriptionHtml(note){
   .replace(/^[\/\[\]]+|[\/\[\]]+$/g, '')
   .replace(/["']/g, char => map[char]);
 
-  return `[&ensp; ${ipa} ]`
+  return `[&ensp;${ipa} ]`
 }
 
 const PROJECTORS = {
