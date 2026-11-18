@@ -9,7 +9,7 @@ function translationsHtml(note) {
 }
 
 function ensurePrefix(prefix, str) {
-  return str.startsWith(prefix) ? str : prefix + str;
+  return str.trimStart().startsWith(prefix) ? str : prefix + str;
 }
 
 // Strip a Norwegian indefinite article, and ONLY that.
@@ -110,14 +110,14 @@ const PROJECTORS = {
   word: (note) => ({
     N: `<div class="center">${wordHeadlineHtml(note)}</div>`,
     E: translationsHtml(note),
-    X: note.context_text ? `<div class="center">${note.context_text.replaceAll('\n', '<br>')}</div>` : "",
+    X: note.context_text ? `<div class="left">${note.context_text.replaceAll('\n', '<br>')}</div>` : "",
     A: "N",
     occurrences: ["A", "E"],
   }),
   expression: (note) => ({
     N: `<div class="center">${note.text}</div>`,
     E: translationsHtml(note),
-    X: note.context_text ? `<div class="center">${note.context_text.replaceAll('\n', '<br>')}</div>` : "",
+    X: note.context_text ? `<div class="left">${note.context_text.replaceAll('\n', '<br>')}</div>` : "",
     A: "N",
     occurrences: ["A", "E"],
   }),
