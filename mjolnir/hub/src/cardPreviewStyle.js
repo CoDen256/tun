@@ -1,5 +1,6 @@
 import { extractCardStyle } from "../../tool/src/extractCardStyle.js";
 import { extractCardSymbols } from "../../tool/src/extractCardSymbols.js";
+import { extractCardUsageCounts } from "../../tool/src/extractCardUsageCounts.js";
 import { cardFontFaceCss } from "./cardRenderer.js";
 
 // assembly-tab-usability item 3: computed once per process from this
@@ -23,7 +24,12 @@ export function getCardPreviewData(baseFolderDir) {
   try {
     const style = extractCardStyle(bundlePath);
     const symbols = extractCardSymbols(bundlePath);
-    cached = { bundlePath, style, symbols };
+    // card-preview-popup task group 4 (Classes & tags "stock usage
+    // counts", design.md §4 / acceptance C27): computed and cached
+    // alongside style/symbols, same "fails loudly, never a silent partial
+    // result" rule as the rest of this function.
+    const usage = extractCardUsageCounts(bundlePath);
+    cached = { bundlePath, style, symbols, usage };
     return cached;
   } catch (err) {
     cached = { bundlePath, error: err };

@@ -63,12 +63,40 @@ import {
   hasAOccurrence,
   resolveTapOutcome,
 } from "./cardPreviewEngine.js";
+import {
+  clampDrawerWidth,
+  clampDrawerHeight,
+  isSheetLayout,
+  wrapSelectionOrInsert,
+  isEdited,
+  currentFaceHtml,
+  copyAllFacesText,
+  editorSlotLabel,
+  highlightHtmlTokens,
+  buildClassesAndTagsRows,
+  buildSymbolsRows,
+  SNIPPET_PALETTE,
+  DRAWER_ARROW_STEP,
+} from "./cardPreviewDrawer.js";
 
 const SCOPE = "cpp-root";
 
 // Exposed so a Node test can assert the pure functions imported above are
 // the ones this module actually wires up (no second copy pasted inline).
 export const _engine = { defaultDirectionFor, directionSlots, stepIndex, occurrenceSummaryText, hasAOccurrence, resolveTapOutcome };
+export const _drawerEngine = {
+  clampDrawerWidth,
+  clampDrawerHeight,
+  isSheetLayout,
+  wrapSelectionOrInsert,
+  isEdited,
+  currentFaceHtml,
+  copyAllFacesText,
+  editorSlotLabel,
+  highlightHtmlTokens,
+  buildClassesAndTagsRows,
+  buildSymbolsRows,
+};
 
 export function cardPreviewPopupStyleBlock() {
   return `
@@ -114,13 +142,73 @@ ${cardRendererResetCss(SCOPE)}
 .${SCOPE} .cpp-scaler { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 .${SCOPE} .cpp-cardbg { position: relative; overflow: hidden; border-radius: 22px; font-family: 'Poppins-Regular', sans-serif; font-synthesis: none; -webkit-font-smoothing: antialiased; }
 
-/* task 4 fills this; task 3 only opens/closes an empty slot (design §4 /
-   task 3.3's explicit scope cut: "for now it can toggle an empty/
-   placeholder drawer region"). */
-.${SCOPE} .cpp-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: 360px; background: var(--bg-elevated); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-width: 0; }
+/* task group 4 ("Tools drawer") — design.md §4 / acceptance C23-C28,
+   mockup fidelity for .drawer/.resize/.tabs/.pane/.ed*/.palette/.cat/
+   .sym*/.sizetag/.dtoast (mockups/card-preview-popup.html). Resizable by a
+   handle (desktop width, bottom sheet height below ~760px) — the actual
+   width/height are set inline via --cpp-dw/--cpp-dh (task 4.1's
+   getDrawerState()/setDrawerState() contract, so task group 6 has a
+   number to read/write, not a CSS rule to parse). */
+.${SCOPE} .cpp-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: var(--cpp-dw, 520px); background: var(--bg-elevated); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-width: 0; }
 .${SCOPE} .cpp-drawer[hidden] { display: none; }
-.${SCOPE} .cpp-dialog.cpp-tools .cpp-stage { margin-right: 360px; }
-.${SCOPE} .cpp-drawer-placeholder { padding: 16px; color: var(--text-faint); font-size: 12.5px; line-height: 1.6; }
+.${SCOPE} .cpp-dialog.cpp-tools .cpp-stage { margin-right: var(--cpp-dw, 520px); }
+.${SCOPE} .cpp-resize { position: absolute; z-index: 3; left: -5px; top: 0; bottom: 0; width: 10px; cursor: ew-resize; touch-action: none; }
+.${SCOPE} .cpp-resize::after { content: ""; position: absolute; left: 4px; top: 50%; width: 3px; height: 44px; margin-top: -22px; border-radius: 3px; background: var(--border); }
+.${SCOPE} .cpp-resize:hover::after, .${SCOPE} .cpp-resize:focus-visible::after, .${SCOPE} .cpp-dialog.cpp-dragging .cpp-resize::after { background: var(--accent); }
+.${SCOPE} .cpp-resize:focus-visible { outline: none; }
+.${SCOPE} .cpp-sizetag { position: absolute; z-index: 4; left: 12px; top: 50%; transform: translateY(-50%); font-size: 11.5px; background: var(--text); color: var(--bg-elevated); border-radius: 6px; padding: 3px 8px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .2s; }
+.${SCOPE} .cpp-sizetag.cpp-on { opacity: 1; }
+.${SCOPE} .cpp-dialog.cpp-dragging .cpp-drawer, .${SCOPE} .cpp-dialog.cpp-dragging .cpp-stage { transition: none; }
+.${SCOPE} .cpp-dialog.cpp-dragging { user-select: none; }
+.${SCOPE} .cpp-tabs { display: flex; gap: 2px; padding: 8px 10px 0; border-bottom: 1px solid var(--border); }
+.${SCOPE} .cpp-tabs button { font: inherit; font-size: 13px; background: none; border: 0; border-bottom: 2px solid transparent; padding: 7px 10px; color: var(--text-faint); cursor: pointer; }
+.${SCOPE} .cpp-tabs button.cpp-on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.${SCOPE} .cpp-tabs button:focus-visible { outline: 2px solid var(--accent); }
+.${SCOPE} .cpp-pane { flex: 1; overflow: auto; padding: 12px 14px 24px; min-width: 0; }
+.${SCOPE} .cpp-pane[hidden] { display: none; }
+.${SCOPE} .cpp-ctx { font-size: 12px; color: var(--text-dim); margin: 0 0 10px; }
+.${SCOPE} .cpp-row-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.${SCOPE} .cpp-palette { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
+.${SCOPE} .cpp-palette button { font: 12px var(--mono); padding: 3px 7px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
+.${SCOPE} .cpp-palette button:hover { border-color: var(--accent); }
+.${SCOPE} .cpp-palette button i { font-style: normal; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: 0; }
+.${SCOPE} .cpp-hint { font-size: 12px; color: var(--text-dim); margin: 0 0 12px; }
+.${SCOPE} .cpp-ed { margin-bottom: 14px; }
+.${SCOPE} .cpp-ed-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 12.5px; flex-wrap: wrap; }
+.${SCOPE} .cpp-ed-head b { font-family: var(--mono); }
+.${SCOPE} .cpp-ed-head .cpp-sub { color: var(--text-dim); }
+.${SCOPE} .cpp-ed-head .cpp-btn { margin-left: auto; font-size: 12px; padding: 2px 8px; }
+.${SCOPE} .cpp-ed.cpp-active .cpp-edhost { border-color: var(--accent); }
+.${SCOPE} .cpp-edhost { width: 100%; min-height: 64px; font: 12.5px/1.5 var(--mono); color: var(--text); background: var(--code-bg, var(--bg)); border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }
+.${SCOPE} .cpp-tok-tag { color: var(--cpp-cm-tag, #1f5fbf); }
+.${SCOPE} .cpp-tok-attr { color: var(--cpp-cm-attr, #8a4b00); }
+.${SCOPE} .cpp-tok-string { color: var(--cpp-cm-str, #1d7f4e); }
+.${SCOPE} .cpp-tok-bracket { color: var(--cpp-cm-br, #7a7f88); }
+@media (prefers-color-scheme: dark) { .${SCOPE} { --cpp-cm-tag: #7aa2ff; --cpp-cm-attr: #f0b456; --cpp-cm-str: #5fcf95; --cpp-cm-br: #8a919b; } }
+.${SCOPE} table.cpp-cat { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.${SCOPE} table.cpp-cat th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-dim); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.${SCOPE} table.cpp-cat td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.${SCOPE} table.cpp-cat td.cpp-sel { font-family: var(--mono); white-space: nowrap; }
+.${SCOPE} table.cpp-cat td.cpp-sel small { display: block; color: var(--text-faint); font-family: inherit; font-size: 11px; }
+.${SCOPE} table.cpp-cat tr.cpp-grp td { background: var(--bg); font-weight: 600; font-size: 11.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; }
+.${SCOPE} .cpp-tag-inf { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 0 5px; border-radius: 4px; background: var(--warn-soft); color: var(--warn); margin-left: 4px; vertical-align: 1px; }
+.${SCOPE} .cpp-tag-bad { background: var(--err-soft); color: var(--err); }
+.${SCOPE} .cpp-sample { border-radius: 6px; border: 1px solid var(--border); padding: 6px 8px; min-width: 96px; max-width: 220px; overflow: hidden; }
+.${SCOPE} .cpp-glyph { font-size: 20px; text-align: center; }
+.${SCOPE} .cpp-g-pop { font-family: 'Poppins-Regular', sans-serif; font-size: 20px; text-align: center; }
+.${SCOPE} .cpp-g-ari { font-family: Arial, Arimo, 'Liberation Sans', sans-serif; font-size: 20px; text-align: center; }
+.${SCOPE} .cpp-num { font-variant-numeric: tabular-nums; text-align: right; }
+.${SCOPE} .cpp-note { font-size: 12px; color: var(--text-dim); margin: 10px 0 0; }
+.${SCOPE} table.cpp-cat tr.cpp-copy { cursor: pointer; }
+.${SCOPE} table.cpp-cat tr.cpp-copy:hover td, .${SCOPE} table.cpp-cat tr.cpp-copy:focus-visible td { background: var(--accent-soft); }
+.${SCOPE} table.cpp-cat tr.cpp-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.${SCOPE} .cpp-dtoast { position: absolute; z-index: 5; left: 50%; bottom: 16px; transform: translate(-50%, 6px); background: var(--text); color: var(--bg-elevated); font-size: 12.5px; padding: 6px 12px; border-radius: 8px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap; max-width: 90%; overflow: hidden; text-overflow: ellipsis; }
+.${SCOPE} .cpp-dtoast.cpp-on { opacity: 1; transform: translate(-50%, 0); }
+@media (max-width: 760px) {
+  .${SCOPE} .cpp-resize { left: 0; right: 0; top: -6px; bottom: auto; width: auto; height: 16px; cursor: ns-resize; }
+  .${SCOPE} .cpp-resize::after { left: 50%; top: 6px; width: 44px; height: 3px; margin: 0 0 0 -22px; }
+  .${SCOPE} .cpp-sizetag { left: 50%; top: 18px; transform: translateX(-50%); }
+}
 
 /* the card alone, on a rectangle of the theme's screen background */
 .${SCOPE} .cpp-card { position: relative; flex: 0 0 auto; align-self: center; display: flex; flex-direction: column; align-items: center; overflow: hidden; border-style: solid; }
@@ -138,8 +226,8 @@ ${cardRendererResetCss(SCOPE)}
 @media (max-width: 760px) {
   .${SCOPE} .cpp-dialog { border-radius: 0; }
   .${SCOPE} .cpp-body { flex-direction: column; }
-  .${SCOPE} .cpp-drawer { top: auto; left: 0; right: 0; width: 100%; height: 55%; border-left: 0; border-top: 1px solid var(--border); }
-  .${SCOPE} .cpp-dialog.cpp-tools .cpp-stage { margin-right: 0; flex: 0 0 auto; height: 45%; }
+  .${SCOPE} .cpp-drawer { top: auto; left: 0; right: 0; width: 100%; height: var(--cpp-dh, 55%); border-left: 0; border-top: 1px solid var(--border); }
+  .${SCOPE} .cpp-dialog.cpp-tools .cpp-stage { margin-right: 0; flex: 0 0 auto; height: auto; }
 }
 `;
 }
@@ -193,7 +281,32 @@ export function cardPreviewPopupMarkupHtml() {
         <div class="cpp-info" id="cpp-info"></div>
       </div>
       <aside class="cpp-drawer" id="cpp-drawer" aria-label="Tools" hidden>
-        <div class="cpp-drawer-placeholder">Tools drawer — built in task group 4 (Edit HTML, Classes &amp; tags, Symbols).</div>
+        <div class="cpp-resize" id="cpp-resize" role="separator" tabindex="0" aria-label="Resize tools panel (arrow keys)"></div>
+        <span class="cpp-sizetag" id="cpp-sizetag"></span>
+        <div class="cpp-dtoast" id="cpp-dtoast" role="status"></div>
+        <div class="cpp-tabs" role="tablist">
+          <button type="button" role="tab" class="cpp-on" data-tab="edit">Edit HTML</button>
+          <button type="button" role="tab" data-tab="classes">Classes &amp; tags</button>
+          <button type="button" role="tab" data-tab="symbols">Symbols</button>
+        </div>
+        <div class="cpp-pane" id="cpp-pane-edit">
+          <div class="cpp-row-btns">
+            <button class="cpp-btn" type="button" id="cpp-reset">Reset to minted card</button>
+            <button class="cpp-btn" type="button" id="cpp-copy-all">Copy all (N, E, X)</button>
+          </div>
+          <div class="cpp-palette" id="cpp-palette"></div>
+          <p class="cpp-hint">Snippets wrap the selection in the last editor you touched, or insert at the cursor.</p>
+          <div id="cpp-editors"></div>
+        </div>
+        <div class="cpp-pane" id="cpp-pane-classes" hidden>
+          <p class="cpp-ctx" id="cpp-cls-ctx"></p>
+          <div style="overflow-x:auto"><table class="cpp-cat"><thead><tr><th>Selector</th><th>Resolves to</th><th>Sample</th></tr></thead><tbody id="cpp-cls-body"></tbody></table></div>
+          <p class="cpp-note">Samples go through the same renderer as the card, on the theme's screen background. <span class="cpp-tag-inf">inferred</span> marks a value this research derived from RN/Android behaviour rather than read directly from the bundle.</p>
+        </div>
+        <div class="cpp-pane" id="cpp-pane-symbols" hidden>
+          <p class="cpp-ctx">Counted across every N/E/X face of the stock cards. A dropped Poppins glyph shows as the browser's own fallback — the reason <code>arialFont</code>/<code>arialFontNormal</code> exist.</p>
+          <div style="overflow-x:auto"><table class="cpp-cat"><thead><tr><th>Entity</th><th>Glyph</th><th>Name</th><th>Poppins</th><th>Arial</th><th>Uses</th></tr></thead><tbody id="cpp-sym-body"></tbody></table></div>
+        </div>
       </aside>
     </div>
   </div>
@@ -230,14 +343,73 @@ var DEVICES = {
 
 var renderEnginePromise = import('/mjolnir/cards/render-engine.js');
 var popupEnginePromise = import('/mjolnir/cards/popup-engine.js');
+// task group 4 (Tools drawer): resize-clamp/snippet-wrap/highlight/
+// catalogue-row-building logic, the same isomorphic-engine pattern as the
+// two imports above — see hub/src/cardPreviewDrawer.js's own header.
+var drawerEnginePromise = import('/mjolnir/cards/drawer-engine.js');
+var enginesPromise = Promise.all([renderEnginePromise, popupEnginePromise, drawerEnginePromise]);
+var ENGINE = null, POPUP_ENGINE = null, DRAWER_ENGINE = null;
+enginesPromise.then(function (mods) { ENGINE = mods[0]; POPUP_ENGINE = mods[1]; DRAWER_ENGINE = mods[2]; });
+
+var DRAWER_STORAGE_KEY = 'mjolnirCardPreviewDrawer';
 
 var S = {
   cards: [], index: 0, dir: 'N', open: false,
   device: '375x812', theme: 'dark', fontSize: null, dirPref: 'auto',
   onClose: null, lastFocus: null,
+  // task 4.1/4.2: edits are keyed by card.key, never persisted/sent
+  // anywhere (acceptance C26) — purely client-side, gone on reload/Reset.
+  edits: {},
+  // task 4.1: closed by default (design §4); width/height/tab are session-
+  // only for THIS task group (sessionStorage) — task group 6 later swaps
+  // the load/save calls below for its real server-side settings without
+  // this file changing shape, via getDrawerState()/setDrawerState().
+  drawer: loadDrawerState(),
+  activeEditorFace: 'N',
 };
 var style = null; // extractor output, set once by setStyle()
+var symbolsData = null;
+var usageData = null;
 var toastTimer = null;
+var dtoastTimer = null;
+var editTimer = null;
+
+function loadDrawerState() {
+  var def = { open: false, width: 520, height: 0, tab: 'edit' };
+  try {
+    var raw = window.sessionStorage.getItem(DRAWER_STORAGE_KEY);
+    if (!raw) return def;
+    var parsed = JSON.parse(raw);
+    return {
+      open: !!parsed.open,
+      width: typeof parsed.width === 'number' ? parsed.width : def.width,
+      height: typeof parsed.height === 'number' ? parsed.height : def.height,
+      tab: ['edit', 'classes', 'symbols'].indexOf(parsed.tab) !== -1 ? parsed.tab : def.tab,
+    };
+  } catch (e) { return def; }
+}
+
+function saveDrawerState() {
+  try { window.sessionStorage.setItem(DRAWER_STORAGE_KEY, JSON.stringify(S.drawer)); } catch (e) { /* ignore */ }
+  document.dispatchEvent(new CustomEvent('cardpreviewpopup:drawerchange', { detail: getDrawerState() }));
+}
+
+// task 4.1's explicit contract: "expose/accept its current size so that
+// [task group 6's real persistence] wiring is trivial". Width/height here
+// are whatever the operator last dragged them to, independent of desktop
+// vs. sheet layout (only one of the two is visually in effect at a time,
+// per the ~760px breakpoint, but both are remembered).
+function getDrawerState() {
+  return { open: S.drawer.open, width: S.drawer.width, height: S.drawer.height, tab: S.drawer.tab };
+}
+
+function setDrawerState(patch) {
+  Object.assign(S.drawer, patch || {});
+  enginesPromise.then(function (mods) { applyDrawerSize(mods[2]); });
+  if (patch && patch.open !== undefined) applyDrawerOpen(S.drawer.open);
+  if (patch && patch.tab !== undefined) setDrawerTab(S.drawer.tab);
+  saveDrawerState();
+}
 
 function $(id) { return document.getElementById(id); }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -246,7 +418,14 @@ function card() { return S.cards[S.index] || null; }
 
 function setStyle(s) { style = s; if (S.fontSize == null && s) S.fontSize = s.fontSizeControl.default; }
 
-function renderInfoAndCard(engine, popupEngine) {
+function applyPreviewData(data) {
+  if (!data) return;
+  if (data.style) setStyle(data.style);
+  if (data.symbols) symbolsData = data.symbols;
+  if (data.usage) usageData = data.usage;
+}
+
+function renderInfoAndCard(engine, popupEngine, drawerEngine) {
   var c = card();
   if (!c || !style) return;
   var d = dev();
@@ -286,7 +465,7 @@ function renderInfoAndCard(engine, popupEngine) {
   var faceEls = screen.querySelectorAll('.cpp-face');
   faceEls.forEach(function (el) {
     var letter = el.dataset.f;
-    var html = letter === 'N' ? c.N : letter === 'E' ? c.E : c.X;
+    var html = drawerEngine ? drawerEngine.currentFaceHtml(c, S.edits[c.key], letter) : (letter === 'N' ? c.N : letter === 'E' ? c.E : c.X);
     var rendered = engine.renderCardFace(html || '', style, { fontSize: S.fontSize, width: d.w, height: d.h, tablet: d.tablet, theme: S.theme });
     el.querySelector('.cpp-fc').innerHTML = rendered.html;
     el.addEventListener('click', function () { tapFace(letter); });
@@ -326,7 +505,7 @@ function fitStage() {
 }
 
 function tapFace(face) {
-  Promise.all([renderEnginePromise, popupEnginePromise]).then(function (mods) {
+  enginesPromise.then(function (mods) {
     var popupEngine = mods[1];
     var c = card();
     var result = popupEngine.resolveTapOutcome(c, face, { audioAvailable: c.audioAvailable, hasAudio: c.hasAudio });
@@ -349,8 +528,8 @@ function syncDir() {
 }
 
 function refresh() {
-  Promise.all([renderEnginePromise, popupEnginePromise]).then(function (mods) {
-    var engine = mods[0], popupEngine = mods[1];
+  enginesPromise.then(function (mods) {
+    var engine = mods[0], popupEngine = mods[1], drawerEngine = mods[2];
     var c = card();
     if (!c) return;
     $('cpp-title').textContent = c.id;
@@ -363,14 +542,16 @@ function refresh() {
     if (hasA) { an.textContent = 'A → ' + c.A; an.title = "This card's A occurrence is its " + c.A + " side (card field A = " + c.A + ")"; }
     $('cpp-occsum').textContent = popupEngine.occurrenceSummaryText(c.occurrences);
     syncDir();
-    renderInfoAndCard(engine, popupEngine);
+    renderInfoAndCard(engine, popupEngine, drawerEngine);
+    loadEditors(drawerEngine);
+    markEdited(drawerEngine);
   });
 }
 
 function setDirection(dir) {
   S.dir = dir;
   syncDir();
-  Promise.all([renderEnginePromise, popupEnginePromise]).then(function (mods) { renderInfoAndCard(mods[0], mods[1]); });
+  enginesPromise.then(function (mods) { renderInfoAndCard(mods[0], mods[1], mods[2]); loadEditors(mods[2]); });
 }
 
 function step(delta) {
@@ -383,9 +564,7 @@ function step(delta) {
 }
 
 function openModal(cards, index, options) {
-  if (!style && window.MjolnirCardPreviewPopupData && window.MjolnirCardPreviewPopupData.style) {
-    setStyle(window.MjolnirCardPreviewPopupData.style);
-  }
+  if (!style) applyPreviewData(window.MjolnirCardPreviewPopupData);
   var opts = options || {};
   S.cards = cards || [];
   S.index = Math.max(0, Math.min(index || 0, S.cards.length - 1));
@@ -418,20 +597,23 @@ function closeModal() {
 document.addEventListener('DOMContentLoaded', function () {
   if (!$('cpp-modal')) return;
 
-  Promise.all([renderEnginePromise, popupEnginePromise]).then(function (mods) {
+  enginesPromise.then(function (mods) {
     document.getElementById('cpp-device').addEventListener('change', function (e) {
       S.device = e.target.value;
-      renderInfoAndCard(mods[0], mods[1]);
+      renderInfoAndCard(mods[0], mods[1], mods[2]);
+      renderClasses(mods[2]);
     });
     document.getElementById('cpp-theme').addEventListener('click', function (e) {
       var b = e.target.closest('button');
       if (!b) return;
       S.theme = b.dataset.t;
       document.getElementById('cpp-theme').querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
-      renderInfoAndCard(mods[0], mods[1]);
+      renderInfoAndCard(mods[0], mods[1], mods[2]);
+      renderClasses(mods[2]);
     });
     document.getElementById('cpp-fs-dec').addEventListener('click', function () { setFontSize(S.fontSize - 1, mods); });
     document.getElementById('cpp-fs-inc').addEventListener('click', function () { setFontSize(S.fontSize + 1, mods); });
+    wireDrawer(mods);
   });
 
   function setFontSize(v, mods) {
@@ -440,7 +622,362 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('cpp-fs').textContent = S.fontSize;
     document.getElementById('cpp-fs-dec').disabled = S.fontSize <= style.fontSizeControl.min;
     document.getElementById('cpp-fs-inc').disabled = S.fontSize >= style.fontSizeControl.max;
-    renderInfoAndCard(mods[0], mods[1]);
+    renderInfoAndCard(mods[0], mods[1], mods[2]);
+    renderClasses(mods[2]);
+  }
+
+  // --------------------------------------------------------------------
+  // Task group 4: Tools drawer
+  // --------------------------------------------------------------------
+
+  // 4.1 open/close + resize ----------------------------------------------
+
+  function applyDrawerOpen(open) {
+    var drawer = $('cpp-drawer');
+    var dialog = $('cpp-dialog');
+    drawer.hidden = !open;
+    dialog.classList.toggle('cpp-tools', open);
+    $('cpp-tools').setAttribute('aria-expanded', open ? 'true' : 'false');
+    $('cpp-tools').classList.toggle('on', open);
+    applyDrawerSize(DRAWER_ENGINE);
+    fitStage();
+    if (open) { if (DRAWER_ENGINE) { loadEditors(DRAWER_ENGINE); renderClasses(DRAWER_ENGINE); renderSymbols(DRAWER_ENGINE); } }
+  }
+
+  function applyDrawerSize(drawerEngine) {
+    if (!drawerEngine) return;
+    var dialog = $('cpp-dialog');
+    var dbody = $('cpp-dbody');
+    var sheet = drawerEngine.isSheetLayout(window.innerWidth);
+    S.drawer.width = drawerEngine.clampDrawerWidth(S.drawer.width, dialog.clientWidth || 1000);
+    S.drawer.height = drawerEngine.clampDrawerHeight(S.drawer.height || (dbody.clientHeight || 600) * 0.55, dbody.clientHeight || 600);
+    dialog.style.setProperty('--cpp-dw', S.drawer.width + 'px');
+    dialog.style.setProperty('--cpp-dh', S.drawer.height + 'px');
+  }
+
+  function showSizeTag(remembered) {
+    var t = $('cpp-sizetag');
+    var sheet = DRAWER_ENGINE && DRAWER_ENGINE.isSheetLayout(window.innerWidth);
+    t.textContent = (sheet ? S.drawer.height + ' px tall' : S.drawer.width + ' px wide') + (remembered ? ' · remembered' : '');
+    t.classList.add('cpp-on');
+    clearTimeout(S._sizeTagTimer);
+    if (remembered) S._sizeTagTimer = setTimeout(function () { t.classList.remove('cpp-on'); }, 1600);
+  }
+
+  function wireResize() {
+    var handle = $('cpp-resize');
+    var dragging = false;
+    handle.addEventListener('pointerdown', function (e) {
+      dragging = true;
+      handle.setPointerCapture(e.pointerId);
+      $('cpp-dialog').classList.add('cpp-dragging');
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', function (e) {
+      if (!dragging || !DRAWER_ENGINE) return;
+      var sheet = DRAWER_ENGINE.isSheetLayout(window.innerWidth);
+      if (sheet) S.drawer.height = $('cpp-dbody').getBoundingClientRect().bottom - e.clientY;
+      else S.drawer.width = $('cpp-dialog').getBoundingClientRect().right - e.clientX;
+      applyDrawerSize(DRAWER_ENGINE);
+      fitStage(); // 4.1: the card stage refits LIVE while dragging
+      showSizeTag(false);
+    });
+    function endDrag() {
+      if (!dragging) return;
+      dragging = false;
+      $('cpp-dialog').classList.remove('cpp-dragging');
+      saveDrawerState();
+      showSizeTag(true);
+    }
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
+    handle.addEventListener('keydown', function (e) {
+      if (!DRAWER_ENGINE) return;
+      var sheet = DRAWER_ENGINE.isSheetLayout(window.innerWidth);
+      var grow = sheet ? { ArrowUp: DRAWER_ARROW_STEP, ArrowDown: -DRAWER_ARROW_STEP } : { ArrowLeft: DRAWER_ARROW_STEP, ArrowRight: -DRAWER_ARROW_STEP };
+      if (!(e.key in grow)) return;
+      e.preventDefault();
+      if (sheet) S.drawer.height += grow[e.key]; else S.drawer.width += grow[e.key];
+      applyDrawerSize(DRAWER_ENGINE);
+      fitStage();
+      saveDrawerState();
+      showSizeTag(true);
+    });
+    window.addEventListener('resize', function () { if (S.open) applyDrawerSize(DRAWER_ENGINE); });
+  }
+
+  // 4.1 tabs ---------------------------------------------------------------
+
+  function setDrawerTab(tab) {
+    S.drawer.tab = tab;
+    document.querySelectorAll('.cpp-tabs button').forEach(function (b) { b.classList.toggle('cpp-on', b.dataset.tab === tab); });
+    ['edit', 'classes', 'symbols'].forEach(function (t) { $('cpp-pane-' + t).hidden = t !== tab; });
+    if (tab === 'classes' && DRAWER_ENGINE) renderClasses(DRAWER_ENGINE);
+    if (tab === 'symbols' && DRAWER_ENGINE) renderSymbols(DRAWER_ENGINE);
+  }
+
+  function wireTabs() {
+    document.querySelectorAll('.cpp-tabs button').forEach(function (b) {
+      b.addEventListener('click', function () { setDrawerTab(b.dataset.tab); saveDrawerState(); });
+    });
+  }
+
+  // 4.2 editors --------------------------------------------------------
+
+  var editors = []; // [{ face, el, head }]
+
+  function caretOffset(el) {
+    var sel = window.getSelection();
+    if (!sel.rangeCount || !el.contains(sel.anchorNode)) return null;
+    var range = sel.getRangeAt(0).cloneRange();
+    range.selectNodeContents(el);
+    range.setEnd(sel.anchorNode, sel.anchorOffset);
+    return range.toString().length;
+  }
+
+  function setCaretOffset(el, offset) {
+    var remaining = offset;
+    var node = null, nodeOffset = 0;
+    (function walk(n) {
+      if (remaining < 0) return;
+      if (n.nodeType === 3) {
+        if (n.textContent.length >= remaining) { node = n; nodeOffset = remaining; remaining = -1; return; }
+        remaining -= n.textContent.length;
+      } else {
+        for (var i = 0; i < n.childNodes.length && remaining >= 0; i++) walk(n.childNodes[i]);
+      }
+    })(el);
+    if (!node) { node = el; nodeOffset = el.childNodes.length; }
+    var range = document.createRange();
+    range.setStart(node, nodeOffset);
+    range.collapse(true);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function paintEditor(ed, drawerEngine) {
+    var text = ed.el.textContent;
+    var tokens = drawerEngine.highlightHtmlTokens(text);
+    var caret = document.activeElement === ed.el ? caretOffset(ed.el) : null;
+    ed.el.innerHTML = tokens.map(function (t) {
+      if (t.kind === 'text') return esc(t.text);
+      var cls = t.kind === 'tag' ? 'cpp-tok-tag' : t.kind === 'attr' ? 'cpp-tok-attr' : t.kind === 'string' ? 'cpp-tok-string' : 'cpp-tok-bracket';
+      return '<span class="' + cls + '">' + esc(t.text) + '</span>';
+    }).join('') || '​';
+    if (caret != null) setCaretOffset(ed.el, caret);
+  }
+
+  function buildEditors(drawerEngine) {
+    var host = $('cpp-editors');
+    host.innerHTML = '';
+    editors = [];
+    ['N', 'E', 'X'].forEach(function (face) {
+      var box = document.createElement('div');
+      box.className = 'cpp-ed';
+      box.innerHTML =
+        '<div class="cpp-ed-head"><b>' + face + '</b><span class="cpp-sub" data-slot></span><span class="cpp-sub" data-aud></span>' +
+        '<button class="cpp-btn" type="button" data-copyface>Copy HTML</button></div>' +
+        '<div class="cpp-edhost" contenteditable="true" spellcheck="false" data-face="' + face + '"></div>';
+      host.appendChild(box);
+      var el = box.querySelector('.cpp-edhost');
+      var ed = { face: face, el: el, box: box };
+      el.addEventListener('focus', function () { setActiveEditor(face); });
+      el.addEventListener('input', function () { onEdit(ed); });
+      box.querySelector('[data-copyface]').addEventListener('click', function (ev) { copyText(el.textContent, ev.currentTarget); });
+      editors.push(ed);
+    });
+    setActiveEditor('N');
+  }
+
+  function setActiveEditor(face) {
+    S.activeEditorFace = face;
+    editors.forEach(function (ed) { ed.box.classList.toggle('cpp-active', ed.face === face); });
+  }
+
+  function loadEditors(drawerEngine) {
+    var c = card();
+    if (!c) return;
+    var slots = POPUP_ENGINE.directionSlots(S.dir);
+    editors.forEach(function (ed) {
+      var current = drawerEngine.currentFaceHtml(c, S.edits[c.key], ed.face);
+      if (ed.el.textContent !== current) { ed.el.textContent = current; paintEditor(ed, drawerEngine); }
+      ed.box.querySelector('[data-slot]').textContent = drawerEngine.editorSlotLabel(slots, ed.face);
+      ed.box.querySelector('[data-aud]').textContent = c.A === ed.face ? '· carries audio (A)' : '';
+    });
+  }
+
+  function onEdit(ed) {
+    if (!DRAWER_ENGINE) return;
+    var c = card();
+    if (!c) return;
+    (S.edits[c.key] = S.edits[c.key] || {})[ed.face] = ed.el.textContent;
+    markEdited(DRAWER_ENGINE);
+    paintEditor(ed, DRAWER_ENGINE);
+    clearTimeout(editTimer);
+    // design §4 "live re-render"; acceptance C25 "within a second" — a
+    // light debounce so fast typing doesn't re-render on every keystroke.
+    editTimer = setTimeout(function () { if (ENGINE && POPUP_ENGINE) renderInfoAndCard(ENGINE, POPUP_ENGINE, DRAWER_ENGINE); }, 200);
+  }
+
+  function markEdited(drawerEngine) {
+    var c = card();
+    var edited = c && drawerEngine.isEdited(c, S.edits[c.key]);
+    $('cpp-edited').hidden = !edited;
+  }
+
+  function resetCard() {
+    var c = card();
+    if (!c || !DRAWER_ENGINE) return;
+    delete S.edits[c.key];
+    loadEditors(DRAWER_ENGINE);
+    renderInfoAndCard(ENGINE, POPUP_ENGINE, DRAWER_ENGINE);
+    markEdited(DRAWER_ENGINE);
+  }
+
+  function copyText(text, btn) {
+    var done = function () {
+      var original = btn.textContent;
+      btn.textContent = 'Copied';
+      setTimeout(function () { btn.textContent = original; }, 1100);
+    };
+    var fallback = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = 'Select and copy manually'; }
+      ta.remove();
+    };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  }
+
+  function buildPalette() {
+    var pal = $('cpp-palette');
+    pal.innerHTML = '';
+    SNIPPET_PALETTE.forEach(function (snippet) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = (snippet.swatch ? '<i style="background:' + snippet.swatch + '"></i>' : '') + esc(snippet.label);
+      b.title = snippet.open + '…' + snippet.close;
+      b.addEventListener('mousedown', function (e) { e.preventDefault(); }); // keep the editor's selection
+      b.addEventListener('click', function () {
+        var ed = editors[editors.findIndex(function (e) { return e.face === S.activeEditorFace; })] || editors[0];
+        if (!ed) return;
+        var offset = document.activeElement === ed.el ? caretOffset(ed.el) : null;
+        var start = offset != null ? offset : ed.el.textContent.length;
+        var end = start;
+        var sel = window.getSelection();
+        if (document.activeElement === ed.el && sel.rangeCount && !sel.getRangeAt(0).collapsed) {
+          end = start + sel.toString().length;
+        }
+        var result = wrapSelectionOrInsert(ed.el.textContent, start, end, snippet.open, snippet.close);
+        ed.el.textContent = result.value;
+        paintEditor(ed, DRAWER_ENGINE);
+        setCaretOffset(ed.el, result.selectionStart);
+        ed.el.focus();
+        onEdit(ed);
+      });
+      pal.appendChild(b);
+    });
+  }
+
+  // 4.3 Classes & tags ---------------------------------------------------
+
+  function renderClasses(drawerEngine) {
+    if (!style || !ENGINE) return;
+    var d = dev();
+    var state = { width: d.w, height: d.h, tablet: d.tablet, theme: S.theme, fontSize: S.fontSize };
+    var normalizeFn = function (v, w, h, t) { return ENGINE.normalize(v, w, h, t); };
+    $('cpp-cls-ctx').textContent =
+      'Resolved at ' + d.w + ' × ' + d.h + (d.tablet ? ' tablet' : '') + ', font ' + S.fontSize + ', ' + S.theme +
+      ' theme (normalize ×' + ENGINE.normalizeFactor(d.w, d.h, d.tablet).toFixed(3) + '). Change the controls above to recompute.';
+    var rows = drawerEngine.buildClassesAndTagsRows(style, usageData, state, normalizeFn);
+    var body = $('cpp-cls-body');
+    body.innerHTML = '';
+    rows.forEach(function (r) {
+      var tr = document.createElement('tr');
+      if (r.group) { tr.className = 'cpp-grp'; tr.innerHTML = '<td colspan="3">' + esc(r.group) + '</td>'; body.appendChild(tr); return; }
+      var flagsHtml = (r.flags || []).map(function (f) { return '<span class="cpp-tag-inf' + (f === 'inferred' ? '' : ' cpp-tag-bad') + '">' + esc(f) + '</span>'; }).join(' ');
+      var useLbl = r.usage != null ? '<small>' + r.usage.toLocaleString('en') + '× in stock</small>' : '';
+      if (r.copyText) { tr.className = 'cpp-copy'; tr.tabIndex = 0; tr.dataset.copy = r.copyText; tr.title = 'Click to copy ' + r.copyText; }
+      tr.innerHTML = '<td class="cpp-sel">' + esc(r.selector) + useLbl + '</td><td>' + esc(r.resolvesTo) + ' ' + flagsHtml + '</td><td></td>';
+      if (r.sampleHtml) {
+        var box = document.createElement('div');
+        box.className = 'cpp-sample';
+        box.style.background = style.themes[S.theme].background;
+        var rendered = ENGINE.renderCardFace(r.sampleHtml, style, { fontSize: S.fontSize, width: d.w, height: d.h, tablet: d.tablet, theme: S.theme });
+        box.innerHTML = rendered.html;
+        tr.lastChild.appendChild(box);
+      }
+      body.appendChild(tr);
+    });
+  }
+
+  // 4.4 Symbols -----------------------------------------------------------
+
+  function renderSymbols(drawerEngine) {
+    if (!symbolsData) return;
+    var rows = drawerEngine.buildSymbolsRows(symbolsData);
+    $('cpp-sym-body').innerHTML = rows.map(function (r) {
+      if (r.group) return '<tr class="cpp-grp"><td colspan="6">' + esc(r.group) + '</td></tr>';
+      return '<tr class="cpp-copy" tabindex="0" title="Click to copy" data-copy="' + esc(r.copyText) + '">' +
+        '<td class="cpp-sel">' + esc(r.entity) + '</td>' +
+        '<td class="cpp-glyph">' + esc(r.glyph) + '</td>' +
+        '<td>' + esc(r.name) + '</td>' +
+        '<td class="cpp-g-pop">' + esc(r.glyph) + '</td>' +
+        '<td class="cpp-g-ari">' + esc(r.glyph) + '</td>' +
+        '<td class="cpp-num">' + r.uses.toLocaleString('en') + '</td></tr>';
+    }).join('');
+  }
+
+  // 4.5 click/Enter-to-copy on the two catalogue tables --------------------
+
+  function showCopyToast(text) {
+    var t = $('cpp-dtoast');
+    t.innerHTML = 'Copied <code>' + esc(text) + '</code>';
+    t.classList.add('cpp-on');
+    clearTimeout(dtoastTimer);
+    dtoastTimer = setTimeout(function () { t.classList.remove('cpp-on'); }, 1400);
+  }
+
+  function rowCopy(ev) {
+    var tr = ev.target.closest && ev.target.closest('tr.cpp-copy');
+    if (!tr) return;
+    if (ev.type === 'keydown') { if (ev.key !== 'Enter') return; ev.preventDefault(); }
+    var text = tr.dataset.copy;
+    var ok = function () { tr.classList.remove('cpp-copied'); void tr.offsetWidth; tr.classList.add('cpp-copied'); showCopyToast(text); };
+    var fallback = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); ok(); } catch (e) { showCopyToast('failed — select it manually: ' + text); }
+      ta.remove();
+    };
+    try { navigator.clipboard.writeText(text).then(ok, fallback); } catch (e) { fallback(); }
+  }
+
+  function wireDrawer(mods) {
+    var drawerEngine = mods[2];
+    buildEditors(drawerEngine);
+    buildPalette();
+    wireTabs();
+    wireResize();
+    $('cpp-reset').addEventListener('click', resetCard);
+    $('cpp-copy-all').addEventListener('click', function (ev) {
+      var c = card();
+      var faces = { N: drawerEngine.currentFaceHtml(c, S.edits[c.key], 'N'), E: drawerEngine.currentFaceHtml(c, S.edits[c.key], 'E'), X: drawerEngine.currentFaceHtml(c, S.edits[c.key], 'X') };
+      copyText(drawerEngine.copyAllFacesText(faces), ev.currentTarget);
+    });
+    $('cpp-cls-body').addEventListener('click', rowCopy);
+    $('cpp-cls-body').addEventListener('keydown', rowCopy);
+    $('cpp-sym-body').addEventListener('click', rowCopy);
+    $('cpp-sym-body').addEventListener('keydown', rowCopy);
+    setDrawerTab(S.drawer.tab);
+    applyDrawerOpen(S.drawer.open);
   }
 
   $('cpp-prev').addEventListener('click', function () { step(-1); });
@@ -460,14 +997,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
   $('cpp-tools').addEventListener('click', function () {
-    var drawer = $('cpp-drawer');
-    var dialog = $('cpp-dialog');
-    var opening = drawer.hidden;
-    drawer.hidden = !opening;
-    dialog.classList.toggle('cpp-tools', opening);
-    $('cpp-tools').setAttribute('aria-expanded', opening ? 'true' : 'false');
-    $('cpp-tools').classList.toggle('on', opening);
-    fitStage();
+    setDrawerState({ open: $('cpp-drawer').hidden });
   });
 
   document.addEventListener('keydown', function (ev) {
@@ -488,9 +1018,7 @@ document.addEventListener('DOMContentLoaded', function () {
     openModal(data.cards || [], index, { defaultDirection: data.defaultDirection });
   });
 
-  if (window.MjolnirCardPreviewPopupData && window.MjolnirCardPreviewPopupData.style) {
-    setStyle(window.MjolnirCardPreviewPopupData.style);
-  }
+  if (!style) applyPreviewData(window.MjolnirCardPreviewPopupData);
 });
 
 window.MjolnirCardPreviewPopup = {

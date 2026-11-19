@@ -124,6 +124,9 @@ function isDatabaseBacked(pathname) {
   // audio-outcome logic (hub/src/cardPreviewEngine.js) is the same kind of
   // static, read-only, import-free JS file — same carve-out reasoning.
   if (pathname === "/mjolnir/cards/popup-engine.js") return false;
+  // card-preview-popup task 4: the tools-drawer pure logic
+  // (hub/src/cardPreviewDrawer.js) — same carve-out reasoning again.
+  if (pathname === "/mjolnir/cards/drawer-engine.js") return false;
   // /mjolnir/cards/<id>/audio reads card_content.
   if (pathname.startsWith("/mjolnir/cards/")) return true;
   return false;
@@ -545,6 +548,11 @@ ${cardPreviewPopupMarkupHtml()}
 <script type="application/json" id="cpp-data">${JSON.stringify({
   cards: popupCards,
   style: previewData.style || null,
+  // task group 4 (Tools drawer): the Symbols tab and the Classes & tags
+  // tab's usage counts, from the same cached extraction as `style` — null
+  // together with it on a failed extraction, never a partial catalogue.
+  symbols: previewData.symbols || null,
+  usage: previewData.usage || null,
   // task 3.4's "operator's saved default" — task group 6 persists the
   // real value server-side; 'auto' (= first occurrence) is the literal
   // stand-in this task group was told to accept and apply.
@@ -1479,6 +1487,21 @@ export function createServer(pool, config, boot) {
       // a hand-kept-in-sync client copy.
       if (req.method === "GET" && url.pathname === "/mjolnir/cards/popup-engine.js") {
         const enginePath = path.join(path.dirname(new URL(import.meta.url).pathname), "cardPreviewEngine.js");
+        const bytes = fs.readFileSync(enginePath);
+        res.writeHead(200, {
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Content-Length": bytes.length,
+          "Cache-Control": "no-cache",
+        });
+        return res.end(bytes);
+      }
+
+      // card-preview-popup task group 4: the tools drawer's own pure-logic
+      // engine (hub/src/cardPreviewDrawer.js), served verbatim for the same
+      // reason as render-engine.js/popup-engine.js above — one source of
+      // the resize-clamp/snippet-wrap/catalogue-row-building rules.
+      if (req.method === "GET" && url.pathname === "/mjolnir/cards/drawer-engine.js") {
+        const enginePath = path.join(path.dirname(new URL(import.meta.url).pathname), "cardPreviewDrawer.js");
         const bytes = fs.readFileSync(enginePath);
         res.writeHead(200, {
           "Content-Type": "application/javascript; charset=utf-8",

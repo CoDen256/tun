@@ -99,7 +99,12 @@ function nameFor(codepoint) {
 // escapes (regex character classes, unrelated UI strings) that are not
 // card content and would otherwise inflate the Symbols tab's "Uses"
 // column with occurrences a card never actually shows.
-function sliceCardArrayText(text) {
+// Exported (card-preview-popup task 4.3's minimal addition — see
+// extractCardUsageCounts.js) so the stock usage-count extractor can scope
+// its tag/class scan to the exact same card-array slice this file already
+// anchors correctly, instead of re-deriving (and risking disagreeing with)
+// the anchor a second time.
+export function sliceCardArrayText(text) {
   const anchorIdx = text.indexOf('{DECK_ID:"');
   if (anchorIdx === -1) {
     throw new Error(
