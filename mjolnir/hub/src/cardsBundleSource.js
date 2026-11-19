@@ -17,6 +17,7 @@
 import path from "node:path";
 import { loadDeckCardModel, cardDirectionsInDeck } from "../../src/deckData.js";
 import { stripHtml } from "./cards.js";
+import { collectClasses } from "./cardsPage.js";
 
 const cache = new Map(); // buildId -> { rows, error }
 
@@ -66,6 +67,7 @@ function buildRows(buildId, decks, cards) {
       pE: stripHtml(c.E),
       pX: stripHtml(c.X),
       rawHtml: `${c.N || ""} ${c.E || ""} ${c.X || ""}`,
+      classes: collectClasses(c.N, c.E, c.X),
       occurrences,
       noteId: null,
       grammarRuleId: null,

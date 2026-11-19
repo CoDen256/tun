@@ -75,8 +75,6 @@ import {
   highlightHtmlTokens,
   buildClassesAndTagsRows,
   buildSymbolsRows,
-  SNIPPET_PALETTE,
-  DRAWER_ARROW_STEP,
 } from "./cardPreviewDrawer.js";
 
 const SCOPE = "cpp-root";
@@ -458,7 +456,7 @@ var S = {
   device: (DEVICES.hasOwnProperty(bakedPopupPrefs.device) ? bakedPopupPrefs.device : '375x812'),
   theme: (bakedPopupPrefs.theme === 'light' || bakedPopupPrefs.theme === 'dark') ? bakedPopupPrefs.theme : 'dark',
   fontSize: typeof bakedPopupPrefs.fontSize === 'number' ? bakedPopupPrefs.fontSize : null,
-  dirPref: 'auto',
+  dirPref: ['auto', 'N', 'E'].indexOf(bakedPopupPrefs.defaultDirection) !== -1 ? bakedPopupPrefs.defaultDirection : 'auto',
   onClose: null, lastFocus: null,
   // task 4.1/4.2: edits are keyed by card.key, never persisted/sent
   // anywhere (acceptance C26) — purely client-side, gone on reload/Reset.
@@ -549,6 +547,12 @@ function renderInfoAndCard(engine, popupEngine, drawerEngine) {
 
   var screen = $('cpp-screen');
   screen.style.cssText = 'width:' + (cardW + 2 * pad) + 'px;height:' + (Xe + 2 * pad) + 'px;padding:' + pad + 'px;background:' + theme.background;
+  // Fix 3 (card-preview-popup): the margin AROUND the card (the stage, not
+  // just the small screen box sized to the card) must show the theme's
+  // screen colour too, not .cpp-dialog's console-panel background — set on
+  // every theme/device change, same point #cpp-screen's background is set.
+  var stageEl = $('cpp-stage');
+  if (stageEl) stageEl.style.background = theme.background;
 
   var faceLetters = [slots.top, slots.mid, slots.bottom];
   var faceFracs = faceLetters.map(function (l) { return style.faces[l]; });
@@ -674,7 +678,12 @@ function openModal(cards, index, options) {
   var opts = options || {};
   S.cards = cards || [];
   S.index = Math.max(0, Math.min(index || 0, S.cards.length - 1));
-  S.dirPref = opts.defaultDirection || 'auto';
+  // Fix 4 (card-preview-popup): only override the live in-session
+  // preference when a caller explicitly passes one — otherwise leave
+  // S.dirPref as the operator's current pick (initialized from the baked
+  // server-side preference, or changed live via the #cpp-dirpref select)
+  // so a popup close/reopen doesn't clobber it back to 'auto'.
+  if (opts.defaultDirection) S.dirPref = opts.defaultDirection;
   S.onClose = typeof opts.onClose === 'function' ? opts.onClose : null;
   S.open = true;
   S.lastFocus = document.activeElement;
@@ -698,6 +707,361 @@ function closeModal() {
   if (S.onClose) S.onClose(c, index);
   document.dispatchEvent(new CustomEvent('cardpreviewpopup:close', { detail: { card: c, index: index } }));
   if (S.lastFocus && typeof S.lastFocus.focus === 'function') S.lastFocus.focus();
+}
+
+// --------------------------------------------------------------------
+// Task group 4: Tools drawer
+// --------------------------------------------------------------------
+
+// 4.1 open/close + resize ----------------------------------------------
+
+function applyDrawerOpen(open) {
+  var drawer = $('cpp-drawer');
+  var dialog = $('cpp-dialog');
+  drawer.hidden = !open;
+  dialog.classList.toggle('cpp-tools', open);
+  $('cpp-tools').setAttribute('aria-expanded', open ? 'true' : 'false');
+  $('cpp-tools').classList.toggle('on', open);
+  applyDrawerSize(DRAWER_ENGINE);
+  fitStage();
+  if (open) { if (DRAWER_ENGINE) { loadEditors(DRAWER_ENGINE); renderClasses(DRAWER_ENGINE); renderSymbols(DRAWER_ENGINE); } }
+}
+
+function applyDrawerSize(drawerEngine) {
+  if (!drawerEngine) return;
+  var dialog = $('cpp-dialog');
+  var dbody = $('cpp-dbody');
+  var sheet = drawerEngine.isSheetLayout(window.innerWidth);
+  S.drawer.width = drawerEngine.clampDrawerWidth(S.drawer.width, dialog.clientWidth || 1000);
+  S.drawer.height = drawerEngine.clampDrawerHeight(S.drawer.height || (dbody.clientHeight || 600) * 0.55, dbody.clientHeight || 600);
+  dialog.style.setProperty('--cpp-dw', S.drawer.width + 'px');
+  dialog.style.setProperty('--cpp-dh', S.drawer.height + 'px');
+}
+
+function showSizeTag(remembered) {
+  var t = $('cpp-sizetag');
+  var sheet = DRAWER_ENGINE && DRAWER_ENGINE.isSheetLayout(window.innerWidth);
+  t.textContent = (sheet ? S.drawer.height + ' px tall' : S.drawer.width + ' px wide') + (remembered ? ' · remembered' : '');
+  t.classList.add('cpp-on');
+  clearTimeout(S._sizeTagTimer);
+  if (remembered) S._sizeTagTimer = setTimeout(function () { t.classList.remove('cpp-on'); }, 1600);
+}
+
+function wireResize() {
+  var handle = $('cpp-resize');
+  var dragging = false;
+  handle.addEventListener('pointerdown', function (e) {
+    dragging = true;
+    handle.setPointerCapture(e.pointerId);
+    $('cpp-dialog').classList.add('cpp-dragging');
+    e.preventDefault();
+  });
+  handle.addEventListener('pointermove', function (e) {
+    if (!dragging || !DRAWER_ENGINE) return;
+    var sheet = DRAWER_ENGINE.isSheetLayout(window.innerWidth);
+    if (sheet) S.drawer.height = $('cpp-dbody').getBoundingClientRect().bottom - e.clientY;
+    else S.drawer.width = $('cpp-dialog').getBoundingClientRect().right - e.clientX;
+    applyDrawerSize(DRAWER_ENGINE);
+    fitStage(); // 4.1: the card stage refits LIVE while dragging
+    showSizeTag(false);
+  });
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    $('cpp-dialog').classList.remove('cpp-dragging');
+    savePopupPrefs();
+    showSizeTag(true);
+  }
+  handle.addEventListener('pointerup', endDrag);
+  handle.addEventListener('pointercancel', endDrag);
+  handle.addEventListener('keydown', function (e) {
+    if (!DRAWER_ENGINE) return;
+    var sheet = DRAWER_ENGINE.isSheetLayout(window.innerWidth);
+    var step = DRAWER_ENGINE.DRAWER_ARROW_STEP;
+    var grow = sheet ? { ArrowUp: step, ArrowDown: -step } : { ArrowLeft: step, ArrowRight: -step };
+    if (!(e.key in grow)) return;
+    e.preventDefault();
+    if (sheet) S.drawer.height += grow[e.key]; else S.drawer.width += grow[e.key];
+    applyDrawerSize(DRAWER_ENGINE);
+    fitStage();
+    savePopupPrefs();
+    showSizeTag(true);
+  });
+  window.addEventListener('resize', function () { if (S.open) applyDrawerSize(DRAWER_ENGINE); });
+}
+
+// 4.1 tabs ---------------------------------------------------------------
+
+function setDrawerTab(tab) {
+  S.drawer.tab = tab;
+  document.querySelectorAll('.cpp-tabs button').forEach(function (b) { b.classList.toggle('cpp-on', b.dataset.tab === tab); });
+  ['edit', 'classes', 'symbols'].forEach(function (t) { $('cpp-pane-' + t).hidden = t !== tab; });
+  if (tab === 'classes' && DRAWER_ENGINE) renderClasses(DRAWER_ENGINE);
+  if (tab === 'symbols' && DRAWER_ENGINE) renderSymbols(DRAWER_ENGINE);
+}
+
+function wireTabs() {
+  document.querySelectorAll('.cpp-tabs button').forEach(function (b) {
+    b.addEventListener('click', function () { setDrawerTab(b.dataset.tab); savePopupPrefs(); });
+  });
+}
+
+// 4.2 editors --------------------------------------------------------
+
+var editors = []; // [{ face, el, head }]
+
+function caretOffset(el) {
+  var sel = window.getSelection();
+  if (!sel.rangeCount || !el.contains(sel.anchorNode)) return null;
+  var range = sel.getRangeAt(0).cloneRange();
+  range.selectNodeContents(el);
+  range.setEnd(sel.anchorNode, sel.anchorOffset);
+  return range.toString().length;
+}
+
+function setCaretOffset(el, offset) {
+  var remaining = offset;
+  var node = null, nodeOffset = 0;
+  (function walk(n) {
+    if (remaining < 0) return;
+    if (n.nodeType === 3) {
+      if (n.textContent.length >= remaining) { node = n; nodeOffset = remaining; remaining = -1; return; }
+      remaining -= n.textContent.length;
+    } else {
+      for (var i = 0; i < n.childNodes.length && remaining >= 0; i++) walk(n.childNodes[i]);
+    }
+  })(el);
+  if (!node) { node = el; nodeOffset = el.childNodes.length; }
+  var range = document.createRange();
+  range.setStart(node, nodeOffset);
+  range.collapse(true);
+  var sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function paintEditor(ed, drawerEngine) {
+  var text = ed.el.textContent;
+  var tokens = drawerEngine.highlightHtmlTokens(text);
+  var caret = document.activeElement === ed.el ? caretOffset(ed.el) : null;
+  ed.el.innerHTML = tokens.map(function (t) {
+    if (t.kind === 'text') return esc(t.text);
+    var cls = t.kind === 'tag' ? 'cpp-tok-tag' : t.kind === 'attr' ? 'cpp-tok-attr' : t.kind === 'string' ? 'cpp-tok-string' : 'cpp-tok-bracket';
+    return '<span class="' + cls + '">' + esc(t.text) + '</span>';
+  }).join('') || '​';
+  if (caret != null) setCaretOffset(ed.el, caret);
+}
+
+function buildEditors(drawerEngine) {
+  var host = $('cpp-editors');
+  host.innerHTML = '';
+  editors = [];
+  ['N', 'E', 'X'].forEach(function (face) {
+    var box = document.createElement('div');
+    box.className = 'cpp-ed';
+    box.innerHTML =
+      '<div class="cpp-ed-head"><b>' + face + '</b><span class="cpp-sub" data-slot></span><span class="cpp-sub" data-aud></span>' +
+      '<button class="cpp-btn" type="button" data-copyface>Copy HTML</button></div>' +
+      '<div class="cpp-edhost" contenteditable="true" spellcheck="false" data-face="' + face + '"></div>';
+    host.appendChild(box);
+    var el = box.querySelector('.cpp-edhost');
+    var ed = { face: face, el: el, box: box };
+    el.addEventListener('focus', function () { setActiveEditor(face); });
+    el.addEventListener('input', function () { onEdit(ed); });
+    box.querySelector('[data-copyface]').addEventListener('click', function (ev) { copyText(el.textContent, ev.currentTarget); });
+    editors.push(ed);
+  });
+  setActiveEditor('N');
+}
+
+function setActiveEditor(face) {
+  S.activeEditorFace = face;
+  editors.forEach(function (ed) { ed.box.classList.toggle('cpp-active', ed.face === face); });
+}
+
+function loadEditors(drawerEngine) {
+  var c = card();
+  if (!c) return;
+  var slots = POPUP_ENGINE.directionSlots(S.dir);
+  editors.forEach(function (ed) {
+    var current = drawerEngine.currentFaceHtml(c, S.edits[c.key], ed.face);
+    if (ed.el.textContent !== current) { ed.el.textContent = current; paintEditor(ed, drawerEngine); }
+    ed.box.querySelector('[data-slot]').textContent = drawerEngine.editorSlotLabel(slots, ed.face);
+    ed.box.querySelector('[data-aud]').textContent = c.A === ed.face ? '· carries audio (A)' : '';
+  });
+}
+
+function onEdit(ed) {
+  if (!DRAWER_ENGINE) return;
+  var c = card();
+  if (!c) return;
+  (S.edits[c.key] = S.edits[c.key] || {})[ed.face] = ed.el.textContent;
+  markEdited(DRAWER_ENGINE);
+  paintEditor(ed, DRAWER_ENGINE);
+  clearTimeout(editTimer);
+  // design §4 "live re-render"; acceptance C25 "within a second" — a
+  // light debounce so fast typing doesn't re-render on every keystroke.
+  editTimer = setTimeout(function () { if (ENGINE && POPUP_ENGINE) renderInfoAndCard(ENGINE, POPUP_ENGINE, DRAWER_ENGINE); }, 200);
+}
+
+function markEdited(drawerEngine) {
+  var c = card();
+  var edited = c && drawerEngine.isEdited(c, S.edits[c.key]);
+  $('cpp-edited').hidden = !edited;
+}
+
+function resetCard() {
+  var c = card();
+  if (!c || !DRAWER_ENGINE) return;
+  delete S.edits[c.key];
+  loadEditors(DRAWER_ENGINE);
+  renderInfoAndCard(ENGINE, POPUP_ENGINE, DRAWER_ENGINE);
+  markEdited(DRAWER_ENGINE);
+}
+
+function copyText(text, btn) {
+  var done = function () {
+    var original = btn.textContent;
+    btn.textContent = 'Copied';
+    setTimeout(function () { btn.textContent = original; }, 1100);
+  };
+  var fallback = function () {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = 'Select and copy manually'; }
+    ta.remove();
+  };
+  try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+}
+
+function buildPalette(drawerEngine) {
+  var pal = $('cpp-palette');
+  pal.innerHTML = '';
+  drawerEngine.SNIPPET_PALETTE.forEach(function (snippet) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = (snippet.swatch ? '<i style="background:' + snippet.swatch + '"></i>' : '') + esc(snippet.label);
+    b.title = snippet.open + '…' + snippet.close;
+    b.addEventListener('mousedown', function (e) { e.preventDefault(); }); // keep the editor's selection
+    b.addEventListener('click', function () {
+      var ed = editors[editors.findIndex(function (e) { return e.face === S.activeEditorFace; })] || editors[0];
+      if (!ed) return;
+      var offset = document.activeElement === ed.el ? caretOffset(ed.el) : null;
+      var start = offset != null ? offset : ed.el.textContent.length;
+      var end = start;
+      var sel = window.getSelection();
+      if (document.activeElement === ed.el && sel.rangeCount && !sel.getRangeAt(0).collapsed) {
+        end = start + sel.toString().length;
+      }
+      var result = drawerEngine.wrapSelectionOrInsert(ed.el.textContent, start, end, snippet.open, snippet.close);
+      ed.el.textContent = result.value;
+      paintEditor(ed, DRAWER_ENGINE);
+      setCaretOffset(ed.el, result.selectionStart);
+      ed.el.focus();
+      onEdit(ed);
+    });
+    pal.appendChild(b);
+  });
+}
+
+// 4.3 Classes & tags ---------------------------------------------------
+
+function renderClasses(drawerEngine) {
+  if (!style || !ENGINE) return;
+  var d = dev();
+  var state = { width: d.w, height: d.h, tablet: d.tablet, theme: S.theme, fontSize: S.fontSize };
+  var normalizeFn = function (v, w, h, t) { return ENGINE.normalize(v, w, h, t); };
+  $('cpp-cls-ctx').textContent =
+    'Resolved at ' + d.w + ' × ' + d.h + (d.tablet ? ' tablet' : '') + ', font ' + S.fontSize + ', ' + S.theme +
+    ' theme (normalize ×' + ENGINE.normalizeFactor(d.w, d.h, d.tablet).toFixed(3) + '). Change the controls above to recompute.';
+  var rows = drawerEngine.buildClassesAndTagsRows(style, usageData, state, normalizeFn);
+  var body = $('cpp-cls-body');
+  body.innerHTML = '';
+  rows.forEach(function (r) {
+    var tr = document.createElement('tr');
+    if (r.group) { tr.className = 'cpp-grp'; tr.innerHTML = '<td colspan="3">' + esc(r.group) + '</td>'; body.appendChild(tr); return; }
+    var flagsHtml = (r.flags || []).map(function (f) { return '<span class="cpp-tag-inf' + (f === 'inferred' ? '' : ' cpp-tag-bad') + '">' + esc(f) + '</span>'; }).join(' ');
+    var useLbl = r.usage != null ? '<small>' + r.usage.toLocaleString('en') + '× in stock</small>' : '';
+    if (r.copyText) { tr.className = 'cpp-copy'; tr.tabIndex = 0; tr.dataset.copy = r.copyText; tr.title = 'Click to copy ' + r.copyText; }
+    tr.innerHTML = '<td class="cpp-sel">' + esc(r.selector) + useLbl + '</td><td>' + esc(r.resolvesTo) + ' ' + flagsHtml + '</td><td></td>';
+    if (r.sampleHtml) {
+      var box = document.createElement('div');
+      box.className = 'cpp-sample';
+      box.style.background = style.themes[S.theme].background;
+      var rendered = ENGINE.renderCardFace(r.sampleHtml, style, { fontSize: S.fontSize, width: d.w, height: d.h, tablet: d.tablet, theme: S.theme });
+      box.innerHTML = rendered.html;
+      tr.lastChild.appendChild(box);
+    }
+    body.appendChild(tr);
+  });
+}
+
+// 4.4 Symbols -----------------------------------------------------------
+
+function renderSymbols(drawerEngine) {
+  if (!symbolsData) return;
+  var rows = drawerEngine.buildSymbolsRows(symbolsData);
+  $('cpp-sym-body').innerHTML = rows.map(function (r) {
+    if (r.group) return '<tr class="cpp-grp"><td colspan="6">' + esc(r.group) + '</td></tr>';
+    return '<tr class="cpp-copy" tabindex="0" title="Click to copy" data-copy="' + esc(r.copyText) + '">' +
+      '<td class="cpp-sel">' + esc(r.entity) + '</td>' +
+      '<td class="cpp-glyph">' + esc(r.glyph) + '</td>' +
+      '<td>' + esc(r.name) + '</td>' +
+      '<td class="cpp-g-pop">' + esc(r.glyph) + '</td>' +
+      '<td class="cpp-g-ari">' + esc(r.glyph) + '</td>' +
+      '<td class="cpp-num">' + r.uses.toLocaleString('en') + '</td></tr>';
+  }).join('');
+}
+
+// 4.5 click/Enter-to-copy on the two catalogue tables --------------------
+
+function showCopyToast(text) {
+  var t = $('cpp-dtoast');
+  t.innerHTML = 'Copied <code>' + esc(text) + '</code>';
+  t.classList.add('cpp-on');
+  clearTimeout(dtoastTimer);
+  dtoastTimer = setTimeout(function () { t.classList.remove('cpp-on'); }, 1400);
+}
+
+function rowCopy(ev) {
+  var tr = ev.target.closest && ev.target.closest('tr.cpp-copy');
+  if (!tr) return;
+  if (ev.type === 'keydown') { if (ev.key !== 'Enter') return; ev.preventDefault(); }
+  var text = tr.dataset.copy;
+  var ok = function () { tr.classList.remove('cpp-copied'); void tr.offsetWidth; tr.classList.add('cpp-copied'); showCopyToast(text); };
+  var fallback = function () {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); ok(); } catch (e) { showCopyToast('failed — select it manually: ' + text); }
+    ta.remove();
+  };
+  try { navigator.clipboard.writeText(text).then(ok, fallback); } catch (e) { fallback(); }
+}
+
+function wireDrawer(mods) {
+  var drawerEngine = mods[2];
+  buildEditors(drawerEngine);
+  buildPalette(drawerEngine);
+  wireTabs();
+  wireResize();
+  $('cpp-reset').addEventListener('click', resetCard);
+  $('cpp-copy-all').addEventListener('click', function (ev) {
+    var c = card();
+    var faces = { N: drawerEngine.currentFaceHtml(c, S.edits[c.key], 'N'), E: drawerEngine.currentFaceHtml(c, S.edits[c.key], 'E'), X: drawerEngine.currentFaceHtml(c, S.edits[c.key], 'X') };
+    copyText(drawerEngine.copyAllFacesText(faces), ev.currentTarget);
+  });
+  $('cpp-cls-body').addEventListener('click', rowCopy);
+  $('cpp-cls-body').addEventListener('keydown', rowCopy);
+  $('cpp-sym-body').addEventListener('click', rowCopy);
+  $('cpp-sym-body').addEventListener('keydown', rowCopy);
+  setDrawerTab(S.drawer.tab);
+  applyDrawerOpen(S.drawer.open);
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -766,360 +1130,6 @@ document.addEventListener('DOMContentLoaded', function () {
     savePopupPrefs();
   }
 
-  // --------------------------------------------------------------------
-  // Task group 4: Tools drawer
-  // --------------------------------------------------------------------
-
-  // 4.1 open/close + resize ----------------------------------------------
-
-  function applyDrawerOpen(open) {
-    var drawer = $('cpp-drawer');
-    var dialog = $('cpp-dialog');
-    drawer.hidden = !open;
-    dialog.classList.toggle('cpp-tools', open);
-    $('cpp-tools').setAttribute('aria-expanded', open ? 'true' : 'false');
-    $('cpp-tools').classList.toggle('on', open);
-    applyDrawerSize(DRAWER_ENGINE);
-    fitStage();
-    if (open) { if (DRAWER_ENGINE) { loadEditors(DRAWER_ENGINE); renderClasses(DRAWER_ENGINE); renderSymbols(DRAWER_ENGINE); } }
-  }
-
-  function applyDrawerSize(drawerEngine) {
-    if (!drawerEngine) return;
-    var dialog = $('cpp-dialog');
-    var dbody = $('cpp-dbody');
-    var sheet = drawerEngine.isSheetLayout(window.innerWidth);
-    S.drawer.width = drawerEngine.clampDrawerWidth(S.drawer.width, dialog.clientWidth || 1000);
-    S.drawer.height = drawerEngine.clampDrawerHeight(S.drawer.height || (dbody.clientHeight || 600) * 0.55, dbody.clientHeight || 600);
-    dialog.style.setProperty('--cpp-dw', S.drawer.width + 'px');
-    dialog.style.setProperty('--cpp-dh', S.drawer.height + 'px');
-  }
-
-  function showSizeTag(remembered) {
-    var t = $('cpp-sizetag');
-    var sheet = DRAWER_ENGINE && DRAWER_ENGINE.isSheetLayout(window.innerWidth);
-    t.textContent = (sheet ? S.drawer.height + ' px tall' : S.drawer.width + ' px wide') + (remembered ? ' · remembered' : '');
-    t.classList.add('cpp-on');
-    clearTimeout(S._sizeTagTimer);
-    if (remembered) S._sizeTagTimer = setTimeout(function () { t.classList.remove('cpp-on'); }, 1600);
-  }
-
-  function wireResize() {
-    var handle = $('cpp-resize');
-    var dragging = false;
-    handle.addEventListener('pointerdown', function (e) {
-      dragging = true;
-      handle.setPointerCapture(e.pointerId);
-      $('cpp-dialog').classList.add('cpp-dragging');
-      e.preventDefault();
-    });
-    handle.addEventListener('pointermove', function (e) {
-      if (!dragging || !DRAWER_ENGINE) return;
-      var sheet = DRAWER_ENGINE.isSheetLayout(window.innerWidth);
-      if (sheet) S.drawer.height = $('cpp-dbody').getBoundingClientRect().bottom - e.clientY;
-      else S.drawer.width = $('cpp-dialog').getBoundingClientRect().right - e.clientX;
-      applyDrawerSize(DRAWER_ENGINE);
-      fitStage(); // 4.1: the card stage refits LIVE while dragging
-      showSizeTag(false);
-    });
-    function endDrag() {
-      if (!dragging) return;
-      dragging = false;
-      $('cpp-dialog').classList.remove('cpp-dragging');
-      savePopupPrefs();
-      showSizeTag(true);
-    }
-    handle.addEventListener('pointerup', endDrag);
-    handle.addEventListener('pointercancel', endDrag);
-    handle.addEventListener('keydown', function (e) {
-      if (!DRAWER_ENGINE) return;
-      var sheet = DRAWER_ENGINE.isSheetLayout(window.innerWidth);
-      var grow = sheet ? { ArrowUp: DRAWER_ARROW_STEP, ArrowDown: -DRAWER_ARROW_STEP } : { ArrowLeft: DRAWER_ARROW_STEP, ArrowRight: -DRAWER_ARROW_STEP };
-      if (!(e.key in grow)) return;
-      e.preventDefault();
-      if (sheet) S.drawer.height += grow[e.key]; else S.drawer.width += grow[e.key];
-      applyDrawerSize(DRAWER_ENGINE);
-      fitStage();
-      savePopupPrefs();
-      showSizeTag(true);
-    });
-    window.addEventListener('resize', function () { if (S.open) applyDrawerSize(DRAWER_ENGINE); });
-  }
-
-  // 4.1 tabs ---------------------------------------------------------------
-
-  function setDrawerTab(tab) {
-    S.drawer.tab = tab;
-    document.querySelectorAll('.cpp-tabs button').forEach(function (b) { b.classList.toggle('cpp-on', b.dataset.tab === tab); });
-    ['edit', 'classes', 'symbols'].forEach(function (t) { $('cpp-pane-' + t).hidden = t !== tab; });
-    if (tab === 'classes' && DRAWER_ENGINE) renderClasses(DRAWER_ENGINE);
-    if (tab === 'symbols' && DRAWER_ENGINE) renderSymbols(DRAWER_ENGINE);
-  }
-
-  function wireTabs() {
-    document.querySelectorAll('.cpp-tabs button').forEach(function (b) {
-      b.addEventListener('click', function () { setDrawerTab(b.dataset.tab); savePopupPrefs(); });
-    });
-  }
-
-  // 4.2 editors --------------------------------------------------------
-
-  var editors = []; // [{ face, el, head }]
-
-  function caretOffset(el) {
-    var sel = window.getSelection();
-    if (!sel.rangeCount || !el.contains(sel.anchorNode)) return null;
-    var range = sel.getRangeAt(0).cloneRange();
-    range.selectNodeContents(el);
-    range.setEnd(sel.anchorNode, sel.anchorOffset);
-    return range.toString().length;
-  }
-
-  function setCaretOffset(el, offset) {
-    var remaining = offset;
-    var node = null, nodeOffset = 0;
-    (function walk(n) {
-      if (remaining < 0) return;
-      if (n.nodeType === 3) {
-        if (n.textContent.length >= remaining) { node = n; nodeOffset = remaining; remaining = -1; return; }
-        remaining -= n.textContent.length;
-      } else {
-        for (var i = 0; i < n.childNodes.length && remaining >= 0; i++) walk(n.childNodes[i]);
-      }
-    })(el);
-    if (!node) { node = el; nodeOffset = el.childNodes.length; }
-    var range = document.createRange();
-    range.setStart(node, nodeOffset);
-    range.collapse(true);
-    var sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-  }
-
-  function paintEditor(ed, drawerEngine) {
-    var text = ed.el.textContent;
-    var tokens = drawerEngine.highlightHtmlTokens(text);
-    var caret = document.activeElement === ed.el ? caretOffset(ed.el) : null;
-    ed.el.innerHTML = tokens.map(function (t) {
-      if (t.kind === 'text') return esc(t.text);
-      var cls = t.kind === 'tag' ? 'cpp-tok-tag' : t.kind === 'attr' ? 'cpp-tok-attr' : t.kind === 'string' ? 'cpp-tok-string' : 'cpp-tok-bracket';
-      return '<span class="' + cls + '">' + esc(t.text) + '</span>';
-    }).join('') || '​';
-    if (caret != null) setCaretOffset(ed.el, caret);
-  }
-
-  function buildEditors(drawerEngine) {
-    var host = $('cpp-editors');
-    host.innerHTML = '';
-    editors = [];
-    ['N', 'E', 'X'].forEach(function (face) {
-      var box = document.createElement('div');
-      box.className = 'cpp-ed';
-      box.innerHTML =
-        '<div class="cpp-ed-head"><b>' + face + '</b><span class="cpp-sub" data-slot></span><span class="cpp-sub" data-aud></span>' +
-        '<button class="cpp-btn" type="button" data-copyface>Copy HTML</button></div>' +
-        '<div class="cpp-edhost" contenteditable="true" spellcheck="false" data-face="' + face + '"></div>';
-      host.appendChild(box);
-      var el = box.querySelector('.cpp-edhost');
-      var ed = { face: face, el: el, box: box };
-      el.addEventListener('focus', function () { setActiveEditor(face); });
-      el.addEventListener('input', function () { onEdit(ed); });
-      box.querySelector('[data-copyface]').addEventListener('click', function (ev) { copyText(el.textContent, ev.currentTarget); });
-      editors.push(ed);
-    });
-    setActiveEditor('N');
-  }
-
-  function setActiveEditor(face) {
-    S.activeEditorFace = face;
-    editors.forEach(function (ed) { ed.box.classList.toggle('cpp-active', ed.face === face); });
-  }
-
-  function loadEditors(drawerEngine) {
-    var c = card();
-    if (!c) return;
-    var slots = POPUP_ENGINE.directionSlots(S.dir);
-    editors.forEach(function (ed) {
-      var current = drawerEngine.currentFaceHtml(c, S.edits[c.key], ed.face);
-      if (ed.el.textContent !== current) { ed.el.textContent = current; paintEditor(ed, drawerEngine); }
-      ed.box.querySelector('[data-slot]').textContent = drawerEngine.editorSlotLabel(slots, ed.face);
-      ed.box.querySelector('[data-aud]').textContent = c.A === ed.face ? '· carries audio (A)' : '';
-    });
-  }
-
-  function onEdit(ed) {
-    if (!DRAWER_ENGINE) return;
-    var c = card();
-    if (!c) return;
-    (S.edits[c.key] = S.edits[c.key] || {})[ed.face] = ed.el.textContent;
-    markEdited(DRAWER_ENGINE);
-    paintEditor(ed, DRAWER_ENGINE);
-    clearTimeout(editTimer);
-    // design §4 "live re-render"; acceptance C25 "within a second" — a
-    // light debounce so fast typing doesn't re-render on every keystroke.
-    editTimer = setTimeout(function () { if (ENGINE && POPUP_ENGINE) renderInfoAndCard(ENGINE, POPUP_ENGINE, DRAWER_ENGINE); }, 200);
-  }
-
-  function markEdited(drawerEngine) {
-    var c = card();
-    var edited = c && drawerEngine.isEdited(c, S.edits[c.key]);
-    $('cpp-edited').hidden = !edited;
-  }
-
-  function resetCard() {
-    var c = card();
-    if (!c || !DRAWER_ENGINE) return;
-    delete S.edits[c.key];
-    loadEditors(DRAWER_ENGINE);
-    renderInfoAndCard(ENGINE, POPUP_ENGINE, DRAWER_ENGINE);
-    markEdited(DRAWER_ENGINE);
-  }
-
-  function copyText(text, btn) {
-    var done = function () {
-      var original = btn.textContent;
-      btn.textContent = 'Copied';
-      setTimeout(function () { btn.textContent = original; }, 1100);
-    };
-    var fallback = function () {
-      var ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.cssText = 'position:fixed;left:-9999px';
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = 'Select and copy manually'; }
-      ta.remove();
-    };
-    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
-  }
-
-  function buildPalette() {
-    var pal = $('cpp-palette');
-    pal.innerHTML = '';
-    SNIPPET_PALETTE.forEach(function (snippet) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.innerHTML = (snippet.swatch ? '<i style="background:' + snippet.swatch + '"></i>' : '') + esc(snippet.label);
-      b.title = snippet.open + '…' + snippet.close;
-      b.addEventListener('mousedown', function (e) { e.preventDefault(); }); // keep the editor's selection
-      b.addEventListener('click', function () {
-        var ed = editors[editors.findIndex(function (e) { return e.face === S.activeEditorFace; })] || editors[0];
-        if (!ed) return;
-        var offset = document.activeElement === ed.el ? caretOffset(ed.el) : null;
-        var start = offset != null ? offset : ed.el.textContent.length;
-        var end = start;
-        var sel = window.getSelection();
-        if (document.activeElement === ed.el && sel.rangeCount && !sel.getRangeAt(0).collapsed) {
-          end = start + sel.toString().length;
-        }
-        var result = wrapSelectionOrInsert(ed.el.textContent, start, end, snippet.open, snippet.close);
-        ed.el.textContent = result.value;
-        paintEditor(ed, DRAWER_ENGINE);
-        setCaretOffset(ed.el, result.selectionStart);
-        ed.el.focus();
-        onEdit(ed);
-      });
-      pal.appendChild(b);
-    });
-  }
-
-  // 4.3 Classes & tags ---------------------------------------------------
-
-  function renderClasses(drawerEngine) {
-    if (!style || !ENGINE) return;
-    var d = dev();
-    var state = { width: d.w, height: d.h, tablet: d.tablet, theme: S.theme, fontSize: S.fontSize };
-    var normalizeFn = function (v, w, h, t) { return ENGINE.normalize(v, w, h, t); };
-    $('cpp-cls-ctx').textContent =
-      'Resolved at ' + d.w + ' × ' + d.h + (d.tablet ? ' tablet' : '') + ', font ' + S.fontSize + ', ' + S.theme +
-      ' theme (normalize ×' + ENGINE.normalizeFactor(d.w, d.h, d.tablet).toFixed(3) + '). Change the controls above to recompute.';
-    var rows = drawerEngine.buildClassesAndTagsRows(style, usageData, state, normalizeFn);
-    var body = $('cpp-cls-body');
-    body.innerHTML = '';
-    rows.forEach(function (r) {
-      var tr = document.createElement('tr');
-      if (r.group) { tr.className = 'cpp-grp'; tr.innerHTML = '<td colspan="3">' + esc(r.group) + '</td>'; body.appendChild(tr); return; }
-      var flagsHtml = (r.flags || []).map(function (f) { return '<span class="cpp-tag-inf' + (f === 'inferred' ? '' : ' cpp-tag-bad') + '">' + esc(f) + '</span>'; }).join(' ');
-      var useLbl = r.usage != null ? '<small>' + r.usage.toLocaleString('en') + '× in stock</small>' : '';
-      if (r.copyText) { tr.className = 'cpp-copy'; tr.tabIndex = 0; tr.dataset.copy = r.copyText; tr.title = 'Click to copy ' + r.copyText; }
-      tr.innerHTML = '<td class="cpp-sel">' + esc(r.selector) + useLbl + '</td><td>' + esc(r.resolvesTo) + ' ' + flagsHtml + '</td><td></td>';
-      if (r.sampleHtml) {
-        var box = document.createElement('div');
-        box.className = 'cpp-sample';
-        box.style.background = style.themes[S.theme].background;
-        var rendered = ENGINE.renderCardFace(r.sampleHtml, style, { fontSize: S.fontSize, width: d.w, height: d.h, tablet: d.tablet, theme: S.theme });
-        box.innerHTML = rendered.html;
-        tr.lastChild.appendChild(box);
-      }
-      body.appendChild(tr);
-    });
-  }
-
-  // 4.4 Symbols -----------------------------------------------------------
-
-  function renderSymbols(drawerEngine) {
-    if (!symbolsData) return;
-    var rows = drawerEngine.buildSymbolsRows(symbolsData);
-    $('cpp-sym-body').innerHTML = rows.map(function (r) {
-      if (r.group) return '<tr class="cpp-grp"><td colspan="6">' + esc(r.group) + '</td></tr>';
-      return '<tr class="cpp-copy" tabindex="0" title="Click to copy" data-copy="' + esc(r.copyText) + '">' +
-        '<td class="cpp-sel">' + esc(r.entity) + '</td>' +
-        '<td class="cpp-glyph">' + esc(r.glyph) + '</td>' +
-        '<td>' + esc(r.name) + '</td>' +
-        '<td class="cpp-g-pop">' + esc(r.glyph) + '</td>' +
-        '<td class="cpp-g-ari">' + esc(r.glyph) + '</td>' +
-        '<td class="cpp-num">' + r.uses.toLocaleString('en') + '</td></tr>';
-    }).join('');
-  }
-
-  // 4.5 click/Enter-to-copy on the two catalogue tables --------------------
-
-  function showCopyToast(text) {
-    var t = $('cpp-dtoast');
-    t.innerHTML = 'Copied <code>' + esc(text) + '</code>';
-    t.classList.add('cpp-on');
-    clearTimeout(dtoastTimer);
-    dtoastTimer = setTimeout(function () { t.classList.remove('cpp-on'); }, 1400);
-  }
-
-  function rowCopy(ev) {
-    var tr = ev.target.closest && ev.target.closest('tr.cpp-copy');
-    if (!tr) return;
-    if (ev.type === 'keydown') { if (ev.key !== 'Enter') return; ev.preventDefault(); }
-    var text = tr.dataset.copy;
-    var ok = function () { tr.classList.remove('cpp-copied'); void tr.offsetWidth; tr.classList.add('cpp-copied'); showCopyToast(text); };
-    var fallback = function () {
-      var ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.cssText = 'position:fixed;left:-9999px';
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); ok(); } catch (e) { showCopyToast('failed — select it manually: ' + text); }
-      ta.remove();
-    };
-    try { navigator.clipboard.writeText(text).then(ok, fallback); } catch (e) { fallback(); }
-  }
-
-  function wireDrawer(mods) {
-    var drawerEngine = mods[2];
-    buildEditors(drawerEngine);
-    buildPalette();
-    wireTabs();
-    wireResize();
-    $('cpp-reset').addEventListener('click', resetCard);
-    $('cpp-copy-all').addEventListener('click', function (ev) {
-      var c = card();
-      var faces = { N: drawerEngine.currentFaceHtml(c, S.edits[c.key], 'N'), E: drawerEngine.currentFaceHtml(c, S.edits[c.key], 'E'), X: drawerEngine.currentFaceHtml(c, S.edits[c.key], 'X') };
-      copyText(drawerEngine.copyAllFacesText(faces), ev.currentTarget);
-    });
-    $('cpp-cls-body').addEventListener('click', rowCopy);
-    $('cpp-cls-body').addEventListener('keydown', rowCopy);
-    $('cpp-sym-body').addEventListener('click', rowCopy);
-    $('cpp-sym-body').addEventListener('keydown', rowCopy);
-    setDrawerTab(S.drawer.tab);
-    applyDrawerOpen(S.drawer.open);
-  }
-
   $('cpp-prev').addEventListener('click', function () { step(-1); });
   $('cpp-next').addEventListener('click', function () { step(1); });
   $('cpp-close').addEventListener('click', closeModal);
@@ -1156,7 +1166,11 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!opener) return;
     var index = Number(opener.getAttribute('data-cpp-open'));
     var data = window.MjolnirCardPreviewPopupData || {};
-    openModal(data.cards || [], index, { defaultDirection: data.defaultDirection });
+    // Fix 4 (card-preview-popup): do NOT pass the page-load-time snapshot's
+    // defaultDirection here — it goes stale the moment the operator changes
+    // the picker in-session. Leaving the key out lets openModal() fall
+    // through to the current S.dirPref.
+    openModal(data.cards || [], index, {});
   });
 
   if (!style) applyPreviewData(window.MjolnirCardPreviewPopupData);

@@ -389,7 +389,7 @@ function openInWorkbench(href) {
 // head, legend, pager skeleton — all populated/filled by the client
 // script), and (3) bake that one source's data plus the renderer/style/
 // symbols/usage data the popup needs, exactly once (acceptance C30).
-async function renderCardsPage(pool, { source, dataDir, baseFolderDir, stabburUiBase, settings = {} }) {
+async function renderCardsPage(pool, { source, dataDir, baseFolderDir, stabburUiBase, settings = {}, sourceNotice = null }) {
   let previewData;
   try {
     previewData = getCardPreviewData(baseFolderDir);
@@ -398,7 +398,7 @@ async function renderCardsPage(pool, { source, dataDir, baseFolderDir, stabburUi
   }
 
   let rows = [];
-  let errorMessage = null;
+  let errorMessage = sourceNotice || null;
   // D157, extended past the places design.md named it (C39): a database
   // outage degrades the Minted source to an empty table with an inline
   // explanation instead of failing the whole page — the gate that used to
@@ -1364,14 +1364,41 @@ export function createServer(pool, config, boot) {
         const queryParam = url.searchParams.get("source");
         const savedSource = settings[CARDS_PAGE_SETTINGS_KEY] && settings[CARDS_PAGE_SETTINGS_KEY].source;
         let source = queryParam || savedSource || "minted";
-        if (source !== "minted" && !BUILD_ID_PATTERN.test(source)) source = "minted";
-        // C38 "stale settings degrade": a saved source naming a build
-        // `publications` no longer has falls back to Minted with no error
-        // — checked against the bundle FILE below (bundleRows' own
-        // read-through-loadDeckCardModel), not against the `publications`
-        // row, since a bundle file can be browsed even if its row was
-        // removed and the inverse (a row with no file) is exactly what
-        // bundleRows()'s own error path reports inline instead of here.
+        // C38 "stale settings degrade": a saved source naming a build id
+        // that no longer has a `publications` row falls back to Minted
+        // with no error. The regex check alone only catches a malformed id
+        // — it does NOT catch a well-formed id whose row was deleted (the
+        // bundle FILE can still be on disk and readable, so bundleRows()
+        // below would happily serve the orphaned build instead of
+        // degrading). So: fetch `publications` first, then reset to
+        // "minted" on EITHER a bad-shaped id OR one absent from the
+        // current list — not against the bundle FILE, which is a
+        // separate, file-missing-but-row-present case bundleRows()'s own
+        // error path reports inline instead of here.
+        let publicationsForSourceCheck = [];
+        try {
+          publicationsForSourceCheck = await listPublications();
+        } catch {
+          // Degrades the same way the later listPublications() call for the
+          // picker does (C39) — an unreachable `publications` list cannot
+          // validate a build id, so fall through to Minted below.
+          publicationsForSourceCheck = null;
+        }
+        let rejectedSourceMessage = null;
+        if (source !== "minted") {
+          const malformed = !BUILD_ID_PATTERN.test(source);
+          const missingRow =
+            !malformed &&
+            publicationsForSourceCheck !== null &&
+            !publicationsForSourceCheck.some((p) => p.build_id === source);
+          // Only the malformed case gets a visible explanation — C38
+          // requires the deleted-publications-row case to degrade to
+          // Minted with NO error (its bundle file is still legitimately
+          // unreachable through this picker, not a mistake worth
+          // surfacing), so `missingRow` resets `source` silently.
+          if (malformed) rejectedSourceMessage = `Source "${source}" is not a recognised build id — showing Minted instead.`;
+          if (malformed || missingRow) source = "minted";
+        }
         if (queryParam && source !== savedSource) {
           const priorView = settings[CARDS_PAGE_SETTINGS_KEY] || {};
           await setSetting(pool, CARDS_PAGE_SETTINGS_KEY, { ...priorView, source });
@@ -1384,6 +1411,7 @@ export function createServer(pool, config, boot) {
             baseFolderDir: config.baseFolderDir,
             stabburUiBase: config.stabburUiBase,
             settings,
+            sourceNotice: rejectedSourceMessage,
           })
         );
       }

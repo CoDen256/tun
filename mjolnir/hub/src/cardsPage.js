@@ -47,7 +47,7 @@ export const BUILD_ID_PATTERN = /^b[0-9]{6}$/;
 // Data assembly — Minted (hub ledger)
 // --------------------------------------------------------------------------
 
-function collectClasses(...htmls) {
+export function collectClasses(...htmls) {
   const set = new Set();
   const walk = (node) => {
     if (!node) return;
@@ -238,6 +238,7 @@ export function cardsPageStyleBlock() {
 .cards-page .achip button:hover { color: var(--text); }
 .cards-page .linkbtn { background: none; border: none; color: var(--accent-text); cursor: pointer; padding: 0; font: inherit; font-weight: 600; }
 .cards-page .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11px; color: var(--text-dim); padding: 6px 2px 10px; }
+.cards-page .legend[hidden] { display: none; }
 .cards-page .legend .axis { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 700; }
 .cards-page .legend .lgi { display: inline-flex; align-items: center; gap: 5px; }
 .cards-page .legend .flow-u { margin: 0; }
