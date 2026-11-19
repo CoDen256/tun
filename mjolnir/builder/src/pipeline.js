@@ -10,10 +10,18 @@ import {
   removeDeck,
 } from "../../src/injectDeck.js";
 import { publish, restampCompanionConstants } from "../../tool/src/otaPublish.js";
-import { pullNotes, filterAudioEligible } from "./stabburClient.js";
+import { pullNotes, filterAudioEligible, buildGrammarRuleLookup } from "./stabburClient.js";
 import { partitionByDeck } from "./eligibility.js";
 import { project } from "./projector.js";
-import { mintCardSlots, cardIdsForNotes, updateAudioSha256, allCardAudio, deckTitle, deckDescription } from "./mint.js";
+import {
+  mintCardSlots,
+  cardIdsForNotes,
+  updateAudioSha256,
+  allCardAudio,
+  deckTitle,
+  deckDescription,
+  managedDecks,
+} from "./mint.js";
 import { resolveActiveDeckCode } from "./deckFamilies.js";
 import { queuePendingOccurrence, hasPendingOccurrence, drainPendingOccurrences, pendingQueueDepths, pendingByTier } from "./pendingOccurrences.js";
 import { stageOccurrence, flushShippable, peekStaged, hasOccurrence } from "./stagedOccurrences.js";
@@ -255,18 +263,12 @@ async function flushDeck(pool, plan, model, deckCode, deckTitleCache, deckDescri
     }
     await log(buildJobId, `ship: ${deckCode} — ${shippable.length} occurrence(s) flushed (${alreadyShipped} -> ${deck.Cards.length})`);
   }
-  // D-SS9: LAST, so the counts describe the deck as this run leaves it.
-  // Until builder-ship-strips this ran at the TOP of `flushDeck`, before
-  // the `addOccurrence` loop above — any count formatted there was stale by
-  // exactly this run's flush. It runs on the held path too (a deck that
-  // flushes nothing still needs a correct description — its counts simply
-  // didn't change), which is why the early `return` above became an `else`.
-  syncDeckDescription(model.decks, deckCode, describeDeck(deckDescriptionCache.get(deckCode)));
-  // Counters and Code are set unconditionally — unlike the description they
-  // depend on no operator-supplied row, so an empty `decks.description`
-  // can no longer leave a deck showing nothing.
-  syncDeckCounters(model.decks, deckCode, deckCounters(deck));
-  syncDeckCode(model.decks, deckCode, deckCodeFor(deckCode));
+  // D-SS9: the description/counter/code sync used to live HERE, which was
+  // the bug — `flushDeck` runs only for decks this run touched, so an
+  // untouched deck kept stale (often empty) presentation forever. It now
+  // happens once per run for every managed deck, in
+  // `syncManagedDeckPresentation`, which runs after this loop so the
+  // counters still describe each deck as the run leaves it.
 }
 
 // deck-consolidation: a deck code can be REUSED by an entirely different
@@ -312,6 +314,28 @@ async function resetReusedDecks(pool, model) {
 // deck-consolidation (D-DC5/deck-removal): `replay` only ever ADDS decks to
 // `model` (via `ensureDeck`) — it never removes one, so a deck already
 // baked into the active logic bundle from BEFORE a migration stays in
+// Title, description, counters and code for every hub-managed deck present
+// in the bundle — re-applied on every run regardless of activity.
+//
+// Deliberately NOT folded into `flushDeck`: that function is about shipping
+// occurrences and runs per touched deck, which is exactly the scoping that
+// caused the bug. Presentation is a property of the deck, not of whether it
+// happened to flush.
+async function syncManagedDeckPresentation(pool, model, log, buildJobId) {
+  const managed = await managedDecks(pool);
+  const touched = [];
+  for (const { code, title, description } of managed) {
+    const deck = model.decks.find((d) => d.Name === code);
+    if (!deck) continue; // managed but not in the bundle yet — nothing to sync onto
+    syncDeckTitle(model.decks, code, title);
+    syncDeckDescription(model.decks, code, describeDeck(description));
+    syncDeckCounters(model.decks, code, deckCounters(deck));
+    syncDeckCode(model.decks, code, deckCodeFor(code));
+    touched.push(`${code}(${deck.Cards.length})`);
+  }
+  await log(buildJobId, `deck-presentation: refreshed ${touched.length} managed deck(s) — ${touched.join(", ") || "none"}`);
+}
+
 // `model.decks` forever unless something explicitly strips it. This is that
 // something: every run, after minting/flushing is done, any "C"-prefixed
 // deck gets removed from both the bundle array and hub's `decks` table if
@@ -364,7 +388,30 @@ export async function pruneRetiredDecks(pool, model, log, buildJobId) {
 // `willShipThisRun` so a caller can't mistake "eligible" for "ships today";
 // `byDeck` gains `stagedBeforeThisRun`/`wouldFlushCount`/`wouldHoldCount` so
 // the sliding-window state is visible without inspecting `wouldShip` at all.
-export async function runForecast(pool, { stabburBaseUrl, internalToken, sourceLang = "no" } = {}) {
+export async function runForecast(
+  pool,
+  { stabburBaseUrl, internalToken, sourceLang = "no", grammarRuleLookup = null } = {}
+) {
+  // The forecast MUST project exactly as the publish does, or its
+  // content-change comparison is against a different document.
+  //
+  // Found live: a grammar card reported as edited on every single run and
+  // could never report otherwise. `project()` without a `grammarRuleLookup`
+  // renders the X face as the placeholder "[grammar rule N — content not
+  // yet available from stabbur]", while `runPublish` passes a real lookup
+  // and stores the rule's actual HTML. So the comparison was placeholder
+  // against real content — guaranteed to differ, forever, for every grammar
+  // note. The run log was right and the forecast was wrong.
+  //
+  // Built here when the caller does not supply one, so no call site can
+  // forget. A failure to reach the rules must not take the whole forecast
+  // down — degrading to no lookup restores the old (wrong) grammar
+  // comparison, so it is logged by the caller via the degraded path rather
+  // than silently preferred.
+  let ruleLookup = grammarRuleLookup;
+  if (!ruleLookup) {
+    ruleLookup = await buildGrammarRuleLookup({ baseUrl: stabburBaseUrl, authToken: internalToken });
+  }
   const { newlyEligibleByDeck, alreadyMinted, eligibleNotesById } = await pullAndAssign(pool, { stabburBaseUrl, internalToken, sourceLang });
   const queueDepths = await pendingQueueDepths(pool);
   // card-flow-view (D-H2-style "one implementation, two call sites" extended
@@ -397,7 +444,7 @@ export async function runForecast(pool, { stabburBaseUrl, internalToken, sourceL
     for (const note of notes) {
       const cardId = `${deckCode}${String(nextNo).padStart(3, "0")}`;
       nextNo += 1;
-      const { immediate, queued } = splitOccurrences(project(note, {}).occurrences);
+      const { immediate, queued } = splitOccurrences(project(note, { grammarRuleLookup: ruleLookup }).occurrences);
       for (const letter of immediate) {
         deckEligible.push({ cardId, letter, deckCode, noteId: note.id, noteText: note.text, reason: "new card" });
         if (letter === "A") newACount += 1;
@@ -490,7 +537,7 @@ export async function runForecast(pool, { stabburBaseUrl, internalToken, sourceL
   for (const note of alreadyMinted) {
     const entry = cardIdByNoteId.get(note.id);
     if (!entry) continue;
-    const content = project(note, {});
+    const content = project(note, { grammarRuleLookup: ruleLookup });
     const faces = changedFaces(existingContent.get(entry.cardId), content);
     if (faces.length > 0) {
       wouldUpdate.push({
@@ -737,6 +784,20 @@ export async function runPublish(
     for (const deckCode of touchedDeckCodes) {
       await flushDeck(pool, plan, model, deckCode, deckTitleCache, deckDescriptionCache, drainedByDeck, shipments, log, buildJobId);
     }
+
+    // Presentation sync for EVERY hub-managed deck, not just the ones this
+    // run touched. `flushDeck` is called only for `touchedDeckCodes`, so a
+    // deck that minted nothing kept whatever title/description/counters it
+    // was last published with — in practice, nothing at all for a deck that
+    // has never had an active run since these fields existed. Found live:
+    // Lexic showed no description or counters while Practice showed both,
+    // purely because only Practice had activity that run.
+    //
+    // Runs AFTER the flush loop so the counters describe the deck as this
+    // run leaves it, and after `ensureDeck` has had every chance to create
+    // entries — a managed deck with no bundle entry yet is simply skipped
+    // (the sync helpers are no-ops on a missing deck).
+    await syncManagedDeckPresentation(pool, model, log, buildJobId);
 
     await pruneRetiredDecks(pool, model, log, buildJobId);
 

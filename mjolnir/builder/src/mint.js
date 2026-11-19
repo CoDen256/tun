@@ -80,6 +80,23 @@ export async function deckTitle(pool, deckCode) {
   return rows[0].title;
 }
 
+// Every deck hub manages, in one query. `flushDeck` only ever runs for decks
+// TOUCHED by a run, so a deck with no new cards never had its title,
+// description, counters or code refreshed — a deck could sit in the bundle
+// indefinitely showing nothing while a sibling that happened to mint a card
+// showed everything. The presentation sync has to cover all of them, every
+// run, independently of whether anything shipped.
+//
+// `managed_by_hub` is the same load-bearing check `pruneRetiredDecks` uses:
+// it keeps this away from the STOCK decks, whose Description/Counter1/
+// Counter2/Code are authored in the stock bundle and must not be rewritten.
+export async function managedDecks(pool) {
+  const { rows } = await pool.query(
+    "SELECT code, title, description FROM decks WHERE managed_by_hub = TRUE ORDER BY code"
+  );
+  return rows.map((r) => ({ code: r.code, title: r.title, description: r.description }));
+}
+
 // deck-descriptions (D-DD2): mirrors `deckTitle` exactly — same source of
 // truth, same shape, same "not found" guard.
 export async function deckDescription(pool, deckCode) {
