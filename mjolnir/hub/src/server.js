@@ -24,6 +24,12 @@ import {
   cardPreviewInlineHtml as cardPreviewInlineHtmlImpl,
 } from "./cardPreview.js";
 import { getCardPreviewData, CARD_PREVIEW_FONTS } from "./cardPreviewStyle.js";
+import {
+  cardPreviewPopupStyleBlock,
+  cardPreviewPopupMarkupHtml,
+  cardPreviewPopupClientScript,
+  cardPreviewPopupRowOpenAttrs,
+} from "./cardPreviewPopup.js";
 import { DECK_ALLOCATION, listDecks, updateDeckDescription } from "./decks.js";
 import { renderShell, escapeHtml } from "./layout.js";
 import { requireAuth } from "../../../libs/jsservice/auth.js";
@@ -114,6 +120,10 @@ function isDatabaseBacked(pathname) {
   // read-only JS file (hub/src/cardRenderer.js, served verbatim) — same
   // carve-out reasoning as the fonts route just above.
   if (pathname === "/mjolnir/cards/render-engine.js") return false;
+  // card-preview-popup task 3: the direction/stepping/occurrence-summary/
+  // audio-outcome logic (hub/src/cardPreviewEngine.js) is the same kind of
+  // static, read-only, import-free JS file — same carve-out reasoning.
+  if (pathname === "/mjolnir/cards/popup-engine.js") return false;
   // /mjolnir/cards/<id>/audio reads card_content.
   if (pathname.startsWith("/mjolnir/cards/")) return true;
   return false;
@@ -400,6 +410,45 @@ function renderCardsPage(cards, { search, deckCode, statusFilter }, stabburUiBas
     byDeck.get(card.deckCode).push(card);
   }
 
+  // card-preview-popup task group 3: ONE shared modal (design.md §4 /
+  // task 3.3), not one per row — so it needs ONE flat, ordered list of
+  // every card on the page (in the same deck-code/row order the panels
+  // below render) to step through (task 3.5), plus an id -> index lookup
+  // so each row's "preview" button can tell the popup where to open. This
+  // is the provisional wiring task 3's own scope note calls for: task
+  // group 5 replaces the per-deck panels with one flat, filtered/sorted/
+  // paginated table and supplies the SAME shape of array across all of
+  // its pages, not just this page's rows.
+  const sortedDeckCodes = [...byDeck.keys()].sort((a, b) => a.localeCompare(b));
+  const popupCards = [];
+  const popupIndexByCardId = new Map();
+  for (const deckCode of sortedDeckCodes) {
+    for (const c of byDeck.get(deckCode)) {
+      const hasAudioFile = !!(c.audioSha256 && fs.existsSync(path.join(dataDir, "blob", c.audioSha256)));
+      popupIndexByCardId.set(c.id, popupCards.length);
+      popupCards.push({
+        key: c.id,
+        id: c.id,
+        D: c.deckTitle,
+        N: c.N || "",
+        E: c.E || "",
+        X: c.X || "",
+        A: c.A || "N",
+        // task 3.4's ordering contract (cardPreviewEngine.js's header):
+        // `sides` is already shipped-ascending-then-pending, a reasonable
+        // stand-in for "first occurrence first" until task group 5 wires
+        // the real occurrence history.
+        occurrences: c.sides.map((s) => ({ letter: s.letter, status: s.status, buildId: s.buildId, remaining: s.remaining })),
+        // task 3.6: passed-in flags, not a real blob-cache lookup (task
+        // group 5's job) — `audioAvailable` true only when the file this
+        // page already checked for the old accordion preview is present.
+        audioUrl: `/mjolnir/cards/${encodeURIComponent(c.id)}/audio`,
+        audioAvailable: hasAudioFile,
+        hasAudio: !!c.audioSha256,
+      });
+    }
+  }
+
   const panels = [...byDeck.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([deckCode, deckCards]) => {
@@ -424,7 +473,10 @@ function renderCardsPage(cards, { search, deckCode, statusFilter }, stabburUiBas
             <td>${c.sides.map(occurrenceBadge).join(" ")}</td>
             <td>${noteLink}</td>
             ${ruleLink}
-            <td><button type="button" class="btn-ghost card-preview-toggle" data-card="${escapeHtml(c.id)}">👁 preview</button></td>
+            <td>
+              <button type="button" class="btn-ghost card-preview-toggle" data-card="${escapeHtml(c.id)}">👁 preview</button>
+              <button type="button" class="btn-ghost" ${cardPreviewPopupRowOpenAttrs(popupIndexByCardId.get(c.id))}>⬜ popup preview</button>
+            </td>
           </tr>
           <tr class="card-preview-row" data-card="${escapeHtml(c.id)}" style="display:none;">
             <td colspan="20">${previewHtml}</td>
@@ -452,6 +504,7 @@ function renderCardsPage(cards, { search, deckCode, statusFilter }, stabburUiBas
     activeHref: "/mjolnir/cards",
     body: `
 <style>${cardPreviewStyleCss}</style>
+<style>${cardPreviewPopupStyleBlock()}</style>
 <div class="page-head"><div><h2>Cards</h2><div class="page-sub">Every card ever minted — the device-side counterpart to stabbur's Notes list.</div></div></div>
 <form class="toolbar" method="GET" action="/mjolnir/cards">
   <input class="search-input" type="search" name="q" value="${escapeHtml(search)}" placeholder="Search card content…">
@@ -487,7 +540,18 @@ document.querySelectorAll('.card-preview-toggle').forEach((btn) => {
   });
 });
 </script>
-<script>${cardPreviewClientScript()}</script>`,
+<script>${cardPreviewClientScript()}</script>
+${cardPreviewPopupMarkupHtml()}
+<script type="application/json" id="cpp-data">${JSON.stringify({
+  cards: popupCards,
+  style: previewData.style || null,
+  // task 3.4's "operator's saved default" — task group 6 persists the
+  // real value server-side; 'auto' (= first occurrence) is the literal
+  // stand-in this task group was told to accept and apply.
+  defaultDirection: "auto",
+})}</script>
+<script>window.MjolnirCardPreviewPopupData = JSON.parse(document.getElementById('cpp-data').textContent);</script>
+<script>${cardPreviewPopupClientScript()}</script>`,
   });
 }
 
@@ -1399,6 +1463,22 @@ export function createServer(pool, config, boot) {
       // no query/param-driven file selection.
       if (req.method === "GET" && url.pathname === "/mjolnir/cards/render-engine.js") {
         const enginePath = path.join(path.dirname(new URL(import.meta.url).pathname), "cardRenderer.js");
+        const bytes = fs.readFileSync(enginePath);
+        res.writeHead(200, {
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Content-Length": bytes.length,
+          "Cache-Control": "no-cache",
+        });
+        return res.end(bytes);
+      }
+
+      // card-preview-popup task 3: the popup's own pure-logic engine
+      // (hub/src/cardPreviewEngine.js), served verbatim for the same
+      // reason as render-engine.js just above — one source of the
+      // direction/stepping/occurrence-summary rules, not a server copy and
+      // a hand-kept-in-sync client copy.
+      if (req.method === "GET" && url.pathname === "/mjolnir/cards/popup-engine.js") {
+        const enginePath = path.join(path.dirname(new URL(import.meta.url).pathname), "cardPreviewEngine.js");
         const bytes = fs.readFileSync(enginePath);
         res.writeHead(200, {
           "Content-Type": "application/javascript; charset=utf-8",
