@@ -152,6 +152,31 @@ export function syncDeckTitle(decks, name, title) {
   if (deck && title !== undefined) deck.Title = title;
 }
 
+// The two stock deck counters. Stock decks carry e.g.
+// `Counter1: "25 cards"` / `Counter2: "<b>\xD71</b> (front)"`; mjolnir's own
+// decks shipped with both empty, so the deck list showed nothing where the
+// stock decks show their size. Counts previously went into `Description`,
+// which both buried them in prose and, for a deck whose description row is
+// empty, rendered nothing at all.
+//
+// Narrow and single-purpose for the same reason `syncDeckDescription` is —
+// touching only these two keys on an already-existing deck, never anything
+// else.
+export function syncDeckCounters(decks, name, counters) {
+  const deck = decks.find((d) => d.Name === name);
+  if (!deck || !counters) return;
+  if (counters.counter1 !== undefined) deck.Counter1 = counters.counter1;
+  if (counters.counter2 !== undefined) deck.Counter2 = counters.counter2;
+}
+
+// Stock decks set `Code` to the digits of their own name — `Z01` carries
+// `Code: "01"`. mjolnir's decks were created with `Code: ""`, so this
+// restores the same relationship: C20 -> "20", C30 -> "30".
+export function syncDeckCode(decks, name, code) {
+  const deck = decks.find((d) => d.Name === name);
+  if (deck && code !== undefined) deck.Code = code;
+}
+
 // deck-removal (D-DC4): removes `name`'s entry entirely via a plain array
 // splice — preserves mod 2119's same-category contiguity requirement for
 // whatever decks remain, AS LONG AS the caller only ever removes a deck

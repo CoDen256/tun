@@ -1,5 +1,14 @@
 import { loadDeckCardModel, saveDeckCardModel, addOccurrence } from "../../src/deckData.js";
-import { createCard, upsertCardContent, ensureDeck, syncDeckDescription, syncDeckTitle, removeDeck } from "../../src/injectDeck.js";
+import {
+  createCard,
+  upsertCardContent,
+  ensureDeck,
+  syncDeckDescription,
+  syncDeckTitle,
+  syncDeckCounters,
+  syncDeckCode,
+  removeDeck,
+} from "../../src/injectDeck.js";
 import { publish, restampCompanionConstants } from "../../tool/src/otaPublish.js";
 import { pullNotes, filterAudioEligible } from "./stabburClient.js";
 import { partitionByDeck } from "./eligibility.js";
@@ -140,12 +149,54 @@ async function drainThenQueue(pool, plan, deckCode, newACount, toQueue) {
 // `prose` is `undefined` for a deck with no description row; the sync call
 // ignores `undefined`, so such a deck's bundle entry is left untouched
 // rather than being given a bare count string with no subject.
-export function describeDeck(prose, deck) {
-  if (prose === undefined || prose === null) return undefined;
+// D-SS9, revised after the first live publish: the counts live in the two
+// stock deck counters, NOT appended to `Description`.
+//
+// Appending them to the description had two faults. It buried the numbers in
+// operator prose, and it produced NOTHING for a deck whose description row is
+// empty — `deckDescription` returns null for such a row, this function
+// returned `undefined`, and `syncDeckDescription` skips `undefined`. C30
+// (Lexic) has an empty description row, so it published with no description
+// and no counts at all while C20 (Practice) got both.
+//
+// `Description` is therefore the operator's prose, untouched and unadorned.
+export function describeDeck(prose) {
+  return prose === undefined || prose === null ? undefined : prose;
+}
+
+// Which side each occurrence letter presents FIRST, per 03-data-model.md's
+// type table: N = front, E = back, A = audio-first (nothing shown). Named
+// here the way the stock decks name them, since these strings sit in the
+// same UI slot as stock's own `(front)`.
+const SIDE_NAME = { N: "front", E: "back", A: "audio", X: "extra" };
+
+// Counter1 = how many cards. Counter2 = how many occurrences, and which
+// sides this deck actually quizzes — derived from the occurrences really in
+// the bundle, not from the family's nominal shape, so a deck mid-flight
+// (C20 mixes listening's `A` with pronunciation's and grammar's `N`) reports
+// what it genuinely contains.
+export function deckCounters(deck) {
   const occurrences = deck.Cards.length;
   const cards = new Set(deck.Cards.map((c) => c.Card.slice(0, -1))).size;
-  const counts = `${cards} cards · ${occurrences} occ`;
-  return prose === "" ? counts : `${prose} · ${counts}`;
+  const letters = [];
+  for (const c of deck.Cards) {
+    const letter = c.Card.slice(-1);
+    if (!letters.includes(letter)) letters.push(letter);
+  }
+  // Stable, meaningful order rather than first-seen: the side you are shown
+  // first reads better front -> back -> audio than in insertion order.
+  const ordered = ["N", "E", "A", "X"].filter((l) => letters.includes(l));
+  const sides = ordered.map((l) => SIDE_NAME[l] || l).join(", ");
+  return {
+    counter1: `${cards} card${cards === 1 ? "" : "s"}`,
+    counter2: occurrences === 0 ? "" : `<b>${occurrences}</b> occ${sides ? ` (${sides})` : ""}`,
+  };
+}
+
+// Stock pairs `Name: "Z01"` with `Code: "01"`. mjolnir's decks were created
+// with an empty Code, so derive the same thing: strip the leading letters.
+export function deckCodeFor(name) {
+  return String(name).replace(/^[A-Za-z]+/, "");
 }
 
 // builder-sliding-window-shipping (D-W2): once per deck per run, after that
@@ -210,7 +261,12 @@ async function flushDeck(pool, plan, model, deckCode, deckTitleCache, deckDescri
   // exactly this run's flush. It runs on the held path too (a deck that
   // flushes nothing still needs a correct description — its counts simply
   // didn't change), which is why the early `return` above became an `else`.
-  syncDeckDescription(model.decks, deckCode, describeDeck(deckDescriptionCache.get(deckCode), deck));
+  syncDeckDescription(model.decks, deckCode, describeDeck(deckDescriptionCache.get(deckCode)));
+  // Counters and Code are set unconditionally — unlike the description they
+  // depend on no operator-supplied row, so an empty `decks.description`
+  // can no longer leave a deck showing nothing.
+  syncDeckCounters(model.decks, deckCode, deckCounters(deck));
+  syncDeckCode(model.decks, deckCode, deckCodeFor(deckCode));
 }
 
 // deck-consolidation: a deck code can be REUSED by an entirely different

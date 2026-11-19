@@ -239,15 +239,14 @@ describe("builder pipeline: forecast + publish against a fixture stabbur and an 
     const model = outputModel(result.buildId);
     const deck = model.decks.find((d) => d.Name === "C30");
     assert.ok(deck, "C30 (lexic's starting code) should have been created in the bundle");
-    // D-SS9: `<operator prose> · <N> cards · <M> occ`, counted from what is
-    // ACTUALLY IN THE BUNDLE — this run staged 4 A's and flushed none, so
-    // the bundle's deck is genuinely empty and says so (the held path gets
-    // a correct description too, not a stale or missing one).
-    assert.equal(
-      deck.Description,
-      "Vocabulary and expressions. · 0 cards · 0 occ",
-      "a freshly-created deck gets its real description plus the bundle's own counts, not blank"
-    );
+    // D-SS9 (revised): Description is the operator's prose alone — the counts
+    // live in the two stock counters instead. This run staged 4 A's and
+    // flushed none, so the bundle's deck is genuinely empty and the counters
+    // say so; the held path still gets them, not a stale or missing set.
+    assert.equal(deck.Description, "Vocabulary and expressions.", "the description is the prose, unadorned");
+    assert.equal(deck.Counter1, "0 cards");
+    assert.equal(deck.Counter2, "", "an empty deck quizzes no sides, so Counter2 claims none");
+    assert.equal(deck.Code, "30", "Code mirrors the digits of the deck name, as the stock decks do");
     const { rows: descRows } = await pool.query("SELECT description FROM decks WHERE code = 'C30'");
     assert.equal(descRows[0].description, "Vocabulary and expressions.", "the counts are NEVER written back to decks.description");
     assert.equal(deck.Cards.length, 0, "4 A's staged this run, short of a multiple of 5 — none flush yet");
@@ -384,7 +383,13 @@ describe("builder pipeline: forecast + publish against a fixture stabbur and an 
     // change it ran at the top of `flushDeck` and would have said 0/0).
     // 5 distinct cards, one `A` occurrence each; every card's `E` is still
     // queued, so the occurrence count is the BUNDLE's, not the eventual 10.
-    assert.equal(lexicDeck.Description, "Vocabulary and expressions. · 5 cards · 5 occ");
+    assert.equal(lexicDeck.Description, "Vocabulary and expressions.");
+    // 5 distinct cards, one `A` each — so the counters report the bundle's
+    // real content and name the side it actually quizzes, not the family's
+    // eventual A+E shape.
+    assert.equal(lexicDeck.Counter1, "5 cards");
+    assert.equal(lexicDeck.Counter2, "<b>5</b> occ (audio)");
+    assert.equal(lexicDeck.Code, "30");
 
     const { rows: jobs } = await pool.query("SELECT status FROM build_jobs ORDER BY requested_at DESC LIMIT 1");
     assert.equal(jobs[0].status, "succeeded");
