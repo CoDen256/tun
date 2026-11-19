@@ -48,6 +48,25 @@ const CODEPOINT_NAMES = {
   720: "MODIFIER LETTER TRIANGULAR COLON",
   809: "COMBINING VERTICAL LINE BELOW",
   8943: "MIDLINE HORIZONTAL ELLIPSIS",
+  // card-preview-popup task 1.3: these surfaced only once card content was
+  // scanned for LITERAL (non-entity) non-ASCII characters too — the
+  // bundle embeds some of these directly as `\xNN`/`\uNNNN` JS string
+  // escapes rather than as `&#NNN;` HTML entities (e.g. tone-number
+  // superscripts in C01004's cards, `p\xe5 skolen`'s uppercase/accented
+  // borrowings, and typographic punctuation).
+  178: "SUPERSCRIPT TWO",
+  185: "SUPERSCRIPT ONE",
+  197: "LATIN CAPITAL LETTER A WITH RING ABOVE",
+  198: "LATIN CAPITAL LETTER AE",
+  201: "LATIN CAPITAL LETTER E WITH ACUTE",
+  216: "LATIN CAPITAL LETTER O WITH STROKE",
+  220: "LATIN CAPITAL LETTER U WITH DIAERESIS",
+  233: "LATIN SMALL LETTER E WITH ACUTE",
+  242: "LATIN SMALL LETTER O WITH GRAVE",
+  252: "LATIN SMALL LETTER U WITH DIAERESIS",
+  8211: "EN DASH",
+  8217: "RIGHT SINGLE QUOTATION MARK",
+  8230: "HORIZONTAL ELLIPSIS",
 };
 
 // tier 2 (assembly-tab-usability item 3, logged to DECISIONS-MADE.md):
@@ -71,12 +90,93 @@ function nameFor(codepoint) {
   return name;
 }
 
+// card-preview-popup task 1.3: scopes the scan to the card array itself
+// (`[{DECK_ID:"...",ID:"...",N:...,E:...,X:...,A:...},...]`) rather than
+// the whole 6MB bundle — `DECK_ID`/`ID` are real, stable domain field
+// names (not minifier-assigned letters), so this anchor survives a
+// rebase the way a module id would not. Scoping matters here because the
+// surrounding app code also contains stray `&#NNN;`/`\xNN`/`\uNNNN`
+// escapes (regex character classes, unrelated UI strings) that are not
+// card content and would otherwise inflate the Symbols tab's "Uses"
+// column with occurrences a card never actually shows.
+function sliceCardArrayText(text) {
+  const anchorIdx = text.indexOf('{DECK_ID:"');
+  if (anchorIdx === -1) {
+    throw new Error(
+      'card-symbol extractor: could not find the card array (anchor \'{DECK_ID:"\') in the bundle — refusing to scan the whole file as a fallback.'
+    );
+  }
+  const start = text.lastIndexOf("[", anchorIdx);
+  if (start === -1) {
+    throw new Error("card-symbol extractor: found a card object but no enclosing array start before it");
+  }
+  let depth = 0;
+  let inStr = null;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (c === "\\") {
+        i++;
+        continue;
+      }
+      if (c === inStr) inStr = null;
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      inStr = c;
+      continue;
+    }
+    if (c === "[") depth++;
+    else if (c === "]") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  throw new Error("card-symbol extractor: unbalanced array literal while scanning for the card array");
+}
+
 export function extractCardSymbols(bundlePath) {
   const text = fs.readFileSync(bundlePath, "utf8");
+  const cardText = sliceCardArrayText(text);
+
   const counts = new Map();
-  for (const m of text.matchAll(/&#(\d+);/g)) {
+  const entityCounts = new Map();
+  const literalCounts = new Map();
+  const bump = (map, cp) => map.set(cp, (map.get(cp) || 0) + 1);
+
+  // HTML entities, e.g. `&#230;` (æ).
+  for (const m of cardText.matchAll(/&#(\d+);/g)) {
     const cp = Number(m[1]);
-    counts.set(cp, (counts.get(cp) || 0) + 1);
+    bump(counts, cp);
+    bump(entityCounts, cp);
+  }
+  // Literal (non-entity) non-ASCII characters embedded as JS string
+  // escapes, e.g. `p\xe5 skolen` (på skolen) or `…` (…). ASCII
+  // escapes (control characters, `\x27` etc.) are not "symbols" for this
+  // tab and are excluded by the cp >= 0x80 filter.
+  for (const m of cardText.matchAll(/\\x([0-9a-fA-F]{2})/g)) {
+    const cp = parseInt(m[1], 16);
+    if (cp >= 0x80) {
+      bump(counts, cp);
+      bump(literalCounts, cp);
+    }
+  }
+  for (const m of cardText.matchAll(/\\u([0-9a-fA-F]{4})/g)) {
+    const cp = parseInt(m[1], 16);
+    if (cp >= 0x80 && !(cp >= 0xd800 && cp <= 0xdfff)) {
+      bump(counts, cp);
+      bump(literalCounts, cp);
+    }
+  }
+  // Actual literal UTF-8 characters, if the bundle ever stops escaping
+  // them — counted the same way so this doesn't silently under-report if
+  // a future rebase changes how Metro/Babel emits non-ASCII strings.
+  for (const ch of cardText) {
+    const cp = ch.codePointAt(0);
+    if (cp >= 0x80 && !(cp >= 0xd800 && cp <= 0xdfff)) {
+      bump(counts, cp);
+      bump(literalCounts, cp);
+    }
   }
 
   const seen = new Set();
@@ -88,6 +188,8 @@ export function extractCardSymbols(bundlePath) {
       glyph: String.fromCodePoint(cp),
       name: nameFor(cp),
       occurrences: counts.get(cp) || 0,
+      entityOccurrences: entityCounts.get(cp) || 0,
+      literalOccurrences: literalCounts.get(cp) || 0,
       group: "norwegian",
     });
     seen.add(cp);
@@ -102,6 +204,8 @@ export function extractCardSymbols(bundlePath) {
       glyph: String.fromCodePoint(cp),
       name: nameFor(cp),
       occurrences,
+      entityOccurrences: entityCounts.get(cp) || 0,
+      literalOccurrences: literalCounts.get(cp) || 0,
       group: "ipa",
     }));
 
