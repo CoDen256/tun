@@ -1,5 +1,6 @@
 import { extractCardStyle } from "../../tool/src/extractCardStyle.js";
 import { extractCardSymbols } from "../../tool/src/extractCardSymbols.js";
+import { cardFontFaceCss } from "./cardRenderer.js";
 
 // assembly-tab-usability item 3: computed once per process from this
 // repo's own `base/` folder (D04 — read-only input, never written to) and
@@ -37,22 +38,35 @@ export function resetCardPreviewDataCache() {
   cached = null;
 }
 
-// Which on-disk font files task 3.3 serves, and the family name the CSS
-// below asks a browser for — single source for both the route allowlist
-// (server.js) and the @font-face declarations here, so a renamed font file
-// can't silently desync the two.
+// Which on-disk font files this preview serves — single source for both
+// the route allowlist (server.js) and the @font-face declarations
+// `cardRenderer.js#cardFontFaceCss` builds, so a renamed font file can't
+// silently desync the two.
+//
+// card-preview-popup task 2.3: each file is its OWN family name — 'Poppins-
+// Regular'/'Poppins-Bold'/'Poppins-Italic'/'Poppins-BoldItalic'/'arial' —
+// matching EXACTLY the `fontFamily` strings `extractCardStyle()` resolves
+// for tags/classes (tags.b.fontFamily === 'Poppins-Bold', etc; see that
+// file's `fontsMap`). There is deliberately no shared 'Poppins' family
+// spanning several weights: that is what let a browser (or this CSS, in
+// the version before this change) synthesize a heavier/obliqued glyph than
+// the device ever draws. `Poppins-SemiBold.ttf` is still served (the
+// Classes & tags tab, a later task group, may want to show the dropped
+// face), but it backs no tag/class any card ever renders with on device.
 export const CARD_PREVIEW_FONTS = [
-  { file: "Poppins-Regular.ttf", family: "Poppins", weight: 400, style: "normal" },
-  { file: "Poppins-Italic.ttf", family: "Poppins", weight: 400, style: "italic" },
-  { file: "Poppins-Bold.ttf", family: "Poppins", weight: 700, style: "normal" },
-  { file: "Poppins-BoldItalic.ttf", family: "Poppins", weight: 700, style: "italic" },
-  { file: "Poppins-SemiBold.ttf", family: "Poppins", weight: 600, style: "normal" },
-  { file: "arial.ttf", family: "CardArial", weight: 400, style: "normal" },
+  { file: "Poppins-Regular.ttf", family: "Poppins-Regular" },
+  { file: "Poppins-Italic.ttf", family: "Poppins-Italic" },
+  { file: "Poppins-Bold.ttf", family: "Poppins-Bold" },
+  { file: "Poppins-BoldItalic.ttf", family: "Poppins-BoldItalic" },
+  { file: "Poppins-SemiBold.ttf", family: "Poppins-SemiBold" },
+  { file: "arial.ttf", family: "arial" },
 ];
 
-export function cardPreviewFontFaceCss() {
-  return CARD_PREVIEW_FONTS.map(
-    (f) =>
-      `@font-face{font-family:'${f.family}';font-weight:${f.weight};font-style:${f.style};src:url('/mjolnir/cards/fonts/${f.file}') format('truetype');font-display:swap;}`
-  ).join("\n");
+// Thin wrapper kept here (not duplicated) so hub's font route table and the
+// engine's font-face generator stay driven by the one list above; the real
+// logic — which families a given extracted style map actually needs, and
+// never emitting a weight/style other than normal/normal — lives in
+// `cardRenderer.js#cardFontFaceCss` (task 2.3).
+export function cardPreviewFontFaceCss(style) {
+  return cardFontFaceCss(style, (file) => `/mjolnir/cards/fonts/${file}`);
 }

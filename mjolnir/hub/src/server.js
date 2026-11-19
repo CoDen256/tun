@@ -110,6 +110,10 @@ function isDatabaseBacked(pathname) {
   // /mjolnir/cards/ prefix rule below before it can mis-gate them during a
   // database outage.
   if (pathname.startsWith("/mjolnir/cards/fonts/")) return false;
+  // card-preview-popup task 2: the render engine itself is a static,
+  // read-only JS file (hub/src/cardRenderer.js, served verbatim) — same
+  // carve-out reasoning as the fonts route just above.
+  if (pathname === "/mjolnir/cards/render-engine.js") return false;
   // /mjolnir/cards/<id>/audio reads card_content.
   if (pathname.startsWith("/mjolnir/cards/")) return true;
   return false;
@@ -351,15 +355,17 @@ function occurrenceBadge(side) {
   return `<span class="pill pill-warn">${escapeHtml(side.letter)} · ${side.remaining} to go</span>`;
 }
 
-// card-preview (assembly-tab-usability item 3): the inline preview under a
-// card's own row in the Cards table (expand/collapse, one open at a time,
-// D109) is now built from `hub/src/cardPreview.js` + `cardPreviewStyle.js`
-// — one real card split into thirds, styled/sized from values TASK 3.1's
-// extractor pulled out of the stock bundle itself, not hand-transcribed.
-// See those files' own headers for why. `CARD_PREVIEW_STYLE`/
-// `cardPreviewInlineHtml` below are thin wrappers kept here so
+// card-preview (assembly-tab-usability item 3, corrected by card-preview-popup
+// task 2): the inline preview under a card's own row in the Cards table
+// (expand/collapse, one open at a time, D109) is built from
+// `hub/src/cardPreview.js` + `cardPreviewStyle.js` — one real card split
+// into thirds, cascaded through `hub/src/cardRenderer.js` from values the
+// extractor pulled out of the stock bundle itself, never hand-transcribed.
+// See those files' own headers for why. The style block now needs the
+// extracted style map (to build real per-font @font-face rules, task 2.3),
+// so it is built per render (`renderCardsPage`, below) rather than once at
+// module load — `cardPreviewInlineHtml` is a thin wrapper kept here so
 // `renderCardsPage` doesn't need to know the preview changed shape.
-const CARD_PREVIEW_STYLE = cardPreviewStyleBlock();
 
 function cardPreviewInlineHtml(cardId, content, hasAudioFile, previewData) {
   if (previewData.error) {
@@ -386,6 +392,7 @@ function renderCardsPage(cards, { search, deckCode, statusFilter }, stabburUiBas
   } catch (err) {
     previewData = { error: err };
   }
+  const cardPreviewStyleCss = cardPreviewStyleBlock(previewData.style);
 
   const byDeck = new Map();
   for (const card of cards) {
@@ -444,7 +451,7 @@ function renderCardsPage(cards, { search, deckCode, statusFilter }, stabburUiBas
     title: "mjolnir / hub — cards",
     activeHref: "/mjolnir/cards",
     body: `
-<style>${CARD_PREVIEW_STYLE}</style>
+<style>${cardPreviewStyleCss}</style>
 <div class="page-head"><div><h2>Cards</h2><div class="page-sub">Every card ever minted — the device-side counterpart to stabbur's Notes list.</div></div></div>
 <form class="toolbar" method="GET" action="/mjolnir/cards">
   <input class="search-input" type="search" name="q" value="${escapeHtml(search)}" placeholder="Search card content…">
@@ -1380,6 +1387,23 @@ export function createServer(pool, config, boot) {
           "Content-Type": "font/ttf",
           "Content-Length": bytes.length,
           "Cache-Control": "public, max-age=86400",
+        });
+        return res.end(bytes);
+      }
+
+      // card-preview-popup task 2: the cascade engine itself (hub/src/cardRenderer.js)
+      // served VERBATIM so the browser runs the exact same cascade/normalize
+      // logic Node uses server-side and in this package's tests — one
+      // source of truth, not a hand-kept-in-sync client copy (the defect
+      // class this whole change exists to remove). Read-only, fixed path,
+      // no query/param-driven file selection.
+      if (req.method === "GET" && url.pathname === "/mjolnir/cards/render-engine.js") {
+        const enginePath = path.join(path.dirname(new URL(import.meta.url).pathname), "cardRenderer.js");
+        const bytes = fs.readFileSync(enginePath);
+        res.writeHead(200, {
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Content-Length": bytes.length,
+          "Cache-Control": "no-cache",
         });
         return res.end(bytes);
       }

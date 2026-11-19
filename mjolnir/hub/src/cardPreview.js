@@ -1,17 +1,30 @@
 import { escapeHtml } from "./layout.js";
 import { cardPreviewFontFaceCss } from "./cardPreviewStyle.js";
+import { renderCardFace, cardRendererResetCss } from "./cardRenderer.js";
 
-// assembly-tab-usability item 3: "one card, three thirds — not three
-// boxes." Every geometry/color/class value this file's CSS and JS use
-// comes from `getCardPreviewData()` (task 3.1's extractor) — nothing here
-// is a hand-typed guess at what the app looks like. Rendered inline under
-// a card's own row in the Cards table, same expand/collapse-one-at-a-time
-// shell as before (D109) — this file only replaces what goes *inside* that
-// row.
+// assembly-tab-usability item 3 / card-preview-popup task group 2: "one
+// card, three thirds — not three boxes." Every class/tag's color, size and
+// font now comes from `renderCardFace()` (hub/src/cardRenderer.js), which
+// in turn reads nothing but `getCardPreviewData()`'s extractor output — NO
+// hand-typed CSS rule for a card class exists in this file any more (task
+// 2.1). The CSS below is layout/chrome only (face geometry, scroll, the
+// editor/catalogue UI) — never a color or font a `.center`/`.royalRed`/`.b`
+// etc. resolves to; those are written inline, per element, by the renderer
+// itself (see cardRenderer.js's "style isolation" section for why).
+//
+// Rendered inline under a card's own row in the Cards table, same
+// expand/collapse-one-at-a-time shell as before (D109) — this file only
+// replaces what goes *inside* that row. (A later task group replaces this
+// whole row-accordion with the card-preview-popup's modal and a flat
+// table — see design.md §5 — but that hasn't landed yet, so this keeps
+// working, correctly, in the meantime.)
 
-export function cardPreviewStyleBlock() {
+const MCR_SCOPE = "mcr-row";
+
+export function cardPreviewStyleBlock(style) {
   return `
-${cardPreviewFontFaceCss()}
+${style ? cardPreviewFontFaceCss(style) : ""}
+${cardRendererResetCss(MCR_SCOPE)}
 .cp-controls { display:flex; gap:18px; align-items:flex-end; flex-wrap:wrap; padding:10px 12px; border:1px solid var(--border); background:var(--bg-elevated); border-radius:8px; margin-bottom:14px; }
 .cp-ctl { display:flex; flex-direction:column; gap:4px; }
 .cp-ctl>span { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); font-weight:700; }
@@ -23,12 +36,17 @@ ${cardPreviewFontFaceCss()}
 .cp-stage { display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; }
 .cp-device { flex: none; }
 
+/* ${MCR_SCOPE}: the renderer's own scope class (card-preview-popup task
+   2.6). Every typographic/color property a card's HTML resolves to is
+   written inline by cardRenderer.js — this block only lays the three
+   faces out and gives the card its border/background, none of which any
+   page-level rule (an .active, an .empty, a [hidden] override) has a
+   reason to target, since none of those class/attribute names are used
+   anywhere under this scope. */
 .cp-root .study-card {
-  font-family:'Poppins', ui-sans-serif, system-ui, sans-serif;
   display:flex; flex-direction:column; align-items:center;
   overflow:hidden; position:relative; border-style:solid;
-  background:var(--cp-cardBackground); border-color:var(--cp-borderColor);
-  color:var(--cp-cardText);
+  border-color:var(--cp-borderColor);
 }
 .cp-root .third { width:100%; display:flex; position:relative; cursor:pointer; -webkit-tap-highlight-color:transparent; }
 .cp-root .third.t-n { align-items:center; overflow:hidden; }
@@ -54,36 +72,11 @@ ${cardPreviewFontFaceCss()}
 .cp-root .toast.go { animation: cp-toastfade 1.4s ease-out; }
 @keyframes cp-toastfade { 0%{opacity:0} 12%{opacity:1} 72%{opacity:1} 100%{opacity:0} }
 
-.cp-root .face-body { text-align:center; width:100%; color:var(--cp-cardText); font-size:var(--cp-fsBase); font-family:'Poppins', ui-sans-serif, system-ui, sans-serif; }
-.cp-root .face-body:empty::after { content:"(empty)"; opacity:.5; font-style:italic; }
-.cp-root .face-body div { font-weight:400; }
-.cp-root .face-body b { font-weight:700; color:var(--cp-headingAccent); }
-.cp-root .face-body i { font-style:italic; text-decoration:underline; }
-.cp-root .face-body p { margin-top:0; margin-bottom:var(--cp-fsP); }
-.cp-root .face-body a { color:var(--cp-headingAccent); }
-.cp-root .face-body .lg { font-size:var(--cp-fsLg); }
-.cp-root .face-body .arialFont { font-family:'CardArial', Arial, Helvetica, sans-serif; font-size:var(--cp-fsArialBig); }
-.cp-root .face-body .arialFontNormal { font-family:'CardArial', Arial, Helvetica, sans-serif; font-size:var(--cp-fsArialNormal); }
-.cp-root .face-body .italic { font-style:italic; font-weight:400; }
-.cp-root .face-body .boldItalic { font-style:italic; font-weight:700; }
-.cp-root .face-body .underline { text-decoration:underline; }
-.cp-root .face-body .green { color:var(--cp-green); }
-.cp-root .face-body .blue { color:var(--cp-headingAccent); }
-.cp-root .face-body .darkBlue { color:var(--cp-headingGray); }
-.cp-root .face-body .red { color:red; }
-.cp-root .face-body .teal { color:#00A4BF; }
-.cp-root .face-body .dodgerBlue { color:#0080ff; }
-.cp-root .face-body .royalRed { color:#cc0066; }
-.cp-root .face-body .blueViolet { color:#8030cf; }
-.cp-root .face-body .burntOrange { color:#ff7733; }
-.cp-root .face-body .center { text-align:center; font-weight:600; }
-.cp-root .face-body .left { text-align:left; }
-.cp-root .face-body .sup { font-size:var(--cp-fsSup); line-height:1; }
-.cp-root .face-body .tipOfTheDay { font-weight:600; color:#fff; font-size:var(--cp-fsTip); }
-/* supWrap: a real flex ROW with items aligned to the top — that top
-   alignment is what raises the superscript; no <sup>, no vertical-align. */
-.cp-root .face-body .supWrap { display:inline-flex; flex-direction:row; align-items:flex-start; justify-content:center; margin-left:var(--cp-supWrapMx); margin-right:var(--cp-supWrapMx); }
-.cp-root .face-body .supWrap .sup { font-size:var(--cp-fsSup); line-height:1; }
+/* .face-body carries no color/font/size rule of its own any more (task
+   2.1) — every element the renderer emits inside it already carries its
+   own resolved style inline. The only exception is the empty-state
+   placeholder, which is chrome, not card content. */
+.cp-root .face-body:empty::after { content:"(empty)"; opacity:.5; font-style:italic; color:var(--cp-cardText); }
 
 .cp-gutter { display:flex; flex-direction:column; font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-faint); width:78px; flex:none; }
 .cp-gutter>div { flex:none; display:flex; align-items:flex-start; justify-content:flex-end; gap:4px; text-align:right; border-right:1px dashed var(--border); padding-right:7px; }
@@ -108,20 +101,24 @@ table.cp-smap th { font-size:10.5px; text-transform:uppercase; letter-spacing:.0
 table.cp-smap td.k { font-family:var(--mono); font-weight:600; }
 table.cp-smap td.v { font-family:var(--mono); color:var(--text-faint); }
 .cp-glyph { font-size:18px; }
-.cp-g-pop { font-family:'Poppins', ui-sans-serif, system-ui, sans-serif; }
-.cp-g-arial { font-family:'CardArial', Arial, Helvetica, sans-serif; }
+.cp-g-pop { font-family:'Poppins-Regular', ui-sans-serif, system-ui, sans-serif; }
+.cp-g-arial { font-family:'arial', Arial, Helvetica, sans-serif; }
 .cp-generated-note { font-size:11px; color:var(--text-faint); margin:6px 0 2px; max-width:72ch; }
 `;
 }
 
 // `extractCardStyle`'s output is a plain, JSON-serializable object — the
 // one blob embedded once per preview row so the shared client script
-// (below) can compute `normalize()` itself, at whatever device
-// width/theme the operator currently has selected, without a server round
-// trip per change (acceptance #20: switching the simulated device must
-// visibly rescale immediately).
-export function cardPreviewDataScript(style, symbols) {
-  return `<script type="application/json" class="cp-style-data">${JSON.stringify({ style, symbols })}</script>`;
+// (below) can run the SAME renderer (dynamically imported from
+// `/mjolnir/cards/render-engine.js`, the live engine, not a reimplemented
+// copy) at whatever device width/theme/font size the operator currently
+// has selected, without a server round trip per change (acceptance #20:
+// switching the simulated device must visibly rescale immediately). `rawContent`
+// carries each face's UNRENDERED HTML — the editor always edits and the
+// renderer always starts from this, never from a previously-rendered DOM
+// subtree (which would double-apply styles / re-escape text).
+export function cardPreviewDataScript(style, symbols, rawContent) {
+  return `<script type="application/json" class="cp-style-data">${JSON.stringify({ style, symbols, rawContent })}</script>`;
 }
 
 export function cardPreviewControlsHtml() {
@@ -145,13 +142,7 @@ export function cardPreviewControlsHtml() {
 </div>`;
 }
 
-const TAG_ROWS = [
-  { kind: "tag", sel: "div", desc: "cardText, Poppins-Regular" },
-  { kind: "tag", sel: "b", desc: "Poppins-Bold, headingAccent" },
-  { kind: "tag", sel: "i", desc: "Poppins-Regular italic, underlined" },
-  { kind: "tag", sel: "p", desc: "block, marginBottom" },
-  { kind: "tag", sel: "a", desc: "headingAccent" },
-];
+const TAG_ROWS = ["div", "b", "i", "p", "a"];
 const CLASS_ROWS = [
   "lg",
   "arialFont",
@@ -176,22 +167,31 @@ const CLASS_ROWS = [
 ];
 
 function classSampleHtml(sel) {
-  if (sel === "supWrap") return `k<span class="supWrap">j</span>(:)`;
+  if (sel === "supWrap") return `k<div class="sup">j</div>(:)`;
   if (sel === "sup") return `j`;
   if (sel === "arialFont" || sel === "arialFontNormal") return `&#649;`;
   return "Aa";
 }
 
+// Samples are run through the SAME cascade the faces use (task 2's whole
+// point: no second, hand-typed idea of what a class looks like) — a tag
+// row's sample is `<tag>Aa</tag>`, a class row's is `<div class="sel">Aa</div>`
+// (classes with no visible effect of their own, e.g. a bare `.underline`,
+// still show the tag defaults so the row isn't blank).
 function classCatalogueRowsHtml(style) {
   const rows = [];
-  for (const r of TAG_ROWS) {
+  for (const tag of TAG_ROWS) {
+    const html = tag === "br" ? "" : `<${tag}>Aa</${tag}>`;
+    const rendered = renderCardFace(html, style, {}).html;
     rows.push(
-      `<tr data-kind="tag" data-sel="${r.sel}"><td class="k">&lt;${r.sel}&gt;</td><td>tag</td><td class="v cp-resolve">—</td><td><span class="cp-sample" data-sel="${r.sel}" data-kind="tag">${escapeHtml(classSampleHtml(r.sel))}</span></td></tr>`
+      `<tr data-kind="tag" data-sel="${tag}"><td class="k">&lt;${tag}&gt;</td><td>tag</td><td class="v cp-resolve" data-resolve-sel="${tag}" data-resolve-kind="tag">—</td><td><span class="cp-sample" data-sel="${tag}" data-kind="tag">${rendered}</span></td></tr>`
     );
   }
   for (const sel of CLASS_ROWS) {
+    const html = `<div class="${sel}">${classSampleHtml(sel)}</div>`;
+    const rendered = renderCardFace(html, style, {}).html;
     rows.push(
-      `<tr data-kind="class" data-sel="${sel}"><td class="k">.${sel}</td><td>class</td><td class="v cp-resolve">—</td><td><span class="cp-sample" data-sel="${sel}" data-kind="class">${classSampleHtml(sel)}</span></td></tr>`
+      `<tr data-kind="class" data-sel="${sel}"><td class="k">.${sel}</td><td>class</td><td class="v cp-resolve" data-resolve-sel="${sel}" data-resolve-kind="class">—</td><td><span class="cp-sample" data-sel="${sel}" data-kind="class">${rendered}</span></td></tr>`
     );
   }
   return rows.join("\n");
@@ -220,7 +220,7 @@ function symbolCatalogueHtml(symbols) {
 }
 
 function editorPaletteHtml() {
-  const items = [...TAG_ROWS.map((r) => ({ open: `<${r.sel}>`, close: `</${r.sel}>` })), ...CLASS_ROWS.map((c) => ({ open: `<div class="${c}">`, close: `</div>` }))];
+  const items = [...TAG_ROWS.map((t) => ({ open: `<${t}>`, close: `</${t}>` })), ...CLASS_ROWS.map((c) => ({ open: `<div class="${c}">`, close: `</div>` }))];
   return items
     .map(
       (it) =>
@@ -232,18 +232,24 @@ function editorPaletteHtml() {
 // The one-card, three-thirds, tap-to-play, editable preview for a single
 // card row — geometry/classes set by the shared client script (below)
 // reading this row's `.cp-style-data` JSON, so every open preview reflects
-// whatever device/theme the operator currently has selected without a
-// server round trip.
+// whatever device/theme/font size the operator currently has selected
+// without a server round trip. Server-side, each face is pre-rendered
+// through the exact same `renderCardFace()` (at the default device/theme/
+// font size) so the row looks correct even before the client script runs.
 export function cardPreviewInlineHtml(cardId, content, hasAudioFile, style, symbols) {
-  const faceHtml = (letter) => `
+  const rawContent = { N: content.N || "", E: content.E || "", X: content.X || "" };
+  const faceHtml = (letter) => {
+    const rendered = style ? renderCardFace(rawContent[letter], style, {}).html : escapeHtml(rawContent[letter]);
+    return `
     <div class="third t-${letter.toLowerCase()}" data-face="${letter}">
-      <div class="touch"><div class="face-body" data-face-body="${letter}">${content[letter] || ""}</div></div>
+      <div class="touch"><div class="face-body" data-face-body="${letter}">${rendered}</div></div>
       <div class="play-pop"><div class="play-tri"></div></div>
       <div class="toast"></div>
     </div>`;
+  };
 
-  return `<div class="cp-root" data-card="${escapeHtml(cardId)}" data-a="${escapeHtml(content.A || "N")}" data-has-audio="${hasAudioFile ? "1" : "0"}">
-  ${cardPreviewDataScript(style, symbols)}
+  return `<div class="cp-root ${MCR_SCOPE}" data-card="${escapeHtml(cardId)}" data-a="${escapeHtml(content.A || "N")}" data-has-audio="${hasAudioFile ? "1" : "0"}">
+  ${cardPreviewDataScript(style, symbols, rawContent)}
   <div class="cp-stage">
     <div class="cp-device">
       <div class="cp-stage" style="gap:10px;align-items:flex-start;">
@@ -265,9 +271,9 @@ export function cardPreviewInlineHtml(cardId, content, hasAudioFile, style, symb
       <div class="cp-ed-banner"><b>Throwaway scratch editor.</b> Edits are not saved anywhere, are never sent to the builder, and vanish on reload or reset.</div>
       <div class="cp-palette">${editorPaletteHtml()}</div>
       <div class="cp-palette-target">inserting into <b data-pal-target>N</b> — click a textarea to retarget</div>
-      <label class="cp-ed-field"><span>Front (N)</span><textarea data-ed="N" spellcheck="false"></textarea></label>
-      <label class="cp-ed-field"><span>Back (E)</span><textarea data-ed="E" spellcheck="false"></textarea></label>
-      <label class="cp-ed-field"><span>Extra (X)</span><textarea data-ed="X" spellcheck="false"></textarea></label>
+      <label class="cp-ed-field"><span>Front (N)</span><textarea data-ed="N" spellcheck="false">${escapeHtml(rawContent.N)}</textarea></label>
+      <label class="cp-ed-field"><span>Back (E)</span><textarea data-ed="E" spellcheck="false">${escapeHtml(rawContent.E)}</textarea></label>
+      <label class="cp-ed-field"><span>Extra (X)</span><textarea data-ed="X" spellcheck="false">${escapeHtml(rawContent.X)}</textarea></label>
       <button type="button" data-ed-reset class="btn-ghost">Reset to minted card</button>
     </div>
   </div>
@@ -281,10 +287,10 @@ export function cardPreviewInlineHtml(cardId, content, hasAudioFile, style, symb
     <div class="cp-table-rail">
       <table class="cp-smap">
         <thead><tr><th>Selector</th><th>Kind</th><th>Resolves to</th><th>Sample</th></tr></thead>
-        <tbody>${classCatalogueRowsHtml(style)}</tbody>
+        <tbody>${style ? classCatalogueRowsHtml(style) : ""}</tbody>
       </table>
     </div>
-    <p class="cp-generated-note">Generated from the bundle's own theme and class-style maps — <code>supWrap</code>, <code>arialFont</code> and <code>arialFontNormal</code> are the three the preview was missing before this change. Values follow the simulated device width's own <code>normalize()</code>.</p>
+    <p class="cp-generated-note">Generated from the bundle's own theme and class-style maps, rendered through the same cascade as the card faces above (<code>hub/src/cardRenderer.js</code>) — not a second, hand-typed idea of what a class looks like. Values follow the simulated device width's own <code>normalize()</code>.</p>
     <p class="cp-generated-note"><b>Dark card background is a mapping, not an extraction:</b> the dark theme has no <code>cardBackground</code> key — <code>#1B1D21</code> shown here comes from <code>archivedBackground</code> (equal to <code>navigationRoot</code>), not from a theme key named for cards.</p>
   </div>
   <div data-cat-panel="symbols" style="display:none">${symbolCatalogueHtml(symbols)}</div>
@@ -292,49 +298,52 @@ export function cardPreviewInlineHtml(cardId, content, hasAudioFile, style, symb
 }
 
 // Shared client script — included ONCE per Cards page (not per row). Reads
-// each open row's own `.cp-style-data` JSON (task 3.1's extractor output,
-// embedded server-side) and computes everything live: `normalize()`,
-// theme colors, face heights, catalogue "resolves to" values. Nothing here
-// is server-recomputed per request — switching the simulated device or
-// theme is a pure client-side re-render (acceptance #20).
+// each open row's own `.cp-style-data` JSON (the extractor output plus
+// each face's raw HTML, embedded server-side) and re-renders everything
+// live through the SAME engine Node used for the initial paint — dynamically
+// imported once from `/mjolnir/cards/render-engine.js` (task 2's single
+// source of cascade logic; see that file's own header). Nothing here
+// reimplements normalize()/the cascade a second time: switching the
+// simulated device, theme or font size is a pure client-side re-render
+// through the one real renderer (acceptance #20).
 export function cardPreviewClientScript() {
   return `
 (function () {
-  var cpState = { width: 375, height: 812, theme: 'dark' };
-
-  function normalize(t, width, isTablet) {
-    return Math.round(t * width / 375 * (isTablet ? 0.7 : 1));
-  }
+  var cpState = { width: 375, height: 812, theme: 'dark', fontSize: null };
+  var enginePromise = import('/mjolnir/cards/render-engine.js');
 
   function applyRoot(root) {
+    enginePromise.then(function (engine) { applyRootWithEngine(root, engine); });
+  }
+
+  function applyRootWithEngine(root, engine) {
     var dataEl = root.querySelector('.cp-style-data');
     if (!dataEl) return;
     var data = JSON.parse(dataEl.textContent);
     var style = data.style;
+    var rawContent = data.rawContent;
     var width = cpState.width, height = cpState.height;
     var isTablet = width >= 600;
+    var fontSize = cpState.fontSize == null ? style.fontSizeControl.default : cpState.fontSize;
     var theme = style.themes[cpState.theme];
-    var n = function (t) { return normalize(t, width, isTablet); };
+    var renderState = { width: width, height: height, tablet: isTablet, theme: cpState.theme, fontSize: fontSize };
+    var n = function (t) { return engine.normalize(t, width, height, isTablet); };
+
+    ['N', 'E', 'X'].forEach(function (letter) {
+      var body = root.querySelector('[data-face-body="' + letter + '"]');
+      if (!body) return;
+      var ta = root.querySelector('[data-ed="' + letter + '"]');
+      var source = ta ? ta.value : rawContent[letter];
+      body.innerHTML = engine.renderCardFace(source, style, renderState).html;
+    });
 
     var card = root.querySelector('[data-study-card]');
-    var C = height - n(style.card.heightInsetBase);
+    var C = height - n(style.card.insetSubtrahend);
     card.style.width = n(style.card.width) + 'px';
     card.style.borderRadius = n(style.card.borderRadius) + 'px';
     card.style.borderWidth = n(style.card.borderWidth) + 'px';
-    card.style.setProperty('--cp-cardBackground', theme.cardBackground);
     card.style.setProperty('--cp-borderColor', theme.borderColor);
     card.style.setProperty('--cp-cardText', theme.cardText);
-    card.style.setProperty('--cp-headingAccent', theme.headingAccent);
-    card.style.setProperty('--cp-headingGray', theme.headingGray);
-    card.style.setProperty('--cp-green', theme.green);
-    card.style.setProperty('--cp-fsBase', n(style.tags.div.fontSize) + 'px');
-    card.style.setProperty('--cp-fsP', n(style.tags.p.marginBottom) + 'px');
-    card.style.setProperty('--cp-fsLg', n(style.classes.lg.fontSize) + 'px');
-    card.style.setProperty('--cp-fsArialBig', n(style.classes.arialFont.fontSize) + 'px');
-    card.style.setProperty('--cp-fsArialNormal', n(style.classes.arialFontNormal.fontSize) + 'px');
-    card.style.setProperty('--cp-fsSup', n(style.classes.sup.fontSize) + 'px');
-    card.style.setProperty('--cp-supWrapMx', n(style.classes.supWrap.marginHorizontal) + 'px');
-    card.style.setProperty('--cp-fsTip', n(style.classes.tipOfTheDay.fontSize) + 'px');
 
     var fracs = style.faces;
     root.querySelectorAll('.third').forEach(function (el) {
@@ -353,37 +362,31 @@ export function cardPreviewClientScript() {
     updateFaceAlignment(root);
 
     root.querySelectorAll('tr[data-sel] .cp-resolve').forEach(function (cell) {
-      var row = cell.closest('tr');
-      var sel = row.dataset.sel, kind = row.dataset.kind;
+      var sel = cell.dataset.resolveSel, kind = cell.dataset.resolveKind;
       var text = '';
       if (kind === 'tag') {
-        if (sel === 'div') text = n(style.tags.div.fontSize) + 'px, Poppins-Regular, ' + theme.cardText;
-        else if (sel === 'p') text = 'marginBottom ' + n(style.tags.p.marginBottom) + 'px';
-        else if (sel === 'b') text = 'Poppins-Bold, ' + theme.headingAccent;
-        else if (sel === 'a') text = theme.headingAccent;
-        else text = 'Poppins-Regular italic, underline';
+        var t = style.tags[sel];
+        if (sel === 'div') text = fontSize === n(fontSize) ? n(fontSize) + 'px, ' + style.tags.div.fontFamily + ', ' + theme.cardText : n(fontSize) + 'px';
+        else if (sel === 'p') text = 'marginBottom ' + n(t.marginBottom) + 'px';
+        else if (t && t.fontDropped) text = '(font dropped) ' + (theme[t.colorToken] || '');
+        else if (t) text = (t.fontFamily ? t.fontFamily + ', ' : '') + (theme[t.colorToken] || '');
+        else text = '(no tagsStyle)';
       } else {
         var c = style.classes[sel] || {};
         var parts = [];
         if (c.fontSize !== undefined) parts.push(n(c.fontSize) + 'px');
         if (c.marginHorizontal !== undefined) parts.push('±' + n(c.marginHorizontal) + 'px margin, top-aligned row');
         if (c.color) parts.push(c.color);
-        if (sel === 'blue') parts.push(theme.headingAccent);
-        if (sel === 'darkBlue') parts.push(theme.headingGray);
-        if (sel === 'green') parts.push(theme.green);
+        if (c.colorToken) parts.push(theme[c.colorToken]);
+        if (c.fontDropped) parts.push('font dropped (' + c.droppedFontFamily + ')');
+        if (sel === 'bold') parts.push('undefined — no effect');
         text = parts.length ? parts.join(', ') : '(no size/color change)';
       }
       cell.textContent = text;
     });
-    root.querySelectorAll('.cp-sample[data-sel]').forEach(function (s) {
-      var sel = s.dataset.sel;
-      var c = style.classes[sel];
-      if (c && c.fontSize !== undefined) s.style.fontSize = n(c.fontSize) + 'px';
-      if (sel === 'arialFont' || sel === 'arialFontNormal') s.style.fontFamily = "'CardArial', Arial, Helvetica, sans-serif";
-    });
 
     var readout = document.getElementById('cp-scale-readout');
-    if (readout) readout.textContent = width + '×' + height + (isTablet ? ' (×0.70 tablet factor)' : '') + ' · theme: ' + cpState.theme;
+    if (readout) readout.textContent = width + '×' + height + (isTablet ? ' (×' + engine.normalizeFactor(width, height, isTablet).toFixed(3) + ' tablet factor)' : '') + ' · theme: ' + cpState.theme + ' · font ' + fontSize + 'px';
   }
 
   // Acceptance #21/#22/#23: E/X are scrollable faces whose content must
@@ -436,17 +439,13 @@ export function cardPreviewClientScript() {
     var toggleBtn = root.querySelector('[data-cp-edit-toggle]');
     var original = {};
     ['N', 'E', 'X'].forEach(function (letter) {
-      original[letter] = root.querySelector('[data-face-body="' + letter + '"]').innerHTML;
+      var ta = root.querySelector('[data-ed="' + letter + '"]');
+      original[letter] = ta.value;
     });
     var activeTa = 'N';
     toggleBtn.addEventListener('click', function () {
       var showing = editor.style.display !== 'none';
       editor.style.display = showing ? 'none' : 'block';
-      if (!showing) {
-        ['N', 'E', 'X'].forEach(function (letter) {
-          root.querySelector('[data-ed="' + letter + '"]').value = original[letter];
-        });
-      }
     });
     ['N', 'E', 'X'].forEach(function (letter) {
       var ta = root.querySelector('[data-ed="' + letter + '"]');
@@ -455,8 +454,7 @@ export function cardPreviewClientScript() {
         root.querySelector('[data-pal-target]').textContent = letter;
       });
       ta.addEventListener('input', function () {
-        root.querySelector('[data-face-body="' + letter + '"]').innerHTML = ta.value;
-        updateFaceAlignment(root);
+        applyRoot(root);
       });
     });
     root.querySelectorAll('.cp-pal-btn').forEach(function (btn) {
@@ -474,9 +472,8 @@ export function cardPreviewClientScript() {
     root.querySelector('[data-ed-reset]').addEventListener('click', function () {
       ['N', 'E', 'X'].forEach(function (letter) {
         root.querySelector('[data-ed="' + letter + '"]').value = original[letter];
-        root.querySelector('[data-face-body="' + letter + '"]').innerHTML = original[letter];
       });
-      updateFaceAlignment(root);
+      applyRoot(root);
     });
   }
 
@@ -496,7 +493,6 @@ export function cardPreviewClientScript() {
   }
 
   function currentVisibleRoot() {
-    var row = document.querySelector('.card-preview-row');
     var rows = document.querySelectorAll('.card-preview-row');
     for (var i = 0; i < rows.length; i++) {
       if (rows[i].style.display !== 'none') return rows[i].querySelector('.cp-root');
