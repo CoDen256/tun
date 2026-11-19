@@ -198,18 +198,19 @@ test("extractCardStyle throws when the classesStyles object's own anchor is remo
   });
 });
 
-test("extractCardStyle throws when a fixed colour class is removed from classesStyles", () => {
-  // Even though classes are discovered generically, a specific class this
-  // extractor's own test suite (and design.md §2) require present can be
-  // deleted outright — the acceptance scenario for "rename one colour
-  // class's anchor" is that the preview loses that class and shows a loud
-  // error, not a card silently missing the colour; here, confirm the
-  // extractor itself reports the class as genuinely gone rather than
-  // inventing a fallback value for it.
+test("extractCardStyle throws, naming the class, when a fixed colour class's key is renamed/removed (acceptance C11)", () => {
+  // Even though classes are discovered generically, each of the seven
+  // FIXED colour classes named in design.md §2 is checked individually
+  // post-discovery. The acceptance scenario (C11) is: rename one colour
+  // class's anchor in a copy of the bundle and point the extractor at it —
+  // the extractor must fail with an error naming the missing anchor,
+  // rather than silently emitting a classes map missing that class (the
+  // bug a previous run of this suite reproduced: this exact mutation used
+  // to return successfully with "royalRed" simply absent from
+  // style.classes).
   const real = fs.readFileSync(REAL_BUNDLE, "utf8");
-  const mutilated = real.replace("royalRed:{color:'#cc0066'},", "");
+  const mutilated = real.replace("royalRed:{color:'#cc0066'}", "royalRedMANGLED:{color:'#cc0066'}");
   withTmpBundle(mutilated, (file) => {
-    const style = extractCardStyle(file);
-    assert.ok(!("royalRed" in style.classes));
+    assert.throws(() => extractCardStyle(file), /royalRed/);
   });
 });

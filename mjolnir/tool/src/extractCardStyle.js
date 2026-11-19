@@ -442,6 +442,22 @@ export function extractCardStyle(bundlePath) {
   for (const [name, entry] of Object.entries(rawClasses)) {
     classes[name] = finalizeStyle(entry.__descriptors ?? {}, systemFontsSet);
   }
+  // The seven FIXED colour classes (design.md §2: .green #5DD8D0, .red
+  // #FF0000, .teal #00A4BF, .dodgerBlue #0080ff, .royalRed #cc0066,
+  // .blueViolet #8030cf, .burntOrange #ff7733) are each checked individually
+  // by name — a silently-shrunk class map (one of these missing while the
+  // rest of the catalogue looks complete) is exactly the failure mode this
+  // package exists to prevent (design.md "Risks"), so each gets its own
+  // named anchor rather than one generic "some colour class is missing"
+  // check.
+  for (const fixedColourClass of ["green", "red", "teal", "dodgerBlue", "royalRed", "blueViolet", "burntOrange"]) {
+    if (!(fixedColourClass in classes)) {
+      throw new Error(
+        `card-style extractor: classesStyles parsed but is missing the fixed colour class ".${fixedColourClass}" — ` +
+          "the generic object parser may be out of sync with the bundle's shape, or this class was renamed/removed."
+      );
+    }
+  }
   if ("bold" in classes) {
     throw new Error(
       'card-style extractor: classesStyles now defines ".bold" — stock cards use it 1,459× assuming it is ' +
