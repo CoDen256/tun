@@ -1,12 +1,18 @@
 # System-Wide Master Backlog
 
 ## Quick Log (Manual Dump)
+[bug] stabbur triage: after a merge on the triage belt, the absorbed notes stay in the in-memory `triageQueue`. Similar-note matches are very often other drafts in the same queue, so advancing lands on a row whose note was just hard-deleted and every PATCH/accept against it 404s. PRE-EXISTING (identical before the `stabbur-merge-fixes` change — confirmed at 925386bd), but that change makes merging much more prominent (take text/lemma, operation labels, save-and-merge), so it will be hit more often. Fix: drop the absorbed ids from `triageQueue` in `commitSimilarMerge`'s tail, where it currently only refreshes the survivor.
+[ux] stabbur grammar detail: the usage list requests `limit: 200` while `rule.usage_count` is uncapped, so a rule referenced by 300 notes reads "300 notes reference this rule" above a list of 200. Either page the list or say it is showing the first 200.
+[bug] projector throws on a verb note whose `inflections` is an empty object `{}` — it enters the verb branch and `ensurePrefix` throws on undefined. `inflections: null` is the projector's own "none" input and works. Found 2026-11-16 while building flush-record-atomicity (four rollover pipeline test fixtures were failing at HEAD on any database because of it); the fixtures were corrected, the latent projector bug deliberately NOT fixed as out of that change's scope.
+[bug] builder `probeDurationMs` (`mjolnir/builder/src/audioSnapshot.js`) runs `ffprobe` with no try/catch, so ONE note with `audio_sel_ms` whose blob ffprobe cannot read fails the WHOLE publish — which contradicts D-F1 ("one bad note must not fail the whole publish"). Found 2026-11-18 by the flush-record-atomicity verification; confirmed byte-identical at pre-change commit 9ab7a814, so it is pre-existing and NOT caused by that change. Since flush-record-atomicity landed, such a failure at least consumes no occurrences.
+
+
+
 [ux] backup own ui with own logs hisotry and button for manual backup and cron setup settings
 [ux] assembly update patches to be more standartized (do not hardcode endpoint for both, let audio url endpon also be specified ), infer fillable envs from the patches.
 [ux] assembly when picking bundle from catalogue its not obvious if its loading or anything, there is no progress marker
 [ux] assembly compare doesn't work at all
-[bug] projector throws on a verb note whose `inflections` is an empty object `{}` — it enters the verb branch and `ensurePrefix` throws on undefined. `inflections: null` is the projector's own "none" input and works. Found 2026-11-16 while building flush-record-atomicity (four rollover pipeline test fixtures were failing at HEAD on any database because of it); the fixtures were corrected, the latent projector bug deliberately NOT fixed as out of that change's scope.
-[bug] builder `probeDurationMs` (`mjolnir/builder/src/audioSnapshot.js`) runs `ffprobe` with no try/catch, so ONE note with `audio_sel_ms` whose blob ffprobe cannot read fails the WHOLE publish — which contradicts D-F1 ("one bad note must not fail the whole publish"). Found 2026-11-18 by the flush-record-atomicity verification; confirmed byte-identical at pre-change commit 9ab7a814, so it is pre-existing and NOT caused by that change. Since flush-record-atomicity landed, such a failure at least consumes no occurrences.
+[ux] assembly also include our custom companions in the explore tab
 1. stabbur examples/translations store as separate rows, not joined by "/", just make the ux easier to edit, view those multiple translations
 2. ipa should be merged on smia side
 [idea/rehaul] create pronounciatikn/audio for context of words (builder, but also kinda stabbur should allow attaching more audio per note)
@@ -27,9 +33,6 @@
 [bug] maybe we should move the PoS picking logic to smia, since each providers know how to pick their PoS, at least order them in the result .
 [ux] stabbur provider priority should reflect the same order in the suggestion list, even if no prefill is done
 
-[bug] stabbur triage: after a merge on the triage belt, the absorbed notes stay in the in-memory `triageQueue`. Similar-note matches are very often other drafts in the same queue, so advancing lands on a row whose note was just hard-deleted and every PATCH/accept against it 404s. PRE-EXISTING (identical before the `stabbur-merge-fixes` change — confirmed at 925386bd), but that change makes merging much more prominent (take text/lemma, operation labels, save-and-merge), so it will be hit more often. Fix: drop the absorbed ids from `triageQueue` in `commitSimilarMerge`'s tail, where it currently only refreshes the survivor.
-[ux] stabbur grammar detail: the usage list requests `limit: 200` while `rule.usage_count` is uncapped, so a rule referenced by 300 notes reads "300 notes reference this rule" above a list of 200. Either page the list or say it is showing the first 200.
-
 
 
 [bug] shadow study doesn't trimmed merged/split sentences good enough
@@ -40,9 +43,20 @@
 [ux] phone ui , put pull for nav/name of book, chapter nav, "more", exit and sentence on one/two lines to make it more compact
 [ux] phone shadow  should provide installable "app", if that's easy to do?
 
+[bug] provider pygmalion no entry for målende, målene
 
-[ux] stabbur duplicate note
+[ux] stabbur duplicate note button
 [idea] stabbur tonelag exercises and pronounciation/hear exercises(i/y, li/ly) type (that will produce special cards in mjolnir)
+a) tonelag notes: i put two identically sounding words, difference only in the tone (visible in IPA) (e.g. lyse/lyset). This is one note / might be separate entity. We might also use tone sketch, like calst does (--/) or (\\/) but make it pretty
+- i can provide as many audio as i want for each of the word, selecting primary one for pronounciation cards
+- produces pronounciation cards(N=read out:text, E=ipa+contour, X=translation, A=E) x 2 (N occ.) for each (use primary audio)
+- produces "listening" cards (N=identify word that you hear, E=text+ipa+contour, X=translation, A=N) x 2 (N occ.) x Num of Audios for each (important to have some kind of spacing between two N's of this type) 
+- separate deck C21?
+b) sound traning notes: i put two contrasting sounds/words, that are easy to mix up (e.g. li/ly or sky/ski)
+- the same concept as (a) actually, same mjolnir pronounciation and listening cards with the same stuff, just no contour, the concept is the same
+so a type of tricky phonetic words, minimal pair which are hard to distinguish (either by toneme, or vowel/consonant), create cards for pronounciation of those and create cards for identifying those,
+-> actually ignore the pair, let's do any tuple of hard to distinguish sounds, so listening cards are created for each distinct sound x for each audio, pronounciation cards are created for each distinct sound.
+-> For example ultimate disambiguation tuple(toneme(1/2),vowel(i/y),length(v,v:)): sinet/sine/sinnet/sinne/synet/syne/syndet/sydne
 ## Triage & Planned Packages
 
 > Last triaged 2026-11-15. All packages batched into `batches/full-sweep/`.
