@@ -47,6 +47,10 @@ const CARDS = {
   B01047: {
     X: '<div class="center flex"><div class="left">The G in the GTE ending of certain <span class="italic">preteritum</span> forms is effectively pronounced as the soft K (i.e. K with superscript J).</div></div>',
   },
+  C01004: {
+    N: '<div class="center">How can I learn when to produce <span class=dodgerBlue>tone 1</span> <br>and when to produce <span class=royalRed>tone 2</span>?</div>',
+    X: '<div class="center"><div class="left"><p>Verbs (except prepositional verbs):<br>(å) <span class=royalRed>²kas</span>te, <span class=royalRed>²del</span>te, <span class=royalRed>²byg</span>de, <span class=royalRed>²trod</span>de</p> <p>Nouns of all genders:<br>(en) <span class=royalRed>²ti</span>me, (ei) <span class=royalRed>²jen</span>te, (et) <span class=royalRed>²bil</span>de</p> <p>Adjectives in the definite/plural form:<br><span class=royalRed>²fi</span>ne, <span class=royalRed>²fri</span>e, <span class=royalRed>²la</span>ve, <span class=royalRed>²rø</span>de</p> <p>Other 2-syllable words:<br><span class=royalRed>²de</span>re, <span class=royalRed>²ba</span>re</p> We will mostly focus on the rules for <span class=royalRed>tone 2</span>, which means that, by subtraction, any other situation will require <span class=dodgerBlue>tone 1</span>.</div></div>',
+  },
 };
 
 function styleAttr(html, needle) {
@@ -145,6 +149,28 @@ test("C5 — colours of the colour classes (quoted and unquoted class=)", () => 
   const b12006 = renderCardFace(CARDS.B12006.E, style, {}).html;
   assert.match(styleAttr(b12006, "ham"), /color:#cc0066/);
   assert.match(styleAttr(b12006, "den"), /color:#ff7733/);
+});
+
+test("C01004 — 7.2 gap: dodgerBlue (unused by any other fixture) alongside royalRed, literal non-ASCII chars (å, ø, ²) and repeated <p>/<br> runs in the longest X face (research §7: 'longest X → scrolls' — the scroll/clip behaviour itself is browser-only, acceptance C15; this only checks the cascade's resolved output)", () => {
+  const n = renderCardFace(CARDS.C01004.N, style, { theme: "light" }).html;
+  assert.match(styleAttr(n, "tone 1"), /color:#0080ff/);
+  assert.match(styleAttr(n, "tone 2"), /color:#cc0066/);
+
+  const x = renderCardFace(CARDS.C01004.X, style, { theme: "light" }).html;
+  // literal (not entity-encoded) non-ASCII characters survive the cascade
+  assert.ok(x.includes("å") && x.includes("ø") && x.includes("²"));
+  assert.match(styleAttr(x, "²kas"), /color:#cc0066/);
+  assert.match(styleAttr(x, "tone 1"), /color:#0080ff/);
+  // every <p> in this face still gets the standard margins (research §7's
+  // "p inside center" cascade, exercised here with four sibling <p>s)
+  const pTags = [...x.matchAll(/<p[^>]*style="([^"]*)"/g)].map((m) => m[1]);
+  assert.ok(pTags.length >= 4, `expected at least 4 <p> tags, got ${pTags.length}`);
+  for (const decl of pTags) {
+    assert.match(decl, /margin-top:0px/);
+    assert.match(decl, /margin-bottom:6px/);
+  }
+  // every <br> is still literal, not collapsed, across this many siblings
+  assert.ok((x.match(/<br>/g) || []).length >= 4);
 });
 
 test("C6 — IPA renders in Arial at the fixed normalize(28)/normalize(18) class sizes, decoded from entities", () => {

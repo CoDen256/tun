@@ -52,4 +52,4 @@
 ## 7. Records
 
 - [x] 7.1 Annotate the archived `2026-11-15-assembly-tab-usability/design.md` table in place with the corrections (faces, base size, card background, alignment, `.center`), pointing here
-- [ ] 7.2 Tests for the cascade on the stock samples in `research/render-research.md` (`B01028`, `Z01001`, `B12007`, `C01004`, `C01001`, `B01047`)
+- [x] 7.2 Tests for the cascade on the stock samples in `research/render-research.md` (`B01028`, `Z01001`, `B12007`, `C01004`, `C01001`, `B01047`)
