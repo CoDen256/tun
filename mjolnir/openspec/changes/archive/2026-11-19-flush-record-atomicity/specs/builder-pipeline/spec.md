@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: A failed publish consumes no occurrences
 `runPublish` SHALL NOT delete a `staged_occurrences` or
@@ -52,8 +52,6 @@ card are lost permanently.
   different bytes), and its bundle SHALL contain every occurrence the
   committed shipment rows recorded, because `replay` rebuilds from
   `occurrence_shipments`
-
-## ADDED Requirements
 
 ### Requirement: An occurrence ships exactly once, A before E
 The pipeline SHALL enforce uniqueness of `(card_id, letter)` across each of
