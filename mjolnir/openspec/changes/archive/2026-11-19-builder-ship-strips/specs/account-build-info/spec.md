@@ -1,6 +1,20 @@
 # account-build-info
 
-## MODIFIED Requirements
+## REMOVED Requirements
+
+### Requirement: The account screen shows the installed build's label and data version
+**Reason**: the device no longer shows label and data version as their own
+rows. Both collapse into the single App version row added below, which also
+carries build time. The label itself is not retired — it stays the bundle's
+name in hub's OTA console; only the device's display of it goes.
+
+### Requirement: Label and data version are baked at assemble time, not read from a server at runtime
+**Reason**: superseded by the publish-time stamping below. Baking these at
+assemble is exactly the defect being fixed — a logic bundle published more
+than once shipped a data version frozen at its assemble. The
+no-network/synchronous guarantee is preserved verbatim in its replacement.
+
+## ADDED Requirements
 
 ### Requirement: The account screen shows the installed build's version facts as one row
 The system SHALL display, as a single row on the account screen, the

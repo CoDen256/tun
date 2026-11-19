@@ -299,3 +299,108 @@ copied, and the source note is untouched.
 - A short, very common word can still produce a long audio list (`do` has
   ~50 dict.cc entries). The human-only filter cut this a lot, but there is
   no cap — tell me if it is still unwieldy.
+
+## Builder UI rehaul & data versioning
+
+Changes: `flush-record-atomicity`, `builder-ship-strips` (both mjolnir, archived 2026-11-19).
+
+### One-time migration — REQUIRED
+
+`hub/migrations/019_occurrence_uniqueness.sql` applies on the next
+`mjolnir-hub` boot. It de-duplicates defensively (keeping the OLDEST row),
+then adds unique `(card_id, letter)` indexes to `staged_occurrences`,
+`pending_occurrences` and `occurrence_shipments`.
+
+Before restarting, confirm production has no duplicates — the migration will
+collapse them silently if it does:
+
+```sh
+docker compose exec -T postgres psql -U mjolnir -d mjolnir -c "
+  SELECT 'staged' t, card_id, letter, count(*) FROM staged_occurrences GROUP BY 1,2,3 HAVING count(*)>1
+  UNION ALL SELECT 'pending', card_id, letter, count(*) FROM pending_occurrences GROUP BY 1,2,3 HAVING count(*)>1
+  UNION ALL SELECT 'shipped', card_id, letter, count(*) FROM occurrence_shipments GROUP BY 1,2,3 HAVING count(*)>1;"
+```
+
+Zero rows = clean. The dev cluster was zero. After restart, confirm the
+indexes exist:
+
+```sh
+docker compose exec -T postgres psql -U mjolnir -d mjolnir -c "\di＊occ＊uniq＊"
+```
+
+### Deploy note — build time will not appear until you re-assemble
+
+`BUILT_AT` is a NEW companion constant. A logic bundle assembled BEFORE this
+change does not contain it, so the first publish logs
+`restamp: … — NOT PRESENT …: BUILT_AT` (non-fatal, by design) and the
+phone's App version row omits the `built …` segment. **Assemble a fresh
+logic bundle** in the Assemble tab to pick it up; everything else
+(build id, base, logic, data) is correct immediately.
+
+### Dev-cluster leftovers
+
+Two throwaway databases were created on the dev Postgres for testing and are
+NOT used by any service: `mjolnir_test`, `mjolnir_hubtest`. Drop them when
+convenient. The production `mjolnir` database was never written to.
+
+### Live flows to test
+
+**Builder page** (`/builder`, and hub's own copy under Builder → the console
+entry — they must look identical):
+1. Every deck's strip is visible with no clicking. There is no 5-stage
+   pipeline rail and no past-batches section.
+2. **Hover an occurrence cell**: you get `#index · card id · letter`, then
+   the N face (truncated), then what this publish does to that card
+   ("E and X change this publish" / "unchanged" / "new card — …"). The same
+   card's OTHER occurrence lights up elsewhere in the strip at the same time.
+3. **Click a cell**: a drawer pushes the page aside (the strip stays visible)
+   showing the shipping build and timestamp, the partner occurrence's
+   position, and the card rendered in mjølnir's real CSS. On a card whose
+   content changes this publish, the drawer says the preview is the NEW
+   content, not what is on the device.
+4. Counts read `◆ minted · ✎ edited · Σ eventual · ● shipped · ◐ staged ·
+   ○ pending` in that order in BOTH the global totals and every deck header.
+   Pending's delta shows `+queued / −drained` in both.
+5. A deck on the 5-grid shows NO status chip. If one ever reads
+   "Off the 5-grid — N shipped is not a multiple of 5", that is a real
+   integrity fault, not cosmetic.
+6. The legend is at the bottom. Its `?` explains the countdown is in new
+   CARDS.
+
+**The integrity banner** — it appears ONLY when something is wrong. On the
+dev database it currently reports 4 genuine anomalies (C20002, C20077,
+C20098, C20099 each owe an occurrence that exists nowhere — verified true
+positives, deliberately not repaired). Check what production says; if it
+reports nothing, that is the expected state.
+
+**Publish**:
+7. Press **Publish now** with nothing newly eligible → it should say nothing
+   needed publishing and stop. It must NOT spin forever.
+8. Press it with real work pending → an in-progress indication plus the run's
+   own log lines appearing live; then a result banner at the top with the
+   build id and what shipped.
+9. **Reload the page afterwards** — the result must still be there. It is
+   derived from `build_jobs`, so a nightly run you never watched also reports
+   itself the next time you open the page.
+10. Open **Run log** for that run: it should now be substantially more
+    detailed — per-deck `flush-calc:` arithmetic, a `commit: applying …`
+    line itemising what is about to be consumed, a `commit: COMMITTED` line,
+    and `done: … in N ms`. If a run ever fails, the log itself now names the
+    phase and the error instead of simply stopping.
+
+**On the phone**, after a publish from a freshly-assembled logic bundle:
+11. Account screen shows ONE `App version` row:
+    `b0000NN · base … · logic … · data … · built <local time>`.
+    No separate Label or Data version row.
+12. Deck list descriptions read `<your prose> · N cards · M occ`, and the
+    counts include what that publish just shipped.
+
+### Known, deliberately not fixed
+
+- `probeDurationMs` (`builder/src/audioSnapshot.js`) has no try/catch around
+  `ffprobe`, so one unreadable blob still fails a whole publish — a D-F1
+  violation, confirmed pre-existing. In BACKLOG.md. It now consumes no
+  occurrences when it fires.
+- The projector throws on a verb note with `inflections: {}`. In BACKLOG.md.
+- Builder test #39 (projector transcription) fails because of `74ba89ca` /
+  `b41aa964`, which are your own commits, not this batch.
