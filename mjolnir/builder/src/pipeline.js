@@ -178,6 +178,17 @@ async function flushDeck(pool, plan, model, deckCode, deckTitleCache, deckDescri
   for (const entry of held) {
     if (entry.pendingId) plan.stagedInserts.push({ deckCode, cardId: entry.cardId, letter: entry.letter });
   }
+  // The flush decision is pure arithmetic, and when a deck does not ship
+  // the obvious question is "why not" — so show the arithmetic rather than
+  // just its verdict. `target` is the largest multiple of 5 reachable with
+  // what is on hand; anything beyond it waits for the next run.
+  const flushTarget = Math.floor((alreadyShipped + stagedTotal) / 5) * 5;
+  await log(
+    buildJobId,
+    `flush-calc: ${deckCode} — shipped=${alreadyShipped} staged=${stagedTotal} ` +
+      `sum=${alreadyShipped + stagedTotal} target=${flushTarget} ` +
+      `=> flush ${shippable.length}, hold ${held.length}`
+  );
   if (shippable.length === 0) {
     if (stagedTotal > 0) {
       await log(
@@ -501,10 +512,16 @@ export async function runPublish(
 
   const buildJobId = await createBuildJob(pool);
   let scratchPath = null;
+  // Phase tracking exists purely so a failure can say WHERE it died. The
+  // run log is the first thing read when a publish breaks, and "it threw
+  // somewhere in runPublish" is not a debugging aid.
+  let phase = "start";
+  const startedAt = Date.now();
   try {
     // D-H4: these two checkpoints only make sense once a build_jobs row
     // exists to attach them to (pull/assign for a no-op run are never
     // logged, matching the no-op run having no job at all, above).
+    phase = "pull";
     await log(buildJobId, `pulled ${eligibleNotesById.size} eligible notes from stabbur (source_lang=${sourceLang})`);
     await log(
       buildJobId,
@@ -624,6 +641,7 @@ export async function runPublish(
       touchedDeckCodes.add(deckCode);
 
       const minted = await mintCardSlots(pool, deckCode, notes);
+      phase = "mint";
       await log(buildJobId, `mint: ${deckCode} — card_slots ${minted.map((m) => m.cardId).join(", ")}`);
       let newACount = 0;
       const toQueue = [];
@@ -652,6 +670,7 @@ export async function runPublish(
     for (const [deckCode, { newACount, toQueue }] of pendingWorkByDeck) {
       const drained = await drainThenQueue(pool, plan, deckCode, newACount, toQueue);
       drainedByDeck.set(deckCode, drained);
+      phase = "drain";
       await log(buildJobId, `drain: ${deckCode} — ${drained.length} row(s) reached remaining<=0, staged`);
     }
 
@@ -669,6 +688,7 @@ export async function runPublish(
 
     const cardAudio = await allCardAudio(pool);
     const finalCardAudio = await ensureBlobsPresent(cardAudio, { stabburBaseUrl, internalToken, dataDir, selMsByCardId });
+    phase = "audio";
     await log(buildJobId, `snapshot: audio manifest covers ${Object.keys(finalCardAudio).length} card(s)`);
 
     // D-L6: base_version/patch_rev now come from the logic bundle this run
@@ -726,6 +746,22 @@ export async function runPublish(
     // shipment rows for occurrences that cannot reach the device. See
     // consumptionPlan.js for the crash-window analysis that settles the
     // ordering against D26/D62.
+    // The consumption plan, itemised BEFORE it is applied. This is the
+    // single most useful line in a post-mortem: it says exactly what the
+    // run intended to consume, so a log that stops here tells you the
+    // transaction never committed and nothing was consumed, while a log
+    // that continues tells you all of it landed. There is no partial state
+    // to reason about in between — that is what D-FA1 bought.
+    const decrementRows = plan.pendingDecrements.reduce((n, d) => n + d.ids.length, 0);
+    phase = "commit";
+    await log(
+      buildJobId,
+      `commit: applying — ${shipments.length} shipment(s), ` +
+        `${plan.stagedIdsToDelete.length} staged delete(s), ` +
+        `${plan.pendingIdsToDelete.length} pending delete(s), ` +
+        `${decrementRows} pending decrement(s) across ${plan.pendingDecrements.length} deck(s), ` +
+        `${plan.stagedInserts.length} staged insert(s) — as ${buildId}, sha256 ${bundleSha}`
+    );
     await commitRun(pool, {
       plan,
       shipments,
@@ -739,16 +775,39 @@ export async function runPublish(
         createdAt: publishedAt,
       },
     });
+    // Crossing this line is irreversible in the database. Anything that
+    // fails after it leaves a durable, complete record (D-FA2).
+    await log(buildJobId, `commit: COMMITTED — occurrences consumed and recorded together`);
+    phase = "publish";
 
     const result = publish(scratchPath, buildId, `base ${baseVersion} · logic ${patchRev} · data ${dataRev + 1}`, {
       dataDir,
       publicBase,
     });
     await log(buildJobId, `published ${buildId} — sha256 ${result.sha256}`);
+    await log(buildJobId, `done: ${buildId} in ${Date.now() - startedAt} ms`);
     await markSucceeded(pool, buildJobId, buildId);
 
     return { published: true, buildId, decksMinted, eligibleCount: eligibleNotesById.size };
   } catch (err) {
+    // A failed run used to write only `build_jobs.error` and leave the run
+    // log simply STOPPING mid-stream — no phase, no stack, nothing to say
+    // where it died. The log is the first thing anyone reads when a publish
+    // breaks, so the failure belongs IN it, not only in a column.
+    //
+    // `rollbackError` is attached (never substituted) by `commitRun` when
+    // the ROLLBACK itself failed; surfacing it matters because that is the
+    // one case where the database state needs a human to look.
+    try {
+      await log(
+        buildJobId,
+        `FAILED in phase "${phase}" after ${Date.now() - startedAt} ms — ${err && err.message ? err.message : String(err)}` +
+          (err && err.rollbackError ? ` — AND its ROLLBACK failed: ${err.rollbackError.message}` : "")
+      );
+      if (err && err.stack) await log(buildJobId, `stack: ${err.stack.split("\n").slice(0, 6).join(" | ")}`);
+    } catch {
+      // Logging the failure must never replace the failure.
+    }
     await markFailed(pool, buildJobId, err);
     throw err;
   } finally {

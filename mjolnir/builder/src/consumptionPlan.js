@@ -70,6 +70,7 @@ export function createConsumptionPlan() {
 // row first, then shipments, then the deletes and decrements.
 export async function commitRun(pool, { plan, publication, shipments }) {
   const client = await pool.connect();
+  let released = false;
   try {
     await client.query("BEGIN");
     await writePublication(client, publication);
@@ -95,9 +96,26 @@ export async function commitRun(pool, { plan, publication, shipments }) {
 
     await client.query("COMMIT");
   } catch (err) {
-    await client.query("ROLLBACK");
+    // ROLLBACK itself can throw — a connection that dropped mid-transaction
+    // is precisely when it does. Letting that throw propagate would REPLACE
+    // the real cause, so `runPublish`'s catch would write the wrong message
+    // into `build_jobs.error` and the run log would point at the cleanup
+    // instead of at what actually broke. Postgres discards an uncommitted
+    // transaction on a lost connection anyway, so a failed ROLLBACK costs
+    // nothing but the diagnostic. Attach it, never substitute it.
+    let rollbackFailed = false;
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      rollbackFailed = true;
+      err.rollbackError = rollbackErr;
+    }
+    // A client whose ROLLBACK failed must not go back into the pool in an
+    // unknown transaction state; destroying it costs one reconnect.
+    client.release(rollbackFailed);
+    released = true;
     throw err;
   } finally {
-    client.release();
+    if (!released) client.release();
   }
 }

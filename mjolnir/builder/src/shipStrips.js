@@ -510,6 +510,7 @@ export const SHIP_STRIPS_STYLE = `
 
 .tip { position: fixed; z-index: 90; pointer-events: none; display: none; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px 6px; font-size: 11.5px; font-family: var(--mono); color: var(--text); box-shadow: 0 8px 26px #000a; max-width: 460px; }
 .tip .kin { display: block; color: var(--text-dim); font-size: 11px; margin-top: 3px; }
+.tip .face { display: block; color: var(--text); font-family: var(--sans); font-size: 12px; margin-top: 4px; }
 
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 452px; max-width: 100vw; background: var(--bg-elevated); border-left: 1px solid var(--border); overflow-y: auto; z-index: 70; transform: translateX(100%); transition: transform .18s ease; }
 .drawer.open { transform: none; }
@@ -604,6 +605,16 @@ export const SHIP_STRIPS_CLIENT = `
   function esc(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
+  // Collapse the whitespace a stripped HTML face leaves behind, then cut on
+  // a word boundary where one is near the limit, so the preview does not end
+  // mid-word for the sake of three characters.
+  function trunc(s, n) {
+    var t = String(s).replace(/\s+/g, ' ').trim();
+    if (t.length <= n) return t;
+    var cut = t.slice(0, n);
+    var sp = cut.lastIndexOf(' ');
+    return (sp > n - 15 ? cut.slice(0, sp) : cut) + '…';
+  }
   function faceList(f) {
     if (f.length === 1) return f[0];
     return f.slice(0, -1).join(', ') + ' and ' + f[f.length - 1];
@@ -656,7 +667,13 @@ export const SHIP_STRIPS_CLIENT = `
     var rec = CELLS.get(el.dataset.key);
     if (!rec) return;
     var u = rec.u;
+    // The N face, truncated. noteText is already the N content with its
+    // HTML stripped (cardFlow.js joins card_content.n), so this costs no
+    // extra query — it was simply never rendered. Shown above the change
+    // line because "which card is this" is the question you ask first; the
+    // full card is one click away in the drawer.
     tip.innerHTML = '#' + u.idx + ' · ' + esc(u.cardId || '—') + ' · ' + esc(u.letter) +
+      (u.note ? '<span class="face">' + esc(trunc(u.note, 90)) + '</span>' : '') +
       '<span class="kin">' + esc(changeText(u)) + '</span>';
     tip.style.display = 'block';
     clearKin();
