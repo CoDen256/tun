@@ -33,7 +33,7 @@ All other packages are parallel-safe.
 
 | package | status |
 |---|---|
-| Builder UI rehaul & data versioning | building — mjolnir: `flush-record-atomicity` then `builder-ship-strips` |
+| Builder UI rehaul & data versioning | archived — mjolnir: `2026-11-19-flush-record-atomicity`, `2026-11-19-builder-ship-strips` |
 | Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` (item 3 redone by "Card preview redo") |
 | Card preview redo | building (mjolnir: `card-preview-popup`) |
 | Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |

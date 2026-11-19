@@ -325,7 +325,7 @@ Zero rows = clean. The dev cluster was zero. After restart, confirm the
 indexes exist:
 
 ```sh
-docker compose exec -T postgres psql -U mjolnir -d mjolnir -c "\di＊occ＊uniq＊"
+docker compose exec -T postgres psql -U mjolnir -d mjolnir -c "\di*occ*uniq*"
 ```
 
 ### Deploy note — build time will not appear until you re-assemble
