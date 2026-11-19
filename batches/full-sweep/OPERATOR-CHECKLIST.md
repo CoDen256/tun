@@ -321,11 +321,11 @@ docker compose exec -T postgres psql -U mjolnir -d mjolnir -c "
   UNION ALL SELECT 'shipped', card_id, letter, count(*) FROM occurrence_shipments GROUP BY 1,2,3 HAVING count(*)>1;"
 ```
 
-Zero rows = clean. The dev cluster was zero. After restart, confirm the
-indexes exist:
+Zero rows = clean. The dev cluster was zero. After restart, confirm all
+THREE indexes exist (fewer than three means the migration did not run):
 
 ```sh
-docker compose exec -T postgres psql -U mjolnir -d mjolnir -c "\di*occ*uniq*"
+docker compose exec -T postgres psql -U mjolnir -d mjolnir -c "\\di *_card_letter_idx"
 ```
 
 ### Deploy note — build time will not appear until you re-assemble
