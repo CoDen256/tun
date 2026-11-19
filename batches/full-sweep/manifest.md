@@ -89,6 +89,17 @@ pending delta carries the queued/drained split in BOTH the global totals and
 every deck rail, and the off-grid chip names the offending shipped count
 ("Off the 5-grid — 12 shipped is not a multiple of 5").
 
+ADDED DURING BUILD, at the operator's request (not designed in session, so
+recorded here rather than pretended into the design):
+- detailed builder run logging — a failed run previously wrote only
+  `build_jobs.error` while the run log stopped mid-stream. Now: phase
+  tracking, the failure and stack IN the log, the consumption plan itemised
+  before it is applied and a COMMITTED line after it, per-deck flush
+  arithmetic, and run duration.
+- the occurrence hover shows the N face (truncated). The data was already
+  there — `noteText` is the stripped `card_content.n` — so this surfaced it
+  rather than querying for it.
+
 Deferred to the builder's judgement (tier 2, not guesses):
 - the stalled-run threshold, and the progress polling interval
 - the exact icon/glyph set for the five stats, provided it is identical in
