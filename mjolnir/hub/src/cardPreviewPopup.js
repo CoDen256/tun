@@ -81,6 +81,17 @@ import {
 
 const SCOPE = "cpp-root";
 
+// card-preview-popup task group 6 (design.md §6) — the `operator_settings`
+// key this file's popup preferences (device, theme, font size, default
+// direction, drawer width/height/active tab/open) are stored under as ONE
+// JSON object, read once at Cards-page render (server.js's "/mjolnir/cards"
+// route) and written back debounced from the client. Exported so server.js
+// reads the SAME key name it writes with no second literal to drift out of
+// sync. Task group 5's Cards-view key (source/filters/sort/page
+// size/page) is a SEPARATE key, left to that task group to name — see
+// `getSetting`/`setSetting` in this file's client script.
+export const CARD_PREVIEW_POPUP_SETTINGS_KEY = "cardPreviewPopup.prefs";
+
 // Exposed so a Node test can assert the pure functions imported above are
 // the ones this module actually wires up (no second copy pasted inline).
 export const _engine = { defaultDirectionFor, directionSlots, stepIndex, occurrenceSummaryText, hasAOccurrence, resolveTapOutcome };
@@ -351,19 +362,107 @@ var enginesPromise = Promise.all([renderEnginePromise, popupEnginePromise, drawe
 var ENGINE = null, POPUP_ENGINE = null, DRAWER_ENGINE = null;
 enginesPromise.then(function (mods) { ENGINE = mods[0]; POPUP_ENGINE = mods[1]; DRAWER_ENGINE = mods[2]; });
 
-var DRAWER_STORAGE_KEY = 'mjolnirCardPreviewDrawer';
+// --------------------------------------------------------------------
+// Task group 6: operator settings (design.md §6, acceptance C37-C39)
+// --------------------------------------------------------------------
+//
+// task 4.1/4.2's own note on this file said: "task 6 should replace
+// sessionStorage calls with real server reads/writes and can listen for
+// cardpreviewpopup:drawerchange instead of polling". This is that swap.
+// getDrawerState()/setDrawerState() keep the exact same shape task group 4
+// built them with — only what backs them changes.
+//
+// One settings row (CARD_PREVIEW_POPUP_SETTINGS_KEY, exported above so
+// server.js reads/writes the identical key name) holds every popup
+// preference as one JSON object: { device, theme, fontSize,
+// defaultDirection, drawer: { open, width, height, tab } }. The INITIAL
+// value is read synchronously off \`window.MjolnirCardPreviewPopupData.
+// popupPrefs\` — server.js's "/mjolnir/cards" route already read it from
+// \`operator_settings\` (via the same getAllSettings() the degrade-to-
+// defaults logic in hub/src/operatorSettings.js backs) and baked it into
+// the page, so there is no extra round trip before the popup can restore
+// itself, and a database outage at PAGE LOAD already degraded to \`{}\`
+// server-side (C39) — this file never has to special-case that itself.
+// WRITES go over the wire, debounced, through the generic settings client
+// below.
+var POPUP_PREFS_KEY = '${CARD_PREVIEW_POPUP_SETTINGS_KEY}';
+var bakedPopupPrefs = (window.MjolnirCardPreviewPopupData && window.MjolnirCardPreviewPopupData.popupPrefs) || {};
+
+// ---- generic settings client -------------------------------------------
+// Exposed on window.MjolnirOperatorSettings so task group 5 (the Cards-
+// page view state: source/filters/sort/page size/page) or any later
+// caller can persist its OWN keys without reinventing this file's fetch/
+// debounce/degrade plumbing. This file's own popup-prefs code below is
+// just one caller of it, for its own key (POPUP_PREFS_KEY) — it has no
+// special access the generic pair doesn't.
+//
+//   window.MjolnirOperatorSettings.getSetting(key, defaultValue) -> Promise<value>
+//     Resolves with the stored value, or defaultValue if the key was never
+//     written OR the read degraded (network/server/database failure —
+//     D157, this never rejects).
+//   window.MjolnirOperatorSettings.setSetting(key, value)
+//     Debounced (400ms): fire-and-forget, coalesces rapid changes (typing,
+//     dragging) into one write. A failed write just doesn't stick — never
+//     thrown, never retried into a storm.
+var SETTINGS_ENDPOINT = '/mjolnir/api/settings';
+var SETTINGS_DEBOUNCE_MS = 400;
+var settingsCache = null;        // null until the first successful/failed load
+var settingsCachePromise = null;
+var settingsWriteTimers = {};    // key -> timeout id
+
+function loadSettingsCache() {
+  if (settingsCachePromise) return settingsCachePromise;
+  settingsCachePromise = fetch(SETTINGS_ENDPOINT, { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : { settings: {} }; })
+    .then(function (body) { settingsCache = (body && body.settings) || {}; return settingsCache; })
+    .catch(function () { settingsCache = {}; return settingsCache; });
+  return settingsCachePromise;
+}
+
+function getSetting(key, defaultValue) {
+  return loadSettingsCache().then(function (cache) {
+    return (cache && Object.prototype.hasOwnProperty.call(cache, key)) ? cache[key] : defaultValue;
+  });
+}
+
+function setSetting(key, value) {
+  // Optimistic local update so a getSetting() called right after this
+  // resolves with the value just set, even before the debounced write
+  // (or the initial load, if it hasn't resolved yet) completes.
+  if (settingsCache) settingsCache[key] = value;
+  else loadSettingsCache().then(function (cache) { cache[key] = value; });
+  clearTimeout(settingsWriteTimers[key]);
+  settingsWriteTimers[key] = setTimeout(function () {
+    delete settingsWriteTimers[key];
+    fetch(SETTINGS_ENDPOINT, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: key, value: value }),
+    }).catch(function () { /* D157: didn't stick this time; next change retries it */ });
+  }, SETTINGS_DEBOUNCE_MS);
+}
+
+window.MjolnirOperatorSettings = { getSetting: getSetting, setSetting: setSetting };
+
+// Seed the generic cache with what the page already baked in, so an
+// early getSetting(POPUP_PREFS_KEY, ...) call (there isn't one today, but
+// a future caller may want to read the SAME key this file writes) does
+// not have to wait on a redundant fetch for a value already on the page.
+settingsCachePromise = Promise.resolve(bakedPopupPrefs && Object.keys(bakedPopupPrefs).length
+  ? (function () { var seed = {}; seed[POPUP_PREFS_KEY] = bakedPopupPrefs; settingsCache = seed; return seed; })()
+  : (settingsCache = {}));
 
 var S = {
   cards: [], index: 0, dir: 'N', open: false,
-  device: '375x812', theme: 'dark', fontSize: null, dirPref: 'auto',
+  device: (DEVICES.hasOwnProperty(bakedPopupPrefs.device) ? bakedPopupPrefs.device : '375x812'),
+  theme: (bakedPopupPrefs.theme === 'light' || bakedPopupPrefs.theme === 'dark') ? bakedPopupPrefs.theme : 'dark',
+  fontSize: typeof bakedPopupPrefs.fontSize === 'number' ? bakedPopupPrefs.fontSize : null,
+  dirPref: 'auto',
   onClose: null, lastFocus: null,
   // task 4.1/4.2: edits are keyed by card.key, never persisted/sent
   // anywhere (acceptance C26) — purely client-side, gone on reload/Reset.
   edits: {},
-  // task 4.1: closed by default (design §4); width/height/tab are session-
-  // only for THIS task group (sessionStorage) — task group 6 later swaps
-  // the load/save calls below for its real server-side settings without
-  // this file changing shape, via getDrawerState()/setDrawerState().
   drawer: loadDrawerState(),
   activeEditorFace: 'N',
 };
@@ -376,29 +475,36 @@ var editTimer = null;
 
 function loadDrawerState() {
   var def = { open: false, width: 520, height: 0, tab: 'edit' };
-  try {
-    var raw = window.sessionStorage.getItem(DRAWER_STORAGE_KEY);
-    if (!raw) return def;
-    var parsed = JSON.parse(raw);
-    return {
-      open: !!parsed.open,
-      width: typeof parsed.width === 'number' ? parsed.width : def.width,
-      height: typeof parsed.height === 'number' ? parsed.height : def.height,
-      tab: ['edit', 'classes', 'symbols'].indexOf(parsed.tab) !== -1 ? parsed.tab : def.tab,
-    };
-  } catch (e) { return def; }
+  var saved = bakedPopupPrefs.drawer;
+  if (!saved || typeof saved !== 'object') return def;
+  return {
+    open: !!saved.open,
+    width: typeof saved.width === 'number' ? saved.width : def.width,
+    height: typeof saved.height === 'number' ? saved.height : def.height,
+    tab: ['edit', 'classes', 'symbols'].indexOf(saved.tab) !== -1 ? saved.tab : def.tab,
+  };
 }
 
-function saveDrawerState() {
-  try { window.sessionStorage.setItem(DRAWER_STORAGE_KEY, JSON.stringify(S.drawer)); } catch (e) { /* ignore */ }
-  document.dispatchEvent(new CustomEvent('cardpreviewpopup:drawerchange', { detail: getDrawerState() }));
+// Gathers every popup preference this task group owns into the one
+// object stored under POPUP_PREFS_KEY, and debounce-writes it. Called on
+// every control change (device/theme/font/default-direction) AND on
+// every drawer change, so one key always reflects the operator's current
+// picks rather than the drawer alone.
+function savePopupPrefs() {
+  setSetting(POPUP_PREFS_KEY, {
+    device: S.device,
+    theme: S.theme,
+    fontSize: S.fontSize,
+    defaultDirection: S.dirPref,
+    drawer: { open: S.drawer.open, width: S.drawer.width, height: S.drawer.height, tab: S.drawer.tab },
+  });
 }
 
-// task 4.1's explicit contract: "expose/accept its current size so that
-// [task group 6's real persistence] wiring is trivial". Width/height here
-// are whatever the operator last dragged them to, independent of desktop
-// vs. sheet layout (only one of the two is visually in effect at a time,
-// per the ~760px breakpoint, but both are remembered).
+// task 4.1's explicit contract, unchanged by this task group: "expose/
+// accept its current size". Width/height here are whatever the operator
+// last dragged them to, independent of desktop vs. sheet layout (only one
+// of the two is visually in effect at a time, per the ~760px breakpoint,
+// but both are remembered).
 function getDrawerState() {
   return { open: S.drawer.open, width: S.drawer.width, height: S.drawer.height, tab: S.drawer.tab };
 }
@@ -408,7 +514,7 @@ function setDrawerState(patch) {
   enginesPromise.then(function (mods) { applyDrawerSize(mods[2]); });
   if (patch && patch.open !== undefined) applyDrawerOpen(S.drawer.open);
   if (patch && patch.tab !== undefined) setDrawerTab(S.drawer.tab);
-  saveDrawerState();
+  savePopupPrefs();
 }
 
 function $(id) { return document.getElementById(id); }
@@ -602,6 +708,7 @@ document.addEventListener('DOMContentLoaded', function () {
       S.device = e.target.value;
       renderInfoAndCard(mods[0], mods[1], mods[2]);
       renderClasses(mods[2]);
+      savePopupPrefs();
     });
     document.getElementById('cpp-theme').addEventListener('click', function (e) {
       var b = e.target.closest('button');
@@ -610,11 +717,43 @@ document.addEventListener('DOMContentLoaded', function () {
       document.getElementById('cpp-theme').querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
       renderInfoAndCard(mods[0], mods[1], mods[2]);
       renderClasses(mods[2]);
+      savePopupPrefs();
     });
     document.getElementById('cpp-fs-dec').addEventListener('click', function () { setFontSize(S.fontSize - 1, mods); });
     document.getElementById('cpp-fs-inc').addEventListener('click', function () { setFontSize(S.fontSize + 1, mods); });
+    // task group 6: the device select, theme buttons and font stepper are
+    // all inside this popup's markup, which exists in the DOM regardless
+    // of whether the modal has ever been opened — so the restored device/
+    // theme/font-size picked up from the baked-in settings (S's initial
+    // values, set above before this closure ran) are reflected in the
+    // controls themselves as soon as the engines (and so the style data,
+    // via applyPreviewData below) are ready, not only once the operator
+    // opens a card.
+    applyInitialPrefsToControls();
     wireDrawer(mods);
   });
+
+  function applyInitialPrefsToControls() {
+    var deviceSelect = document.getElementById('cpp-device');
+    if (deviceSelect && DEVICES.hasOwnProperty(S.device)) deviceSelect.value = S.device;
+    document.getElementById('cpp-theme').querySelectorAll('button').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.t === S.theme);
+    });
+    // The default-direction picker is normally set per-open in openModal()
+    // from the server-baked defaultDirection field (already the persisted
+    // value — see server.js's cpp-data block). Reflecting it here too
+    // means the control shows the restored pick even before any card is
+    // opened, for consistency with the device/theme/font controls above.
+    var dirPrefSelect = $('cpp-dirpref');
+    if (dirPrefSelect && bakedPopupPrefs.defaultDirection) dirPrefSelect.value = bakedPopupPrefs.defaultDirection;
+    if (style) {
+      if (S.fontSize == null) S.fontSize = style.fontSizeControl.default;
+      S.fontSize = Math.max(style.fontSizeControl.min, Math.min(style.fontSizeControl.max, S.fontSize));
+      document.getElementById('cpp-fs').textContent = S.fontSize;
+      document.getElementById('cpp-fs-dec').disabled = S.fontSize <= style.fontSizeControl.min;
+      document.getElementById('cpp-fs-inc').disabled = S.fontSize >= style.fontSizeControl.max;
+    }
+  }
 
   function setFontSize(v, mods) {
     if (!style) return;
@@ -624,6 +763,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('cpp-fs-inc').disabled = S.fontSize >= style.fontSizeControl.max;
     renderInfoAndCard(mods[0], mods[1], mods[2]);
     renderClasses(mods[2]);
+    savePopupPrefs();
   }
 
   // --------------------------------------------------------------------
@@ -686,7 +826,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!dragging) return;
       dragging = false;
       $('cpp-dialog').classList.remove('cpp-dragging');
-      saveDrawerState();
+      savePopupPrefs();
       showSizeTag(true);
     }
     handle.addEventListener('pointerup', endDrag);
@@ -700,7 +840,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (sheet) S.drawer.height += grow[e.key]; else S.drawer.width += grow[e.key];
       applyDrawerSize(DRAWER_ENGINE);
       fitStage();
-      saveDrawerState();
+      savePopupPrefs();
       showSizeTag(true);
     });
     window.addEventListener('resize', function () { if (S.open) applyDrawerSize(DRAWER_ENGINE); });
@@ -718,7 +858,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function wireTabs() {
     document.querySelectorAll('.cpp-tabs button').forEach(function (b) {
-      b.addEventListener('click', function () { setDrawerTab(b.dataset.tab); saveDrawerState(); });
+      b.addEventListener('click', function () { setDrawerTab(b.dataset.tab); savePopupPrefs(); });
     });
   }
 
@@ -995,6 +1135,7 @@ document.addEventListener('DOMContentLoaded', function () {
       S.dir = popupEngine.defaultDirectionFor(card(), S.dirPref);
       refresh();
     });
+    savePopupPrefs();
   });
   $('cpp-tools').addEventListener('click', function () {
     setDrawerState({ open: $('cpp-drawer').hidden });

@@ -29,6 +29,7 @@ import {
   cardPreviewPopupMarkupHtml,
   cardPreviewPopupClientScript,
   cardPreviewPopupRowOpenAttrs,
+  CARD_PREVIEW_POPUP_SETTINGS_KEY,
 } from "./cardPreviewPopup.js";
 import { DECK_ALLOCATION, listDecks, updateDeckDescription } from "./decks.js";
 import { renderShell, escapeHtml } from "./layout.js";
@@ -75,6 +76,7 @@ import {
 import { checkOccurrenceIntegrity } from "../../builder/src/integrity.js";
 import { buildInsights } from "./insights.js";
 import { renderInsightsPage } from "./insightsPage.js";
+import { getAllSettings, setSetting, isValidSettingKey } from "./operatorSettings.js";
 
 const WORKBENCH_MOUNT = "/mjolnir/workbench";
 
@@ -129,6 +131,12 @@ function isDatabaseBacked(pathname) {
   if (pathname === "/mjolnir/cards/drawer-engine.js") return false;
   // /mjolnir/cards/<id>/audio reads card_content.
   if (pathname.startsWith("/mjolnir/cards/")) return true;
+  // card-preview-popup task 6: /mjolnir/api/settings is DELIBERATELY not
+  // gated here. design.md §6 / acceptance C39 want a database outage to
+  // degrade this route to defaults, not 503 it — the opposite of every
+  // route above. operatorSettings.js does that degrade itself (catches its
+  // own query error and answers with the caller's default), so this route
+  // reaches its own handler unconditionally and is never in DB_BACKED.
   return false;
 }
 
@@ -391,7 +399,7 @@ function cardPreviewInlineHtml(cardId, content, hasAudioFile, previewData) {
   return cardPreviewInlineHtmlImpl(cardId, content, hasAudioFile, previewData.style, previewData.symbols);
 }
 
-function renderCardsPage(cards, { search, deckCode, statusFilter }, stabburUiBase, dataDir, baseFolderDir) {
+function renderCardsPage(cards, { search, deckCode, statusFilter }, stabburUiBase, dataDir, baseFolderDir, settings = {}) {
   // assembly-tab-usability item 3: extracted once per page render (the
   // module-level cache in cardPreviewStyle.js makes repeat renders free
   // while `base/` is unchanged). A failed extraction does NOT crash the
@@ -553,10 +561,15 @@ ${cardPreviewPopupMarkupHtml()}
   // together with it on a failed extraction, never a partial catalogue.
   symbols: previewData.symbols || null,
   usage: previewData.usage || null,
-  // task 3.4's "operator's saved default" — task group 6 persists the
-  // real value server-side; 'auto' (= first occurrence) is the literal
-  // stand-in this task group was told to accept and apply.
-  defaultDirection: "auto",
+  // task group 6 (operator settings, design.md §6): task 3.4's "operator's
+  // saved default" is no longer the literal 'auto' stand-in it was before
+  // this task group — `settings[CARD_PREVIEW_POPUP_SETTINGS_KEY]` is the
+  // real row from `operator_settings` (or `{}` on a database outage,
+  // getAllSettings()'s own degrade), and cardPreviewPopupClientScript()'s
+  // init code reads `popupPrefs` below for device/theme/font size/drawer
+  // too, rather than this script block hand-picking one field out of it.
+  defaultDirection: (settings[CARD_PREVIEW_POPUP_SETTINGS_KEY] && settings[CARD_PREVIEW_POPUP_SETTINGS_KEY].defaultDirection) || "auto",
+  popupPrefs: settings[CARD_PREVIEW_POPUP_SETTINGS_KEY] || null,
 })}</script>
 <script>window.MjolnirCardPreviewPopupData = JSON.parse(document.getElementById('cpp-data').textContent);</script>
 <script>${cardPreviewPopupClientScript()}</script>`,
@@ -1246,6 +1259,41 @@ export function createServer(pool, config, boot) {
         return sendJson(res, 200, await listPublications());
       }
 
+      // card-preview-popup task 6 (design.md §6, acceptance C37-C39):
+      // operator-plane settings storage. Reachable only because it is
+      // behind the SAME unconditional `requireAuth` check above everything
+      // else in this handler — there is no second auth mechanism here, and
+      // no device-plane route (/ota/*, /blob/*, /audio-manifest/*,
+      // /mjolnir/userdata/* — the latter served by mjolnir-sync, a
+      // different process entirely, D158) reads or writes this table: this
+      // route lives only in hub, under /mjolnir/api/, never under any
+      // device-plane prefix.
+      //
+      // GET returns every stored key at once — the Cards page load reads a
+      // handful of keys (the view state, the popup preferences) in one
+      // round trip rather than one request per key. A database outage
+      // degrades to `{ settings: {}, degraded: true }` with a 200, not a
+      // 503 — see the isDatabaseBacked() carve-out note above for why this
+      // path is deliberately excluded from that gate.
+      if (req.method === "GET" && url.pathname === "/mjolnir/api/settings") {
+        const { values, degraded } = await getAllSettings(pool);
+        return sendJson(res, 200, { settings: values, degraded });
+      }
+
+      // POST { key, value } upserts one key. Never 500s on a database
+      // failure for the same reason the GET above never 503s: the
+      // client-side debounced autosave (cardPreviewPopup.js) treats
+      // `{ ok: false, degraded: true }` as "didn't stick this time", not as
+      // a reason to retry-storm or surface an error to the operator.
+      if (req.method === "POST" && url.pathname === "/mjolnir/api/settings") {
+        const body = await readJson(req);
+        if (!isValidSettingKey(body.key)) {
+          return sendJson(res, 400, { error: "invalid or missing settings key" });
+        }
+        const result = await setSetting(pool, body.key, body.value);
+        return sendJson(res, 200, result);
+      }
+
       // D109: hub's own "Builder" nav pages — see the top-of-file import
       // comment. All three reuse builder's exact body-builder functions and
       // pure read-functions; only the schedule/publish POST actions stay on
@@ -1409,9 +1457,20 @@ export function createServer(pool, config, boot) {
         const deckCode = url.searchParams.get("deck") || "";
         const statusFilter = url.searchParams.get("status") || "";
         const cards = await cardsList(pool, { search, deckCode, statusFilter });
+        // card-preview-popup task 6: the popup preferences (device, theme,
+        // font size, default direction, drawer width/height/tab/open) are
+        // read once here so the page loads already restored (design.md §6
+        // "loading the Cards page restores them"). This call is the same
+        // getAllSettings() the /mjolnir/api/settings GET route uses, so it
+        // degrades to `{}` the same way on a database hiccup — this route
+        // is already behind the isDatabaseBacked() gate for "/mjolnir/cards"
+        // itself, so by the time this line runs the database answered at
+        // least once, but getAllSettings() still never throws if that
+        // changes between the gate check and this call.
+        const { values: settings } = await getAllSettings(pool);
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         return res.end(
-          renderCardsPage(cards, { search, deckCode, statusFilter }, config.stabburUiBase, config.dataDir, config.baseFolderDir)
+          renderCardsPage(cards, { search, deckCode, statusFilter }, config.stabburUiBase, config.dataDir, config.baseFolderDir, settings)
         );
       }
 

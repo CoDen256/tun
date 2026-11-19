@@ -45,9 +45,9 @@
 
 ## 6. Operator settings
 
-- [ ] 6.1 Hub migration: a settings table (key, JSON value, updated-at), no user column
-- [ ] 6.2 Read on Cards page load, write on change (debounced), defaults on database outage (D157), stale values fall back to defaults
-- [ ] 6.3 Operator-plane only; confirm no device-plane route reads or writes it
+- [x] 6.1 Hub migration: a settings table (key, JSON value, updated-at), no user column
+- [x] 6.2 Read on Cards page load, write on change (debounced), defaults on database outage (D157), stale values fall back to defaults
+- [x] 6.3 Operator-plane only; confirm no device-plane route reads or writes it
 
 ## 7. Records
 
