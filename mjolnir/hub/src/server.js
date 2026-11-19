@@ -16,22 +16,24 @@ import {
 } from "./ota.js";
 import { findBakedBaseVersion, findBakedPatchRev } from "../../tool/src/otaPublish.js";
 import { list as listLogicBundles } from "./logicBundles.js";
-import { cardsList, stripHtml, getCardSlot } from "./cards.js";
-import {
-  cardPreviewStyleBlock,
-  cardPreviewControlsHtml,
-  cardPreviewClientScript,
-  cardPreviewInlineHtml as cardPreviewInlineHtmlImpl,
-} from "./cardPreview.js";
-import { getCardPreviewData, CARD_PREVIEW_FONTS } from "./cardPreviewStyle.js";
+import { stripHtml, getCardSlot } from "./cards.js";
+import { getCardPreviewData, CARD_PREVIEW_FONTS, cardPreviewFontFaceCss } from "./cardPreviewStyle.js";
 import {
   cardPreviewPopupStyleBlock,
   cardPreviewPopupMarkupHtml,
   cardPreviewPopupClientScript,
-  cardPreviewPopupRowOpenAttrs,
   CARD_PREVIEW_POPUP_SETTINGS_KEY,
 } from "./cardPreviewPopup.js";
-import { DECK_ALLOCATION, listDecks, updateDeckDescription } from "./decks.js";
+import {
+  CARDS_PAGE_SETTINGS_KEY,
+  BUILD_ID_PATTERN,
+  mintedRows,
+  bundleRows,
+  cardsPageStyleBlock,
+  cardsPageMarkup,
+  cardsPageClientScript,
+} from "./cardsPage.js";
+import { listDecks, updateDeckDescription } from "./decks.js";
 import { renderShell, escapeHtml } from "./layout.js";
 import { requireAuth } from "../../../libs/jsservice/auth.js";
 import { slugify } from "./slug.js";
@@ -103,7 +105,6 @@ const DB_BACKED = [
   "/mjolnir/decks/api/description",
   "/mjolnir/catalogue",
   "/mjolnir/catalogue.json",
-  "/mjolnir/cards",
   "/mjolnir/device",
   "/mjolnir/device/doc",
   "/mjolnir/device/insights",
@@ -129,6 +130,13 @@ function isDatabaseBacked(pathname) {
   // card-preview-popup task 4: the tools-drawer pure logic
   // (hub/src/cardPreviewDrawer.js) — same carve-out reasoning again.
   if (pathname === "/mjolnir/cards/drawer-engine.js") return false;
+  // card-preview-popup task group 5: the Cards page's own filter/sort/
+  // paginate/occurrence-cell engine (hub/src/cardsPageEngine.js) — same
+  // carve-out reasoning again. Note "/mjolnir/cards" itself (no trailing
+  // slash, the page route) is DELIBERATELY NOT in DB_BACKED above any
+  // more (acceptance C39): it reaches its own handler unconditionally and
+  // degrades itself, the same way /mjolnir/api/settings does, below.
+  if (pathname === "/mjolnir/cards/cards-engine.js") return false;
   // /mjolnir/cards/<id>/audio reads card_content.
   if (pathname.startsWith("/mjolnir/cards/")) return true;
   // card-preview-popup task 6: /mjolnir/api/settings is DELIBERATELY not
@@ -371,190 +379,79 @@ function openInWorkbench(href) {
 
 // ---- Cards ----
 
-function occurrenceBadge(side) {
-  if (side.status === "shipped") return `<span class="pill pill-ok">${escapeHtml(side.letter)} · ${escapeHtml(side.buildId)}</span>`;
-  return `<span class="pill pill-warn">${escapeHtml(side.letter)} · ${side.remaining} to go</span>`;
-}
-
-// card-preview (assembly-tab-usability item 3, corrected by card-preview-popup
-// task 2): the inline preview under a card's own row in the Cards table
-// (expand/collapse, one open at a time, D109) is built from
-// `hub/src/cardPreview.js` + `cardPreviewStyle.js` — one real card split
-// into thirds, cascaded through `hub/src/cardRenderer.js` from values the
-// extractor pulled out of the stock bundle itself, never hand-transcribed.
-// See those files' own headers for why. The style block now needs the
-// extracted style map (to build real per-font @font-face rules, task 2.3),
-// so it is built per render (`renderCardsPage`, below) rather than once at
-// module load — `cardPreviewInlineHtml` is a thin wrapper kept here so
-// `renderCardsPage` doesn't need to know the preview changed shape.
-
-function cardPreviewInlineHtml(cardId, content, hasAudioFile, previewData) {
-  if (previewData.error) {
-    return `<div class="cp-root"><div class="gone" style="display:inline-block;border:1px dashed #f99;color:#900;background:#fee;border-radius:4px;padding:8px 10px;">
-      Card preview unavailable: the bundle style extractor failed — <code>${escapeHtml(previewData.error.message)}</code>.
-      Fix the extractor (<code>tool/src/extractCardStyle.js</code>) before trusting any preview; refusing to show a
-      partial/guessed-at rendering.
-    </div></div>`;
-  }
-  return cardPreviewInlineHtmlImpl(cardId, content, hasAudioFile, previewData.style, previewData.symbols);
-}
-
-function renderCardsPage(cards, { search, deckCode, statusFilter }, stabburUiBase, dataDir, baseFolderDir, settings = {}) {
-  // assembly-tab-usability item 3: extracted once per page render (the
-  // module-level cache in cardPreviewStyle.js makes repeat renders free
-  // while `base/` is unchanged). A failed extraction does NOT crash the
-  // whole Cards page — every row's preview shows the loud error banner
-  // from `cardPreviewInlineHtml` instead, so Cards itself keeps serving
-  // (D157's "serve before migrate" spirit applied to a read failure, not
-  // just a DB one).
+// card-preview-popup task group 5 ("The Cards page", design.md §5): ONE
+// flat table, no per-deck panels and no per-row accordion — REPLACES the
+// row-expand preview `hub/src/cardPreview.js` used to render (that file is
+// now deleted; see git history for the pre-task-5 version). Filtering,
+// sorting and pagination are client-side (see hub/src/cardsPage.js's own
+// header for why); this function's only jobs are (1) assemble the current
+// source's row data once, (2) render the static shell (controls, table
+// head, legend, pager skeleton — all populated/filled by the client
+// script), and (3) bake that one source's data plus the renderer/style/
+// symbols/usage data the popup needs, exactly once (acceptance C30).
+async function renderCardsPage(pool, { source, dataDir, baseFolderDir, stabburUiBase, settings = {} }) {
   let previewData;
   try {
     previewData = getCardPreviewData(baseFolderDir);
   } catch (err) {
     previewData = { error: err };
   }
-  const cardPreviewStyleCss = cardPreviewStyleBlock(previewData.style);
 
-  const byDeck = new Map();
-  for (const card of cards) {
-    if (!byDeck.has(card.deckCode)) byDeck.set(card.deckCode, []);
-    byDeck.get(card.deckCode).push(card);
-  }
-
-  // card-preview-popup task group 3: ONE shared modal (design.md §4 /
-  // task 3.3), not one per row — so it needs ONE flat, ordered list of
-  // every card on the page (in the same deck-code/row order the panels
-  // below render) to step through (task 3.5), plus an id -> index lookup
-  // so each row's "preview" button can tell the popup where to open. This
-  // is the provisional wiring task 3's own scope note calls for: task
-  // group 5 replaces the per-deck panels with one flat, filtered/sorted/
-  // paginated table and supplies the SAME shape of array across all of
-  // its pages, not just this page's rows.
-  const sortedDeckCodes = [...byDeck.keys()].sort((a, b) => a.localeCompare(b));
-  const popupCards = [];
-  const popupIndexByCardId = new Map();
-  for (const deckCode of sortedDeckCodes) {
-    for (const c of byDeck.get(deckCode)) {
-      const hasAudioFile = !!(c.audioSha256 && fs.existsSync(path.join(dataDir, "blob", c.audioSha256)));
-      popupIndexByCardId.set(c.id, popupCards.length);
-      popupCards.push({
-        key: c.id,
-        id: c.id,
-        D: c.deckTitle,
-        N: c.N || "",
-        E: c.E || "",
-        X: c.X || "",
-        A: c.A || "N",
-        // task 3.4's ordering contract (cardPreviewEngine.js's header):
-        // `sides` is already shipped-ascending-then-pending, a reasonable
-        // stand-in for "first occurrence first" until task group 5 wires
-        // the real occurrence history.
-        occurrences: c.sides.map((s) => ({ letter: s.letter, status: s.status, buildId: s.buildId, remaining: s.remaining })),
-        // task 3.6: passed-in flags, not a real blob-cache lookup (task
-        // group 5's job) — `audioAvailable` true only when the file this
-        // page already checked for the old accordion preview is present.
-        audioUrl: `/mjolnir/cards/${encodeURIComponent(c.id)}/audio`,
-        audioAvailable: hasAudioFile,
-        hasAudio: !!c.audioSha256,
-      });
+  let rows = [];
+  let errorMessage = null;
+  // D157, extended past the places design.md named it (C39): a database
+  // outage degrades the Minted source to an empty table with an inline
+  // explanation instead of failing the whole page — the gate that used to
+  // 503 this route unconditionally is gone (see isDatabaseBacked() above).
+  if (source === "minted") {
+    try {
+      rows = await mintedRows(pool, { dataDir, stabburUiBase });
+    } catch (err) {
+      errorMessage = `Minted source unavailable: ${err.message}`;
     }
+  } else {
+    const result = await bundleRows(pool, dataDir, source, { stabburUiBase });
+    rows = result.rows;
+    if (result.error) errorMessage = `Bundle "${source}" could not be read: ${result.error}`;
   }
 
-  const panels = [...byDeck.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([deckCode, deckCards]) => {
-      const hasGrammar = deckCards.some((c) => c.grammarRuleId);
-      const rows = deckCards
-        .map((c) => {
-          const noteLink = stabburUiBase
-            ? `<a href="${escapeHtml(stabburUiBase)}#/notes/${escapeHtml(c.noteId)}" target="_blank" rel="noopener">${escapeHtml(stripHtml(c.N) || c.id)} ↗</a>`
-            : escapeHtml(stripHtml(c.N) || c.id);
-          const ruleLink =
-            hasGrammar && c.grammarRuleId
-              ? `<td>${stabburUiBase ? `<a href="${escapeHtml(stabburUiBase)}#/grammar/${escapeHtml(c.grammarRuleId)}" target="_blank" rel="noopener">rule ↗</a>` : escapeHtml(c.grammarRuleId)}</td>`
-              : hasGrammar
-                ? "<td></td>"
-                : "";
-          const hasAudioFile = !!(c.audioSha256 && fs.existsSync(path.join(dataDir, "blob", c.audioSha256)));
-          const previewHtml = cardPreviewInlineHtml(c.id, { N: c.N, E: c.E, X: c.X, A: c.A }, hasAudioFile, previewData);
-          return `<tr>
-            <td class="mono">${escapeHtml(c.id)}</td>
-            <td class="wrap">${escapeHtml(stripHtml(c.N))}</td>
-            <td class="wrap">${escapeHtml(stripHtml(c.E))}</td>
-            <td>${c.sides.map(occurrenceBadge).join(" ")}</td>
-            <td>${noteLink}</td>
-            ${ruleLink}
-            <td>
-              <button type="button" class="btn-ghost card-preview-toggle" data-card="${escapeHtml(c.id)}">👁 preview</button>
-              <button type="button" class="btn-ghost" ${cardPreviewPopupRowOpenAttrs(popupIndexByCardId.get(c.id))}>⬜ popup preview</button>
-            </td>
-          </tr>
-          <tr class="card-preview-row" data-card="${escapeHtml(c.id)}" style="display:none;">
-            <td colspan="20">${previewHtml}</td>
-          </tr>`;
-        })
-        .join("\n");
-      return `<div class="panel">
-        <div class="panel-head"><h3>${escapeHtml(deckCode)} — ${escapeHtml(deckCards[0].deckTitle)} <span class="pill pill-neutral" style="margin-left:8px;">${deckCards.length} cards</span></h3></div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Card</th><th>Front (N)</th><th>Back (E)</th><th>Occurrences</th><th>Source note</th>${hasGrammar ? "<th>Grammar rule</th>" : ""}<th></th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-      </div>`;
-    })
-    .join("\n");
+  let publications = [];
+  try {
+    publications = await listPublications();
+  } catch {
+    // Degrades to "Minted only" in the source picker — the picker itself
+    // still renders, just without the build list (C39).
+  }
+  const current = readCurrent(dataDir);
+  const sourceList = [
+    { value: "minted", label: "Minted (hub ledger)" },
+    ...publications.map((p) => ({
+      value: p.build_id,
+      label: `Bundle ${p.build_id}${current && current.buildId === p.build_id ? " · current" : ""} · ${new Date(p.created_at).toISOString().slice(0, 10)}`,
+    })),
+  ];
 
-  const deckOptions = DECK_ALLOCATION.map(
-    (d) => `<option value="${escapeHtml(d.code)}" ${d.code === deckCode ? "selected" : ""}>${escapeHtml(d.code)}</option>`
-  ).join("");
+  const popupPrefs = settings[CARD_PREVIEW_POPUP_SETTINGS_KEY] || null;
+  const savedView = settings[CARDS_PAGE_SETTINGS_KEY] || null;
 
   return renderShell({
     title: "mjolnir / hub — cards",
     activeHref: "/mjolnir/cards",
     body: `
-<style>${cardPreviewStyleCss}</style>
+<style>${previewData.style ? cardPreviewFontFaceCss(previewData.style) : ""}</style>
+<style>${cardsPageStyleBlock()}</style>
 <style>${cardPreviewPopupStyleBlock()}</style>
-<div class="page-head"><div><h2>Cards</h2><div class="page-sub">Every card ever minted — the device-side counterpart to stabbur's Notes list.</div></div></div>
-<form class="toolbar" method="GET" action="/mjolnir/cards">
-  <input class="search-input" type="search" name="q" value="${escapeHtml(search)}" placeholder="Search card content…">
-  <select name="deck"><option value="">Deck: all</option>${deckOptions}</select>
-  <select name="status">
-    <option value="">Occurrence status: all</option>
-    <option value="shipped" ${statusFilter === "shipped" ? "selected" : ""}>fully shipped</option>
-    <option value="pending" ${statusFilter === "pending" ? "selected" : ""}>a side pending</option>
-  </select>
-  <button type="submit">Filter</button>
-</form>
-${cardPreviewControlsHtml()}
-${panels || `<div class="panel panel-pad">no cards match this filter</div>`}
-<script>
-// D109: at most one preview open at a time — opening another closes
-// whichever one was already showing, same "exclusive accordion" behavior
-// across every deck panel on the page.
-document.querySelectorAll('.card-preview-toggle').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const card = btn.dataset.card;
-    const row = document.querySelector('.card-preview-row[data-card="' + CSS.escape(card) + '"]');
-    const isOpen = row.style.display !== 'none';
-    document.querySelectorAll('.card-preview-row').forEach((r) => { r.style.display = 'none'; });
-    row.style.display = isOpen ? 'none' : 'table-row';
-    // assembly-tab-usability item 3: (re-)apply the current simulated
-    // device/theme to whichever preview just opened, so a row opened
-    // after the operator already changed the controls reflects them
-    // immediately instead of the 375×812/dark defaults.
-    if (!isOpen && window.cpApplyRoot) {
-      const root = row.querySelector('.cp-root');
-      if (root) window.cpApplyRoot(root);
-    }
-  });
-});
-</script>
-<script>${cardPreviewClientScript()}</script>
+${cardsPageMarkup({ source, sourceList, errorMessage: errorMessage || (previewData.error ? `Card renderer data unavailable: ${previewData.error.message}` : "") })}
 ${cardPreviewPopupMarkupHtml()}
+<script type="application/json" id="cards-page-data">${JSON.stringify({
+  rows,
+  source,
+  viewPrefs: savedView,
+  defaultDirection: (popupPrefs && popupPrefs.defaultDirection) || "auto",
+})}</script>
+<script>window.MjolnirCardsPageData = JSON.parse(document.getElementById('cards-page-data').textContent);</script>
 <script type="application/json" id="cpp-data">${JSON.stringify({
-  cards: popupCards,
+  cards: [],
   style: previewData.style || null,
   // task group 4 (Tools drawer): the Symbols tab and the Classes & tags
   // tab's usage counts, from the same cached extraction as `style` — null
@@ -572,7 +469,8 @@ ${cardPreviewPopupMarkupHtml()}
   popupPrefs: settings[CARD_PREVIEW_POPUP_SETTINGS_KEY] || null,
 })}</script>
 <script>window.MjolnirCardPreviewPopupData = JSON.parse(document.getElementById('cpp-data').textContent);</script>
-<script>${cardPreviewPopupClientScript()}</script>`,
+<script>${cardPreviewPopupClientScript()}</script>
+<script>${cardsPageClientScript()}</script>`,
   });
 }
 
@@ -1453,24 +1351,40 @@ export function createServer(pool, config, boot) {
       }
 
       if (req.method === "GET" && url.pathname === "/mjolnir/cards") {
-        const search = url.searchParams.get("q") || "";
-        const deckCode = url.searchParams.get("deck") || "";
-        const statusFilter = url.searchParams.get("status") || "";
-        const cards = await cardsList(pool, { search, deckCode, statusFilter });
-        // card-preview-popup task 6: the popup preferences (device, theme,
-        // font size, default direction, drawer width/height/tab/open) are
-        // read once here so the page loads already restored (design.md §6
-        // "loading the Cards page restores them"). This call is the same
-        // getAllSettings() the /mjolnir/api/settings GET route uses, so it
-        // degrades to `{}` the same way on a database hiccup — this route
-        // is already behind the isDatabaseBacked() gate for "/mjolnir/cards"
-        // itself, so by the time this line runs the database answered at
-        // least once, but getAllSettings() still never throws if that
-        // changes between the gate check and this call.
+        // card-preview-popup task group 5 / task group 6: the popup
+        // preferences AND the Cards-page view state (source/filters/sort/
+        // page size/page, `cardsPage.view`) are read once here, the same
+        // getAllSettings() the /mjolnir/api/settings GET route uses — it
+        // degrades to `{}` on its own on a database hiccup (D157), which
+        // is exactly why "/mjolnir/cards" is NOT in DB_BACKED any more
+        // (acceptance C39): this route must reach its own handler even
+        // while postgres is down, not 503 before it gets the chance to
+        // degrade.
         const { values: settings } = await getAllSettings(pool);
+        const queryParam = url.searchParams.get("source");
+        const savedSource = settings[CARDS_PAGE_SETTINGS_KEY] && settings[CARDS_PAGE_SETTINGS_KEY].source;
+        let source = queryParam || savedSource || "minted";
+        if (source !== "minted" && !BUILD_ID_PATTERN.test(source)) source = "minted";
+        // C38 "stale settings degrade": a saved source naming a build
+        // `publications` no longer has falls back to Minted with no error
+        // — checked against the bundle FILE below (bundleRows' own
+        // read-through-loadDeckCardModel), not against the `publications`
+        // row, since a bundle file can be browsed even if its row was
+        // removed and the inverse (a row with no file) is exactly what
+        // bundleRows()'s own error path reports inline instead of here.
+        if (queryParam && source !== savedSource) {
+          const priorView = settings[CARDS_PAGE_SETTINGS_KEY] || {};
+          await setSetting(pool, CARDS_PAGE_SETTINGS_KEY, { ...priorView, source });
+        }
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         return res.end(
-          renderCardsPage(cards, { search, deckCode, statusFilter }, config.stabburUiBase, config.dataDir, config.baseFolderDir, settings)
+          await renderCardsPage(pool, {
+            source,
+            dataDir: config.dataDir,
+            baseFolderDir: config.baseFolderDir,
+            stabburUiBase: config.stabburUiBase,
+            settings,
+          })
         );
       }
 
@@ -1561,6 +1475,21 @@ export function createServer(pool, config, boot) {
       // the resize-clamp/snippet-wrap/catalogue-row-building rules.
       if (req.method === "GET" && url.pathname === "/mjolnir/cards/drawer-engine.js") {
         const enginePath = path.join(path.dirname(new URL(import.meta.url).pathname), "cardPreviewDrawer.js");
+        const bytes = fs.readFileSync(enginePath);
+        res.writeHead(200, {
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Content-Length": bytes.length,
+          "Cache-Control": "no-cache",
+        });
+        return res.end(bytes);
+      }
+
+      // card-preview-popup task group 5: the Cards page's own pure-logic
+      // engine (hub/src/cardsPageEngine.js), served verbatim for the same
+      // reason as the three engines above — one source of the filter/
+      // sort/paginate/occurrence-cell rules.
+      if (req.method === "GET" && url.pathname === "/mjolnir/cards/cards-engine.js") {
+        const enginePath = path.join(path.dirname(new URL(import.meta.url).pathname), "cardsPageEngine.js");
         const bytes = fs.readFileSync(enginePath);
         res.writeHead(200, {
           "Content-Type": "application/javascript; charset=utf-8",

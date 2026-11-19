@@ -259,6 +259,18 @@ details.json-toggle summary { cursor: pointer; font-size: 13px; padding: 4px 0; 
    — a future arrival still to land, not an unminted slot in the current
    batch. */
 .flow-u.gap { background: transparent; border: 1.5px dotted var(--accent); opacity: .55; color: var(--accent-text); }
+/* card-preview-popup task group 5 (design.md §5 / §7): the Cards page's
+   occurrence cell needs a state the ship strips never do — a letter that
+   simply has no occurrence at all, not a future slot or a queued arrival.
+   Added to the shared base, not a second cell definition, per design §7
+   ("one definition, not two copies that can drift"); it is .flow-u.absent
+   rather than reusing .open/.gap/.pending because those all mean "a
+   slot something could still land in," while absent means "this card has
+   no N/E/A occurrence here, ever." The ✕ it carries is deliberately NOT a
+   letter glyph — smaller font, dimmed opacity, no weight — so acceptance
+   C31's "no taller or wider than a letter slot, visibly smaller than the
+   letter glyphs" holds without a second box size. */
+.flow-u.absent { background: transparent; border: 1px solid var(--border); opacity: .55; color: var(--text-faint); font-weight: 400; font-size: 8px; line-height: 1; }
 
 .flow-batch-div { width: 1px; height: 21px; background: var(--border); margin: 0 6px; flex: none; }
 

@@ -93,7 +93,12 @@ export function isTypingTarget(target) {
 // Occurrence summary (design.md §4 / acceptance C22)
 // --------------------------------------------------------------------------
 
-function occurrenceTip(o) {
+// Exported (card-preview-popup task group 5) so the Cards page's
+// occurrence-cell hover text — one slot at a time, N/E/A — is built by the
+// SAME function as the popup bar's occurrence summary below, instead of a
+// second hand-written copy that could drift from it (acceptance C22's
+// "matching the row's hover text" made literal: there is only one text).
+export function occurrenceTip(o) {
   if (!o || !o.letter) return "";
   if (o.status === "shipped") return `${o.letter} · shipped${o.buildId ? " in " + o.buildId : " (stock)"}`;
   if (o.status === "staged") return `${o.letter} · staged · ${o.flushing ? "flushes next run" : "held"}`;
