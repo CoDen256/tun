@@ -152,8 +152,8 @@ ${cardRendererResetCss(SCOPE)}
 .${SCOPE} .cpp-cardbg { position: relative; overflow: hidden; border-radius: 22px; font-family: 'Poppins-Regular', sans-serif; font-synthesis: none; -webkit-font-smoothing: antialiased; }
 
 /* task group 4 ("Tools drawer") — design.md §4 / acceptance C23-C28,
-   mockup fidelity for .drawer/.resize/.tabs/.pane/.ed*/.palette/.cat/
-   .sym*/.sizetag/.dtoast (mockups/card-preview-popup.html). Resizable by a
+   mockup fidelity for .drawer/.resize/.tabs/.pane/.ed-star/.palette/.cat/
+   .sym-star/.sizetag/.dtoast (mockups/card-preview-popup.html). Resizable by a
    handle (desktop width, bottom sheet height below ~760px) — the actual
    width/height are set inline via --cpp-dw/--cpp-dh (task 4.1's
    getDrawerState()/setDrawerState() contract, so task group 6 has a

@@ -209,6 +209,28 @@ test("C8 — <br> semantics: every <br>, including a trailing one, is emitted li
   assert.ok(!withoutTrailing.includes("<br>"));
 });
 
+test("C8 — a <br> that is the LAST thing in the whole face gets a zero-width-space anchor so the browser doesn't collapse its empty line box (confirmed by getClientRects() measurement: identical markup without this anchor renders at the SAME height with/without the trailing <br> in Chrome/Firefox/Safari — a real engine quirk, not something 'native <br>' handles for free)", () => {
+  const withTrailing = renderCardFace("<div>line<br></div>", style, {}).html;
+  const withoutTrailing = renderCardFace("<div>line</div>", style, {}).html;
+  // the trailing <br> is followed immediately by U+200B (zero-width space)
+  // and nothing else — invisible, but it IS "content" after the <br>, which
+  // is what makes browsers create the second (empty) line box.
+  assert.match(withTrailing, /<br>​<\/div>$/);
+  assert.ok(!withoutTrailing.includes("​"));
+
+  // a <br> that is NOT the final thing in the face (more content follows,
+  // even in a different sibling element) must NOT get the anchor — only
+  // the true trailing one needs it.
+  const midBr = renderCardFace("<div>a<br>b</div>", style, {}).html;
+  assert.ok(!midBr.includes("​"));
+
+  // the anchor also has to reach through nesting: a trailing <br> inside a
+  // nested div with nothing after it anywhere in the face still collapses
+  // in real browsers unless marked.
+  const nested = renderCardFace("<div><div>line<br></div></div>", style, {}).html;
+  assert.match(nested, /<br>​<\/div><\/div>$/);
+});
+
 test("C9 — font size control: plain div runs follow the stepper; .lg stays fixed at normalize(28)", () => {
   const at15 = renderCardFace("<div>hello <span class=\"lg\">BIG</span></div>", style, { fontSize: 15 });
   assert.match(styleAttr(at15.html, "hello"), /font-size:15px/);

@@ -341,9 +341,35 @@ function cssToStyleAttr(css) {
 
 function renderNode(node) {
   if (node.type === "text") return escapeHtml(node.value);
-  if (node.tag === "br") return "<br>"; // 2.4: every <br> is a real line break, including a trailing one — native <br> already does this, no collapsing logic needed/wanted here
+  if (node.tag === "br") return "<br>"; // 2.4: every <br> is a real line break, including a trailing one
   const inner = (node.children || []).map(renderNode).join("");
   return `<${node.tag}${cssToStyleAttr(node.css)}>${inner}</${node.tag}>`;
+}
+
+// 2.4 correction: a <br> that is the LAST rendered thing in the entire face
+// (nothing — no text, no element — follows it anywhere in the flow) is a
+// real browser quirk, not something this engine can leave to "native <br>
+// already does this": Chrome/Firefox/Safari all suppress the empty line box
+// a trailing <br> would otherwise create when it has zero content after it
+// in the whole block-formatting context, even across element boundaries
+// (confirmed by direct getClientRects() measurement — see C8's acceptance
+// note and the task's root-cause write-up). A <br> anywhere else (followed
+// by more text/elements, even just `<div>line<br></div>after`) renders
+// fine; only the absolute trailing one collapses. Appending a zero-width
+// space as its next sibling gives the browser "content" to anchor the
+// empty line box to, without being visible or affecting layout width.
+const TRAILING_BR_FIX = "​";
+
+function markTrailingBr(children) {
+  if (!children || !children.length) return;
+  const last = children[children.length - 1];
+  if (last.type === "element" && last.tag === "br") {
+    children.push({ type: "text", value: TRAILING_BR_FIX, css: {} });
+    return;
+  }
+  if (last.type === "element" && last.children && last.children.length) {
+    markTrailingBr(last.children);
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -380,6 +406,7 @@ export function renderCardFace(html, styleData, state = {}) {
   const warnings = [];
   const ast = parseCardHtml(html);
   const resolved = resolveNode(ast, null, styleData, resolvedState, warnings);
+  markTrailingBr(resolved.children);
   const bodyHtml = resolved.children.map(renderNode).join("");
   return {
     html: bodyHtml,
