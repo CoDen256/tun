@@ -122,7 +122,7 @@ test("tagCopyText — <br> is the one exception, never <br></br>", () => {
 });
 
 test("classCopyText", () => {
-  assert.equal(classCopyText("royalRed"), 'class="royalRed"');
+  assert.equal(classCopyText("royalRed"), "royalRed");
 });
 
 test("symbolCopyText — entity vs literal character", () => {

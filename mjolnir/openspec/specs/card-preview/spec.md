@@ -133,9 +133,9 @@ bundle SHALL be tagged as inferred; `.bold` SHALL be flagged as undefined
 and `.center` as having its font dropped.
 
 Clicking (or pressing Enter on) a row SHALL copy it to the clipboard: a tag
-row as `<tag></tag>` (`<br>` for br), a class row as `class="name"`, a symbol
-row as its entity or, for a literal character, the character, with a brief
-confirmation naming what was copied.
+row as `<tag></tag>` (`<br>` for br), a class row as the bare class name (no
+`class="..."` wrapper), a symbol row as its entity or, for a literal
+character, the character, with a brief confirmation naming what was copied.
 
 #### Scenario: Colour samples are coloured
 - **WHEN** the operator opens Classes & tags in the Light theme
@@ -144,7 +144,7 @@ confirmation naming what was copied.
 
 #### Scenario: Copying a class
 - **WHEN** the operator clicks the `.royalRed` row
-- **THEN** the clipboard holds `class="royalRed"` and a "Copied" confirmation
+- **THEN** the clipboard holds `royalRed` and a "Copied" confirmation
   appears
 
 ### Requirement: A card's HTML can be edited throwaway, to see how it would render

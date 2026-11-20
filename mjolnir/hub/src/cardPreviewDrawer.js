@@ -205,12 +205,16 @@ export function highlightHtmlTokens(html) {
 // --------------------------------------------------------------------------
 // 4.3 / 4.4 / 4.5 Click/Enter-to-copy string formatting
 // --------------------------------------------------------------------------
-// design.md §4 / acceptance C28: tag -> `<x></x>` (`<br>` is the one
-// exception — never `<br></br>`), class -> `class="name"`, a symbol's
-// entity -> the entity text itself, a literal character -> the literal
-// character. Metric rows are never copyable (callers simply never attach
-// copy text to one — see buildClassesAndTagsRows below, which omits
-// `copyText` entirely for those rows).
+// design.md §4 / acceptance C28 originally specified class -> `class="name"`;
+// live operator feedback after archive changed this to the bare class name
+// (pasting straight into an existing `class="..."` attribute was the actual
+// use case, and the wrapper just had to be retyped around it every time).
+// tag -> `<x></x>` (`<br>` is the one exception — never `<br></br>`), class
+// -> `name` (no `class="..."` wrapper), a symbol's entity -> the entity text
+// itself, a literal character -> the literal character. Metric rows are
+// never copyable (callers simply never attach copy text to one — see
+// buildClassesAndTagsRows below, which omits `copyText` entirely for those
+// rows).
 
 export function tagCopyText(tagName) {
   if (tagName === "br") return "<br>";
@@ -218,7 +222,7 @@ export function tagCopyText(tagName) {
 }
 
 export function classCopyText(className) {
-  return `class="${className}"`;
+  return className;
 }
 
 export function symbolCopyText(row) {

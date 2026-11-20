@@ -127,6 +127,12 @@ ${cardRendererResetCss(SCOPE)}
 }
 .${SCOPE} .cpp-btn:hover, .${SCOPE} .cpp-seg button:hover, .${SCOPE} .cpp-step button:hover { border-color: var(--accent); }
 .${SCOPE} .cpp-btn:disabled { opacity: .4; cursor: default; }
+/* Reset/Copy actions blended into every other outline control in the bar
+   and were hard to find in live use — this gives them real contrast
+   (filled accent border + bold) without promoting them to a solid
+   primary-colour button, which would overstate what they do. */
+.${SCOPE} .cpp-btn-strong { border-color: var(--accent); color: var(--accent-text); font-weight: 600; background: var(--accent-soft); }
+.${SCOPE} .cpp-btn-strong:hover { background: var(--accent); color: var(--bg-elevated); }
 .${SCOPE} .cpp-seg { display: inline-flex; }
 .${SCOPE} .cpp-seg button { border-radius: 0; }
 .${SCOPE} .cpp-seg button:first-child { border-radius: 7px 0 0 7px; }
@@ -300,8 +306,8 @@ export function cardPreviewPopupMarkupHtml() {
         </div>
         <div class="cpp-pane" id="cpp-pane-edit">
           <div class="cpp-row-btns">
-            <button class="cpp-btn" type="button" id="cpp-reset">Reset to minted card</button>
-            <button class="cpp-btn" type="button" id="cpp-copy-all">Copy all (N, E, X)</button>
+            <button class="cpp-btn cpp-btn-strong" type="button" id="cpp-reset">Reset to minted card</button>
+            <button class="cpp-btn cpp-btn-strong" type="button" id="cpp-copy-all">Copy all (N, E, X)</button>
           </div>
           <div class="cpp-palette" id="cpp-palette"></div>
           <p class="cpp-hint">Snippets wrap the selection in the last editor you touched, or insert at the cursor.</p>
@@ -404,20 +410,28 @@ var bakedPopupPrefs = (window.MjolnirCardPreviewPopupData && window.MjolnirCardP
 //     thrown, never retried into a storm.
 var SETTINGS_ENDPOINT = '/mjolnir/api/settings';
 var SETTINGS_DEBOUNCE_MS = 400;
-var settingsCache = null;        // null until the first successful/failed load
-var settingsCachePromise = null;
+var settingsCache = {};          // eagerly seeded below with whatever the page baked in; merged with the live fetch, never replaced by it
+var settingsCachePromise = null; // null until the one real fetch below has been kicked off
 var settingsWriteTimers = {};    // key -> timeout id
 
 function loadSettingsCache() {
   if (settingsCachePromise) return settingsCachePromise;
-  settingsCachePromise = fetch(SETTINGS_ENDPOINT, { credentials: 'same-origin' })
+  settingsCachePromise = fetch(SETTINGS_ENDPOINT, { credentials: 'same-origin', cache: 'no-store' })
     .then(function (r) { return r.ok ? r.json() : { settings: {} }; })
-    .then(function (body) { settingsCache = (body && body.settings) || {}; return settingsCache; })
-    .catch(function () { settingsCache = {}; return settingsCache; });
+    // MERGE, not replace — a key seeded eagerly from baked page data (see
+    // below) must survive a live fetch that degraded to {} (D157), and a
+    // key the live fetch finds must not be shadowed by a stale eager seed.
+    .then(function (body) { settingsCache = Object.assign({}, settingsCache, (body && body.settings) || {}); return settingsCache; })
+    .catch(function () { return settingsCache; });
   return settingsCachePromise;
 }
 
 function getSetting(key, defaultValue) {
+  // A key already in the eager seed resolves instantly — this is the whole
+  // point of seeding it (see the comment below): no caller should have to
+  // wait on a network round trip for a value the page already rendered
+  // with. Everything else falls through to the one real, merged fetch.
+  if (Object.prototype.hasOwnProperty.call(settingsCache, key)) return Promise.resolve(settingsCache[key]);
   return loadSettingsCache().then(function (cache) {
     return (cache && Object.prototype.hasOwnProperty.call(cache, key)) ? cache[key] : defaultValue;
   });
@@ -427,8 +441,7 @@ function setSetting(key, value) {
   // Optimistic local update so a getSetting() called right after this
   // resolves with the value just set, even before the debounced write
   // (or the initial load, if it hasn't resolved yet) completes.
-  if (settingsCache) settingsCache[key] = value;
-  else loadSettingsCache().then(function (cache) { cache[key] = value; });
+  settingsCache[key] = value;
   clearTimeout(settingsWriteTimers[key]);
   settingsWriteTimers[key] = setTimeout(function () {
     delete settingsWriteTimers[key];
@@ -444,12 +457,15 @@ function setSetting(key, value) {
 window.MjolnirOperatorSettings = { getSetting: getSetting, setSetting: setSetting };
 
 // Seed the generic cache with what the page already baked in, so an
-// early getSetting(POPUP_PREFS_KEY, ...) call (there isn't one today, but
-// a future caller may want to read the SAME key this file writes) does
-// not have to wait on a redundant fetch for a value already on the page.
-settingsCachePromise = Promise.resolve(bakedPopupPrefs && Object.keys(bakedPopupPrefs).length
-  ? (function () { var seed = {}; seed[POPUP_PREFS_KEY] = bakedPopupPrefs; settingsCache = seed; return seed; })()
-  : (settingsCache = {}));
+// early getSetting(POPUP_PREFS_KEY, ...) call does not have to wait on a
+// redundant fetch for a value already on the page. This used to also
+// pre-resolve settingsCachePromise, which permanently short-circuited
+// loadSettingsCache() for every OTHER key too — nothing else ever got a
+// live fetch for the rest of the page's life. Seeding the plain cache
+// object (read instantly by getSetting's own fast path above) without
+// touching settingsCachePromise keeps the early-availability win while
+// letting the first call for any other key still fetch for real.
+if (bakedPopupPrefs && Object.keys(bakedPopupPrefs).length) settingsCache[POPUP_PREFS_KEY] = bakedPopupPrefs;
 
 var S = {
   cards: [], index: 0, dir: 'N', open: false,
@@ -861,17 +877,75 @@ function buildEditors(drawerEngine) {
     box.className = 'cpp-ed';
     box.innerHTML =
       '<div class="cpp-ed-head"><b>' + face + '</b><span class="cpp-sub" data-slot></span><span class="cpp-sub" data-aud></span>' +
-      '<button class="cpp-btn" type="button" data-copyface>Copy HTML</button></div>' +
+      '<button class="cpp-btn cpp-btn-strong" type="button" data-copyface>Copy HTML</button></div>' +
       '<div class="cpp-edhost" contenteditable="true" spellcheck="false" data-face="' + face + '"></div>';
     host.appendChild(box);
     var el = box.querySelector('.cpp-edhost');
     var ed = { face: face, el: el, box: box };
+    resetHistory(ed);
     el.addEventListener('focus', function () { setActiveEditor(face); });
-    el.addEventListener('input', function () { onEdit(ed); });
+    el.addEventListener('input', function () { onEdit(ed); scheduleHistoryCommit(ed); });
+    // A native browser undo stack can't survive paintEditor's innerHTML
+    // repaint on every keystroke (that repaint is what the highlighting
+    // needs) — so Ctrl/Cmd+Z/Y and Ctrl/Cmd+Shift+Z are intercepted here
+    // and replayed against our own plain-text snapshot stack instead of
+    // falling through to the browser's (already-broken) native undo.
+    el.addEventListener('keydown', function (ev) {
+      var mod = ev.ctrlKey || ev.metaKey;
+      if (!mod || ev.key.toLowerCase() !== 'z' && ev.key.toLowerCase() !== 'y') return;
+      ev.preventDefault();
+      if (ev.key.toLowerCase() === 'y' || (ev.key.toLowerCase() === 'z' && ev.shiftKey)) redoHistory(ed);
+      else undoHistory(ed);
+    });
     box.querySelector('[data-copyface]').addEventListener('click', function (ev) { copyText(el.textContent, ev.currentTarget); });
     editors.push(ed);
   });
   setActiveEditor('N');
+}
+
+// Per-editor plain-text undo/redo stack (see the keydown handler above for
+// why this exists instead of relying on contenteditable's native undo).
+function resetHistory(ed) {
+  ed.history = { stack: [ed.el.textContent], index: 0 };
+  clearTimeout(ed.historyTimer);
+}
+
+function commitHistory(ed) {
+  var text = ed.el.textContent;
+  var h = ed.history;
+  if (h.stack[h.index] === text) return;
+  h.stack = h.stack.slice(0, h.index + 1);
+  h.stack.push(text);
+  h.index = h.stack.length - 1;
+}
+
+// Coalesces a burst of keystrokes into one undo step (fires 400ms after
+// typing pauses), so Ctrl+Z steps back by "what the operator just typed",
+// not by one character.
+function scheduleHistoryCommit(ed) {
+  clearTimeout(ed.historyTimer);
+  ed.historyTimer = setTimeout(function () { commitHistory(ed); }, 400);
+}
+
+function applyHistoryText(ed, text) {
+  ed.el.textContent = text;
+  onEdit(ed);
+}
+
+function undoHistory(ed) {
+  clearTimeout(ed.historyTimer);
+  commitHistory(ed); // capture whatever was mid-flight before stepping back
+  var h = ed.history;
+  if (h.index <= 0) return;
+  h.index--;
+  applyHistoryText(ed, h.stack[h.index]);
+}
+
+function redoHistory(ed) {
+  var h = ed.history;
+  if (h.index >= h.stack.length - 1) return;
+  h.index++;
+  applyHistoryText(ed, h.stack[h.index]);
 }
 
 function setActiveEditor(face) {
@@ -885,7 +959,7 @@ function loadEditors(drawerEngine) {
   var slots = POPUP_ENGINE.directionSlots(S.dir);
   editors.forEach(function (ed) {
     var current = drawerEngine.currentFaceHtml(c, S.edits[c.key], ed.face);
-    if (ed.el.textContent !== current) { ed.el.textContent = current; paintEditor(ed, drawerEngine); }
+    if (ed.el.textContent !== current) { ed.el.textContent = current; paintEditor(ed, drawerEngine); resetHistory(ed); }
     ed.box.querySelector('[data-slot]').textContent = drawerEngine.editorSlotLabel(slots, ed.face);
     ed.box.querySelector('[data-aud]').textContent = c.A === ed.face ? '· carries audio (A)' : '';
   });

@@ -40,6 +40,13 @@ import {
 } from "./cardsPageEngine.js";
 
 export const CARDS_PAGE_SETTINGS_KEY = "cardsPage.view";
+// Live operator feedback, added after archive: the two built-in presets
+// (*Pending E sides*, *Uses IPA*) aren't enough — the operator wants to save
+// their OWN filter/sort/page-size combinations. One JSON array, each entry
+// { id, name, filters, sort, pageSize } — same filter/sort shape as
+// CARDS_PAGE_SETTINGS_KEY's `view.filters`/`view.sort`, so applying one is
+// just `Object.assign` over the current view, same as a built-in preset.
+export const CARDS_CUSTOM_VIEWS_SETTINGS_KEY = "cardsPage.customViews";
 
 export const BUILD_ID_PATTERN = /^b[0-9]{6}$/;
 
@@ -237,6 +244,8 @@ export function cardsPageStyleBlock() {
 .cards-page .achip button { background: none; border: none; color: var(--text-faint); cursor: pointer; padding: 0 2px; font: inherit; }
 .cards-page .achip button:hover { color: var(--text); }
 .cards-page .linkbtn { background: none; border: none; color: var(--accent-text); cursor: pointer; padding: 0; font: inherit; font-weight: 600; }
+.cards-page .cp-save-view { display: inline-flex; align-items: center; gap: 6px; }
+.cards-page #cp-save-view-name { font: inherit; font-size: 13px; padding: 3px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elevated); color: var(--text); width: 160px; }
 .cards-page .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11px; color: var(--text-dim); padding: 6px 2px 10px; }
 .cards-page .legend[hidden] { display: none; }
 .cards-page .legend .axis { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 700; }
@@ -304,6 +313,12 @@ export function cardsPageMarkup({ source, sourceList, errorMessage }) {
       <select id="cp-size" aria-label="Page size">${sizeOptions}</select>
       <select id="cp-views" aria-label="Saved views"><option value="">Saved views…</option><option value="pending-e">Pending E sides</option><option value="ipa">Uses IPA</option></select>
       <button type="button" class="linkbtn" id="cp-reset">Reset view</button>
+      <span class="cp-save-view" id="cp-save-view-wrap">
+        <button type="button" class="linkbtn" id="cp-save-view-btn">Save view…</button>
+        <input type="text" id="cp-save-view-name" placeholder="View name" maxlength="60" hidden>
+        <button type="button" class="linkbtn" id="cp-save-view-confirm" hidden>Save</button>
+        <button type="button" class="linkbtn" id="cp-save-view-cancel" hidden>Cancel</button>
+      </span>
     </div>
     <div class="active" id="cp-chips"></div>
   </div>
@@ -401,7 +416,17 @@ function init() {
   $('cp-sort-dir').addEventListener('click', function () { V.sort.desc = !V.sort.desc; changed(); });
   $('cp-size').addEventListener('change', function (e) { V.pageSize = Number(e.target.value); changed(); });
   $('cp-views').addEventListener('change', function (e) {
-    var preset = ENGINE.SAVED_VIEWS[e.target.value];
+    var val = e.target.value;
+    if (val.indexOf('custom:') === 0) {
+      var saved = CUSTOM_VIEWS.filter(function (cv) { return cv.id === val.slice(7); })[0];
+      if (!saved) return;
+      V = Object.assign({}, V, { filters: Object.assign({}, saved.filters, { occ: Object.assign({}, saved.filters.occ) }), sort: Object.assign({}, saved.sort), pageSize: saved.pageSize, page: 1 });
+      syncControls();
+      persist();
+      renderTable();
+      return;
+    }
+    var preset = ENGINE.SAVED_VIEWS[val];
     if (!preset) return;
     V = preset.apply(V);
     syncControls();
@@ -409,6 +434,7 @@ function init() {
     renderTable();
   });
   $('cp-reset').addEventListener('click', function () { V = defaultView(); syncControls(); persist(); renderTable(); });
+  wireSaveView();
   $('cp-pager').addEventListener('click', function (e) {
     var b = e.target.closest('button[data-p]');
     if (!b || b.disabled) return;
@@ -428,6 +454,68 @@ function init() {
     var dd = $('cp-deck-dd');
     if (dd && dd.open && !dd.contains(e.target)) dd.open = false;
   });
+}
+
+// --------------------------------------------------------------------------
+// Custom saved views — operator-named filter/sort/page-size snapshots,
+// alongside the two built-in presets. Added from live operator feedback.
+// --------------------------------------------------------------------------
+
+var CUSTOM_VIEWS = [];
+
+function loadCustomViews() {
+  if (!window.MjolnirOperatorSettings) return;
+  window.MjolnirOperatorSettings.getSetting('${CARDS_CUSTOM_VIEWS_SETTINGS_KEY}', []).then(function (saved) {
+    CUSTOM_VIEWS = Array.isArray(saved) ? saved : [];
+    renderCustomViewOptions();
+  });
+}
+
+function renderCustomViewOptions() {
+  var sel = $('cp-views');
+  var group = sel.querySelector('optgroup[data-custom]');
+  if (group) group.remove();
+  if (!CUSTOM_VIEWS.length) return;
+  group = document.createElement('optgroup');
+  group.label = 'Your views';
+  group.dataset.custom = '1';
+  CUSTOM_VIEWS.forEach(function (cv) {
+    var opt = document.createElement('option');
+    opt.value = 'custom:' + cv.id;
+    opt.textContent = cv.name;
+    group.appendChild(opt);
+  });
+  sel.appendChild(group);
+}
+
+function wireSaveView() {
+  var btn = $('cp-save-view-btn'), input = $('cp-save-view-name'), confirmBtn = $('cp-save-view-confirm'), cancelBtn = $('cp-save-view-cancel');
+  function open() { btn.hidden = true; input.hidden = false; confirmBtn.hidden = false; cancelBtn.hidden = false; input.value = ''; input.focus(); }
+  function close() { btn.hidden = false; input.hidden = true; confirmBtn.hidden = true; cancelBtn.hidden = true; }
+  function save() {
+    var name = input.value.trim();
+    if (!name) { input.focus(); return; }
+    var entry = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name: name,
+      filters: Object.assign({}, V.filters, { occ: Object.assign({}, V.filters.occ) }),
+      sort: Object.assign({}, V.sort),
+      pageSize: V.pageSize,
+    };
+    CUSTOM_VIEWS = CUSTOM_VIEWS.concat([entry]);
+    if (window.MjolnirOperatorSettings) window.MjolnirOperatorSettings.setSetting('${CARDS_CUSTOM_VIEWS_SETTINGS_KEY}', CUSTOM_VIEWS);
+    renderCustomViewOptions();
+    $('cp-views').value = 'custom:' + entry.id;
+    close();
+  }
+  btn.addEventListener('click', open);
+  cancelBtn.addEventListener('click', close);
+  confirmBtn.addEventListener('click', save);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') save();
+    else if (e.key === 'Escape') close();
+  });
+  loadCustomViews();
 }
 
 function buildControls() {
