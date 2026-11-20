@@ -16,12 +16,14 @@ them in that order.
 
 | package | status |
 |---|---|
-| Stabbur editor redesign | pending (design in progress) |
+| Stabbur editor redesign | designed — stabbur: `stabbur-editor-redesign`; mjolnir: `projector-examples-column` |
 
 ## Packages
 
 ### Stabbur editor redesign
 projects: stabbur, mjolnir (builder projector only)
+status: designed 2026-11-20 — changes `stabbur-editor-redesign` (stabbur) and
+`projector-examples-column` (mjolnir). Deploy together, stabbur first.
 
 Operator request (2026-11-20, verbatim):
 
@@ -72,3 +74,65 @@ Data answers (2026-11-20):
 - Duplicate note copies EVERYTHING, the audio reference included (blobs are
   content-addressed, so they are shared rather than copied), and the copy is
   a draft.
+
+Locked 2026-11-20 after six mockup iterations. The operator's words: *"this
+is exactly perfect as it is now"*, to be implemented **1:1**. Accepted mockup:
+`stabbur/openspec/changes/stabbur-editor-redesign/mockups/stabbur-editor-redesign.html`.
+That page is the look-and-interaction reference, and its rows are sample data.
+
+What the iterations changed (so the build does not "simplify" them back):
+1. **Labels vs values.** Labels are small uppercase grey. Values use a distinct
+   value colour, which the operator can configure in **Settings → Appearance**
+   (theme Auto/Light/Dark; blue, teal, violet or orange, or a custom colour).
+   This was added at lock time.
+2. **Two-way merge.**
+   - Merge works in both directions; a ready note cannot be absorbed (existing
+     rule kept).
+   - Take order: text → lemma → PoS → inflections → audio → IPA →
+     translations → examples, with no section headers.
+   - PoS is a new take, and audio can be played before it is taken.
+3. **Sheets.** A sheet animates only when it opens; that fixes the "drawer
+   reopens on every click" bug the operator found.
+4. **Type and headword.** The type is a small pill beside the headword, and
+   the IPA subtitle is removed.
+5. **Provider queries.** Each provider can override the query in a sheet.
+6. **No native selects anywhere.** Part of speech is a dropdown with
+   "custom…".
+7. **Candidate presentation.**
+   - The "matching / other" headers are replaced by a PoS tag per row.
+   - Audio rows show context and duration only.
+   - Inflection candidates are a mini-table.
+   - Example candidates show a context line.
+   - Providers are visibly separate boxes.
+8. **Notes list.** Rich filters and sort.
+9. **Prefill.** Prefill sits in the pinned bar of every context. On the phone
+   it is icon-only, and Skip moves to the ⋯ tray.
+10. **Duplicate.**
+    - Duplicate is also in triage (the copy goes next in the queue).
+    - On the phone, the Note context's Duplicate is in ⋯.
+11. **Grammar.** The explanation is rendered HTML with an Edit-HTML toggle.
+    The rule page has no examples section.
+
+Dropped by the operator (recorded in design D14):
+- the raw-JSON record view
+- the in-panel "add target language" control (languages come from Settings)
+- the free-text audio-link input (replaced by "Use URL from clipboard")
+- the translation append/separate merge mode
+
+No ADR conflict. Nothing touches the device plane. The hover-translate
+capture contract is unchanged (D154). Read-API contract D-N4 is amended:
+`examples: string[]` replaces `context_text`, and its only consumer (the
+builder) changes in the same package.
+
+Deferred to the builder's judgement (tier 2, not guesses):
+- the phone/desktop width breakpoint, provided the three desktop columns never
+  drop below about 280 px
+- how the theme and value colour apply before first paint (no flash of the
+  other theme is the requirement)
+- self-hosting the four fonts vs Google Fonts, provided the faces match and
+  IPA renders
+- the HTML sanitiser for grammar explanations, provided scripts and
+  event-handler attributes never execute
+- the exact wording of the clipboard error messages
+- the duplicate endpoint's route shape
+- the filter query-parameter names
