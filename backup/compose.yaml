@@ -128,6 +128,77 @@ services:
       # (StrictHostKeyChecking=accept-new on first connect).
       - ${BACKUP_SSH_KEY_PATH:?set BACKUP_SSH_KEY_PATH in the root .env}:/root/.ssh/id_backup:ro
 
+  # backup-console: the operator console over the service above (/backup/).
+  #
+  # A SECOND SERVICE, NOT AN HTTP LISTENER IN `backup` (design §1). That
+  # container holds the SSH deploy key with push access to the backup
+  # repository, so a network-reachable listener there is a listener in the one
+  # place whose compromise means "an attacker can rewrite the backups". And
+  # `backup`'s health check is deliberately NOT liveness — it reads the
+  # success stamp, because "the process is up" is exactly the predicate that
+  # reported green while nothing was backed up for seven hours. One container
+  # cannot answer two different health questions with one exit code.
+  #
+  # ONE VOLUME EACH WAY, AND THE MOUNT IS THE RULE:
+  #   /state  read-write — run records, the settings it writes, the request it
+  #           writes for the scheduler to claim.
+  #   /data   READ-ONLY  — the git clone. The clone has exactly one writer,
+  #           the scheduler loop above; this console never dumps, commits or
+  #           pushes, and `:ro` is what guarantees it instead of a rule
+  #           somebody has to remember. Two writers against one git working
+  #           tree is a race whose failure mode is a corrupt backup.
+  #
+  # NO DATABASE AT ALL, and no `depends_on`. It must come up and serve when
+  # postgres is down, when `backup` is stopped, when the clone does not exist
+  # and when no run has ever completed — each of those is a condition the page
+  # REPORTS. That is the one thing it is for.
+  #
+  # NO PUBLISHED PORT. It is reached through the gateway's `/backup/*` handle
+  # only, behind the one `(operator_gate)` credential like every other
+  # operator zone (D159/D160). Standalone poking is `docker compose exec`.
+  backup-console:
+    build:
+      context: ./console
+    restart: unless-stopped
+    environment:
+      # unified-auth 4.6: ONE service-to-service token. NO `:-changeme`
+      # default — an unset value must fail CLOSED, and the console refuses to
+      # start without it (P55). The operator credential itself is never passed
+      # here: the gateway checks it and vouches with X-Tun-Operator.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      PORT: "8003"
+      # Read-only facts the page prints, and the SEED values it shows while
+      # nothing has been stored yet. They are never written back and never
+      # override the stored settings (D151) — the stored file is the live one.
+      BACKUP_REPO_URL: ${BACKUP_REPO_URL:?set BACKUP_REPO_URL in the root .env}
+      BACKUP_SSH_KEY_PATH: ${BACKUP_SSH_KEY_PATH:?set BACKUP_SSH_KEY_PATH in the root .env}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETRY_SECONDS: ${BACKUP_RETRY_SECONDS:-3600}
+      BACKUP_RUN_RETENTION: ${BACKUP_RUN_RETENTION:-40}
+    volumes:
+      - ./console:/app
+      # libs/ mounted at /libs, NOT /app/libs, so the SAME relative import
+      # resolves in the repo and in the container: /app is backup/console and
+      # / is the repository root, so `../../../libs/` from a file one level
+      # under either one lands in the same place. The same arrangement
+      # mjolnir/compose.yaml documents at length.
+      - ../libs:/libs:ro
+      - backup-state:/state
+      # READ-ONLY. See the note above — this is the single-writer rule, held
+      # by the filesystem.
+      - backup-repo-clone:/data:ro
+    healthcheck:
+      # Its OWN health question, which is "can I serve the page" — not "has a
+      # backup happened". That second question is `backup`'s health check and
+      # is answered on the page; a console that reported itself unhealthy
+      # because no backup had ever completed would hide the very state it
+      # exists to show.
+      test: ["CMD", "node", "-e", "const r=require('http').get({host:'127.0.0.1',port:8003,path:'/_health'},s=>process.exit(s.statusCode===200?0:1));r.setTimeout(3000,()=>{r.destroy();process.exit(1)});r.on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+
 volumes:
   backup-repo-clone:
     # DO NOT CHANGE THIS NAME. It is the clone that exists on disk today; a

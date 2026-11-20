@@ -661,6 +661,51 @@
 		}
 	}
 
+	# ---- /backup : the backup console (backup-console) -------------------
+	# An ORDINARY OPERATOR ZONE, and that is the whole of its auth design: one
+	# `handle_path` importing the same (operator_gate) snippet the other seven
+	# import, then a reverse_proxy. No new credential, no new mechanism, nothing
+	# this file has to learn (D159/D160). Behind it the console runs the one
+	# shared check from libs/jsservice/auth.js and accepts the
+	# gateway-verified marker or INTERNAL_TOKEN.
+	#
+	# `handle_path` strips /backup before forwarding — the console serves its
+	# page at `/` and its JSON under `/api/*`, and its probe at `/_health`,
+	# which is the path the container health check hits directly and the one
+	# path the shared check lets through unauthenticated.
+	#
+	# MUST BE A `handle` BLOCK, NOT A BARE `reverse_proxy`. Caddy sequences all
+	# `handle` blocks together and a bare `reverse_proxy` does NOT slot into
+	# that sequence — it is evaluated after the whole handle group, which means
+	# after the `handle {}` catch-all at the bottom of this file, which matches
+	# everything. Read the long note above /mjolnir; verified here the only way
+	# any claim about order in this file is worth anything, with
+	# `caddy adapt --adapter caddyfile`: this block compiles inside the handle
+	# group, ahead of the catch-all, and behind the site-level
+	# `request_header -X-Tun-Operator` strip — so a forged `X-Tun-Operator: 1`
+	# is deleted before this route is ever considered.
+	# GATED, and inside a `route` so it STAYS gated (P56). A bare top-level
+	# `redir /backup /backup/ 308` would compile ahead of the handle group AND
+	# ahead of the marker strip, and would answer 308 to a client with no
+	# credential while /nope answers 404 — an unauthenticated oracle for which
+	# operator zones exist. The inner `route` is not decoration: Caddy sorts the
+	# directives inside a `handle` by its own global order, in which `redir`
+	# comes BEFORE `route`, so writing the gate above the redirect without this
+	# wrapper hoists the redirect back above the gate and changes nothing.
+	handle /backup {
+		route {
+			import operator_gate
+			# `*` is the matcher. `redir /backup/ 308` without it parses as
+			# matcher=/backup/, to="308" and compiles to a 302 with
+			# `Location: 308`.
+			redir * /backup/ 308
+		}
+	}
+	handle_path /backup/* {
+		import operator_gate
+		reverse_proxy backup-console:8003
+	}
+
 	# ---- /adminer : tun/compose.yaml's shared Adminer (D-T3) -------------
 	# Only reachable this way when deployed via tun's `include:` unification
 	# (D94/D101) — that's the only compose file defining a service literally

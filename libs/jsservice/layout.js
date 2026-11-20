@@ -324,6 +324,12 @@ export const ZONES = [
   { href: "/smia/", label: "smia" },
   { href: "/phonexa/", label: "phonexa" },
   { href: "/shadow/", label: "shadow" },
+  // `/backup/` joined the list with `backup-console`: the backup service was
+  // the only thing in the stack with no page at all, and the only way to
+  // answer "did last night's backup work?" was `docker compose logs backup`
+  // over SSH. Added to grind/caddy/status/index.html in the same change, as
+  // the comment above requires.
+  { href: "/backup/", label: "backup" },
   { href: "/adminer", label: "adminer" },
 ];
 

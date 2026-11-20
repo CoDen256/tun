@@ -45,52 +45,52 @@
       control that excludes a source from the backup set.
 
 ## 5. The manual run, with the loop as the only writer
-- [ ] 5.1 Have the console write a run **request** to the state volume; it must
+- [x] 5.1 Have the console write a run **request** to the state volume; it must
       never dump, commit or push.
 - [x] 5.2 Make the scheduler's sleep interruptible so a request is picked up
       promptly rather than up to a full interval later.
 - [x] 5.3 Have the request run `run_backup` unchanged — no flags, no variant
       behaviour, no extra or skipped step.
-- [ ] 5.4 Report the request as **queued** until the loop actually begins, and
+- [x] 5.4 Report the request as **queued** until the loop actually begins, and
       prevent a second concurrent run.
 
 ## 6. The console service
-- [ ] 6.1 Add the `backup-console` service to `backup/compose.yaml`:
+- [x] 6.1 Add the `backup-console` service to `backup/compose.yaml`:
       `restart: unless-stopped`, its own health check, no published host port
       in the unified stack.
-- [ ] 6.2 Apply the one shared operator check from `libs/` — the
+- [x] 6.2 Apply the one shared operator check from `libs/` — the
       gateway-verified marker or the internal token. No new credential.
-- [ ] 6.3 Serve the page when the state volume is empty, when no run has ever
+- [x] 6.3 Serve the page when the state volume is empty, when no run has ever
       completed, when the clone is absent, and when the `backup` service is
       stopped. Report each condition; never fail to boot.
 
 ## 7. The page
-- [ ] 7.1 Build to `mockups/backup-console.html` — the accepted
+- [x] 7.1 Build to `mockups/backup-console.html` — the accepted
       look-and-interaction reference.
-- [ ] 7.2 Health banner: last success + age, next run, unpushed-commit count,
+- [x] 7.2 Health banner: last success + age, next run, unpushed-commit count,
       and the health verdict. All three states visually distinct by more than
       text.
-- [ ] 7.3 Run now, with queued / in-progress / result states and the phase
+- [x] 7.3 Run now, with queued / in-progress / result states and the phase
       indication.
-- [ ] 7.4 Run history: expandable rows revealing each run's full log, wide
+- [x] 7.4 Run history: expandable rows revealing each run's full log, wide
       content scrolling in its own container.
-- [ ] 7.5 Sources: read-only, with per-run deltas, the empty-source-non-empty-
+- [x] 7.5 Sources: read-only, with per-run deltas, the empty-source-non-empty-
       mirror fault, and `smia` shown as deliberately excluded.
-- [ ] 7.6 Settings: three fields with save feedback; credentials and remote
+- [x] 7.6 Settings: three fields with save feedback; credentials and remote
       read-only.
-- [ ] 7.7 Commit history: expandable to each commit's changed files.
-- [ ] 7.8 Restore instructions as copyable commands per source.
-- [ ] 7.9 Both themes, no horizontal body scroll.
+- [x] 7.7 Commit history: expandable to each commit's changed files.
+- [x] 7.8 Restore instructions as copyable commands per source.
+- [x] 7.9 Both themes, no horizontal body scroll.
 
 ## 8. Zone wiring
-- [ ] 8.1 Add a `/backup/*` `handle` block to `grind/caddy/Caddyfile` importing
+- [x] 8.1 Add a `/backup/*` `handle` block to `grind/caddy/Caddyfile` importing
       the existing `(operator_gate)` snippet, then reverse-proxying the console.
       It must be a `handle` block, not a bare `reverse_proxy` — read that
       file's own warning about why.
-- [ ] 8.2 Verify compiled route order with
+- [x] 8.2 Verify compiled route order with
       `caddy adapt --adapter caddyfile`, never by reading the file top to
       bottom (P56).
-- [ ] 8.3 Register `backup` in `libs/jsservice/layout.js`'s `ZONES` **and** in
+- [x] 8.3 Register `backup` in `libs/jsservice/layout.js`'s `ZONES` **and** in
       `grind/caddy/status/index.html` — the layout file's own comment requires
       both.
 
