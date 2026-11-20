@@ -111,7 +111,10 @@ def register_capture_routes(app):
                 source_lang=body.get("source_lang", "no"),
                 text=body["selected_text"],
                 translations=translations,
-                context_text=context_text,
+                # captures-ingestion (stabbur-editor-redesign): the context
+                # seeds the note's first example; the capture keeps its own
+                # context_text unchanged, as provenance.
+                examples=[context_text.strip()] if isinstance(context_text, str) and context_text.strip() else [],
                 audio_blob=audio_blob,
                 audio_sel_ms=audio_sel_ms,
             )

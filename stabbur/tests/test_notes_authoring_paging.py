@@ -133,15 +133,16 @@ def test_missing_audio_is_the_operators_original_sweep(client):
     assert _texts(_get(client, "?audio_blob_presence=missing")) == {"without-audio"}
 
 
-def test_lemma_and_context_presence(client):
+def test_lemma_and_examples_presence(client):
     _create(client, text="l-null")
     _create(client, text="l-empty", lemma="")
     _create(client, text="l-set", lemma="hus")
     assert _texts(_get(client, "?lemma_presence=has")) == {"l-set"}
     assert _texts(_get(client, "?lemma_presence=missing")) == {"l-null", "l-empty"}
 
-    _create(client, text="c-set", context_text="Huset er stort.")
-    assert "c-set" in _texts(_get(client, "?context_text_presence=has"))
+    _create(client, text="c-set", examples=["Huset er stort."])
+    assert "c-set" in _texts(_get(client, "?examples_presence=has"))
+    assert "c-set" not in _texts(_get(client, "?examples_presence=missing"))
 
 
 def test_any_is_the_same_as_no_filter(client):

@@ -33,7 +33,7 @@ def _row(source, **overrides):
         "text": None,
         "pos": None,
         "translations": [],
-        "context_text": None,
+        "examples": [],
         "transcription": None,
         "inflections": {},
         "audio_ref": None,

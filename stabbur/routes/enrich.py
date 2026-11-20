@@ -25,7 +25,11 @@ import smia_client
 
 # stabbur only proxies the kinds a note actually has fields for — /stt has
 # no corresponding note field today, so it's deliberately not exposed here.
-# `examples` qualifies because `context_text` is that field.
+# `examples` qualifies because the note's `examples` list is that field.
+# Its candidates carry more than `text` — a corpus `source`, a dictionary
+# `sense` — and post_enrich passes every key through untouched, so the
+# suggestion sheet can show each candidate's provenance/context line
+# (stabbur-editor-redesign D8 / task 2.5; test_enrich pins this).
 ENRICHABLE_KINDS = ("ipa", "translations", "inflections", "tts", "examples")
 
 

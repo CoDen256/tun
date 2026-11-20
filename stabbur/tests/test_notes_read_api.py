@@ -20,7 +20,7 @@ READ_API_FIELDS = {
     "pos",
     "lemma",
     "inflections",
-    "context_text",
+    "examples",
     "audio_blob",
     "audio_sel_ms",
     "grammar_rule_id",
@@ -90,14 +90,23 @@ def test_response_shape_matches_documented_contract_exactly(client):
         lemma="hus",
         translations=[{"lang": "en", "text": "house"}],
         inflections={"article": "et", "sg_indef": "hus", "sg_def": "huset", "pl_indef": "hus", "pl_def": "husene"},
-        context_text="Jeg bor i et hus.",
+        examples=["Jeg bor i et hus.", "Huset er gult."],
     )
+    _create(client, text="bil")
 
     resp = client.get("/api/notes?source_lang=no", headers=AUTH)
     notes = resp.get_json()
-    assert len(notes) >= 1
+    assert len(notes) == 2
     for note in notes:
         assert set(note.keys()) == READ_API_FIELDS
+        # C03 / stabbur-editor-redesign D6: examples replaces the old
+        # newline-joined text field, and is always an array of strings.
+        assert "context_text" not in note
+        assert isinstance(note["examples"], list)
+        assert all(isinstance(e, str) for e in note["examples"])
+    by_text = {n["text"]: n for n in notes}
+    assert by_text["hus"]["examples"] == ["Jeg bor i et hus.", "Huset er gult."]
+    assert by_text["bil"]["examples"] == []
 
 
 def test_public_response_excludes_origin_and_import_ref(client):

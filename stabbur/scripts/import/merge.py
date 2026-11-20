@@ -50,7 +50,7 @@ MERGE_FIELDS = (
     "text",
     "pos",
     "translations",
-    "context_text",
+    "examples",
     "transcription",
     "inflections",
 )
@@ -290,7 +290,7 @@ def run(conn: sqlite3.Connection, run_id: int) -> tuple[int, int, int]:
     rows = conn.execute(
         """
         SELECT n.id AS normalized_id, n.raw_note_id, n.source, n.note_type, n.text, n.pos,
-               n.translations_json, n.context_text, n.transcription, n.inflections_json,
+               n.translations_json, n.examples_json, n.transcription, n.inflections_json,
                n.audio_ref, n.order_signal_json, n.notation_json, s.signature_key
         FROM normalized n
         JOIN signature s ON s.normalized_id = n.id
@@ -318,7 +318,7 @@ def run(conn: sqlite3.Connection, run_id: int) -> tuple[int, int, int]:
                 "text": row["text"],
                 "pos": row["pos"],
                 "translations": json.loads(row["translations_json"]),
-                "context_text": row["context_text"],
+                "examples": json.loads(row["examples_json"]),
                 "transcription": row["transcription"],
                 "inflections": json.loads(row["inflections_json"]),
                 "audio_ref": row["audio_ref"],

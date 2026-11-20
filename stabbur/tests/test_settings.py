@@ -18,7 +18,10 @@ def test_reading_before_anything_configured_returns_full_defaults(client, monkey
     resp = client.get("/api/settings", headers=AUTH)
     assert resp.status_code == 200
     body = resp.get_json()
-    assert body["translation_merge_mode"] == "append"
+    assert "translation_merge_mode" not in body
+    assert body["theme"] == "auto"
+    assert body["value_color"] == "blue"
+    assert body["value_color_custom"] is None
     assert body["override_prefill"] is True
     assert body["default_target_langs"] == ["en", "de"]
     assert body["prefill_timing"] == "on_open"
@@ -102,11 +105,12 @@ def test_settings_requires_auth(client):
 def test_partial_write_leaves_other_preferences_at_default(client, monkeypatch):
     _mock_catalogue(monkeypatch, {})
     resp = client.patch(
-        "/api/settings", json={"translation_merge_mode": "separate"}, headers=AUTH
+        "/api/settings", json={"theme": "light"}, headers=AUTH
     )
     assert resp.status_code == 200
     body = resp.get_json()
-    assert body["translation_merge_mode"] == "separate"
+    assert body["theme"] == "light"
+    assert body["value_color"] == "blue"
     # Untouched preferences remain at their defaults.
     assert body["override_prefill"] is True
     assert body["default_target_langs"] == ["en", "de"]
@@ -147,9 +151,74 @@ def test_unknown_settings_key_is_rejected(client, monkeypatch):
     assert resp.status_code == 400
 
 
-def test_invalid_merge_mode_is_rejected(client, monkeypatch):
+def test_translation_merge_mode_no_longer_exists(client, monkeypatch):
+    # stabbur-editor-redesign D7: translations are always separate rows.
     _mock_catalogue(monkeypatch, {})
-    resp = client.patch("/api/settings", json={"translation_merge_mode": "sideways"}, headers=AUTH)
+    resp = client.patch("/api/settings", json={"translation_merge_mode": "append"}, headers=AUTH)
+    assert resp.status_code == 400
+
+
+# ------------------------------------- stabbur-editor-redesign D12 --
+
+def test_theme_and_preset_value_color_are_stored(client, monkeypatch):
+    # C12, the accepted half.
+    _mock_catalogue(monkeypatch, {})
+    resp = client.patch("/api/settings", json={"theme": "dark", "value_color": "teal"}, headers=AUTH)
+    assert resp.status_code == 200, resp.get_json()
+    body = client.get("/api/settings", headers=AUTH).get_json()
+    assert body["theme"] == "dark"
+    assert body["value_color"] == "teal"
+
+
+def test_every_theme_and_preset_is_accepted(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {})
+    for theme in ("auto", "light", "dark"):
+        assert client.patch("/api/settings", json={"theme": theme}, headers=AUTH).status_code == 200
+    for color in ("blue", "teal", "violet", "orange"):
+        assert client.patch("/api/settings", json={"value_color": color}, headers=AUTH).status_code == 200
+
+
+def test_invalid_appearance_values_are_rejected(client, monkeypatch):
+    # C12, the refused half.
+    _mock_catalogue(monkeypatch, {})
+    for body in (
+        {"value_color": "pink"},
+        {"value_color_custom": "red"},
+        {"value_color_custom": "#c2185"},
+        {"value_color_custom": "c2185b"},
+        {"value_color_custom": "#c2185bff"},
+        {"value_color_custom": 123},
+        {"theme": "sepia"},
+        {"theme": None},
+    ):
+        resp = client.patch("/api/settings", json=body, headers=AUTH)
+        assert resp.status_code == 400, body
+    stored = client.get("/api/settings", headers=AUTH).get_json()
+    assert stored["value_color"] == "blue" and stored["value_color_custom"] is None
+
+
+def test_a_custom_value_color_is_stored_and_can_be_cleared(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {})
+    resp = client.patch(
+        "/api/settings", json={"value_color": "custom", "value_color_custom": "#c2185b"}, headers=AUTH
+    )
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()["value_color"] == "custom"
+    assert resp.get_json()["value_color_custom"] == "#c2185b"
+
+    # Clearing the colour while "custom" is selected would leave nothing to use.
+    assert client.patch("/api/settings", json={"value_color_custom": None}, headers=AUTH).status_code == 400
+
+    # Back to a preset; the custom colour can then be cleared.
+    assert client.patch("/api/settings", json={"value_color": "violet"}, headers=AUTH).status_code == 200
+    resp = client.patch("/api/settings", json={"value_color_custom": None}, headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.get_json()["value_color_custom"] is None
+
+
+def test_custom_without_any_custom_colour_is_rejected(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {})
+    resp = client.patch("/api/settings", json={"value_color": "custom"}, headers=AUTH)
     assert resp.status_code == 400
 
 

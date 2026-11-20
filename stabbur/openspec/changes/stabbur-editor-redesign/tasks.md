@@ -7,19 +7,19 @@ below names the criteria it must turn green.
 
 ## 1. Data model and migration (C01–C06)
 
-- [ ] 1.1 Alembic migration per design D5: add `notes.examples` (JSONB array, NOT NULL, default `[]`); fill it from `context_text` (split on newlines, trim, drop empty lines, keep order); split translation rows on `" / "` in place; drop `notes.context_text`; drop `settings.translation_merge_mode`. Verify with a pytest that seeds pre-migration rows and asserts the post-migration values from the `notes-schema` scenarios.
-- [ ] 1.2 Update `db/models.py` (`Note.examples`, no `context_text`; Settings without the merge mode; add `theme`, `value_color`, `value_color_custom`). Verify: model tests pass, and `grep -rn context_text stabbur/` hits only `Capture` and the migration.
-- [ ] 1.3 Authoring and read APIs (`routes/notes.py`): accept and return `examples` as a list of strings, and validate each element as a non-empty string; the read API returns `examples` in place of `context_text`. Update `tests/test_notes_read_api.py` and the authoring tests.
-- [ ] 1.4 Capture promotion (`routes/captures.py`): the draft's `examples` is `[context_text]` when the context is non-empty, else `[]`. Ingestion still accepts `context_text`. Update `tests/test_captures.py`.
-- [ ] 1.5 Import scripts (`scripts/import/*`) and `scripts/seed_p4_notes.py`: write `examples` lists. Update their tests.
+- [x] 1.1 Alembic migration per design D5: add `notes.examples` (JSONB array, NOT NULL, default `[]`); fill it from `context_text` (split on newlines, trim, drop empty lines, keep order); split translation rows on `" / "` in place; drop `notes.context_text`; drop `settings.translation_merge_mode`. Verify with a pytest that seeds pre-migration rows and asserts the post-migration values from the `notes-schema` scenarios.
+- [x] 1.2 Update `db/models.py` (`Note.examples`, no `context_text`; Settings without the merge mode; add `theme`, `value_color`, `value_color_custom`). Verify: model tests pass, and `grep -rn context_text stabbur/` hits only `Capture` and the migration.
+- [x] 1.3 Authoring and read APIs (`routes/notes.py`): accept and return `examples` as a list of strings, and validate each element as a non-empty string; the read API returns `examples` in place of `context_text`. Update `tests/test_notes_read_api.py` and the authoring tests.
+- [x] 1.4 Capture promotion (`routes/captures.py`): the draft's `examples` is `[context_text]` when the context is non-empty, else `[]`. Ingestion still accepts `context_text`. Update `tests/test_captures.py`.
+- [x] 1.5 Import scripts (`scripts/import/*`) and `scripts/seed_p4_notes.py`: write `examples` lists. Update their tests.
 
 ## 2. Server behaviour (C07–C12)
 
-- [ ] 2.1 Duplicate endpoint per D11: copy every field including audio; status draft; origin manual; no capture or import link. Covered by a pytest.
-- [ ] 2.2 Merge: add part of speech as a take; examples are additive with de-duplication, replacing the context-text handling; the "absorb this note" direction uses the existing survivor/absorbed API with the roles swapped; a ready note cannot be absorbed (existing rule). Pytest for each take and both directions.
-- [ ] 2.3 Notes browser API: the filters and sorts from the `notes-browser` delta (PoS multi, origin, audio, missing fields, updated within; sort by updated, created, A–Z, completeness), server-side and paged, with a total. Pytest per filter and sort.
-- [ ] 2.4 Settings: remove `translation_merge_mode` from the store and routes; add `theme`, `value_color` and `value_color_custom` with validation (enum values; `#rrggbb`). Pytest.
-- [ ] 2.5 Enrichment (`routes/enrich.py`): pass through each examples candidate's provenance/context so the sheet can show it. No smia change.
+- [x] 2.1 Duplicate endpoint per D11: copy every field including audio; status draft; origin manual; no capture or import link. Covered by a pytest.
+- [x] 2.2 Merge: add part of speech as a take; examples are additive with de-duplication, replacing the context-text handling; the "absorb this note" direction uses the existing survivor/absorbed API with the roles swapped; a ready note cannot be absorbed (existing rule). Pytest for each take and both directions.
+- [x] 2.3 Notes browser API: the filters and sorts from the `notes-browser` delta (PoS multi, origin, audio, missing fields, updated within; sort by updated, created, A–Z, completeness), server-side and paged, with a total. Pytest per filter and sort.
+- [x] 2.4 Settings: remove `translation_merge_mode` from the store and routes; add `theme`, `value_color` and `value_color_custom` with validation (enum values; `#rrggbb`). Pytest.
+- [x] 2.5 Enrichment (`routes/enrich.py`): pass through each examples candidate's provenance/context so the sheet can show it. No smia change.
 
 ## 3. Shell, visual language, appearance (C13–C17)
 

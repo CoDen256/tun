@@ -65,7 +65,7 @@ def test_similar_match_includes_actual_field_values(client):
         client,
         text="en opplevelse",
         translations=[{"lang": "en", "text": "an experience"}],
-        context_text="en spennende opplevelse",
+        examples=["en spennende opplevelse"],
         inflections={"article": "en", "sg_indef": "opplevelse", "sg_def": "opplevelsen"},
         transcription="/ɔ.plɛ.vɛl.sə/",
     )
@@ -74,7 +74,8 @@ def test_similar_match_includes_actual_field_values(client):
     by_id = {m["id"]: m for m in matches}
     match = by_id[b["id"]]
     assert match["translations"] == [{"lang": "en", "text": "an experience"}]
-    assert match["context_text"] == "en spennende opplevelse"
+    assert match["examples"] == ["en spennende opplevelse"]
+    assert match["has_examples"] is True
     assert match["inflections"] == {"article": "en", "sg_indef": "opplevelse", "sg_def": "opplevelsen"}
     assert match["transcription"] == "/ɔ.plɛ.vɛl.sə/"
     assert match["audio_blob"] is None
@@ -119,7 +120,8 @@ def test_similar_match_without_fields_returns_empty_values(client):
     by_id = {m["id"]: m for m in matches}
     match = by_id[b["id"]]
     assert match["translations"] == []
-    assert match["context_text"] is None
+    assert match["examples"] == []
+    assert match["has_examples"] is False
     assert match["inflections"] == {}
     assert match["transcription"] is None
     assert match["audio_blob"] is None
@@ -241,12 +243,13 @@ def test_permitted_merge_deletes_absorbed_and_bumps_survivor(client):
         json={
             "survivor_id": survivor["id"],
             "absorbed_ids": [absorbed["id"]],
-            "take": {"context_text": absorbed["id"]},
+            "take": {"examples": absorbed["id"]},
         },
         headers=AUTH,
     )
     assert resp.status_code == 200
     survivor_after = resp.get_json()
+    assert survivor_after["absorbed_ids"] == [absorbed["id"]]
 
     gone = client.get(f"/api/notes/{absorbed['id']}", headers=AUTH)
     assert gone.status_code == 404
@@ -296,7 +299,9 @@ def test_taking_inflections_strips_grammatical_marker_prefix(client):
     assert resp.get_json()["inflections"] == {"infinitiv": "ringe", "perfektum": "ringt", "presens": "ringer"}
 
 
-def test_taking_translations_merges_with_survivors_own_default_append_mode(client):
+def test_taking_translations_adds_separate_rows_never_a_joined_one(client):
+    # stabbur-editor-redesign D7/D10: translations are always separate rows;
+    # the retired append mode's "house / home" can no longer be produced.
     survivor = _create(client, text="hus", status="draft", translations=[{"lang": "en", "text": "house"}])
     absorbed = _create(
         client,
@@ -315,18 +320,21 @@ def test_taking_translations_merges_with_survivors_own_default_append_mode(clien
         headers=AUTH,
     )
     assert resp.status_code == 200
-    translations = resp.get_json()["translations"]
-    assert {"lang": "en", "text": "house / home"} in translations
-    assert {"lang": "de", "text": "Haus"} in translations
-    assert len(translations) == 2
+    assert resp.get_json()["translations"] == [
+        {"lang": "en", "text": "house"},
+        {"lang": "en", "text": "home"},
+        {"lang": "de", "text": "Haus"},
+    ]
 
 
-def test_taking_translations_separate_mode_adds_a_second_row_for_the_same_language(client, monkeypatch):
+def test_taking_translations_skips_a_translation_the_survivor_already_has(client):
     survivor = _create(client, text="hus", status="draft", translations=[{"lang": "en", "text": "house"}])
-    absorbed = _create(client, text="hus2", status="draft", translations=[{"lang": "en", "text": "home"}])
-
-    patch_resp = client.patch("/api/settings", json={"translation_merge_mode": "separate"}, headers=AUTH)
-    assert patch_resp.status_code == 200
+    absorbed = _create(
+        client,
+        text="hus2",
+        status="draft",
+        translations=[{"lang": "EN", "text": " house "}, {"lang": "en", "text": "home"}],
+    )
 
     resp = client.post(
         "/api/notes/merge",
@@ -338,10 +346,10 @@ def test_taking_translations_separate_mode_adds_a_second_row_for_the_same_langua
         headers=AUTH,
     )
     assert resp.status_code == 200
-    translations = resp.get_json()["translations"]
-    assert {"lang": "en", "text": "house"} in translations
-    assert {"lang": "en", "text": "home"} in translations
-    assert len(translations) == 2
+    assert resp.get_json()["translations"] == [
+        {"lang": "en", "text": "house"},
+        {"lang": "en", "text": "home"},
+    ]
 
 
 def test_taking_translations_with_no_existing_translations_just_adds_them(client):
@@ -401,7 +409,7 @@ def test_failed_merge_rolls_back_entirely(client):
         json={
             "survivor_id": survivor["id"],
             "absorbed_ids": [absorbed_ok["id"], absorbed_forbidden["id"]],
-            "take": {"context_text": absorbed_ok["id"]},
+            "take": {"examples": absorbed_ok["id"]},
         },
         headers=AUTH,
     )
@@ -411,7 +419,7 @@ def test_failed_merge_rolls_back_entirely(client):
     still_ok = client.get(f"/api/notes/{absorbed_ok['id']}", headers=AUTH)
     assert still_ok.status_code == 200
     survivor_after = client.get(f"/api/notes/{survivor['id']}", headers=AUTH).get_json()
-    assert survivor_after["context_text"] is None
+    assert survivor_after["examples"] == []
 
 
 def test_merge_rejects_absorbing_self(client):
@@ -439,7 +447,7 @@ def test_unsaved_form_value_survives_a_merge_that_takes_nothing(client):
             "survivor_id": survivor["id"],
             "absorbed_ids": [absorbed["id"]],
             "take": {},
-            "survivor_values": {"transcription": "ˈhuːs", "context_text": "Et stort hus."},
+            "survivor_values": {"transcription": "ˈhuːs", "examples": ["Et stort hus."]},
         },
         headers=AUTH,
     )
@@ -447,7 +455,7 @@ def test_unsaved_form_value_survives_a_merge_that_takes_nothing(client):
 
     stored = client.get(f"/api/notes/{survivor['id']}", headers=AUTH).get_json()
     assert stored["transcription"] == "ˈhuːs"
-    assert stored["context_text"] == "Et stort hus."
+    assert stored["examples"] == ["Et stort hus."]
 
 
 def test_merge_without_survivor_values_leaves_the_stored_row_alone(client):
@@ -607,76 +615,207 @@ def test_merge_with_survivor_values_still_bumps_updated_at(client):
 
 
 # ------------------------------------- stabbur-merge-fixes task 2.4 ---
-# Additive context, replacive inflections (dragging the source's pos).
+# Additive examples, replacive inflections (dragging the source's pos).
 
 
-def test_taking_context_appends_on_a_single_newline(client):
-    survivor = _create(client, text="hus", status="draft", context_text="Han gikk på doen.")
-    absorbed = _create(client, text="hus2", status="draft", context_text="Døra var låst.")
-
-    resp = client.post(
-        "/api/notes/merge",
-        json={
-            "survivor_id": survivor["id"],
-            "absorbed_ids": [absorbed["id"]],
-            "take": {"context_text": absorbed["id"]},
-        },
-        headers=AUTH,
-    )
-    assert resp.status_code == 200
-    assert resp.get_json()["context_text"] == "Han gikk på doen.\nDøra var låst."
-
-
-def test_taking_context_appends_to_the_submitted_form_value_not_the_stored_one(client):
-    survivor = _create(client, text="hus", status="draft", context_text="stored")
-    absorbed = _create(client, text="hus2", status="draft", context_text="Døra var låst.")
+def test_taking_examples_appends_them_in_order(client):
+    survivor = _create(client, text="hus", status="draft", examples=["Han gikk på doen."])
+    absorbed = _create(client, text="hus2", status="draft", examples=["Døra var låst.", "Lyset var av."])
 
     resp = client.post(
         "/api/notes/merge",
         json={
             "survivor_id": survivor["id"],
             "absorbed_ids": [absorbed["id"]],
-            "take": {"context_text": absorbed["id"]},
-            "survivor_values": {"context_text": "Han gikk på doen."},
+            "take": {"examples": absorbed["id"]},
         },
         headers=AUTH,
     )
-    assert resp.status_code == 200
-    assert resp.get_json()["context_text"] == "Han gikk på doen.\nDøra var låst."
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()["examples"] == ["Han gikk på doen.", "Døra var låst.", "Lyset var av."]
 
 
-def test_taking_identical_context_does_not_duplicate_it(client):
-    survivor = _create(client, text="hus", status="draft", context_text="Døra var låst.")
-    absorbed = _create(client, text="hus2", status="draft", context_text="  Døra var låst. ")
+def test_taking_examples_appends_to_the_submitted_form_value_not_the_stored_one(client):
+    survivor = _create(client, text="hus", status="draft", examples=["stored"])
+    absorbed = _create(client, text="hus2", status="draft", examples=["Døra var låst."])
 
     resp = client.post(
         "/api/notes/merge",
         json={
             "survivor_id": survivor["id"],
             "absorbed_ids": [absorbed["id"]],
-            "take": {"context_text": absorbed["id"]},
+            "take": {"examples": absorbed["id"]},
+            "survivor_values": {"examples": ["Han gikk på doen."]},
         },
         headers=AUTH,
     )
-    assert resp.status_code == 200
-    assert resp.get_json()["context_text"] == "Døra var låst."
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()["examples"] == ["Han gikk på doen.", "Døra var låst."]
 
 
-def test_taking_context_onto_an_empty_survivor_just_takes_it(client):
+def test_taking_examples_when_both_share_a_sentence_keeps_the_union_without_duplicate(client):
+    # C09.
+    survivor = _create(client, text="hus", status="draft", examples=["Døra var låst.", "Huset er stort."])
+    absorbed = _create(client, text="hus2", status="draft", examples=["  Døra var låst. ", "Ny setning."])
+
+    resp = client.post(
+        "/api/notes/merge",
+        json={
+            "survivor_id": survivor["id"],
+            "absorbed_ids": [absorbed["id"]],
+            "take": {"examples": absorbed["id"]},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()["examples"] == ["Døra var låst.", "Huset er stort.", "Ny setning."]
+
+
+def test_taking_examples_onto_an_empty_survivor_just_takes_them(client):
     survivor = _create(client, text="hus", status="draft")
-    absorbed = _create(client, text="hus2", status="draft", context_text="Døra var låst.")
+    absorbed = _create(client, text="hus2", status="draft", examples=["Døra var låst."])
 
     resp = client.post(
         "/api/notes/merge",
         json={
             "survivor_id": survivor["id"],
             "absorbed_ids": [absorbed["id"]],
-            "take": {"context_text": absorbed["id"]},
+            "take": {"examples": absorbed["id"]},
         },
         headers=AUTH,
     )
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()["examples"] == ["Døra var låst."]
+
+
+def test_taking_only_pos_changes_pos_and_leaves_inflections_alone(client):
+    # C08: part of speech is its own replacive take.
+    paradigm = {"infinitiv": "gå", "presens": "går", "preteritum": "gikk", "perfektum": "gått"}
+    survivor = _create(client, text="gå", status="draft", pos="verb", inflections=paradigm)
+    absorbed = _create(client, text="gå2", status="draft", pos="substantiv",
+                       inflections={"article": "en", "sg_indef": "gang"})
+
+    resp = client.post(
+        "/api/notes/merge",
+        json={"survivor_id": survivor["id"], "absorbed_ids": [absorbed["id"]], "take": {"pos": absorbed["id"]}},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.get_json()
+    stored = client.get(f"/api/notes/{survivor['id']}", headers=AUTH).get_json()
+    assert stored["pos"] == "substantiv"
+    assert stored["inflections"] == paradigm
+
+
+# ----------------------------- stabbur-editor-redesign D10: two-way ---
+# "This note into '<other>'": the open note is the ABSORBED one; its unsaved
+# form state travels as absorbed_values so the takes read what is on screen.
+
+
+def test_open_note_absorbed_into_other_carries_its_unsaved_form_values(client):
+    other = _create(client, text="hus", status="ready", examples=["Huset er stort."])
+    open_note = _create(client, text="huset", status="draft", transcription="stored")
+
+    resp = client.post(
+        "/api/notes/merge",
+        json={
+            "survivor_id": other["id"],
+            "absorbed_ids": [open_note["id"]],
+            "take": {"transcription": open_note["id"], "examples": open_note["id"], "pos": open_note["id"]},
+            "absorbed_values": {
+                open_note["id"]: {"transcription": "ˈhʉːsə", "examples": ["Huset er rødt."], "pos": "substantiv"}
+            },
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.get_json()
+    body = resp.get_json()
+    assert body["id"] == other["id"]
+    assert body["absorbed_ids"] == [open_note["id"]]
+    assert body["transcription"] == "ˈhʉːsə"
+    assert body["examples"] == ["Huset er stort.", "Huset er rødt."]
+    assert body["pos"] == "substantiv"
+    assert body["status"] == "ready"
+    assert client.get(f"/api/notes/{open_note['id']}", headers=AUTH).status_code == 404
+
+
+def test_both_directions_produce_the_mirror_survivor(client):
+    a = _create(client, text="bil", status="draft", examples=["A."])
+    b = _create(client, text="bilen", status="draft", examples=["B."])
+    # Into this note (a survives).
+    resp = client.post(
+        "/api/notes/merge",
+        json={"survivor_id": a["id"], "absorbed_ids": [b["id"]], "take": {"examples": b["id"]}},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200 and resp.get_json()["examples"] == ["A.", "B."]
+
+    c = _create(client, text="bil", status="draft", examples=["C."])
+    d = _create(client, text="bilen", status="draft", examples=["D."])
+    # This note (c) into the other (d survives).
+    resp = client.post(
+        "/api/notes/merge",
+        json={"survivor_id": d["id"], "absorbed_ids": [c["id"]], "take": {"examples": c["id"], "text": c["id"]}},
+        headers=AUTH,
+    )
     assert resp.status_code == 200
-    assert resp.get_json()["context_text"] == "Døra var låst."
+    assert resp.get_json()["id"] == d["id"]
+    assert resp.get_json()["examples"] == ["D.", "C."]
+    assert resp.get_json()["text"] == "bil"
+    assert client.get(f"/api/notes/{c['id']}", headers=AUTH).status_code == 404
+
+
+def test_a_ready_open_note_cannot_be_absorbed_into_another(client):
+    other = _create(client, text="hus", status="draft")
+    open_note = _create(client, text="huset", status="ready")
+    resp = client.post(
+        "/api/notes/merge",
+        json={"survivor_id": other["id"], "absorbed_ids": [open_note["id"]], "take": {"text": open_note["id"]}},
+        headers=AUTH,
+    )
+    assert resp.status_code == 400
+    assert "only draft" in resp.get_json()["error"]
+    assert client.get(f"/api/notes/{open_note['id']}", headers=AUTH).status_code == 200
+    assert client.get(f"/api/notes/{other['id']}", headers=AUTH).get_json()["text"] == "hus"
+
+
+def test_an_open_note_switched_to_ready_in_the_form_cannot_be_absorbed(client):
+    other = _create(client, text="hus", status="draft")
+    open_note = _create(client, text="huset", status="draft")
+    resp = client.post(
+        "/api/notes/merge",
+        json={
+            "survivor_id": other["id"],
+            "absorbed_ids": [open_note["id"]],
+            "take": {},
+            "absorbed_values": {open_note["id"]: {"status": "ready"}},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 400
+    assert client.get(f"/api/notes/{open_note['id']}", headers=AUTH).status_code == 200
+
+
+def test_absorbed_values_are_validated_and_must_name_an_absorbed_note(client):
+    other = _create(client, text="hus", status="draft")
+    open_note = _create(client, text="huset", status="draft")
+    for absorbed_values in (
+        {other["id"]: {"text": "x"}},
+        {open_note["id"]: {"examples": [""]}},
+        {open_note["id"]: {"origin": "import"}},
+        {open_note["id"]: "not an object"},
+    ):
+        resp = client.post(
+            "/api/notes/merge",
+            json={
+                "survivor_id": other["id"],
+                "absorbed_ids": [open_note["id"]],
+                "take": {"text": open_note["id"]},
+                "absorbed_values": absorbed_values,
+            },
+            headers=AUTH,
+        )
+        assert resp.status_code == 400, absorbed_values
+    assert client.get(f"/api/notes/{open_note['id']}", headers=AUTH).status_code == 200
 
 
 def test_taking_inflections_replaces_the_paradigm_wholesale(client):

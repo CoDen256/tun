@@ -10,9 +10,18 @@ to branch on "unconfigured" vs. "configured".
 
 from __future__ import annotations
 
-from db.models import Settings
+import re
 
-TRANSLATION_MERGE_MODES = ("append", "separate")
+from db.models import SETTINGS_THEMES, SETTINGS_VALUE_COLOR_CUSTOM_PATTERN, SETTINGS_VALUE_COLORS, Settings
+
+# stabbur-editor-redesign D12: appearance. Mirrors db/models.py, whose check
+# constraints are the enforced source of truth; validated here first so the
+# operator gets a readable 400 instead of an IntegrityError.
+THEMES = SETTINGS_THEMES
+VALUE_COLORS = SETTINGS_VALUE_COLORS
+VALUE_COLOR_CUSTOM_RE = re.compile(SETTINGS_VALUE_COLOR_CUSTOM_PATTERN)
+DEFAULT_THEME = "auto"
+DEFAULT_VALUE_COLOR = "blue"
 # note-triage design D6: "on_open" prefills a triage note's empty fields the
 # moment it's presented; "on_demand" waits for the operator's fill control.
 PREFILL_TIMINGS = ("on_open", "on_demand")
@@ -26,7 +35,6 @@ TRIAGE_NAVIGATE_SAVE_MODES = ("autosave", "manual")
 EXAMPLES_COUNT_RANGE = (1, 10)
 EXAMPLES_MAX_PROVIDERS_RANGE = (1, 10)
 
-DEFAULT_TRANSLATION_MERGE_MODE = "append"
 DEFAULT_OVERRIDE_PREFILL = True
 DEFAULT_TARGET_LANGS = ("en", "de")
 DEFAULT_PREFILL_TIMING = "on_open"
@@ -60,12 +68,26 @@ QUEUE_FILTER_KEYS = (
     "audio_blob_presence",
     "transcription_presence",
     "inflections_presence",
-    "context_text_presence",
+    "examples_presence",
     "translations_presence",
     "lemma_presence",
+    # stabbur-editor-redesign notes-browser delta: "Triage these" saves the
+    # browser's own filters, so a queue may carry them too.
+    "audio",
+    "missing",
+    "updated_within",
 )
 
-QUEUE_SORTS = ("updated_asc", "updated_desc", "created_asc", "created_desc", "text_asc", "text_desc")
+QUEUE_SORTS = (
+    "updated_asc",
+    "updated_desc",
+    "created_asc",
+    "created_desc",
+    "text_asc",
+    "text_desc",
+    "complete_asc",
+    "complete_desc",
+)
 DEFAULT_QUEUE_SORT = "updated_asc"
 MAX_QUEUE_NAME_LENGTH = 60
 
@@ -157,13 +179,16 @@ def read_scalars(db) -> dict:
     involved, since these aren't provider-ordering preferences."""
     row = _row(db)
     return {
-        "translation_merge_mode": (row.translation_merge_mode if row else None) or DEFAULT_TRANSLATION_MERGE_MODE,
         "override_prefill": DEFAULT_OVERRIDE_PREFILL if row is None or row.override_prefill is None else row.override_prefill,
         "default_target_langs": (row.default_target_langs if row else None) or list(DEFAULT_TARGET_LANGS),
         "prefill_timing": (row.prefill_timing if row else None) or DEFAULT_PREFILL_TIMING,
         "triage_navigate_save": (row.triage_navigate_save if row else None) or DEFAULT_TRIAGE_NAVIGATE_SAVE,
         "examples_count": (row.examples_count if row else None) or DEFAULT_EXAMPLES_COUNT,
         "examples_max_providers": (row.examples_max_providers if row else None) or DEFAULT_EXAMPLES_MAX_PROVIDERS,
+        "theme": (row.theme if row else None) or DEFAULT_THEME,
+        "value_color": (row.value_color if row else None) or DEFAULT_VALUE_COLOR,
+        # No default: unset means "no custom colour picked yet".
+        "value_color_custom": row.value_color_custom if row else None,
     }
 
 
@@ -210,8 +235,6 @@ def write(db, updates: dict, kinds: tuple[str, ...]) -> None:
         row = Settings(id=1)
         db.add(row)
 
-    if "translation_merge_mode" in updates:
-        row.translation_merge_mode = updates["translation_merge_mode"]
     if "override_prefill" in updates:
         row.override_prefill = updates["override_prefill"]
     if "default_target_langs" in updates:
@@ -224,6 +247,9 @@ def write(db, updates: dict, kinds: tuple[str, ...]) -> None:
         row.examples_count = updates["examples_count"]
     if "examples_max_providers" in updates:
         row.examples_max_providers = updates["examples_max_providers"]
+    for key in ("theme", "value_color", "value_color_custom"):
+        if key in updates:
+            setattr(row, key, updates[key])
 
     if "providers" in updates:
         # Reassigned as a new dict (not mutated in place) so SQLAlchemy's
