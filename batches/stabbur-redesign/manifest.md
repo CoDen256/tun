@@ -16,7 +16,7 @@ them in that order.
 
 | package | status |
 |---|---|
-| Stabbur editor redesign | designed — stabbur: `stabbur-editor-redesign`; mjolnir: `projector-examples-column` |
+| Stabbur editor redesign | building — stabbur: `stabbur-editor-redesign`; mjolnir: `projector-examples-column` |
 
 ## Packages
 
