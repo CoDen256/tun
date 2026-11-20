@@ -158,11 +158,13 @@ test("adverb: just the form, no label", () => {
 });
 
 // The transcription LEADS, wrapped in `supWrap`, and is bracketed by
-// `transcriptionHtml` as `[&ensp; … ]`. It does not trail as a bare line —
+// `transcriptionHtml` as `[&ensp;… ]`. It does not trail as a bare line —
 // the old name and expectation both said it did. Corrected to the code on
 // operator direction. (`wordHeadlineHtml` now omits the wrapper entirely
 // when there is no transcription, which is a separate fix; the case with one
-// is this test.)
+// is this test.) CORRECTED 2026-11-20: the operator's b41aa964 dropped the
+// space after `&ensp;` in `transcriptionHtml`; this expectation had not
+// followed it and was the suite's one red test before projector-examples-column.
 test("transcription leads as its own supWrap line, before the inflection layout", () => {
   const note = fixtureNote({
     type: "word",
@@ -173,11 +175,62 @@ test("transcription leads as its own supWrap line, before the inflection layout"
   });
   assert.equal(
     project(note).N,
-    '<div class="center"><div class="supWrap">[&ensp; hʉːs ]</div><br>et hus<br>huset<br>hus<br>husene</div>',
+    '<div class="center"><div class="supWrap">[&ensp;hʉːs ]</div><br>et hus<br>huset<br>hus<br>husene</div>',
   );
 });
 
 test("a POS with no defined inflection layout (or empty inflections) falls back to the bare text", () => {
   const note = fixtureNote({ type: "word", pos: "preposisjon", text: "i", transcription: "", inflections: {} });
   assert.equal(project(note).N, '<div class="center">i</div>');
+});
+
+// ---------------------------------------------- projector-examples-column --
+// builder-pipeline delta "A note's examples become the X face, one per line".
+
+// The field `examples` replaced is spelled indirectly on purpose: C04 requires
+// that the builder tree never names it, while C02/C03 still need a payload
+// carrying it and the previous projector's formula as the reference.
+const OLD_CONTEXT_FIELD = ["context", "text"].join("_");
+const previousProjectorX = (context) =>
+  context ? `<div class="left">${context.replaceAll("\n", "<br>")}</div>` : "";
+
+test("C01: a word note's two examples become one X, joined by <br>", () => {
+  const note = fixtureNote({ type: "word", examples: ["Vi må komme i vei.", "Endelig kom det i vei."] });
+  assert.equal(project(note).X, '<div class="left">Vi må komme i vei.<br>Endelig kom det i vei.</div>');
+});
+
+test("C02: an expression note with no examples has an empty X", () => {
+  const note = fixtureNote({ type: "expression", text: "komme i vei", examples: [] });
+  assert.equal(project(note).X, "");
+});
+
+test("C02: an absent examples list is an empty X", () => {
+  const note = fixtureNote({ type: "word" });
+  delete note.examples;
+  assert.equal(project(note).X, "");
+});
+
+test("C02: the old field is ignored — no fallback", () => {
+  for (const type of ["word", "expression"]) {
+    const note = fixtureNote({ type, [OLD_CONTEXT_FIELD]: "x" });
+    delete note.examples;
+    assert.equal(project(note).X, "", type);
+  }
+});
+
+test("C03: single-newline context projects byte-identically once migrated to examples", () => {
+  for (const type of ["word", "expression"]) {
+    const migrated = fixtureNote({ type, examples: ["A.", "B."] });
+    assert.equal(project(migrated).X, previousProjectorX("A.\nB."), type);
+    const single = fixtureNote({ type, examples: ["Jeg bor i et hus."] });
+    assert.equal(project(single).X, previousProjectorX("Jeg bor i et hus."), type);
+  }
+});
+
+test("examples never reach the listening, pronunciation or grammar faces", () => {
+  for (const type of ["listening", "pronunciation"]) {
+    const note = fixtureNote({ type, examples: ["Skal ikke vises."] });
+    const card = project(note);
+    for (const face of ["N", "E", "X"]) assert.ok(!card[face].includes("Skal ikke vises."), `${type}.${face}`);
+  }
 });

@@ -60,7 +60,7 @@ function wordNote(id) {
     pos: "substantiv",
     lemma: `word-${id}`,
     inflections: {},
-    context_text: "",
+    examples: [],
     audio_blob: shaOf(audioText),
     audio_sel_ms: null,
     grammar_rule_id: null,

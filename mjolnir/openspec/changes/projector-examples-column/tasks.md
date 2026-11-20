@@ -2,8 +2,8 @@
 
 ## 1. Projector (C01–C04)
 
-- [ ] 1.1 `builder/src/projector.js`: build word and expression X from `note.examples` per design D1, with no `context_text` read and no fallback (D2). Verify: new unit tests for the four `builder-pipeline` scenarios pass.
-- [ ] 1.2 Move every builder fixture and test from `context_text` to `examples`. Verify: `grep -rn context_text mjolnir/builder` returns nothing, and the full builder test suite passes.
+- [x] 1.1 `builder/src/projector.js`: build word and expression X from `note.examples` per design D1, with no `context_text` read and no fallback (D2). Verify: new unit tests for the four `builder-pipeline` scenarios pass.
+- [x] 1.2 Move every builder fixture and test from `context_text` to `examples`. Verify: `grep -rn context_text mjolnir/builder` returns nothing, and the full builder test suite passes.
 
 ## 2. Integration (C05)
 

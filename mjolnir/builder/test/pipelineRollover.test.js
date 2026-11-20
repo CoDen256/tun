@@ -33,7 +33,7 @@ function listeningNote(id) {
     pos: null,
     lemma: null,
     inflections: {},
-    context_text: "",
+    examples: [],
     audio_blob: shaOf(audioText),
     audio_sel_ms: null,
     grammar_rule_id: null,
