@@ -404,3 +404,88 @@ reports nothing, that is the expected state.
 - The projector throws on a verb note with `inflections: {}`. In BACKLOG.md.
 - Builder test #39 (projector transcription) fails because of `74ba89ca` /
   `b41aa964`, which are your own commits, not this batch.
+
+## Card preview redo
+`mjolnir/openspec/changes/archive/2026-11-20-card-preview-popup`
+
+This REDOES the card preview from the earlier `assembly-tab-usability`
+build, after you rejected that version's result against the real app —
+`.center` bold, centred text, a card background, wrong face ratios. This
+build is an independent extractor-rules read of the stock bundle, with a
+widened extractor, and the hand-typed preview CSS deleted entirely.
+
+No schema migration for the preview itself; one small one for settings
+storage (see below). Deploy touches `mjolnir-hub` only —
+`mjolnir-builder`, `mjolnir-sync`, device plane and the APK are untouched
+(verified byte-for-byte: `/ota/current.json` and the bundle file are
+unchanged by browsing any source on the Cards page).
+
+### Deploy
+- `git pull`, `docker compose build mjolnir-hub && docker compose up -d mjolnir-hub`.
+- **One-time migration, runs automatically on hub boot**: hub's own
+  migration runner applies `hub/migrations/020_operator_settings.sql`,
+  adding a new `operator_settings` table (`key`, `value` JSONB,
+  `updated_at`) in the shared `mjolnir` database — no manual step, no data
+  backfill, nothing to run by hand. If you want to confirm it landed:
+  `docker exec <postgres container> psql -U mjolnir -d mjolnir -c "\dt operator_settings"`.
+- No new secrets, no env var changes.
+
+### Flows to test live
+1. **Cards page** (hub → Cards): confirm it is now **one flat table** —
+   Card · Deck · Front (N) · Back (E) · Occurrences · ↗ — with no per-deck
+   panels and no inline preview row. Click a card's Front/Back text (not
+   the ↗ icons) to open the popup.
+2. **The popup**: confirm it shows the study card **alone** — no phone
+   chrome, no status bar, no answer buttons — on the theme's screen
+   background, with the deck name above it. Switch Light ↔ Dark and
+   confirm the colour *inside* the card border and the margin *around* it
+   match (white in Light, `#1B1D21` in Dark) — this was the exact bug you
+   rejected the old preview over.
+3. **Direction switch**: pick a card with both N and E occurrences, toggle
+   N ↔ E, and confirm the top/middle faces swap and the audio icon follows
+   whichever face is currently showing the card's `A` side.
+4. **Tap-to-play**: tap the face carrying audio on a card whose clip is
+   present — it should actually play, with no visible `<audio>` control
+   anywhere. Tap a different face — a brief "no audio on this face" message.
+5. **Tools drawer**: click "Tools", drag its edge to resize it (the card
+   should visibly shrink to fit while you drag), reload the page and
+   reopen a card's popup — the drawer should reopen at the size you left
+   it. Try the Edit HTML tab: type into the N/E/X editors, confirm the
+   card re-renders live, select some text and click a colour swatch to
+   wrap it in a `<span class="...">`, then hit Reset and confirm the
+   `edited (throwaway)` chip disappears and the card goes back to its
+   stored content. Reload the page — the edit should be nowhere, including
+   in the database (it was never saved).
+6. **Classes & tags / Symbols tables** (inside Tools): click a few rows —
+   each should copy something to your clipboard and show a brief "Copied"
+   confirmation. Colour class rows (`.teal`, `.royalRed`, etc.) should show
+   their actual colour in the Sample column.
+7. **Source picker**: switch from `Minted (hub ledger)` to a published
+   build — the table should refilter to exactly that build's cards, with
+   hub-minted ones carrying a small dot, and the Minted-only filters
+   (grammar rule, audio-missing, etc.) should grey out rather than vanish
+   or break.
+8. **Filters, sort, pagination**: try the *Pending E sides* and *Uses IPA*
+   saved views, change page size, and confirm the occurrence cells (small
+   N/E/A boxes) look the same here as on the builder's ship-strips page —
+   same colours for shipped/staged-flushing/staged-held/pending.
+9. **Settings persistence**: change the theme, font size, or page size,
+   then reload the page (or open it in a different browser) — your choices
+   should still be there. This is the new `operator_settings` table at
+   work; nothing to configure, it's automatic.
+
+### Known follow-ups (not blocking, not regressions)
+- None outstanding. All 41 acceptance criteria passed on the final
+  re-verification pass (`acceptance.md` in the archived change folder).
+  Two rounds of fixes landed first: a tools-drawer scope bug, a missing
+  `[hidden]` CSS override on the Minted-only legend, the card-stage
+  background colour, default-direction persistence across popup reopen,
+  a silent bundle-degrade path, an empty class filter in Bundle mode, the
+  extractor not failing loudly on a missing fixed colour-class anchor, a
+  trailing `<br>` not producing a second line box, and the drawer's resize
+  handle being mispositioned by a corrupted CSS comment.
+- Line metrics (Poppins/Arial line-height) and whether long `.flex`
+  children wrap are *inferred*, not read from the device — the design
+  record flagged this as unverified against a real phone. Compare a real
+  screenshot against the preview when you get a chance; a mismatch is a
+  new backlog item, not a build defect.

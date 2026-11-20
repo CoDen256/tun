@@ -35,7 +35,7 @@ All other packages are parallel-safe.
 |---|---|
 | Builder UI rehaul & data versioning | archived — mjolnir: `2026-11-19-flush-record-atomicity`, `2026-11-19-builder-ship-strips` |
 | Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` (item 3 redone by "Card preview redo") |
-| Card preview redo | building (mjolnir: `card-preview-popup`) |
+| Card preview redo | archived — `mjolnir/openspec/changes/archive/2026-11-20-card-preview-popup` |
 | Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
 | Stabbur merging & dict.cc translations | archived — smia `2026-11-18-dictcc-parsing-fixes`; stabbur `2026-11-18-stabbur-merge-fixes`, `2026-11-18-stabbur-triage-queues` |
 | Shadow studying mode | archived — `shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode` |
