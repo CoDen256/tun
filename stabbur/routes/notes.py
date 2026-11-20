@@ -6,13 +6,13 @@ D-N3) and the one-directional read API (`notes-read-api` spec, D-N4) that
 
 from __future__ import annotations
 
+import copy
 import datetime
 
 from flask import jsonify, request
-from sqlalchemy import Text, cast, func, or_, select
+from sqlalchemy import Float, Text, and_, case, cast, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 
-import settings_store
 import similarity
 from db.models import NOTE_ORIGINS, NOTE_STATUSES, NOTE_TYPES, GrammarRule, Note
 from db.session import session_scope
@@ -29,20 +29,21 @@ MERGE_TAKE_FIELDS = (
     "pos",
     "lemma",
     "inflections",
-    "context_text",
+    "examples",
     "audio_blob",
     "audio_sel_ms",
 )
 
 # stabbur-merge-fixes D2: a take is either additive or replacive, fixed per
-# field. `translations` and `context_text` add — the survivor's own value is
+# field. `translations` and `examples` add (stabbur-editor-redesign D10:
+# `examples` took over the old context text's additive role) — the survivor's own value is
 # never discarded, because combining two drafts' knowledge is the point of a
 # merge. Everything else replaces: an inflection paradigm is one coherent
 # object (unioning it slot-by-slot across two notes describes no actual
 # word), and the remaining fields are single-valued. Declared here so the
 # distinction is readable without tracing the merge loop; the loop below is
 # what enforces it.
-MERGE_ADDITIVE_FIELDS = ("translations", "context_text")
+MERGE_ADDITIVE_FIELDS = ("translations", "examples")
 
 # stabbur-merge-fixes D1: the fields the merge request may carry as the
 # survivor's current (unsaved) form state. The same set `patch_note` accepts
@@ -60,11 +61,40 @@ MERGE_SURVIVOR_VALUE_FIELDS = (
     "pos",
     "lemma",
     "inflections",
-    "context_text",
+    "examples",
     "audio_blob",
     "audio_sel_ms",
     "grammar_rule_id",
 )
+
+# The fields `patch_note` writes — the same set a merge may carry as form
+# state for either side (survivor or absorbed).
+PATCHABLE_FIELDS = MERGE_SURVIVOR_VALUE_FIELDS
+
+# stabbur-editor-redesign D11: every authored field a duplicate copies.
+# Status (always draft) and provenance (always manual, unlinked) are set by
+# the route instead.
+DUPLICATED_FIELDS = (
+    "type",
+    "source_lang",
+    "text",
+    "translations",
+    "transcription",
+    "pos",
+    "lemma",
+    "inflections",
+    "examples",
+    "audio_blob",
+    "audio_sel_ms",
+    "grammar_rule_id",
+)
+
+
+def copy_value(value):
+    """A deep-enough copy of a JSONB value so the copy never shares a list
+    or dict object with the original's in-session state."""
+    return copy.deepcopy(value)
+
 
 SIMILAR_NOTES_SIGNAL_LABELS = {
     "spelling": "spelled alike",
@@ -86,7 +116,7 @@ FIELD_PRESENCE_FILTERS = (
     "audio_blob",
     "transcription",
     "inflections",
-    "context_text",
+    "examples",
     "translations",
     "lemma",
 )
@@ -112,12 +142,92 @@ def _is_missing(column):
     name = column.key
     if name in ("inflections",):
         return or_(column.is_(None), cast(column, Text) == "{}")
-    if name in ("translations",):
+    if name in ("translations", "examples"):
         return or_(column.is_(None), cast(column, Text) == "[]")
     return or_(column.is_(None), column == "")
 
 
+# stabbur-editor-redesign notes-browser delta: the editor's done-markers,
+# computed in SQL so the list can sort on them server-side and page. The
+# applicable fields are exactly the markers' (Word | Sound | Meaning, plus
+# Grammar only on a grammar note):
+#   Word    text, type, pos, lemma, + inflections when the pos has a paradigm
+#           (every slot of that pos's field set filled)
+#   Sound   audio, transcription (IPA)
+#   Meaning translations non-empty, examples non-empty
+#   Grammar the linked rule — counted only when type = grammar
+# The paradigm field sets are the editor's own INFLECTION_SHAPES (ui.js);
+# adverb's single `form` slot is not a paradigm and does not count.
+PARADIGM_FIELDS = {
+    "substantiv": ("article", "sg_indef", "sg_def", "pl_indef", "pl_def"),
+    "adjektiv": ("positiv", "nøytrum", "flertall", "komparativ", "superlativ"),
+    "verb": ("infinitiv", "presens", "preteritum", "perfektum"),
+}
+
+
+def _filled(column):
+    return case((_is_missing(column), 0), else_=1)
+
+
+def _completeness_columns():
+    """(filled, applicable) as SQL expressions over `notes`."""
+    paradigm_filled = case(
+        *[
+            (
+                and_(
+                    Note.pos == pos,
+                    *[func.coalesce(func.btrim(Note.inflections[key].astext), "") != "" for key in keys],
+                ),
+                1,
+            )
+            for pos, keys in PARADIGM_FIELDS.items()
+        ],
+        else_=0,
+    )
+    paradigm_applicable = case((Note.pos.in_(tuple(PARADIGM_FIELDS)), 1), else_=0)
+    grammar_filled = case((and_(Note.type == "grammar", Note.grammar_rule_id.is_not(None)), 1), else_=0)
+    grammar_applicable = case((Note.type == "grammar", 1), else_=0)
+    filled = (
+        _filled(Note.text)
+        + _filled(Note.type)
+        + _filled(Note.pos)
+        + _filled(Note.lemma)
+        + paradigm_filled
+        + _filled(Note.audio_blob)
+        + _filled(Note.transcription)
+        + _filled(Note.translations)
+        + _filled(Note.examples)
+        + grammar_filled
+    )
+    applicable = literal(8) + paradigm_applicable + grammar_applicable
+    return filled, applicable
+
+
+COMPLETENESS_FILLED, COMPLETENESS_APPLICABLE = _completeness_columns()
+COMPLETENESS_RATIO = cast(COMPLETENESS_FILLED, Float) / cast(COMPLETENESS_APPLICABLE, Float)
+
+# The notes browser's multi-value filters: a comma-separated list (repeating
+# the parameter works too). "missing" names a field the operator wants
+# EMPTY; several are ANDed.
+MISSING_FILTER_FIELDS = {
+    "ipa": "transcription",
+    "translations": "translations",
+    "examples": "examples",
+    "lemma": "lemma",
+}
+AUDIO_FILTER_STATES = ("has", "none")
+# Rolling windows, like `updated_since` (and the same lengths): "today" is
+# the last 24 hours, not since a midnight in some timezone.
+UPDATED_WITHIN_WINDOWS = {
+    "today": datetime.timedelta(hours=24),
+    "week": datetime.timedelta(days=7),
+    "month": datetime.timedelta(days=30),
+}
+
 AUTHORING_SORTS = {
+    # Least complete first; ties by most recently updated.
+    "complete_asc": (COMPLETENESS_RATIO.asc(), Note.updated_at.desc()),
+    "complete_desc": (COMPLETENESS_RATIO.desc(), Note.updated_at.desc()),
     "updated_desc": Note.updated_at.desc(),
     "updated_asc": Note.updated_at.asc(),
     "created_desc": Note.created_at.desc(),
@@ -141,7 +251,7 @@ READ_API_FIELDS = (
     "pos",
     "lemma",
     "inflections",
-    "context_text",
+    "examples",
     "audio_blob",
     "audio_sel_ms",
     "grammar_rule_id",
@@ -167,7 +277,7 @@ def _serialize_public(note: Note) -> dict:
         "pos": note.pos,
         "lemma": note.lemma,
         "inflections": note.inflections,
-        "context_text": note.context_text,
+        "examples": note.examples or [],
         "audio_blob": note.audio_blob,
         "audio_sel_ms": note.audio_sel_ms,
         "grammar_rule_id": note.grammar_rule_id,
@@ -225,86 +335,97 @@ def _normalize_inflections(inflections: dict | None) -> dict:
 # way every other take field works, since those are single-value fields)
 # would silently drop any translation the survivor already had — a merge
 # is supposed to combine two drafts' knowledge, not pick a winner for a
-# list-shaped field. Merged per-language using the same append/separate
-# choice operator-settings already exposes for the suggest panel's own
-# "use a second suggestion for the same language" case (ui.js's
-# useTranslationCandidate) — same semantics, same setting, now also at
-# merge-commit time.
-def _merge_translation_lists(existing: list | None, incoming: list | None, merge_mode: str) -> list:
+# list-shaped field. stabbur-editor-redesign D7/D10: translations are always
+# separate rows, so an incoming row is appended unless the survivor already
+# has that exact translation (same language, case-insensitively; same
+# trimmed text). No row is ever joined onto another with a separator.
+def _merge_translation_lists(existing: list | None, incoming: list | None) -> list:
     merged = [dict(e) for e in (existing or []) if isinstance(e, dict)]
+    seen = {((e.get("lang") or "").lower(), (e.get("text") or "").strip()) for e in merged}
     for item in incoming or []:
         if not isinstance(item, dict):
             continue
         lang, text = item.get("lang"), item.get("text")
         if lang is None or text is None:
             continue
-        match_idx = next(
-            (i for i, e in enumerate(merged) if (e.get("lang") or "").lower() == lang.lower()),
-            None,
-        )
-        if match_idx is not None and merge_mode == "append":
-            current_text = merged[match_idx].get("text") or ""
-            merged[match_idx]["text"] = f"{current_text} / {text}" if current_text else text
-        else:
-            merged.append({"lang": lang, "text": text})
+        key = (lang.lower(), text.strip())
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append({"lang": lang, "text": text})
     return merged
 
 
-# stabbur-merge-fixes D3: context is sentence-length, so the two sentences
-# join on a single newline — `" / "` would build one unreadable line and a
-# blank line wastes height in the tallest field on the card. An exact
-# (trimmed) duplicate is skipped: appending the same sentence twice is pure
-# noise. Compared line by line, so absorbing a third note that repeats a
-# sentence an earlier merge already brought across doesn't re-add it either.
-# Near-duplicates are deliberately left alone — deciding two sentences are
-# "the same enough" is a judgement this route has no business making
-# silently.
-def _merge_context_texts(existing: str | None, incoming: str | None) -> str | None:
-    if incoming is None or not incoming.strip():
-        return existing
-    if existing is None or not existing.strip():
-        return incoming
-    incoming_trimmed = incoming.strip()
-    if incoming_trimmed in {line.strip() for line in existing.split("\n")}:
-        return existing
-    return f"{existing.rstrip()}\n{incoming_trimmed}"
+# stabbur-editor-redesign D10 (replacing stabbur-merge-fixes D3's context
+# join): examples are a list, so the incoming sentences are appended in
+# order, skipping any exact (trimmed) duplicate of one the survivor already
+# has or one this merge already brought across. Near-duplicates are
+# deliberately left alone — deciding two sentences are "the same enough" is
+# a judgement this route has no business making silently.
+def _merge_example_lists(existing: list | None, incoming: list | None) -> list:
+    merged = list(existing or [])
+    seen = {e.strip() for e in merged if isinstance(e, str)}
+    for sentence in incoming or []:
+        if not isinstance(sentence, str) or not sentence.strip():
+            continue
+        if sentence.strip() in seen:
+            continue
+        seen.add(sentence.strip())
+        merged.append(sentence)
+    return merged
 
 
-def _validate_survivor_values(values: dict, survivor: Note) -> str | None:
-    """stabbur-merge-fixes tasks 1.2/1.3: the submitted form state is held to
+def _validate_examples(value) -> str | None:
+    """notes-schema: `examples` is an ordered list of non-empty sentences."""
+    if not isinstance(value, list):
+        return "examples must be a list of strings"
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            return "every example must be a non-empty string"
+    return None
+
+
+def _validate_form_values(values: dict, note: Note, role: str = "survivor") -> str | None:
+    """stabbur-merge-fixes tasks 1.2/1.3: submitted form state is held to
     exactly the rules `patch_note` applies, and is validated in full before
     anything is written, so an invalid value can never be partially applied.
-    Returns an error message, or None."""
-    unknown = [f for f in values if f not in MERGE_SURVIVOR_VALUE_FIELDS and f not in ("origin", "import_ref")]
+    Used for the survivor's values and (stabbur-editor-redesign D10) for an
+    absorbed note's values. Returns an error message, or None."""
+    unknown = [f for f in values if f not in PATCHABLE_FIELDS and f not in ("origin", "import_ref")]
     if unknown:
-        return f"cannot set field {unknown[0]!r} on the survivor"
+        return f"cannot set field {unknown[0]!r} on the {role}"
 
-    error = _validate_type_and_status(values, survivor.type, survivor.status)
+    error = _validate_type_and_status(values, note.type, note.status)
     if error:
         return error
 
     # The identical value is accepted so a round-trip of the whole note
     # object through the merge request isn't broken by immutability.
-    if "origin" in values and values["origin"] != survivor.origin:
+    if "origin" in values and values["origin"] != note.origin:
         return "origin is immutable once set"
-    if "import_ref" in values and values["import_ref"] != survivor.import_ref:
+    if "import_ref" in values and values["import_ref"] != note.import_ref:
         return "import_ref is immutable once set"
 
     missing = [f for f in REQUIRED_CREATE_FIELDS if f in values and not values[f]]
     if missing:
         return f"missing required fields: {missing}"
 
+    if "examples" in values:
+        error = _validate_examples(values["examples"])
+        if error:
+            return error
+
     return None
 
 
-def _apply_survivor_values(survivor: Note, values: dict) -> None:
-    """Writes the submitted form state onto the survivor. Absent fields mean
+def _apply_form_values(note: Note, values: dict) -> None:
+    """Writes submitted form state onto a note. Absent fields mean
     "unchanged" (tasks 1.1), so a client that doesn't send them — an older
     one, or a merge driven from somewhere without an open form — still gets
     the previous behaviour of merging the stored row."""
-    for field in MERGE_SURVIVOR_VALUE_FIELDS:
+    for field in PATCHABLE_FIELDS:
         if field in values:
-            setattr(survivor, field, values[field])
+            setattr(note, field, values[field])
 
 
 def _serialize_similar_match(note: Note, signals: dict) -> dict:
@@ -332,7 +453,7 @@ def _serialize_similar_match(note: Note, signals: dict) -> dict:
         "has_audio": note.audio_blob is not None,
         "has_transcription": note.transcription is not None,
         "has_inflections": bool(note.inflections),
-        "has_context": note.context_text is not None,
+        "has_examples": bool(note.examples),
         "has_translations": bool(note.translations),
         "has_pos": note.pos is not None,
         # stabbur-merge-fixes task 3.1: `lemma` gained a take control, which
@@ -344,13 +465,25 @@ def _serialize_similar_match(note: Note, signals: dict) -> dict:
         # above, not an extra query. The booleans stay too; existing UI
         # logic still branches on them for which take-buttons to render.
         "translations": note.translations or [],
-        "context_text": note.context_text,
+        "examples": note.examples or [],
         "inflections": _normalize_inflections(note.inflections),
         "transcription": note.transcription,
         "audio_blob": note.audio_blob,
         "pos": note.pos,
         "lemma": note.lemma,
     }
+
+
+def _multi_arg(name: str) -> list[str]:
+    """A multi-value query parameter: comma-separated and/or repeated.
+    Empty items are dropped; order is kept, duplicates removed."""
+    values = []
+    for raw in request.args.getlist(name):
+        for item in raw.split(","):
+            item = item.strip()
+            if item and item not in values:
+                values.append(item)
+    return values
 
 
 def _validate_type_and_status(body: dict, existing_type: str | None, existing_status: str | None) -> str | None:
@@ -402,6 +535,11 @@ def register_notes_routes(app):
         if error:
             return jsonify({"error": error}), 400
 
+        if "examples" in body:
+            error = _validate_examples(body["examples"])
+            if error:
+                return jsonify({"error": error}), 400
+
         note = Note(
             type=body["type"],
             source_lang=body["source_lang"],
@@ -415,7 +553,7 @@ def register_notes_routes(app):
             pos=body.get("pos"),
             lemma=body.get("lemma"),
             inflections=body.get("inflections", {}),
-            context_text=body.get("context_text"),
+            examples=body.get("examples", []),
             audio_blob=body.get("audio_blob"),
             audio_sel_ms=body.get("audio_sel_ms"),
             grammar_rule_id=body.get("grammar_rule_id"),
@@ -462,22 +600,12 @@ def register_notes_routes(app):
             if "import_ref" in body and body["import_ref"] != note.import_ref:
                 return jsonify({"error": "import_ref is immutable once set"}), 400
 
-            for field in (
-                "type",
-                "source_lang",
-                "text",
-                "status",
-                "capture_id",
-                "translations",
-                "transcription",
-                "pos",
-                "lemma",
-                "inflections",
-                "context_text",
-                "audio_blob",
-                "audio_sel_ms",
-                "grammar_rule_id",
-            ):
+            if "examples" in body:
+                error = _validate_examples(body["examples"])
+                if error:
+                    return jsonify({"error": error}), 400
+
+            for field in PATCHABLE_FIELDS:
                 if field in body:
                     setattr(note, field, body[field])
 
@@ -545,13 +673,28 @@ def register_notes_routes(app):
         if status is not None and status not in NOTE_STATUSES:
             return jsonify({"error": f"status must be one of {NOTE_STATUSES}"}), 400
 
-        type_ = request.args.get("type")
-        if type_ is not None and type_ not in NOTE_TYPES:
-            return jsonify({"error": f"type must be one of {NOTE_TYPES}"}), 400
+        types = _multi_arg("type")
+        if any(t not in NOTE_TYPES for t in types):
+            return jsonify({"error": f"type must be one or more of {NOTE_TYPES}"}), 400
 
-        origin = request.args.get("origin")
-        if origin is not None and origin not in NOTE_ORIGINS:
-            return jsonify({"error": f"origin must be one of {NOTE_ORIGINS}"}), 400
+        origins = _multi_arg("origin")
+        if any(o not in NOTE_ORIGINS for o in origins):
+            return jsonify({"error": f"origin must be one or more of {NOTE_ORIGINS}"}), 400
+
+        audio = request.args.get("audio")
+        if audio is not None and audio != "any" and audio not in AUDIO_FILTER_STATES:
+            return jsonify({"error": f"audio must be one of {['any', *AUDIO_FILTER_STATES]}"}), 400
+
+        missing_fields = _multi_arg("missing")
+        if any(m not in MISSING_FILTER_FIELDS for m in missing_fields):
+            return jsonify({"error": f"missing must be one or more of {list(MISSING_FILTER_FIELDS)}"}), 400
+
+        updated_within = request.args.get("updated_within")
+        if updated_within is not None and updated_within != "any" and updated_within not in UPDATED_WITHIN_WINDOWS:
+            return (
+                jsonify({"error": f"updated_within must be one of {['any', *UPDATED_WITHIN_WINDOWS]}"}),
+                400,
+            )
 
         sort = request.args.get("sort", "updated_desc")
         if sort not in AUTHORING_SORTS:
@@ -560,13 +703,24 @@ def register_notes_routes(app):
         stmt = select(Note).where(Note.deleted_at.is_(None))
         if status:
             stmt = stmt.where(Note.status == status)
-        if type_:
-            stmt = stmt.where(Note.type == type_)
-        if origin:
-            stmt = stmt.where(Note.origin == origin)
-        pos = request.args.get("pos")
-        if pos:
-            stmt = stmt.where(Note.pos == pos)
+        if types:
+            stmt = stmt.where(Note.type.in_(types))
+        if origins:
+            stmt = stmt.where(Note.origin.in_(origins))
+        # Any part of speech, including a custom one — the classes are the
+        # editor's menu, not a constraint on stored data.
+        pos_values = _multi_arg("pos")
+        if pos_values:
+            stmt = stmt.where(Note.pos.in_(pos_values))
+        if audio == "has":
+            stmt = stmt.where(~_is_missing(Note.audio_blob))
+        elif audio == "none":
+            stmt = stmt.where(_is_missing(Note.audio_blob))
+        for name in missing_fields:
+            stmt = stmt.where(_is_missing(getattr(Note, MISSING_FILTER_FIELDS[name])))
+        if updated_within and updated_within != "any":
+            cutoff = datetime.datetime.now(datetime.timezone.utc) - UPDATED_WITHIN_WINDOWS[updated_within]
+            stmt = stmt.where(Note.updated_at >= cutoff)
         grammar_rule_id = request.args.get("grammar_rule_id")
         if grammar_rule_id:
             stmt = stmt.where(Note.grammar_rule_id == grammar_rule_id)
@@ -627,7 +781,8 @@ def register_notes_routes(app):
         if offset < 0:
             return jsonify({"error": "offset must not be negative"}), 400
 
-        stmt = stmt.order_by(AUTHORING_SORTS[sort])
+        order = AUTHORING_SORTS[sort]
+        stmt = stmt.order_by(*(order if isinstance(order, tuple) else (order,)))
 
         with session_scope() as db:
             # The total counts the FILTERS, not the page (task 2.2) — it is
@@ -649,11 +804,20 @@ def register_notes_routes(app):
             missing_audio = db.scalar(
                 select(func.count()).select_from(counted).where(_is_missing(counted.c.audio_blob))
             )
-            notes = db.scalars(stmt.limit(limit).offset(offset)).all()
+            page = db.execute(
+                stmt.add_columns(COMPLETENESS_FILLED, COMPLETENESS_APPLICABLE).limit(limit).offset(offset)
+            ).all()
+            rows = []
+            for note, filled, applicable in page:
+                row = _serialize_authoring(note)
+                # The same numbers `sort=complete_asc` orders by, for the
+                # list's Complete column.
+                row["completeness"] = {"filled": filled, "applicable": applicable}
+                rows.append(row)
             return (
                 jsonify(
                     {
-                        "notes": [_serialize_authoring(n) for n in notes],
+                        "notes": rows,
                         "total": total,
                         "limit": limit,
                         "offset": offset,
@@ -788,6 +952,31 @@ def register_notes_routes(app):
             matches.sort(key=lambda m: m["note"].text.lower())
             return jsonify([_serialize_similar_match(m["note"], m["signals"]) for m in matches]), 200
 
+    # ------------------------------------------------------------- merge --
+    # HOW THE EDITOR CALLS THIS (stabbur-editor-redesign D10). The merge is
+    # two-way in the UI but ONE shape here: a survivor absorbs drafts.
+    #
+    # "Into this note" — the open note survives:
+    #     {survivor_id: <open>, absorbed_ids: [<other>],
+    #      take: {<field>: <other>, ...},
+    #      survivor_values: <the open form's fields>}
+    #
+    # "This note into '<other>'" — the open note is absorbed:
+    #     {survivor_id: <other>, absorbed_ids: [<open>],
+    #      take: {<field>: <open>, ...},
+    #      absorbed_values: {<open>: <the open form's fields>}}
+    #   `survivor_values` is omitted (the survivor is not being edited); the
+    #   open form's unsaved edits travel as `absorbed_values`, which are
+    #   applied to the absorbed note before the takes read from it, so what
+    #   is taken is what the operator sees, exactly as save-then-merge
+    #   (stabbur-merge-fixes D1) guarantees for the survivor side. The open
+    #   note must be a draft — stored AND as submitted — or the request is
+    #   refused (the UI disables this direction for a ready note).
+    #
+    # `take` keys: text, lemma, pos, inflections, audio_blob, audio_sel_ms,
+    # transcription (all REPLACE), translations, examples (both ADD with
+    # de-duplication). Taking `inflections` also brings the source's pos.
+    # The response is the survivor (authoring shape) plus `absorbed_ids`.
     @app.route("/api/notes/merge", methods=["POST"])
     def merge_notes():
         """similar-notes-merge tasks.md 4.2-4.7: one survivor absorbs one or
@@ -800,7 +989,9 @@ def register_notes_routes(app):
         stabbur-merge-fixes: the request also carries `survivor_values`, the
         open form's current state, which is saved onto the survivor *before*
         the takes are applied, inside this same transaction — so a merge can
-        never silently discard an edit the operator had not saved."""
+        never silently discard an edit the operator had not saved.
+        stabbur-editor-redesign D10 adds `absorbed_values` for the reverse
+        direction (see the block comment above)."""
         body = request.get_json(silent=True)
         if body is None:
             return jsonify({"error": "JSON body required"}), 400
@@ -814,11 +1005,17 @@ def register_notes_routes(app):
         survivor_values = body.get("survivor_values")
         if survivor_values is not None and not isinstance(survivor_values, dict):
             return jsonify({"error": "survivor_values must be an object"}), 400
+        absorbed_values = body.get("absorbed_values") or {}
+        if not isinstance(absorbed_values, dict) or not all(isinstance(v, dict) for v in absorbed_values.values()):
+            return jsonify({"error": "absorbed_values must be an object of objects keyed by absorbed id"}), 400
 
         if not survivor_id or not absorbed_ids:
             return jsonify({"error": "survivor_id and absorbed_ids are required"}), 400
         if survivor_id in absorbed_ids:
             return jsonify({"error": "a note cannot absorb itself"}), 400
+        stray = [i for i in absorbed_values if i not in absorbed_ids]
+        if stray:
+            return jsonify({"error": f"absorbed_values given for {stray[0]}, which is not absorbed"}), 400
         for field in take:
             if field not in MERGE_TAKE_FIELDS:
                 return jsonify({"error": f"cannot take field {field!r}"}), 400
@@ -833,11 +1030,13 @@ def register_notes_routes(app):
                 absorbed = db.get(Note, absorbed_id)
                 if absorbed is None:
                     return jsonify({"error": f"absorbed note {absorbed_id} not found"}), 404
-                if absorbed.status != "draft":
+                submitted_status = absorbed_values.get(absorbed_id, {}).get("status", absorbed.status)
+                if absorbed.status != "draft" or submitted_status != "draft":
+                    status = absorbed.status if absorbed.status != "draft" else submitted_status
                     return (
                         jsonify(
                             {
-                                "error": f"absorbed note {absorbed_id} has status={absorbed.status!r}; "
+                                "error": f"absorbed note {absorbed_id} has status={status!r}; "
                                 "only draft notes can be absorbed by a merge"
                             }
                         ),
@@ -863,18 +1062,25 @@ def register_notes_routes(app):
             resolved_takes.sort(key=lambda pair: pair[0] == "pos")
 
             if survivor_values is not None:
-                error = _validate_survivor_values(survivor_values, survivor)
+                error = _validate_form_values(survivor_values, survivor)
+                if error:
+                    return jsonify({"error": error}), 400
+            for absorbed_id, values in absorbed_values.items():
+                error = _validate_form_values(values, absorbed_by_id[absorbed_id], role="absorbed note")
                 if error:
                     return jsonify({"error": error}), 400
 
-            # Ordering is load-bearing (design D1): the form's values first,
+            # Ordering is load-bearing (design D1): the forms' values first,
             # the takes on top. A take is the operator saying "and also bring
             # this across", which must win over whatever the form held — and
             # for the two additive fields it is also what makes the result
             # correct, since the taken value then appends to the *edited*
-            # value rather than to the stored one.
+            # value rather than to the stored one. An absorbed note's values
+            # are applied for the same reason: the take reads what is shown.
             if survivor_values is not None:
-                _apply_survivor_values(survivor, survivor_values)
+                _apply_form_values(survivor, survivor_values)
+            for absorbed_id, values in absorbed_values.items():
+                _apply_form_values(absorbed_by_id[absorbed_id], values)
 
             for field, source in resolved_takes:
                 value = getattr(source, field)
@@ -887,10 +1093,9 @@ def register_notes_routes(app):
                     value = _normalize_inflections(value)
                 elif field in MERGE_ADDITIVE_FIELDS and source is not survivor:
                     if field == "translations":
-                        merge_mode = settings_store.read_scalars(db).get("translation_merge_mode", "append")
-                        value = _merge_translation_lists(survivor.translations, value, merge_mode)
+                        value = _merge_translation_lists(survivor.translations, value)
                     else:
-                        value = _merge_context_texts(survivor.context_text, value)
+                        value = _merge_example_lists(survivor.examples, value)
                 setattr(survivor, field, value)
                 if field == "inflections" and source is not survivor and source.pos is not None:
                     # D2: the paradigm's part of speech comes with it, always
@@ -903,11 +1108,15 @@ def register_notes_routes(app):
                     # there is nothing to carry, and clearing the survivor's
                     # pos would leave the paradigm just taken with no shape
                     # to render into at all — the opposite of the point.
+                    # (A `pos` take on its own is the reverse: it replaces the
+                    # part of speech and never touches inflections.)
                     survivor.pos = source.pos
 
             # Hard-deleted, never tombstoned — every absorbed note was just
             # asserted to be a draft above, and a draft has never been
             # eligible for the read API to have pulled it (design D3).
+            # Values applied to it above are discarded with it; they existed
+            # only so its takes read the operator's unsaved edits.
             for absorbed in absorbed_notes:
                 db.delete(absorbed)
 
@@ -923,7 +1132,40 @@ def register_notes_routes(app):
                 db.rollback()
                 return jsonify({"error": _integrity_error_message(exc)}), 400
 
-            return jsonify(_serialize_authoring(survivor)), 200
+            result = _serialize_authoring(survivor)
+            result["absorbed_ids"] = list(absorbed_ids)
+            return jsonify(result), 200
+
+    # --------------------------------------------------------- duplicate --
+    # stabbur-editor-redesign D11. A new draft with every authored field
+    # copied (audio included: blobs are content-addressed, so the bytes are
+    # shared, not copied). Provenance is NOT copied — a capture backs exactly
+    # one note and an import ref names one imported note — so the copy is
+    # origin=manual with no capture_id and no import_ref. The response is the
+    # new note (authoring shape) plus `duplicated_from: <original id>`, which
+    # is not stored; the UI uses it to label the copy.
+    @app.route("/api/notes/<note_id>/duplicate", methods=["POST"])
+    def duplicate_note(note_id):
+        with session_scope() as db:
+            original = db.get(Note, note_id)
+            if original is None:
+                return jsonify({"error": "not found"}), 404
+            duplicate = Note(
+                status="draft",
+                origin="manual",
+                capture_id=None,
+                import_ref=None,
+                **{field: copy_value(getattr(original, field)) for field in DUPLICATED_FIELDS},
+            )
+            db.add(duplicate)
+            try:
+                db.flush()
+            except IntegrityError as exc:
+                db.rollback()
+                return jsonify({"error": _integrity_error_message(exc)}), 400
+            result = _serialize_authoring(duplicate)
+            result["duplicated_from"] = original.id
+            return jsonify(result), 201
 
 
 def _serialize_grammar_rule(rule: GrammarRule, usage_count: int) -> dict:

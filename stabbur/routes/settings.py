@@ -19,8 +19,9 @@ from db.session import session_scope
 from routes.enrich import ENRICHABLE_KINDS
 
 ALLOWED_SETTINGS_KEYS = {
-    "translation_merge_mode", "override_prefill", "default_target_langs", "providers", "prefill_timing",
+    "override_prefill", "default_target_langs", "providers", "prefill_timing",
     "triage_navigate_save", "examples_count", "examples_max_providers",
+    "theme", "value_color", "value_color_custom",
 }
 
 
@@ -52,8 +53,17 @@ def _validate_patch_body(body: dict) -> str | None:
     if unknown:
         return f"unknown settings key(s): {sorted(unknown)}"
 
-    if "translation_merge_mode" in body and body["translation_merge_mode"] not in settings_store.TRANSLATION_MERGE_MODES:
-        return f"translation_merge_mode must be one of {settings_store.TRANSLATION_MERGE_MODES}"
+    if "theme" in body and body["theme"] not in settings_store.THEMES:
+        return f"theme must be one of {settings_store.THEMES}"
+
+    if "value_color" in body and body["value_color"] not in settings_store.VALUE_COLORS:
+        return f"value_color must be one of {settings_store.VALUE_COLORS}"
+
+    # null clears the custom colour; otherwise exactly #rrggbb.
+    if "value_color_custom" in body and body["value_color_custom"] is not None:
+        value = body["value_color_custom"]
+        if not isinstance(value, str) or not settings_store.VALUE_COLOR_CUSTOM_RE.match(value):
+            return "value_color_custom must be a #rrggbb colour or null"
 
     if "override_prefill" in body and not isinstance(body["override_prefill"], bool):
         return "override_prefill must be a boolean"
@@ -202,5 +212,13 @@ def register_settings_routes(app):
             return jsonify({"error": error}), 400
 
         with session_scope() as db:
+            # D12: "custom" means "use value_color_custom", so it needs one —
+            # from this request or already stored.
+            if body.get("value_color") == "custom" or "value_color_custom" in body:
+                current = settings_store.read_scalars(db)
+                color = body.get("value_color", current["value_color"])
+                custom = body.get("value_color_custom", current["value_color_custom"])
+                if color == "custom" and not custom:
+                    return jsonify({"error": "value_color 'custom' requires value_color_custom"}), 400
             settings_store.write(db, body, ENRICHABLE_KINDS)
             return jsonify(_serialize(db)), 200

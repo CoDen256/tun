@@ -154,7 +154,12 @@ class Note(Base):
     pos: Mapped[str | None] = mapped_column(Text, nullable=True)
     lemma: Mapped[str | None] = mapped_column(Text, nullable=True)
     inflections: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    context_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # stabbur-editor-redesign D4: an ordered list of non-empty plain
+    # sentences, one example each. Replaced the newline-joined text column
+    # (migration d5e1a7c39f20 split it once); a JSONB array rather than a
+    # child table because it mirrors `translations`, travels whole with the
+    # note (read API, merge, duplicate) and nothing queries one example.
+    examples: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
 
     # A reference (sha256), not the bytes (D-N2) — not required for
     # status=ready, only for Mjolnir eligibility, which stabbur never checks.
@@ -171,7 +176,12 @@ class Note(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
 
 
-SETTINGS_TRANSLATION_MERGE_MODES = ("append", "separate")
+# stabbur-editor-redesign D12: appearance preferences. The value colour is a
+# preset name or "custom", in which case `value_color_custom` holds the
+# operator's own #rrggbb (used as given in both themes).
+SETTINGS_THEMES = ("auto", "light", "dark")
+SETTINGS_VALUE_COLORS = ("blue", "teal", "violet", "orange", "custom")
+SETTINGS_VALUE_COLOR_CUSTOM_PATTERN = "^#[0-9a-fA-F]{6}$"
 # note-triage design D6: whether prefill runs the moment a triage note is
 # presented, or only when the operator presses the fill control.
 SETTINGS_PREFILL_TIMINGS = ("on_open", "on_demand")
@@ -202,9 +212,13 @@ class Settings(Base):
     __tablename__ = "settings"
     __table_args__ = (
         CheckConstraint("id = 1", name="ck_settings_singleton"),
+        CheckConstraint(f"theme IS NULL OR theme IN {SETTINGS_THEMES!r}", name="ck_settings_theme"),
         CheckConstraint(
-            f"translation_merge_mode IS NULL OR translation_merge_mode IN {SETTINGS_TRANSLATION_MERGE_MODES!r}",
-            name="ck_settings_merge_mode",
+            f"value_color IS NULL OR value_color IN {SETTINGS_VALUE_COLORS!r}", name="ck_settings_value_color"
+        ),
+        CheckConstraint(
+            f"value_color_custom IS NULL OR value_color_custom ~ '{SETTINGS_VALUE_COLOR_CUSTOM_PATTERN}'",
+            name="ck_settings_value_color_custom",
         ),
         CheckConstraint(
             f"prefill_timing IS NULL OR prefill_timing IN {SETTINGS_PREFILL_TIMINGS!r}",
@@ -231,7 +245,6 @@ class Settings(Base):
     # Ordering and enablement only (D43) — never provider definitions,
     # endpoints, or credentials, which stay smia's own (design D3/Non-Goals).
     provider_prefs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    translation_merge_mode: Mapped[str | None] = mapped_column(Text, nullable=True)
     override_prefill: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     default_target_langs: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     prefill_timing: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -250,3 +263,7 @@ class Settings(Base):
     # built-in origin queues are NOT stored — they are synthesised, so they
     # cannot be edited or deleted and cannot drift from their definition.
     triage_queues: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # stabbur-editor-redesign D12 — see SETTINGS_THEMES / SETTINGS_VALUE_COLORS.
+    theme: Mapped[str | None] = mapped_column(Text, nullable=True)
+    value_color: Mapped[str | None] = mapped_column(Text, nullable=True)
+    value_color_custom: Mapped[str | None] = mapped_column(Text, nullable=True)

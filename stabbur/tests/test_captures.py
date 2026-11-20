@@ -39,6 +39,38 @@ def test_ingestion_writes_both_rows(client):
     assert note["text"] == "hunden løper"
 
 
+def test_promotion_seeds_the_first_example_from_the_capture_context(client):
+    # C04 / captures-ingestion delta: the context becomes the draft's single
+    # example, and the capture itself keeps its context unchanged.
+    resp = client.post(
+        "/api/captures",
+        json=_capture_payload(selected_text="komme i vei", context_text="Vi må komme i vei nå."),
+        headers=AUTH,
+    )
+    assert resp.status_code == 201
+    body = resp.get_json()
+    assert body["note"]["examples"] == ["Vi må komme i vei nå."]
+    assert body["capture"]["context_text"] == "Vi må komme i vei nå."
+
+    Session = get_sessionmaker()
+    with Session() as db:
+        assert db.get(Capture, "cap-1").context_text == "Vi må komme i vei nå."
+        assert db.scalar(select(Note).where(Note.capture_id == "cap-1")).examples == ["Vi må komme i vei nå."]
+
+
+def test_promotion_without_context_has_no_examples(client):
+    for i, context in enumerate((None, "", "   ")):
+        payload = _capture_payload(id=f"cap-empty-{i}", context_text=context)
+        resp = client.post("/api/captures", json=payload, headers=AUTH)
+        assert resp.status_code == 201
+        assert resp.get_json()["note"]["examples"] == []
+    payload = _capture_payload(id="cap-missing")
+    del payload["context_text"]
+    resp = client.post("/api/captures", json=payload, headers=AUTH)
+    assert resp.status_code == 201
+    assert resp.get_json()["note"]["examples"] == []
+
+
 def test_replaying_the_same_id_creates_nothing_new(client):
     first = client.post("/api/captures", json=_capture_payload(), headers=AUTH)
     assert first.status_code == 201

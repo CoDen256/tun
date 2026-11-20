@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS normalized (
     text TEXT NOT NULL,
     pos TEXT,
     translations_json TEXT NOT NULL DEFAULT '[]',
-    context_text TEXT,
+    examples_json TEXT NOT NULL DEFAULT '[]',
     transcription TEXT,
     inflections_json TEXT NOT NULL DEFAULT '{}',
     audio_ref TEXT,
@@ -156,6 +156,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(raw_note)")}
     if "due" not in columns:
         conn.execute("ALTER TABLE raw_note ADD COLUMN due INTEGER")
+    # stabbur-editor-redesign: a store created before examples became a
+    # list gains the column; `normalize` fully replaces its rows on the next
+    # run (re-run normalize -> merge before pushing from such a store).
+    normalized_columns = {row["name"] for row in conn.execute("PRAGMA table_info(normalized)")}
+    if "examples_json" not in normalized_columns:
+        conn.execute("ALTER TABLE normalized ADD COLUMN examples_json TEXT NOT NULL DEFAULT '[]'")
     conn.commit()
 
 

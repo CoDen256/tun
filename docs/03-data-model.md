@@ -73,13 +73,26 @@ note
                       but nothing here assumes that forever
   text                              -- the source-language content
   translations JSONB               -- [{lang, text}, ...] — any number, any
-                                      languages, not fixed to en/de
+                                      languages, not fixed to en/de. One pair
+                                      per translation: two English
+                                      translations are two pairs, never
+                                      "a / b" in one (stabbur-editor-redesign
+                                      D7; the old append merge-mode's joined
+                                      rows were split by its D5 migration)
   transcription                    -- bare string, no kind/source provenance
   pos, lemma
   inflections JSONB                -- Norwegian-shaped for now (below);
                                       becomes language-keyed if a second
                                       source_lang is ever added — not before
-  context_text
+  examples JSONB                   -- ["sentence", ...] — ordered, non-empty
+                                      plain sentences, default []. REPLACED
+                                      `context_text` (one newline-joined
+                                      TEXT) in stabbur-editor-redesign D4/D5:
+                                      migrated once by newline split and
+                                      dropped. The read API returns
+                                      `examples`; the capture keeps its own
+                                      `context_text` as provenance and seeds
+                                      the promoted note's first example
   audio_blob  sha256 | null        -- NOT required to reach status=ready;
                                       only required for Mjølnir to pick it up
   audio_sel_ms [start, end]

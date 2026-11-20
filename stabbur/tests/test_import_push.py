@@ -127,7 +127,7 @@ def test_payload_carries_merged_fields():
         "note_type": "word",
         "translations": [{"lang": "en", "text": "dog"}],
         "pos": "noun",
-        "context_text": "Jeg har en hund.",
+        "examples": ["Jeg har en hund."],
         "transcription": "/hun/",
         "inflections": {"sg_indef": "hund"},
     }
@@ -135,7 +135,7 @@ def test_payload_carries_merged_fields():
     assert payload["text"] == "hund"
     assert payload["translations"] == [{"lang": "en", "text": "dog"}]
     assert payload["pos"] == "noun"
-    assert payload["context_text"] == "Jeg har en hund."
+    assert payload["examples"] == ["Jeg har en hund."]
     assert payload["transcription"] == "/hun/"
     assert payload["inflections"] == {"sg_indef": "hund"}
     assert payload["audio_blob"] == "sha256hash"

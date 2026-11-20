@@ -458,6 +458,15 @@ def _extract_audio_ref(field_value: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def examples_from_text(value: str | None) -> list[str]:
+    """A source's example field as stabbur's `examples` list
+    (stabbur-editor-redesign D4): one sentence per line, trimmed, empty
+    lines dropped — the same split the notes migration applied."""
+    if not value:
+        return []
+    return [line.strip() for line in value.split("\n") if line.strip()]
+
+
 def _normalize_ntnu(fields: dict) -> dict:
     article = fields.get("Article", "")
     word = fields.get("Word", "").strip()
@@ -470,7 +479,7 @@ def _normalize_ntnu(fields: dict) -> dict:
         "translations": [{"lang": "en", "text": fields.get("English", "").strip()}]
         if fields.get("English", "").strip()
         else [],
-        "context_text": None,
+        "examples": [],
         "transcription": transcription,
         "inflections": inflections,
         "audio_ref": _extract_audio_ref(fields.get("Audio", "")),
@@ -491,7 +500,7 @@ def _normalize_a1(fields: dict) -> dict:
         "translations": [{"lang": "en", "text": fields.get("Back", "").strip()}]
         if fields.get("Back", "").strip()
         else [],
-        "context_text": None,
+        "examples": [],
         "transcription": transcription,
         "inflections": {},
         "audio_ref": _extract_audio_ref(fields.get("Audio 1", "")),
@@ -516,7 +525,7 @@ def _normalize_core6k(fields: dict) -> dict:
         "text": text,
         "pos": None,
         "translations": [{"lang": "en", "text": translation}] if translation else [],
-        "context_text": fields.get("Norwegian-Sentence", "").strip() or None,
+        "examples": examples_from_text(fields.get("Norwegian-Sentence", "")),
         "transcription": None,
         "inflections": parse_core6k_inflection(fields.get("Inflections", "")),
         "audio_ref": _extract_audio_ref(fields.get("Audio", "")),
@@ -549,7 +558,7 @@ def _normalize_freq6k(fields: dict) -> dict:
         "text": text,
         "pos": pos,
         "translations": [{"lang": "en", "text": translation}] if translation else [],
-        "context_text": None,
+        "examples": [],
         "transcription": None,
         "inflections": {},
         "audio_ref": None,  # freq6k audio is machine-synthesised — never carried past ingest (D10, task 7.1)
@@ -569,7 +578,7 @@ def _normalize_csv(fields: dict) -> dict:
         "text": head,
         "pos": None,
         "translations": [{"lang": "en", "text": translation}] if translation else [],
-        "context_text": context or None,
+        "examples": examples_from_text(context),
         "transcription": None,
         "inflections": {},
         "audio_ref": None,
@@ -647,7 +656,7 @@ def run(conn: sqlite3.Connection, run_id: int) -> tuple[int, int, int]:
             """
             INSERT INTO normalized (
                 run_id, raw_note_id, source, note_type, text, pos,
-                translations_json, context_text, transcription,
+                translations_json, examples_json, transcription,
                 inflections_json, audio_ref, order_signal_json, notation_json
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -659,7 +668,7 @@ def run(conn: sqlite3.Connection, run_id: int) -> tuple[int, int, int]:
                 row["text"],
                 row["pos"],
                 json.dumps(row["translations"], ensure_ascii=False),
-                row["context_text"],
+                json.dumps(row["examples"], ensure_ascii=False),
                 row["transcription"],
                 json.dumps(row["inflections"], ensure_ascii=False),
                 row["audio_ref"],

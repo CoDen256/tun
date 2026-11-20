@@ -45,7 +45,7 @@ BATCHES = {
         grammar_note=dict(
             type="grammar", text="Hva er perfektum av 'å skrive'?",
             translations=[{"lang": "en", "text": "What is the perfect tense of 'to write'?"}],
-            context_text="har skrevet",
+            examples=["har skrevet"],
             audio_file=f"{PHONEXA_AUDIO}/mjolnir/er/skriver.mp3", audio_ms=1280,
         ),
         notes=[
@@ -66,7 +66,7 @@ BATCHES = {
                 translations=[{"lang": "en", "text": "to write"}, {"lang": "de", "text": "schreiben"}],
                 inflections={"infinitiv": "skrive", "presens": "skriver", "preteritum": "skrev", "perfektum": "har skrevet"},
                 audio_file=f"{PHONEXA_AUDIO}/mjolnir/er/skriver.mp3", audio_ms=1280,
-                context_text="Hun skriver et brev.",
+                examples=["Hun skriver et brev."],
             ),
             dict(
                 type="word", pos="verb", lemma="kunne", text="kunne",
@@ -89,7 +89,7 @@ BATCHES = {
             dict(
                 type="expression", text="god morgen",
                 translations=[{"lang": "en", "text": "good morning"}, {"lang": "de", "text": "guten Morgen"}],
-                context_text="Man sier 'god morgen' til noen man møter tidlig på dagen.",
+                examples=["Man sier 'god morgen' til noen man møter tidlig på dagen."],
                 audio_file=f"{PHONEXA_AUDIO}/god_morgen.mp3", audio_ms=1080,
             ),
             dict(
@@ -100,7 +100,7 @@ BATCHES = {
             dict(
                 type="listening", text="hvor",
                 translations=[{"lang": "en", "text": "where"}, {"lang": "de", "text": "wo"}],
-                context_text="Dictation drill: write down what you hear.",
+                examples=["Dictation drill: write down what you hear."],
                 audio_file=f"{PHONEXA_AUDIO}/mjolnir/u/hvor.mp3", audio_ms=601,
             ),
             dict(
@@ -121,7 +121,7 @@ BATCHES = {
         grammar_note=dict(
             type="grammar", text="Hva er nøytrumsformen av 'ny'?",
             translations=[{"lang": "en", "text": "What is the neuter form of 'new'?"}],
-            context_text="et nytt hus",
+            examples=["et nytt hus"],
             audio_file=f"{PHONEXA_AUDIO}/mjolnir/y/nytt.mp3", audio_ms=1071,
         ),
         notes=[
@@ -170,13 +170,13 @@ BATCHES = {
             dict(
                 type="expression", text="god dag",
                 translations=[{"lang": "en", "text": "good day"}, {"lang": "de", "text": "guten Tag"}],
-                context_text="Man sier 'god dag' som en formell hilsen.",
+                examples=["Man sier 'god dag' som en formell hilsen."],
                 audio_file=f"{PHONEXA_AUDIO}/god_dag.mp3", audio_ms=750,
             ),
             dict(
                 type="listening", text="ikke",
                 translations=[{"lang": "en", "text": "not"}, {"lang": "de", "text": "nicht"}],
-                context_text="Dictation drill: write down what you hear.",
+                examples=["Dictation drill: write down what you hear."],
                 audio_file=f"{PHONEXA_AUDIO}/mjolnir/i/ikke.mp3", audio_ms=967,
             ),
             dict(

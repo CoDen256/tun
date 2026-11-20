@@ -139,9 +139,9 @@
 
     renderInflections(fields.inflections);
 
-    if (fields.context_text) {
+    if (fields.examples && fields.examples.length) {
       contextField.hidden = false;
-      contextEl.textContent = fields.context_text;
+      contextEl.textContent = fields.examples.join("\n");
     } else {
       contextField.hidden = true;
     }

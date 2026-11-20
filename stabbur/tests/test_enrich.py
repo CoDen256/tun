@@ -423,3 +423,22 @@ def test_filmot_capture_rejects_unsafe_url(client, monkeypatch):
     )
     assert resp.status_code == 400
     assert called == []
+
+
+def test_examples_candidates_keep_their_provenance_and_context(client, monkeypatch):
+    # stabbur-editor-redesign task 2.5: the sheet shows each example's
+    # provenance/context line, so every key smia returns on a candidate —
+    # not just `text` — must reach the browser unchanged.
+    smia_body = {
+        "provider": "ordbokene",
+        "candidates": [
+            {"text": "Vi må komme i vei.", "sense": "begynne å bevege seg"},
+            {"text": "Endelig kom det i vei.", "source": "tatoeba"},
+        ],
+    }
+    monkeypatch.setattr(smia_client, "post", lambda path, json, timeout=20.0: (200, smia_body))
+    resp = client.post(
+        "/api/enrich/examples", json={"text": "komme i vei", "provider": "ordbokene"}, headers=AUTH
+    )
+    assert resp.status_code == 200
+    assert resp.get_json() == smia_body
