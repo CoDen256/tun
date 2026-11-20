@@ -16,6 +16,11 @@ set -euo pipefail
 BACKUP_REPO="/data/tun-backup"
 SSH_KEY="/root/.ssh/id_backup"
 RESTRICT_KEY="tunbackupfixedkey"
+# SEED VALUES NOW, NOT THE LIVE SCHEDULE (backup-console task 4). The live
+# interval is the one stored in $SETTINGS_FILE on the state volume and edited
+# from /backup/; these two variables are consulted only while nothing has been
+# stored, so no setting exists as a live value in two places (D151). They are
+# read in exactly one place below, SEED_INTERVAL/SEED_RETRY.
 INTERVAL="${BACKUP_INTERVAL_SECONDS:-86400}"
 # After a FAILED run, not after a successful one. The two intervals used to
 # be the same 24 hours: a service whose very first clone failed then sat for
@@ -439,6 +444,317 @@ run_backup() {
   log "entrypoint: committed and pushed"
 }
 
+# ---- THE STATE VOLUME (backup-console tasks 3-5) ---------------------------
+# Run records, each run's captured log, the three editable settings and the
+# manual-run REQUEST all live on a second volume, mounted at /state. This loop
+# writes them; backup-console reads them.
+#
+# WHY FILES AND NOT POSTGRES, which is not a preference. This service's entire
+# job is dumping Postgres, so the run that most needs to be recorded is the one
+# that failed BECAUSE Postgres was unreachable — and a Postgres-backed run log
+# cannot record it. Storing the backup's own history inside the thing being
+# backed up would also mean a restore rewrites the history of its own
+# restoration.
+#
+# WHY A SECOND VOLUME AND NOT /data. /data holds the git clone, and the clone
+# has exactly ONE writer: this loop. The console has to be able to write a run
+# request without being able to write the clone at all — so it gets /state
+# read-write and /data READ-ONLY. The single-writer rule is then enforced by
+# the mount rather than by remembering; two writers against one git working
+# tree is a race whose failure mode is a corrupt backup.
+STATE_DIR="/state"
+RUNS_DIR="$STATE_DIR/runs"
+SETTINGS_FILE="$STATE_DIR/settings.json"
+REQUEST_FILE="$STATE_DIR/run-request"
+CLAIM_FILE="$STATE_DIR/run-claimed"
+HEARTBEAT_FILE="$STATE_DIR/scheduler.json"
+# How often the sleep wakes to look for a request and re-read the settings.
+# The whole reason the sleep is not one long `sleep "$INTERVAL"` any more: a
+# requested run would otherwise wait up to a full interval — 24 hours — and
+# the console's button would be indistinguishable from a broken one.
+TICK=5
+
+# THE THREE SETTINGS, AND WHERE THEIR VALUES COME FROM (D151).
+#
+# Each of them lives in exactly ONE authoritative place: $SETTINGS_FILE on the
+# state volume. The environment variables below are SEED values, consulted
+# only while nothing has been stored — never allowed to override a stored
+# value. That is the whole of D151 applied to a runtime-editable setting: the
+# live value is in one file, and `.env` is a first-boot default, not a second
+# copy.
+#
+# What stays environment-only and is never editable from the page:
+# BACKUP_REPO_URL, BACKUP_SSH_KEY_PATH, POSTGRES_PASSWORD. A UI that can
+# repoint the backup remote is a UI that can silently stop backing up.
+SEED_INTERVAL="$INTERVAL"
+SEED_RETRY="$RETRY_INTERVAL"
+SEED_RETENTION="${BACKUP_RUN_RETENTION:-40}"
+
+# Reads one integer setting. `$1` = key, `$2` = its seed. A missing file, a
+# missing key, or a non-numeric value all fall back to the seed: a corrupt
+# settings file must degrade to the documented default, never to an empty
+# interval that would turn the schedule into a spin loop.
+setting() {
+  local value=""
+  if [ -f "$SETTINGS_FILE" ]; then
+    value=$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" "$SETTINGS_FILE" | head -1)
+  fi
+  case "$value" in
+    ''|*[!0-9]*) value="$2" ;;
+  esac
+  [ "$value" -gt 0 ] 2>/dev/null || value="$2"
+  printf '%s' "$value"
+}
+
+# Seeds the file from the environment ONCE, and only when nothing is stored.
+# Written atomically (tmp + mv) for the same reason every write here is: the
+# console may be reading it at any moment, and half a settings file reads as a
+# corrupt one.
+seed_settings() {
+  [ -f "$SETTINGS_FILE" ] && return 0
+  log "entrypoint: no stored settings — seeding $SETTINGS_FILE from the environment"
+  cat > "$SETTINGS_FILE.tmp" <<EOF
+{
+  "interval_seconds": $SEED_INTERVAL,
+  "retry_seconds": $SEED_RETRY,
+  "run_retention": $SEED_RETENTION,
+  "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "updated_by": "environment seed"
+}
+EOF
+  mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+}
+
+# The scheduler's heartbeat: what the loop is doing right now, and when the
+# next run is due. backup-console reads it to tell QUEUED from RUNNING, and
+# treats a stale one as "the backup service's state cannot be determined" —
+# which is the honest answer when the container is stopped, and better than a
+# page that implies a scheduler is waiting when none is.
+heartbeat() {
+  local state="$1" due="$2" reason="$3" run_id="$4"
+  cat > "$HEARTBEAT_FILE.tmp" <<EOF
+{
+  "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "updated_epoch": $(date -u +%s),
+  "state": "$state",
+  "current_run": $( [ -n "$run_id" ] && printf '"%s"' "$run_id" || printf 'null' ),
+  "next_run_epoch": ${due:-null},
+  "next_run_reason": "$reason",
+  "interval_seconds": $(setting interval_seconds "$SEED_INTERVAL"),
+  "retry_seconds": $(setting retry_seconds "$SEED_RETRY"),
+  "run_retention": $(setting run_retention "$SEED_RETENTION"),
+  "tick_seconds": $TICK
+}
+EOF
+  mv "$HEARTBEAT_FILE.tmp" "$HEARTBEAT_FILE"
+}
+
+# JSON string escaping, for the one field that carries free text (the
+# summary). Backslash first, then quote, then the control characters a log
+# line can really contain.
+json_string() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' | tr -d '\r\n'
+}
+
+# What the backup repository holds right now, as JSON. Deliberately derived
+# from the REPO rather than from the list of databases: every `*.sql` at the
+# top level and every top-level directory, so a source added later (the
+# committed `userdata/` export, next change) appears here with no edit.
+repo_sources_json() {
+  local first=1 path name bytes files
+  printf '{'
+  for path in "$BACKUP_REPO"/*.sql; do
+    [ -e "$path" ] || continue
+    name=$(basename "$path")
+    bytes=$(wc -c < "$path" | tr -d ' ')
+    [ "$first" -eq 1 ] || printf ','
+    first=0
+    printf '"%s":{"bytes":%s}' "$name" "$bytes"
+  done
+  for path in "$BACKUP_REPO"/*/; do
+    [ -d "$path" ] || continue
+    name=$(basename "$path")
+    case "$name" in .git) continue ;; esac
+    files=$(find "$path" -type f ! -path '*/.git/*' | wc -l | tr -d ' ')
+    bytes=$(du -sb "$path" 2>/dev/null | cut -f1)
+    [ "$first" -eq 1 ] || printf ','
+    first=0
+    printf '"%s/":{"bytes":%s,"files":%s}' "$name" "${bytes:-0}" "$files"
+  done
+  printf '}'
+}
+
+# ONE RECORD PER RUN, AND FOUR OUTCOMES RATHER THAN TWO.
+#
+# `run_backup` already produces four distinct endings and they are not the
+# same fact:
+#
+#   committed       dumps changed, commit and push both returned
+#   no-changes      dumps byte-identical, nothing committed. NOT a failure
+#   push-recovered  a PREVIOUS run committed and failed to push, and this run
+#                   pushed it ("pushed previously-committed backups"). It must
+#                   not be flattened into no-changes: the operator needs to
+#                   see that the remote WAS stale and now is not
+#   failed          any step returned non-zero; nothing committed this cycle
+#
+# They are read off the run's own log lines, which are the stable strings
+# `run_backup` logs, rather than by changing `run_backup` to report them.
+# Nothing in the backup path is altered to make it observable — the manual
+# button and the schedule have to be the same code, and that is easiest to
+# guarantee by not touching it at all.
+write_record() {
+  local run_id="$1" trigger="$2" rc="$3" started_epoch="$4" started_at="$5" log_file="$6"
+  local finished_epoch finished_at outcome summary head_sha parent_sha unpushed pushed repo_bytes git_bytes
+  finished_epoch=$(date -u +%s)
+  finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+  if [ "$rc" -ne 0 ]; then
+    outcome="failed"
+    # The last FATAL line is the cause; failing that, the last line at all.
+    summary=$(grep -a 'FATAL' "$log_file" 2>/dev/null | tail -1)
+    [ -n "$summary" ] || summary=$(tail -1 "$log_file" 2>/dev/null)
+  elif grep -aq 'pushed previously-committed backups' "$log_file" 2>/dev/null; then
+    outcome="push-recovered"
+    summary="pushed a previously-committed backup — the remote was stale and is now current"
+  elif grep -aq 'committed and pushed' "$log_file" 2>/dev/null; then
+    outcome="committed"
+    summary="committed and pushed"
+  elif grep -aq 'no changes, nothing to commit' "$log_file" 2>/dev/null; then
+    outcome="no-changes"
+    summary="every dump byte-identical and no new files — nothing to commit"
+  else
+    # An exit status of 0 with none of the four known endings in the log means
+    # the log and the exit code disagree. Recorded as its own outcome rather
+    # than guessed at: "reported success, said nothing" is the exact shape
+    # this whole file is written against.
+    outcome="unknown"
+    summary="the run exited 0 but logged none of the known endings — read the log"
+  fi
+
+  head_sha=$(git -C "$BACKUP_REPO" rev-parse --short HEAD 2>/dev/null || true)
+  parent_sha=$(git -C "$BACKUP_REPO" rev-parse --short HEAD^ 2>/dev/null || true)
+  unpushed=$(git -C "$BACKUP_REPO" rev-list --count '@{u}..HEAD' 2>/dev/null || echo "")
+  case "$unpushed" in ''|*[!0-9]*) unpushed="null"; pushed="null" ;;
+    0) pushed="true" ;;
+    *) pushed="false" ;;
+  esac
+  repo_bytes=$(du -sb --exclude=.git "$BACKUP_REPO" 2>/dev/null | cut -f1)
+  git_bytes=$(du -sb "$BACKUP_REPO/.git" 2>/dev/null | cut -f1)
+
+  cat > "$RUNS_DIR/$run_id.json.tmp" <<EOF
+{
+  "id": "$run_id",
+  "trigger": "$trigger",
+  "outcome": "$outcome",
+  "exit_code": $rc,
+  "started_at": "$started_at",
+  "started_epoch": $started_epoch,
+  "finished_at": "$finished_at",
+  "duration_seconds": $(( finished_epoch - started_epoch )),
+  "summary": "$(json_string "$summary")",
+  "head": "${head_sha:-}",
+  "parent": "${parent_sha:-}",
+  "unpushed": $unpushed,
+  "pushed": $pushed,
+  "repo_bytes": ${repo_bytes:-0},
+  "git_bytes": ${git_bytes:-0},
+  "sources": $(repo_sources_json),
+  "log": "runs/$run_id.log"
+}
+EOF
+  mv "$RUNS_DIR/$run_id.json.tmp" "$RUNS_DIR/$run_id.json"
+  log "entrypoint: recorded run $run_id as $outcome (trigger $trigger)"
+}
+
+# Retention is one of the three editable settings, so the state volume cannot
+# grow without bound. It prunes RUN RECORDS AND THEIR LOGS ONLY — the backup
+# repository's commits are never pruned by anything here.
+#
+# Counted in runs rather than days, deliberately: "keep the last N runs" is a
+# statement an operator can verify by looking, and it is what the acceptance
+# criterion for this setting is written against. A day-based window on a
+# service that runs once a day is a setting whose effect cannot be observed.
+prune_runs() {
+  local keep count victim
+  keep=$(setting run_retention "$SEED_RETENTION")
+  count=$(ls -1 "$RUNS_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')
+  [ "$count" -gt "$keep" ] || return 0
+  # Run ids are UTC timestamps, so a plain sort is chronological.
+  for victim in $(ls -1 "$RUNS_DIR"/*.json 2>/dev/null | sort | head -n $(( count - keep ))); do
+    rm -f "$victim" "${victim%.json}.log"
+  done
+  log "entrypoint: pruned $(( count - keep )) run record(s), retention is $keep"
+}
+
+# A full run, recorded. The backup itself is `run_backup`, UNCHANGED and
+# unparameterised: a manual run and a scheduled run differ only in the
+# `trigger` field written here, which is the entire point — a button that took
+# its own code path would be testing a path the schedule never uses, and the
+# operator presses it precisely to check that the schedule works.
+#
+# `if run_backup ... ; then` keeps the existing caller shape, including its
+# documented gotcha: `if`/`||` suppress errexit for the whole function body
+# recursively, which is why every step inside `run_backup` is checked
+# explicitly. Do not "simplify" any of those checks away.
+recorded_run() {
+  local trigger="$1" run_id started_epoch started_at log_file rc
+  started_epoch=$(date -u +%s)
+  started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  run_id=$(date -u -d "@$started_epoch" +%Y%m%dT%H%M%SZ)
+  mkdir -p "$RUNS_DIR"
+  log_file="$RUNS_DIR/$run_id.log"
+  : > "$log_file"
+  heartbeat running "" "$trigger" "$run_id"
+  # tee, not a redirect: the line has to reach the container log AND the run's
+  # own log file AS IT HAPPENS, because the console follows a run in progress
+  # by reading this file. PIPESTATUS is not consulted — `if` on the pipeline
+  # with pipefail set already yields run_backup's own status.
+  if run_backup 2>&1 | tee -a "$log_file"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  write_record "$run_id" "$trigger" "$rc" "$started_epoch" "$started_at" "$log_file"
+  prune_runs
+  return "$rc"
+}
+
+# Did the console ask for a run? The request is a FILE the console writes and
+# this function takes ownership of by renaming it — so the window in which a
+# request exists but no run has started is visible to the console as QUEUED,
+# and claiming it is a single atomic operation rather than a read-then-delete
+# two services could race.
+claim_request() {
+  [ -f "$REQUEST_FILE" ] || return 1
+  mv -f "$REQUEST_FILE" "$CLAIM_FILE" 2>/dev/null || return 1
+  return 0
+}
+
+# The interruptible sleep. Short ticks instead of one long sleep, because a
+# requested run must be picked up in seconds, and because re-reading the
+# settings each tick is what makes a saved interval take effect with no
+# restart: the due time is recomputed from the stored value every few seconds,
+# so shortening the interval can even make the next run due immediately.
+sleep_until_due() {
+  local cycle_end="$1" reason="$2" interval due now
+  while true; do
+    if [ "$reason" = "retry" ]; then
+      interval=$(setting retry_seconds "$SEED_RETRY")
+    else
+      interval=$(setting interval_seconds "$SEED_INTERVAL")
+    fi
+    due=$(( cycle_end + interval ))
+    now=$(date -u +%s)
+    heartbeat sleeping "$due" "$reason" ""
+    if [ -f "$REQUEST_FILE" ]; then
+      log "entrypoint: a run was requested from the console — picking it up now"
+      return 0
+    fi
+    [ "$now" -ge "$due" ] && return 0
+    sleep "$TICK"
+  done
+}
+
 # One place to record success, called on every path that really finished.
 stamp_success() {
   date -u +%s > "$STAMP"
@@ -447,24 +763,60 @@ stamp_success() {
 : "${BACKUP_REPO_URL:?set BACKUP_REPO_URL}"
 : "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}"
 
+# The state volume has to exist before anything records anything into it. It
+# is created rather than asserted: an empty volume is the normal first-boot
+# state, and refusing to start on it would mean the console cannot report
+# "nothing has run yet" — which is exactly the state this service was found in.
+mkdir -p "$RUNS_DIR"
+seed_settings
+
 # RUN_ONCE=1 runs the backup exactly once and exits — used for testing and
 # for triggering a manual backup on demand (e.g. `docker compose run --rm
 # -e RUN_ONCE=1 backup`) without waiting for the schedule.
+#
+# NOTE FOR THE CONSOLE'S SAKE: this is NOT how the page's "Run now" works. A
+# `docker compose run` is a SECOND container against the same clone, i.e. a
+# second writer, which is the one thing the single-writer rule forbids. The
+# page writes $REQUEST_FILE and this loop performs the run. This flag stays
+# because it is useful from a shell, where the operator can see that the
+# scheduler is idle.
 if [ "${RUN_ONCE:-}" = "1" ]; then
-  run_backup
-  stamp_success
-  exit 0
+  if recorded_run once; then
+    stamp_success
+    exit 0
+  fi
+  exit 1
 fi
 
+trigger="boot"
 while true; do
-  if run_backup; then
+  if recorded_run "$trigger"; then
     stamp_success
-    sleep_for="$INTERVAL"
+    reason="schedule"
   else
     log "entrypoint: run FAILED — nothing was backed up this cycle; this container is now UNHEALTHY" >&2
-    sleep_for="$RETRY_INTERVAL"
+    reason="retry"
+  fi
+  # The request this cycle may have served is consumed only now, so the
+  # console reports a requested run as in progress until it has really
+  # finished, and never as finished before it has.
+  rm -f "$CLAIM_FILE"
+  cycle_end=$(date -u +%s)
+  # The interval is read from the STORED setting inside sleep_until_due, on
+  # every tick — not captured once at boot. The two INTERVAL/RETRY_INTERVAL
+  # variables at the top of this file are now seeds for $SETTINGS_FILE and
+  # nothing else reads them.
+  if [ "$reason" = "retry" ]; then
+    sleep_for=$(setting retry_seconds "$SEED_RETRY")
+  else
+    sleep_for=$(setting interval_seconds "$SEED_INTERVAL")
   fi
   next_run=$(date -u -d "+${sleep_for} seconds" +%Y-%m-%dT%H:%M:%SZ)
-  log "entrypoint: sleeping ${sleep_for}s, next run at $next_run"
-  sleep "$sleep_for"
+  log "entrypoint: sleeping up to ${sleep_for}s, next run at $next_run (waking every ${TICK}s to check for a requested run)"
+  sleep_until_due "$cycle_end" "$reason"
+  if claim_request; then
+    trigger="manual"
+  else
+    trigger="schedule"
+  fi
 done

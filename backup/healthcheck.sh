@@ -29,12 +29,37 @@
 set -u
 
 STAMP="/data/last-success"
-INTERVAL="${BACKUP_INTERVAL_SECONDS:-86400}"
+SETTINGS_FILE="/state/settings.json"
+
+# THE INTERVAL IS THE STORED ONE, NOT THE ENVIRONMENT'S (backup-console 4.3).
+# The schedule is editable from /backup/ now and lives in exactly one place:
+# $SETTINGS_FILE on the state volume. BACKUP_INTERVAL_SECONDS is only the
+# first-boot seed for that file (D151).
+#
+# WHY THIS CHECK MUST FOLLOW THE STORED VALUE. Set the schedule to 6h in the
+# UI while the variable still says 24h, and reading the variable here would
+# call a 30-hour-old stamp healthy — a service that has missed four runs,
+# reported green. The grace below is a FRACTION of the interval precisely so
+# that shortening the interval tightens the check; reading a value the
+# operator can no longer see would quietly remove that property.
+#
+# A missing or corrupt settings file falls back to the environment seed and
+# then to the documented default, because an unreadable setting must not make
+# this probe pass unconditionally.
+INTERVAL=""
+if [ -f "$SETTINGS_FILE" ]; then
+  INTERVAL=$(sed -n 's/.*"interval_seconds"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$SETTINGS_FILE" | head -1)
+fi
+case "$INTERVAL" in
+  ''|*[!0-9]*) INTERVAL="${BACKUP_INTERVAL_SECONDS:-86400}" ;;
+esac
+[ "$INTERVAL" -gt 0 ] 2>/dev/null || INTERVAL="${BACKUP_INTERVAL_SECONDS:-86400}"
+
 # A quarter of the interval. The run itself takes minutes (five dumps and a
 # push), so the stamp is always written somewhat after the cycle begins; a
 # margin stops a healthy service flapping unhealthy for the length of its own
 # run. It is deliberately a fraction of the interval and not a constant, so
-# shortening BACKUP_INTERVAL_SECONDS tightens the check with it.
+# shortening the SCHEDULE tightens the check with it.
 GRACE=$(( INTERVAL / 4 ))
 LIMIT=$(( INTERVAL + GRACE ))
 

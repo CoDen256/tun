@@ -76,6 +76,13 @@ services:
       # postgres/init/bootstrap.sh used to create them.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}
       BACKUP_RETRY_SECONDS: ${BACKUP_RETRY_SECONDS:-3600}
+      # SEED VALUES, NOT THE LIVE SETTINGS (backup-console task 4, D151). The
+      # three editable settings — schedule interval, retry interval, run-log
+      # retention — live in /state/settings.json, which the console writes and
+      # entrypoint.sh/healthcheck.sh read. These variables are consulted only
+      # while nothing has been stored, so changing one after first boot does
+      # nothing, which is correct: the stored value is the live one.
+      BACKUP_RUN_RETENTION: ${BACKUP_RUN_RETENTION:-40}
     # A HEALTHCHECK THAT REFLECTS WHETHER A BACKUP HAS ACTUALLY HAPPENED.
     # This service used to be in bin/_check_services.py's
     # NO_HEALTHCHECK_BY_DESIGN set, and a container that had produced no
@@ -99,6 +106,13 @@ services:
       # The repo clone persists across restarts (D-C4) — cloned by the
       # container on first boot, never a host bind mount.
       - backup-repo-clone:/data
+      # THE STATE VOLUME (backup-console task 3). Run records, each run's
+      # captured log, the three settings, the scheduler heartbeat and the
+      # console's run REQUEST. READ-WRITE here, because this loop is the only
+      # thing that records a run; the console mounts it read-write too (it
+      # writes the request and the settings) but mounts /data READ-ONLY, so
+      # the git clone keeps exactly one writer by construction.
+      - backup-state:/state
       # THE DEV REMOTE (backup-console task 1). Empty and unused in
       # production: entrypoint.sh touches it only when BACKUP_REPO_URL is a
       # local absolute path, which on the VPS it is not.
@@ -121,3 +135,7 @@ volumes:
     name: tun_backup-repo-clone
   backup-dev-remote:
     name: tun_backup-dev-remote
+  backup-state:
+    # Explicit name for the same reason the clone has one: standalone and
+    # root bring-ups must see the SAME run history, not two.
+    name: tun_backup-state

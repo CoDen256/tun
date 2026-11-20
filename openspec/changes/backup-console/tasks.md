@@ -20,36 +20,36 @@
       projects' compose files.
 
 ## 3. State volume: run records and settings
-- [ ] 3.1 Add a state volume shared by `backup` and `backup-console` — writable
+- [x] 3.1 Add a state volume shared by `backup` and `backup-console` — writable
       by the scheduler, and readable by the console.
-- [ ] 3.2 Have `entrypoint.sh` write one durable record per run (start,
+- [x] 3.2 Have `entrypoint.sh` write one durable record per run (start,
       duration, outcome, what changed) plus that run's full captured log.
-- [ ] 3.3 Record the four distinct outcomes, not two: committed; succeeded with
+- [x] 3.3 Record the four distinct outcomes, not two: committed; succeeded with
       no changes; failed; and **pushed a previously-committed backup** (the
       recovery path `entrypoint.sh` already logs). Do not flatten recovery into
       "no changes".
-- [ ] 3.4 Capture the log of a run that fails because Postgres is unreachable —
+- [x] 3.4 Capture the log of a run that fails because Postgres is unreachable —
       this is the case the file-based store exists for; verify it by stopping
       the postgres container.
-- [ ] 3.5 Implement retention pruning of records and logs.
+- [x] 3.5 Implement retention pruning of records and logs.
 
 ## 4. Settings, stored in exactly one place
-- [ ] 4.1 Store schedule interval, retry interval and run-log retention on the
+- [x] 4.1 Store schedule interval, retry interval and run-log retention on the
       state volume as the single authoritative location.
-- [ ] 4.2 Make the environment variables **seed values only** — consulted when
+- [x] 4.2 Make the environment variables **seed values only** — consulted when
       nothing is stored, never overriding a stored value (D151).
-- [ ] 4.3 Make `healthcheck.sh` judge staleness against the **stored** interval,
+- [x] 4.3 Make `healthcheck.sh` judge staleness against the **stored** interval,
       preserving its existing property that the grace is a fraction of the
       interval so shortening the interval tightens the check.
-- [ ] 4.4 Do not add any setting beyond the three. In particular, add no
+- [x] 4.4 Do not add any setting beyond the three. In particular, add no
       control that excludes a source from the backup set.
 
 ## 5. The manual run, with the loop as the only writer
 - [ ] 5.1 Have the console write a run **request** to the state volume; it must
       never dump, commit or push.
-- [ ] 5.2 Make the scheduler's sleep interruptible so a request is picked up
+- [x] 5.2 Make the scheduler's sleep interruptible so a request is picked up
       promptly rather than up to a full interval later.
-- [ ] 5.3 Have the request run `run_backup` unchanged — no flags, no variant
+- [x] 5.3 Have the request run `run_backup` unchanged — no flags, no variant
       behaviour, no extra or skipped step.
 - [ ] 5.4 Report the request as **queued** until the loop actually begins, and
       prevent a second concurrent run.
