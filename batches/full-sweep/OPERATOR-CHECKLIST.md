@@ -489,3 +489,24 @@ unchanged by browsing any source on the Cards page).
   record flagged this as unverified against a real phone. Compare a real
   screenshot against the preview when you get a chance; a mismatch is a
   new backlog item, not a build defect.
+
+### Live feedback addressed (2026-11-20, commit `bdd4e2f8`)
+Four small items from actually using the built page:
+- A "Save view…" control next to the two built-in presets, so you can
+  name and keep your own filter/sort/page-size combinations. Try it:
+  set some filters, click Save view…, name it, and it reappears in the
+  Saved views dropdown (persisted server-side, survives a reload).
+- Ctrl/Cmd+Z and Shift+Z/Y now undo/redo inside the drawer's HTML
+  editors (they didn't before — the syntax highlighter's repaint was
+  silently breaking the browser's native undo on every keystroke).
+- Reset/Copy HTML/Copy all buttons now stand out (accent-colored),
+  instead of blending into every other control in the bar.
+- Clicking a class row (Classes & tags) now copies just the class name
+  (`royalRed`), not `class="royalRed"`.
+
+Caught along the way: a pre-existing bug in the generic settings client
+that silently blocked a live fetch for any setting key other than the
+popup's own prefs — the new Save-view feature was the first thing to
+actually hit it. Worth knowing if a future feature's settings seem to
+silently not load: check `cardPreviewPopup.js`'s `settingsCache` seeding
+first.

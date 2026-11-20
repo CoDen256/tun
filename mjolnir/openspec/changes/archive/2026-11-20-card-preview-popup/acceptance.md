@@ -175,6 +175,12 @@ Clicking the `.royalRed` row puts `class="royalRed"` on the clipboard and a
 copies `<br>`; the `&#649;` symbol row copies `&#649;`; the å row copies
 `å`. Enter on a focused row does the same. Line-metric rows copy nothing.
 
+**Corrected 2026-11-20, live operator feedback:** a class row now copies the
+bare class name (`royalRed`), not `class="royalRed"` — the operator's actual
+use was pasting into an existing `class="..."` attribute, where the wrapper
+just had to be retyped around it every time. See commit `bdd4e2f8`; the main
+spec (`card-preview/spec.md`) is updated to match.
+
 ## The Cards page
 
 ### C29. One flat table, these columns
