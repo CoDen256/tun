@@ -95,10 +95,10 @@
       both.
 
 ## 9. Verification
-- [ ] 9.1 Walk `acceptance.md` top to bottom against the running stack.
-- [ ] 9.2 Confirm the diff touches no file under `mjolnir/sync/`,
+- [x] 9.1 Walk `acceptance.md` top to bottom against the running stack.
+- [x] 9.2 Confirm the diff touches no file under `mjolnir/sync/`,
       `mjolnir/patches/`, `mjolnir/base/`, and does not modify
       `docs/11-ota-contract.md`.
-- [ ] 9.3 `bin/check-standards.sh` passes.
-- [ ] 9.4 Add an ADR row to `docs/07-decisions.md` for the backup console zone
+- [x] 9.3 `bin/check-standards.sh` passes.
+- [x] 9.4 Add an ADR row to `docs/07-decisions.md` for the backup console zone
       and the runtime-settings-over-env decision.

@@ -167,11 +167,21 @@ function healthBanner(s) {
     head = "No backup has EVER completed";
     sub = `There is no success stamp at <code>${escapeHtml(s.environmentOnly.stamp)}</code>. Nothing has been pushed to the remote by this service — not an old backup, not a partial one. ${s.runsTotal ? "Runs have been recorded; open the newest one below for the reason." : "No run has been recorded either."}`;
   } else if (h.state === "fail") {
+    // THE FAILURE IS THE PRIMARY STATE, ahead of any older success — showing
+    // a stale success as the current state is this ecosystem's signature
+    // defect. When the failure LEFT COMMITS BEHIND, the headline says so:
+    // "the push failed" and "the remote is stale" are the same incident and
+    // the operator needs the count in front of him, not one state hiding the
+    // other.
     cls = "state-fail";
     ico = "✕";
-    pill = ["run failed", "pill-err"];
-    head = "Last run FAILED — nothing was backed up this cycle";
-    sub = `Every committed <code>.sql</code> was left untouched and no commit was made this cycle. The newest backup that reached the remote is the one from <b>${escapeHtml(stamp(h.stampEpoch))}</b>. Retry ${h.nextRunEpoch ? `is due <b>${escapeHtml(stamp(h.nextRunEpoch))}</b>` : "interval is in force"} — the <b>retry</b> interval of ${duration(h.retrySeconds)}, not the schedule.`;
+    pill = [unpushed > 0 ? "run failed · remote stale" : "run failed", "pill-err"];
+    head = unpushed > 0
+      ? `Last run FAILED — committed locally, so the remote is STALE (${unpushed} unpushed commit${unpushed === 1 ? "" : "s"})`
+      : "Last run FAILED — nothing was backed up this cycle";
+    sub = unpushed > 0
+      ? `${unpushed} commit${unpushed === 1 ? "" : "s"} exist only in <code>${escapeHtml(s.environmentOnly.clone)}</code> inside the backup container — <b>losing the host loses them.</b> Retry ${h.nextRunEpoch ? `is due <b>${escapeHtml(stamp(h.nextRunEpoch))}</b>` : "interval is in force"} — the <b>retry</b> interval of ${duration(h.retrySeconds)}, not the schedule. The newest backup that reached the remote is the one from <b>${escapeHtml(stamp(h.stampEpoch))}</b>.`
+      : `Every committed <code>.sql</code> was left untouched and no commit was made this cycle. The newest backup that reached the remote is the one from <b>${escapeHtml(stamp(h.stampEpoch))}</b>. Retry ${h.nextRunEpoch ? `is due <b>${escapeHtml(stamp(h.nextRunEpoch))}</b>` : "interval is in force"} — the <b>retry</b> interval of ${duration(h.retrySeconds)}, not the schedule.`;
   } else if (h.state === "stale" && unpushed > 0) {
     cls = "state-stale";
     ico = "!";
