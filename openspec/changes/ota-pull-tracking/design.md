@@ -1,213 +1,146 @@
-## Context
+# Design — ota-pull-tracking
 
-`/ota/*` is served off disk by the gateway: `handle /ota/* { ... root * /srv;
-file_server }`, token-gated and GET-only, with no process and no database in the
-path. That property is load-bearing (D158, `docs/11-ota-contract.md`) — studying
-must not depend on hub, builder or Postgres being up.
+## 1. The gateway is the only observation point, and why that is settled
 
-Nothing records that a bundle was fetched. `device_state` tried to learn it from
-the device and was dropped in `015_drop_device_state.sql` because the client half
-was never built: the table sat permanently empty. Re-attempting that approach
-means a JS patch, an assembled bundle, a publish, and then waiting for the phone
-to pull the very build that teaches it to report — the data starts at zero and
-nothing historical is recoverable.
+`/ota/*` is a `handle` block containing a token gate, a GET-only gate, two
+`Cache-Control` headers, `root * /srv` and `file_server`. No process, no
+database, no application code. The device plane is frozen
+(`docs/11-ota-contract.md`): there is an APK in the field that cannot be rolled
+back.
 
-The gateway, meanwhile, has seen every one of those downloads already and thrown
-the information away: its only logger writes `format console` to stdout.
+The alternative — the device reporting what it has — **was already built and
+removed**. D126 is unusually valuable here because it records a failure of
+exactly the design one would otherwise propose: `device_state` was correctly
+implemented, correctly tested, and permanently empty, because the client never
+attached the fields and the server's write path early-returned when they were
+absent. The lesson is not "the implementation was bad" but "a design that
+depends on the frozen device reporting something new cannot be delivered".
 
-## Goals / Non-Goals
+So pulls are observed where they are already visible: in the gateway's own
+access log. Logging is **post-response** and adds no I/O before the file is
+served.
 
-**Goals:**
-- Know which published build was downloaded, and when, with no device work.
-- Keep the record after the gateway's log file rolls away.
-- Show it where it is useful, without pretending it is something it is not.
+## 2. Two traps, verified live, both silent
 
-**Non-Goals:**
-- Knowing what is *active* on the handset. That needs the device to report, it
-  is the thing that was already declined, and this change must not quietly grow
-  into it. The boot watchdog (D08) can quarantine a perfectly downloaded bundle;
-  a download is evidence of a download.
-- Device or account identity. The OTA token is shared and the gateway sees an
-  address. No row here is per-device, and the UI must not imply otherwise.
-- Tracking `current.json` polls, `/blob/*` or `/audio-manifest/*`. Deliberately
-  scoped out: the ask was which bundle was pulled and when.
-- Touching `/mjolnir/builder/*`. The Builder UI rehaul package owns those files
-  in this same batch.
+Checked against `caddy:2-alpine` v2.11.7 by adapting the config and issuing
+real requests — not by reading documentation.
 
-## Decisions
+**Trap 1 — the LAST-declared named logger becomes the site default.**
+Read out of `srv0.logs.default_logger_name` in the adapted JSON:
 
-### Caddy writes one subset to its own file — VERIFIED, not assumed
+| declaration order | `default_logger_name` |
+|---|---|
+| the OTA logger first, the general site logger second | the site logger ✅ |
+| the site logger first, the OTA logger second | the OTA logger ❌ |
 
-This is the load-bearing technical claim, so it was tested live against
-`caddy:2-alpine` **v2.11.7** (the image the stack actually runs) rather than
-reasoned from documentation. The working construction:
+In the wrong order **every request in all seven zones** is written to the OTA
+pull log and stdout goes completely dark. Nothing errors; the gateway starts
+and serves normally. The first probe did exactly this. The OTA logger must
+therefore be declared **before** the general site logger, with a comment in the
+file saying why.
 
-```
-	log otapulls {
-		output file /var/log/ota/pulls.log
-		format json
-	}
-	log site {
-		output stdout
-		format console
-	}
+**Trap 2 — `default` is a reserved logger name.** `log default { … }` alongside
+a second named logger fails at startup with *"when both include and exclude are
+populated, each element must be a superspace or subspace of one in the other"*,
+and the container **exits 1 after printing "adapted config to JSON"** — which
+looks like a successful boot if you read only the first few lines. The general
+logger must be given some other name.
 
-	handle /ota/bundle/* {
-		log_name otapulls
-		...
-	}
-```
+Re-verify both with `caddy adapt --adapter caddyfile` plus a live request, never
+by reading the file top to bottom. That is the same rule this Caddyfile already
+states about compiled route order, after it was wrong by five routes (P56).
 
-Measured: three requests (`/ota/bundle/b000247.js`, `/ota/current.json`,
-`/stabbur/`) produced exactly **one** line in `pulls.log` — the bundle — and
-**two** `handled request` lines on stdout. That is the required behaviour.
+## 3. Scoping by the existing handle block
 
-**Two traps were found doing this, and both are silent:**
+The log-name directive sits **inside** the existing `handle /ota/*` block. It
+adds a variable-setting handler to the route, not a check on the response path.
+The block keeps its shape exactly: the token gate, the GET-only gate, both
+`Cache-Control` headers, and the deliberate absence of `precompressed` (D49
+requires transport-level gzip only, so the body the native code hashes is always
+the uncompressed bundle).
 
-1. **The LAST-declared named logger becomes the site's default logger.**
-   Confirmed by reading `default_logger_name` out of the adapted JSON for both
-   orderings:
+Nothing in the response changes. The acceptance criteria carry a byte-for-byte
+comparison of a device-facing response before and after, so this is verified
+rather than asserted.
 
-   | declaration order | `srv0.logs.default_logger_name` |
-   |---|---|
-   | `otapulls` first, `site` second | `site` ✅ |
-   | `site` first, `otapulls` second | `otapulls` ❌ |
+## 4. The two event kinds mean different things
 
-   In the wrong order, **every request in the entire stack** — all seven zones —
-   is written to the OTA pull log and the console log goes completely dark. The
-   first probe did exactly this: all three test requests landed in `pulls.log`
-   and stdout received nothing. Nothing errors; the gateway starts and serves
-   normally. So `otapulls` MUST be declared before the general site logger, and
-   the ordering needs a comment saying why, in the file, next to the blocks.
+| kind | path | volume | what it proves |
+|---|---|---|---|
+| bundle download | `/ota/bundle/*` | low | this build's bytes were served |
+| `current.json` poll | `/ota/current.json` | high | a device was alive and checking |
 
-2. **`default` is a reserved logger name.** `log default { ... }` alongside a
-   second named logger fails at startup with *"when both include and exclude are
-   populated, each element must be a superspace or subspace of one in the
-   other"* — the container exits 1 after printing "adapted config to JSON", which
-   looks like a successful start if you only read the first four log lines. The
-   general logger must be given some other name.
+Keeping both was the operator's decision, and the poll stream is valuable for
+one specific reason: it is the **only liveness signal left** after `device_state`
+was dropped. But polls outnumber pulls by a large factor, so the design
+constraint is that **the noisy kind must not drown the meaningful one**. Hence:
+bundle rows dominate visually, consecutive successful polls collapse into one
+expandable row, and **non-200 outcomes never collapse** — a 401 scan or a 404
+for a deleted build must stay visible.
 
-Re-verify both with `caddy adapt --adapter caddyfile` and a live request, never
-by reading the file top to bottom — the same rule this Caddyfile already states
-about compiled route order (P56).
+## 5. What the record cannot know, and must therefore not imply
 
-### Scoping by `handle`, not by matcher on the log block
+Three limits, all of which must be visible in the UI rather than discovered:
 
-`log_name` sits inside the existing `handle /ota/*` block, matched to
-`/ota/bundle/*`. It adds a `vars` handler to the route, not a check to the
-response path: no I/O happens before the file is served, and Caddy's logging is
-post-response. The `/ota/*` block keeps its `root` + `file_server` shape exactly
-— the token gate, the GET-only gate, both `Cache-Control` headers and the
-absence of `precompressed` (D49) are untouched.
+1. **No device identity.** The gateway sees a source IP. The OTA token is
+   shared, so there is no account, uid or handset on these rows. A home
+   connection also means one IP dominates and may change.
+2. **A download is not an activation.** The native boot watchdog (D08) can
+   quarantine a bundle that was fetched perfectly. "Pulled" must never be
+   rendered as "running on the phone".
+3. **A poll carries no build id.** The log records a request, not a body, so a
+   poll says a device checked — not what it decided.
 
-### Log file: a volume the gateway writes and hub reads read-only
+## 6. The log file is a transport; the table is the record
 
-A named volume mounted writable at the gateway and **read-only** into hub.
-Read-only is the point: the ingester must not be able to truncate, rotate or
-delete the gateway's log, and a bug in hub must not be able to affect the device
-plane's host filesystem.
+A named volume, writable by the gateway and mounted **read-only** into hub.
+Caddy rotates the log, so the file is not a durable record. Ingest must be
+**idempotent** — a dedup key over the event's identifying fields — so that
+re-reading the whole file inserts nothing twice, and so the table survives
+rotation and container restarts.
 
-Caddy's `output file` rolls by default. The builder sets `roll_size`,
-`roll_keep` and `roll_keep_for` explicitly rather than inheriting defaults,
-because the whole durability argument depends on knowing how much history the
-file is guaranteed to hold between ingests.
+Ingest lives in hub because the pull data is about build ids that only hub
+knows, and hub already owns the `mjolnir` schema and its migrations (one service
+owns each database's schema; hub's migrate holds an advisory lock across the
+run, after a second instance raced itself — P58).
 
-**A full or unwritable volume must not break bundle serving.** Caddy's logging
-is not in the response path, so this holds by construction — but it is in the
-spec as a scenario because it is the thing that would make this change
-unacceptable, and it must be observed, not assumed.
+`ota_pulls` keys on `build_id` alone. That is a permanent primary key frozen by
+the OTA contract, so it is insulated from anything the versioning work changed
+about human labels; the label is rendered as a secondary line read from
+`publications`.
 
-### `ota_pulls`: the table is the record, the log is transport
+## 7. Why Logic bundles gets no columns
 
-```
-CREATE TABLE ota_pulls (
-  id         SERIAL PRIMARY KEY,
-  build_id   TEXT NOT NULL,
-  at         TIMESTAMPTZ NOT NULL,
-  remote_ip  TEXT NOT NULL,
-  status     INTEGER NOT NULL,
-  bytes      BIGINT NOT NULL,
-  UNIQUE (at, build_id, remote_ip)
-);
-```
+A pull is recorded against a **published** `buildId`. A `logic_bundles` row is a
+build *input* that the device never fetches. Adding the columns there would put
+a permanently blank cell next to something that is not pullable, and a blank
+"times pulled" reads as "never pulled". The columns go on Publish history,
+where every row is a thing the device could actually have taken.
 
-The unique constraint is what makes ingestion idempotent: ingest re-reads
-whatever the log currently holds and inserts `ON CONFLICT DO NOTHING`. No
-byte-offset bookkeeping, nothing to corrupt, and nothing to get wrong across a
-rotation — the expensive-but-correct option, chosen because the volume is a
-handful of rows per week.
+## 8. Never-pulled is two different states
 
-`build_id` is **not** a foreign key to `publications`. A pull can legitimately
-name a build id that no `publications` row has (a build deleted from the
-console, or a request for a path that was never a real build), and a foreign key
-would turn that into an ingest failure instead of a row the operator can see.
-The display LEFT JOINs.
+The distinction the mockup makes, and the reason it matters:
 
-`at` comes from Caddy's `ts`, which is a float epoch — the ingester converts it;
-it must not store the raw float, or every comparison in the UI becomes a
-conversion.
+- **Current and never fetched** — published, still current, no pull. This is a
+  *problem*: the operator published and the phone has not taken it. Flagged
+  prominently.
+- **Superseded before it could be** — published, then replaced minutes later. A
+  zero here is *expected* and means nothing. Rendered quietly.
 
-`build_id` is parsed out of the request URI (`/ota/bundle/<buildId>.js`) and
-MUST be validated against the contract's own `^[A-Za-z0-9._-]{1,64}$` (D48). A
-URI that does not match is a skipped, counted line — not a row.
+Collapsing these into one "never pulled" state would train the operator to
+ignore the one that matters.
 
-### Ingestion trigger: on page load, with a floor
+## 9. Retention
 
-Ingest runs when the Pulls page is requested, skipped if it ran within the last
-minute. No scheduler, no background loop, and the data is current exactly when
-someone is looking at it. The read is bounded by the roll size, and `ON
-CONFLICT DO NOTHING` makes the repeat cost a few index probes.
+`ota_pulls` is small — a year of bundle pulls plus polls is on the order of a
+few megabytes — so it is dumped with the rest of the `mjolnir` database rather
+than excluded. If polls ever make it large, that is a backlog item; it should
+not be pre-emptively excluded, because an excluded table with no source is the
+trap `bin/_check_backup_sources.py` exists to catch.
 
-If the log file is missing entirely — a fresh stack, or the volume not yet
-mounted — that is a **state the page reports**, not an error it throws. "No
-pull log found" and "no pulls recorded" are different sentences and the page
-must not collapse them.
+## 10. Mockup
 
-### UI: a dedicated page, not a panel on Sync
-
-`/mjolnir/device/pulls`, a third item in the Device rail group. The deciding
-argument is that **everything on the Sync page is account-scoped** — it opens
-with a uid selector that governs every panel — and pull data has no account
-dimension at all. A pulls panel on that page has to carry a disclaimer that it
-ignores the selector directly above it, which is a sign the data does not belong
-there. The dedicated page also has room for the never-pulled rows and the
-failed-download entries, which are the two things most worth seeing.
-
-### Insulation from the versioning rethink
-
-The Builder UI rehaul package builds first and changes how bundle/data versions
-are labelled, adding build time. This change stores and joins on `build_id`
-only — a permanent primary key, filename-validated, frozen by D26/D48 — and
-reads the human label from `publications` for display as a secondary line. The
-label can change shape freely; no stored row and no join is affected.
-
-### "Never pulled" vs "pulled before we were looking"
-
-Recording starts the day this ships. Every build published before that has no
-rows and would render identically to a build the phone genuinely ignored — a
-false statement made confidently, which is the exact defect class this
-ecosystem keeps producing. The page must either distinguish the two (the
-earliest ingested record's timestamp is the boundary: no record can exist
-before it) or state plainly that no data exists before that point.
-
-## Risks / Trade-offs
-
-- **Downloads, not activations.** The central limitation. A bundle can be
-  downloaded and then quarantined by the boot watchdog, and this view will
-  happily show a pull for a build that never ran. Mitigated only by saying so
-  in the UI. If the operator later wants activation truth, that is the declined
-  device-reporting work, as a separate change.
-- **An address is not a device.** With one handset this is nearly a distinction
-  without a difference, right up until the operator `curl`s a bundle from a
-  laptop and it appears as a pull. The log records the address; the UI must not
-  translate that into a device.
-- **The gateway Caddyfile is the highest-blast-radius file in the stack.** A
-  mistake in the logger ordering silently disables all gateway logging; a
-  mistake in the `handle` block could affect the device plane. Hence the two
-  verified traps above, and an acceptance criterion that diffs a real bundle
-  response byte for byte.
-- **Log loss between ingests is real.** If more bundle downloads occur between
-  two ingests than the roll settings retain, records are lost with nothing
-  reporting it. At one device and one bundle per publish this is not a plausible
-  volume, but the roll settings must be set explicitly so the bound is known
-  rather than inherited.
+`mockups/device-pulls.html`, Pulls and Publish history surfaces — accepted by
+the operator on the first pass, including the argument in §7. (The file's third
+surface belongs to `userdata-git-history`; it is kept whole so the shared
+chrome stays one reference.)

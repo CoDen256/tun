@@ -1,0 +1,1173 @@
+<title>mockup · OTA pulls, pull counts, export history</title>
+<style>
+/* ===================================================================
+   COPIED VERBATIM from libs/jsservice/layout.js STYLE — no new palette.
+   =================================================================== */
+:root {
+  --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
+  --border: #2a3039; --border-soft: #232832;
+  --text: #e8e6e1; --text-dim: #8b94a3; --text-faint: #566073;
+  --accent: #c6703f; --accent-soft: #c6703f26; --accent-text: #f2b688;
+  --ok: #5bab7e; --ok-soft: #5bab7e1f;
+  --warn: #d4a73d; --warn-soft: #d4a73d1f;
+  --err: #d1453f; --err-soft: #d1453f1f;
+  --radius: 6px;
+  --sans: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f3ef; --bg-elevated: #ffffff; --bg-sunken: #ebe7e0;
+    --border: #e2ddd3; --border-soft: #ece8e0;
+    --text: #221f1a; --text-dim: #6b6660; --text-faint: #9a948a;
+    --accent: #b35a2d; --accent-soft: #b35a2d14; --accent-text: #8a431c;
+    --ok: #2f8a5c; --ok-soft: #2f8a5c14;
+    --warn: #a87c1f; --warn-soft: #a87c1f14;
+    --err: #b23a34; --err-soft: #b23a3414;
+  }
+}
+/* mockup-only: an explicit toggle, so the reviewer can see both themes
+   without changing the OS setting. Same two variable sets, nothing new. */
+:root[data-theme="dark"] {
+  --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
+  --border: #2a3039; --border-soft: #232832;
+  --text: #e8e6e1; --text-dim: #8b94a3; --text-faint: #566073;
+  --accent: #c6703f; --accent-soft: #c6703f26; --accent-text: #f2b688;
+  --ok: #5bab7e; --ok-soft: #5bab7e1f;
+  --warn: #d4a73d; --warn-soft: #d4a73d1f;
+  --err: #d1453f; --err-soft: #d1453f1f;
+}
+:root[data-theme="light"] {
+  --bg: #f5f3ef; --bg-elevated: #ffffff; --bg-sunken: #ebe7e0;
+  --border: #e2ddd3; --border-soft: #ece8e0;
+  --text: #221f1a; --text-dim: #6b6660; --text-faint: #9a948a;
+  --accent: #b35a2d; --accent-soft: #b35a2d14; --accent-text: #8a431c;
+  --ok: #2f8a5c; --ok-soft: #2f8a5c14;
+  --warn: #a87c1f; --warn-soft: #a87c1f14;
+  --err: #b23a34; --err-soft: #b23a3414;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+h1, h2, h3 { text-wrap: balance; font-weight: 650; margin: 0; }
+code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+a { color: var(--accent-text); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.top-bar { display: flex; align-items: center; gap: 14px; padding: 10px 20px; background: var(--bg-sunken); border-bottom: 1px solid var(--border); font-size: 13px; }
+.top-bar strong { font-weight: 700; }
+.top-bar nav { margin-left: auto; display: flex; gap: 14px; }
+.top-bar nav a { color: var(--text-dim); text-decoration: none; }
+.top-bar nav a:hover { color: var(--text); }
+
+.shell { display: flex; min-height: calc(100vh - 41px); }
+.rail { width: 192px; flex: none; border-right: 1px solid var(--border); padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; }
+.rail-group-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint); padding: 12px 10px 6px; }
+.rail-group-label:first-child { padding-top: 2px; }
+.rail a { padding: 7px 10px; border-radius: var(--radius); font-size: 13px; color: var(--text-dim); text-decoration: none; display: block; }
+.rail a:hover { background: var(--bg-elevated); color: var(--text); }
+.rail a.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+
+.content { flex: 1; min-width: 0; padding: 24px 28px 48px; }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.page-head h2 { font-size: 18px; }
+.page-sub { color: var(--text-dim); font-size: 13px; margin-top: 3px; }
+
+button, .btn { font: inherit; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+button:hover { border-color: var(--text-faint); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #1a0d05; }
+.btn-primary:hover { filter: brightness(1.08); border-color: var(--accent); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--text-dim); padding: 7px 9px; }
+.btn-ghost:hover { background: var(--bg-elevated); color: var(--text); border-color: transparent; }
+.btn-danger { color: var(--err); }
+
+.panel { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; }
+.panel + .panel { margin-top: 16px; }
+.panel-pad { padding: 18px 20px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border-soft); }
+.panel-head h3 { font-size: 13.5px; }
+
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+select, input[type="text"], input[type="number"], input[type="search"] { font: inherit; font-size: 13px; background: var(--bg-sunken); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; }
+.search-input { min-width: 220px; }
+.spacer { flex: 1; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 9px 14px; white-space: nowrap; }
+thead th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); font-weight: 600; border-bottom: 1px solid var(--border); }
+tbody tr { border-bottom: 1px solid var(--border-soft); }
+tbody tr:last-child { border-bottom: none; }
+td.wrap { white-space: normal; }
+td.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 2px 9px 3px; border-radius: 99px; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill-ok { background: var(--ok-soft); color: var(--ok); }
+.pill-warn { background: var(--warn-soft); color: var(--warn); }
+.pill-err { background: var(--err-soft); color: var(--err); }
+.pill-neutral { background: var(--border-soft); color: var(--text-dim); }
+
+.inline-note { font-size: 12.5px; color: var(--text-faint); margin-top: 6px; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.stat .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); font-weight: 600; }
+.stat .value { font-size: 24px; font-weight: 700; margin-top: 4px; font-family: var(--mono); }
+.stat .sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+.timeline { display: flex; flex-direction: column; }
+.tl-row { display: grid; grid-template-columns: 90px 20px 1fr; gap: 10px; padding: 8px 0; }
+.tl-time { font-family: var(--mono); font-size: 12px; color: var(--text-faint); padding-top: 2px; }
+.tl-rail { display: flex; justify-content: center; }
+.tl-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); margin-top: 5px; }
+.tl-dot.ok { background: var(--ok); }
+.tl-dot.warn { background: var(--warn); }
+.tl-dot.err { background: var(--err); }
+.tl-title { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.tl-detail { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+
+details.json-toggle summary { cursor: pointer; font-size: 12.5px; color: var(--text-dim); padding: 4px 0; list-style: none; }
+details.json-toggle summary::-webkit-details-marker { display: none; }
+details.json-toggle summary::before { content: "\25B8"; display: inline-block; margin-right: 6px; transition: transform .15s ease; color: var(--text-faint); }
+details.json-toggle[open] summary::before { transform: rotate(90deg); }
+details.json-toggle pre { margin: 8px 0 0; padding: 12px 14px; background: var(--bg-sunken); border: 1px solid var(--border-soft); border-radius: var(--radius); font-size: 12px; overflow-x: auto; color: var(--text-dim); }
+
+.flow-banner { font-size: 12.5px; color: var(--text-dim); background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; margin: 14px 0; line-height: 1.6; }
+.flow-banner b { color: var(--text); }
+
+/* ---- device sync page's own style block (server.js DEVICE_PAGE_STYLE) ---- */
+.identity-bar { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; padding: 14px 16px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 16px; }
+.identity-bar .field select { font-family: var(--mono); min-width: 230px; }
+.identity-bar .field label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; color: var(--text-faint); }
+.snap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px 24px; }
+.snap-item .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); font-weight: 600; }
+.snap-item .value { font-size: 16px; font-weight: 650; margin-top: 4px; font-family: var(--mono); }
+.snap-item .value.prose { font-family: var(--sans); font-weight: 600; font-size: 14px; }
+.chip { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; font-family: var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--border-soft); color: var(--text-dim); }
+.pill-accent { background: var(--accent-soft); color: var(--accent-text); }
+.tl-delta { font-family: var(--mono); }
+.tl-delta.up { color: var(--ok); }
+.tl-delta.flat { color: var(--text-faint); }
+.pager { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.pager-readout { font-size: 12px; color: var(--text-faint); margin-right: auto; }
+.pager a.btn-ghost[aria-disabled="true"], .pager button[disabled] { opacity: .4; pointer-events: none; }
+.pager .pager-current { background: var(--bg-elevated); color: var(--text); font-weight: 600; }
+
+.top-bar nav a.zone-current { color: var(--accent-text); font-weight: 650; }
+.top-bar nav a.zone-current::before { content: "\25CF "; font-size: 9px; vertical-align: 2px; }
+
+/* ===================================================================
+   NEW rules this change would add (kept to the existing variables).
+   =================================================================== */
+
+/* --- the mockup harness: deliberately outside the page chrome --- */
+.mk-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 20px; background: var(--bg); border-bottom: 1px dashed var(--text-faint); font-size: 12px; color: var(--text-faint); }
+.mk-bar .mk-tag { font-weight: 700; letter-spacing: .06em; text-transform: uppercase; font-size: 10.5px; color: var(--text-faint); }
+.mk-bar .mk-btn { font-size: 12px; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text-dim); cursor: pointer; font-weight: 600; }
+.mk-bar .mk-btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+.mk-cap { padding: 7px 20px; font-size: 12px; color: var(--text-faint); background: var(--bg); border-bottom: 1px dashed var(--border); line-height: 1.5; }
+.mk-cap b { color: var(--text-dim); }
+.mk-cap .mk-new { color: var(--accent-text); font-weight: 700; }
+
+/* --- pulls table: bundle rows dominate, poll rows recede --- */
+tr.ev-bundle td { font-weight: 600; }
+tr.ev-bundle td.ev-when { color: var(--text); }
+tr.ev-poll td { color: var(--text-faint); font-weight: 400; }
+tr.ev-poll { background: color-mix(in srgb, var(--bg-sunken) 55%, transparent); }
+tr.ev-run { cursor: pointer; }
+tr.ev-run td { color: var(--text-faint); background: color-mix(in srgb, var(--bg-sunken) 55%, transparent); }
+tr.ev-run:hover td { color: var(--text-dim); }
+tr.ev-run .run-caret { display: inline-block; width: 10px; color: var(--text-faint); transition: transform .12s ease; }
+tr.ev-run.open .run-caret { transform: rotate(90deg); }
+tr.ev-child td:first-child { padding-left: 34px; }
+.kind-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 1px 7px 2px; border-radius: 4px; }
+.kind-tag.bundle { background: var(--accent-soft); color: var(--accent-text); }
+.kind-tag.poll { background: transparent; color: var(--text-faint); border: 1px solid var(--border-soft); font-weight: 600; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--text-dim); }
+th.sortable .arrow { opacity: 0; margin-left: 3px; }
+th.sortable.sorted .arrow { opacity: 1; color: var(--accent-text); }
+
+/* --- the activity strip --- */
+.actstrip { padding: 14px 18px 10px; }
+.actstrip svg { display: block; width: 100%; height: auto; }
+.act-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-dim); margin-top: 8px; }
+.act-legend .sw { display: inline-flex; align-items: center; gap: 6px; }
+.act-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+/* --- publish history: never-pulled states --- */
+tr.never-pulled-live { background: var(--warn-soft); }
+tr.never-pulled-live td { }
+td.pullcount a { text-decoration: none; font-weight: 650; }
+.never-tag { font-size: 11.5px; font-weight: 650; color: var(--warn); }
+.never-tag.quiet { color: var(--text-faint); font-weight: 500; }
+
+/* --- export history --- */
+.grain-note { display: flex; gap: 10px; align-items: flex-start; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 8px; padding: 12px 14px; font-size: 12.5px; color: var(--text); line-height: 1.6; }
+.grain-note .gn-icon { font-weight: 700; color: var(--accent-text); }
+.grain-note b { font-weight: 700; }
+.grain-badge { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--accent-text); background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 99px; padding: 2px 8px 3px; }
+.fid-badge { font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; border-radius: 99px; padding: 2px 8px 3px; }
+.fid-badge.patch { background: var(--ok-soft); color: var(--ok); border: 1px solid var(--ok); }
+.fid-badge.daily { background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--accent); }
+.tier-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 2px 0 10px; }
+.tier-head .tier-name { font-size: 12.5px; font-weight: 700; }
+.tier-head .tier-src { font-size: 11.5px; color: var(--text-faint); font-family: var(--mono); }
+.tier-div { margin: 16px 0 12px; border-top: 1px dashed var(--accent); padding-top: 11px; }
+.tier-div .td-label { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 12.5px; font-weight: 700; color: var(--accent-text); }
+.tier-div .td-when { font-family: var(--mono); font-weight: 600; color: var(--text-faint); font-size: 11.5px; }
+.tl-row.patch-row { border-left: 2px solid var(--ok); padding-left: 12px; }
+.tl-row.patch-row .tl-time { color: var(--text-dim); }
+.tl-row.git-row { border-left: 2px dotted var(--accent); padding-left: 12px; }
+.tl-row.git-row .tl-dot { background: transparent; border: 2px solid var(--accent); width: 6px; height: 6px; }
+.tl-row.gap-row { border-left: 2px dotted var(--border); padding-left: 12px; }
+.arch-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 650; font-family: var(--mono); padding: 1px 7px 2px; border-radius: 4px; border: 1px dashed var(--accent); color: var(--accent-text); background: transparent; cursor: pointer; }
+.arch-chip:hover { background: var(--accent-soft); }
+.arch-chip.pending { border: 1px dashed var(--border); color: var(--text-faint); cursor: default; }
+.arch-chip.pending:hover { background: transparent; }
+.arch-box { margin: 8px 0 2px; border: 1px dashed var(--accent); border-radius: var(--radius); background: var(--accent-soft); padding: 10px 12px; font-size: 12px; line-height: 1.6; color: var(--text-dim); }
+.arch-box b { color: var(--text); }
+.arch-box .ab-head { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; color: var(--accent-text); margin-bottom: 4px; }
+.arch-box ul { margin: 6px 0 0; padding-left: 18px; }
+.arch-box li { margin: 2px 0; }
+.tl-row.gap-row { opacity: .75; }
+.tl-row.gap-row .tl-dot { background: transparent; border: 1.5px dashed var(--text-faint); width: 8px; height: 8px; box-sizing: content-box; }
+.commit-sha { font-family: var(--mono); font-size: 11.5px; color: var(--text-faint); }
+.tl-actions { display: flex; gap: 4px; margin-top: 4px; }
+.diffbox { margin: 8px 0 2px; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--bg-sunken); overflow-x: auto; }
+.diffbox pre { margin: 0; padding: 10px 14px; font-family: var(--mono); font-size: 12px; line-height: 1.55; }
+.diffbox .d-hdr { color: var(--text-faint); }
+.diffbox .d-add { color: var(--ok); }
+.diffbox .d-del { color: var(--err); }
+.state-box { display: flex; gap: 12px; align-items: flex-start; border-radius: 8px; padding: 14px 16px; font-size: 12.5px; line-height: 1.6; }
+.state-box.err { background: var(--err-soft); border: 1px solid var(--err); }
+.state-box.neutral { background: var(--bg-sunken); border: 1px solid var(--border); color: var(--text-dim); }
+.state-box .sb-icon { font-size: 16px; line-height: 1.2; }
+.state-box b { color: var(--text); }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.seg button { border: none; border-radius: 0; background: transparent; color: var(--text-dim); font-size: 12px; padding: 5px 10px; font-weight: 600; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button.on { background: var(--accent-soft); color: var(--accent-text); }
+</style>
+<!-- ============================ mockup harness ============================ -->
+<div class="mk-bar">
+  <span class="mk-tag">mockup</span>
+  <button class="mk-btn" data-surface="pulls">1 · Device → Pulls <span style="opacity:.7">(new page)</span></button>
+  <button class="mk-btn" data-surface="history">2 · Publish history <span style="opacity:.7">(+2 columns)</span></button>
+  <button class="mk-btn" data-surface="sync">3 · Device → Sync <span style="opacity:.7">(timeline rebuilt)</span></button>
+  <span class="spacer"></span>
+  <button class="mk-btn" id="theme-btn" title="light / dark">◐ theme</button>
+</div>
+<div class="mk-cap" id="mk-cap"></div>
+
+<!-- ============================ the page ============================ -->
+<div class="top-bar">
+  <strong>mjølnir · hub</strong>
+  <nav>
+    <a href="#" class="zone-current">workbench</a>
+    <a href="#">builder</a>
+    <a href="#">stabbur</a>
+    <a href="#">smia</a>
+    <a href="#">phonexa</a>
+    <a href="#">shadow</a>
+    <a href="#">adminer</a>
+  </nav>
+</div>
+<div class="shell">
+  <div class="rail" id="rail"></div>
+  <div class="content" id="content"></div>
+</div>
+
+<script>
+/* ===================================================================
+   Fixed clock, so the mockup reads the same every time it is opened.
+   =================================================================== */
+const NOW = new Date("2026-11-20T16:42:00+01:00");
+
+function timeAgo(d) {                       // server.js's own timeAgo()
+  const ms = NOW - new Date(d);
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + "m ago";
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return hours + "h ago";
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "yesterday";
+  if (days < 7) return days + "d ago";
+  return Math.floor(days / 7) + "w ago";
+}
+const nf = (n) => n.toLocaleString("en-US");
+function bytes(n) {
+  if (n == null) return "—";
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KiB";
+  return (n / 1048576).toFixed(2) + " MiB";
+}
+function iso(d) { return new Date(d).toISOString().replace(".000Z", "Z"); }
+function clock(d) { return iso(d).slice(0, 16).replace("T", " ") + "Z"; }
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* ===================================================================
+   RAIL — hub's real NAV, with one item added to the Device group.
+   =================================================================== */
+const NAV = [
+  { group: "Content", items: [["/mjolnir/cards", "Cards"]] },
+  { group: "OTA", items: [["/mjolnir/ota", "Logic bundles"], ["/mjolnir", "Publish history"]] },
+  { group: "Builder", items: [["/mjolnir/builder/forecast", "Ship strips"], ["/mjolnir/builder/schedule", "Schedule"], ["/mjolnir/builder/logs", "Run log"], ["/mjolnir/decks", "Decks"]] },
+  { group: "Device", items: [["/mjolnir/device", "Sync"], ["/mjolnir/device/pulls", "Pulls"], ["/mjolnir/device/insights", "Insights"]] },
+  { group: "Tools", items: [["/mjolnir/catalogue", "Catalogue"], ["/mjolnir/workbench/", "Bundle workbench"]] },
+];
+function renderRail(active) {
+  return NAV.map(g =>
+    '<div class="rail-group-label">' + g.group + '</div>' +
+    g.items.map(([href, label]) =>
+      '<a href="#" data-nav="' + href + '" class="' + (href === active ? "active" : "") + '">' + label + '</a>').join("")
+  ).join("");
+}
+
+/* ===================================================================
+   DATA — gateway access-log derived events, as hub's ota_pulls would
+   hold them. One home device dominates; a scanner shows up once.
+   =================================================================== */
+const IP_HOME = "84.211.109.37";
+const IP_MOBILE = "2a02:fe0:cd13:8a::1f";
+const IP_SCAN = "45.134.26.118";
+
+const BUNDLE_BYTES = {
+  b000013: 4118784, b000015: 4206912, b000018: 4287488, b000020: 4301056,
+  b000021: 4302912, b000022: 4311040, b000023: 4346368, b000024: 4352000, b000025: 4369408,
+};
+
+// polls per day + the bundle GETs that happened that day
+const DAYS = [
+  ["2026-10-22", 5, [["14:08:31", "b000013", 200]]],
+  ["2026-10-23", 4, []],
+  ["2026-10-24", 6, [["09:22:04", "b000015", 206], ["09:25:47", "b000015", 200]]],
+  ["2026-10-25", 3, []],
+  ["2026-10-26", 0, []],
+  ["2026-10-27", 5, []],
+  ["2026-10-28", 6, []],
+  ["2026-10-29", 4, []],
+  ["2026-10-30", 7, []],
+  ["2026-10-31", 3, []],
+  ["2026-11-01", 2, []],
+  ["2026-11-02", 5, [["20:11:19", "b000018", 200]]],
+  ["2026-11-03", 6, [["07:40:52", "b000018", 200], ["19:02:08", "b000018", 200]]],
+  ["2026-11-04", 4, [["08:15:36", "b000018", 200]]],
+  ["2026-11-05", 0, []], ["2026-11-06", 0, []], ["2026-11-07", 0, []],
+  ["2026-11-08", 0, []], ["2026-11-09", 0, []], ["2026-11-10", 0, []],
+  ["2026-11-11", 0, []], ["2026-11-12", 0, []], ["2026-11-13", 0, []],
+  ["2026-11-14", 7, [["14:02:55", "b000020", 200], ["14:26:12", "b000021", 200], ["14:51:40", "b000022", 200]]],
+  ["2026-11-15", 5, []],
+  ["2026-11-16", 4, []],
+  ["2026-11-17", 6, []],
+  ["2026-11-18", 5, [["19:48:21", "b000023", 200]]],
+  ["2026-11-19", 6, [["17:58:03", "b000019", 404], ["18:02:44", "b000024", 200]]],
+  ["2026-11-20", 4, []],
+];
+// launch-time-looking poll clocks, taken in order per day
+const POLL_CLOCKS = ["07:12:40", "08:47:02", "12:03:55", "16:28:11", "19:41:27", "21:33:08", "22:50:14"];
+
+const EVENTS = [];
+let evId = 1;
+for (const [day, polls, bundles] of DAYS) {
+  for (let i = 0; i < polls; i++) {
+    EVENTS.push({
+      id: evId++, ts: day + "T" + POLL_CLOCKS[i] + "+01:00", kind: "poll",
+      path: "/ota/current.json", build: null, status: 200, bytes: 412,
+      ip: (day === "2026-11-15" && i === 2) ? IP_MOBILE : IP_HOME,
+    });
+  }
+  for (const [t, build, status] of bundles) {
+    EVENTS.push({
+      id: evId++, ts: day + "T" + t + "+01:00", kind: "bundle",
+      path: "/ota/bundle/" + build + ".js", build, status,
+      bytes: status === 404 ? 14 : status === 206 ? 1048576 : BUNDLE_BYTES[build],
+      ip: IP_HOME,
+    });
+  }
+}
+// one unauthenticated scanner hit — the status column has to be able to show it
+EVENTS.push({ id: evId++, ts: "2026-11-16T03:14:52+01:00", kind: "poll", path: "/ota/current.json", build: null, status: 401, bytes: 12, ip: IP_SCAN });
+
+const okPull = (e) => e.kind === "bundle" && (e.status === 200 || e.status === 206) && e.status !== 404;
+const BUNDLE_OK = EVENTS.filter(e => e.kind === "bundle" && e.status === 200);
+const PULLS_BY_BUILD = {};
+for (const e of BUNDLE_OK) {
+  (PULLS_BY_BUILD[e.build] = PULLS_BY_BUILD[e.build] || { n: 0, last: null }).n++;
+  const b = PULLS_BY_BUILD[e.build];
+  if (!b.last || new Date(e.ts) > new Date(b.last)) b.last = e.ts;
+}
+const LAST_PULL = BUNDLE_OK.map(e => e.ts).sort().slice(-1)[0];
+const LIVE_POLLS = EVENTS.filter(e => e.kind === "poll" && e.status === 200);
+const LAST_POLL = LIVE_POLLS.map(e => e.ts).sort().slice(-1)[0];
+const POLLS_TODAY = LIVE_POLLS.filter(e => e.ts.startsWith("2026-11-20")).length;
+
+/* ===================================================================
+   SURFACE 1 — /mjolnir/device/pulls
+   =================================================================== */
+const PF = { kind: "all", build: "", window: "30d", ip: "", collapse: true, sort: "ts", dir: "desc", page: 1, size: 25, open: {} };
+
+function windowStart() {
+  if (PF.window === "all") return new Date("2000-01-01");
+  const h = { "24h": 24, "7d": 168, "30d": 720 }[PF.window];
+  return new Date(NOW - h * 3600 * 1000);
+}
+function filteredEvents() {
+  const from = windowStart();
+  return EVENTS.filter(e =>
+    new Date(e.ts) >= from &&
+    (PF.kind === "all" || e.kind === PF.kind) &&
+    (!PF.build || e.build === PF.build) &&
+    (!PF.ip || e.ip.includes(PF.ip.trim()))
+  );
+}
+function sortEvents(list) {
+  const key = PF.sort, sign = PF.dir === "desc" ? -1 : 1;
+  return list.slice().sort((a, b) => {
+    let x, y;
+    if (key === "ts") { x = a.ts; y = b.ts; }
+    else if (key === "kind") { x = a.kind; y = b.kind; }
+    else if (key === "build") { x = a.build || ""; y = b.build || ""; }
+    else if (key === "status") { x = a.status; y = b.status; }
+    else if (key === "bytes") { x = a.bytes; y = b.bytes; }
+    else { x = a.ip; y = b.ip; }
+    if (x < y) return -1 * sign;
+    if (x > y) return 1 * sign;
+    return (a.ts < b.ts ? 1 : -1);
+  });
+}
+// Collapse consecutive poll events into one run row. Only meaningful while
+// the table is in time order, so it is skipped for any other sort.
+function groupRows(sorted) {
+  if (!PF.collapse || PF.sort !== "ts") return sorted.map(e => ({ type: "event", e }));
+  const out = [];
+  let run = null;
+  for (const e of sorted) {
+    if (e.kind === "poll" && e.status === 200) {
+      if (!run) { run = { type: "run", items: [], key: "run" + e.id }; out.push(run); }
+      run.items.push(e);
+    } else { run = null; out.push({ type: "event", e }); }
+  }
+  return out.map(r => (r.type === "run" && r.items.length === 1) ? { type: "event", e: r.items[0] } : r);
+}
+function statusCell(s) {
+  if (s === 200) return '<span class="mono" style="color:var(--ok)">200</span>';
+  if (s === 206) return '<span class="mono" style="color:var(--ok)">206</span>';
+  if (s === 404) return '<span class="mono" style="color:var(--err)">404</span>';
+  if (s === 401) return '<span class="mono" style="color:var(--err)">401</span>';
+  return '<span class="mono">' + s + '</span>';
+}
+function eventRowHtml(e, child) {
+  const cls = (e.kind === "bundle" ? "ev-bundle" : "ev-poll") + (child ? " ev-child" : "");
+  const buildCell = e.build
+    ? '<a href="#" class="mono" data-filter-build="' + e.build + '">' + e.build + '</a>'
+    : '<span style="color:var(--text-faint)">—</span>';
+  return '<tr class="' + cls + '">' +
+    '<td class="ev-when"><span class="mono">' + clock(e.ts) + '</span>' +
+      (child ? "" : ' <span style="color:var(--text-faint);font-size:11.5px">· ' + timeAgo(e.ts) + '</span>') + '</td>' +
+    '<td>' + (e.kind === "bundle"
+        ? '<span class="kind-tag bundle">bundle</span>'
+        : '<span class="kind-tag poll">poll</span>') + '</td>' +
+    '<td>' + buildCell + '</td>' +
+    '<td><span class="mono" style="font-size:12px;color:var(--text-faint)">' + esc(e.path) + '</span></td>' +
+    '<td>' + statusCell(e.status) + '</td>' +
+    '<td class="num">' + bytes(e.bytes) + '</td>' +
+    '<td class="mono" style="font-size:12px">' + e.ip + '</td>' +
+  '</tr>';
+}
+function runRowHtml(r) {
+  const open = !!PF.open[r.key];
+  const first = r.items[r.items.length - 1], last = r.items[0];
+  const span = first.ts.slice(0, 10) === last.ts.slice(0, 10)
+    ? first.ts.slice(0, 10) + " " + last.ts.slice(11, 16) + " → " + first.ts.slice(11, 16)
+    : first.ts.slice(0, 10) + " → " + last.ts.slice(0, 10);
+  const ips = [...new Set(r.items.map(i => i.ip))];
+  let html = '<tr class="ev-run' + (open ? " open" : "") + '" data-run="' + r.key + '">' +
+    '<td><span class="run-caret">▸</span> <span class="mono">' + span + '</span></td>' +
+    '<td><span class="kind-tag poll">' + r.items.length + ' polls</span></td>' +
+    '<td><span style="color:var(--text-faint)">—</span></td>' +
+    '<td><span class="mono" style="font-size:12px">/ota/current.json</span></td>' +
+    '<td><span class="mono">200</span></td>' +
+    '<td class="num">' + bytes(r.items.reduce((s, i) => s + i.bytes, 0)) + '</td>' +
+    '<td class="mono" style="font-size:12px">' + (ips.length === 1 ? ips[0] : ips.length + " addresses") + '</td>' +
+  '</tr>';
+  if (open) html += r.items.map(e => eventRowHtml(e, true)).join("");
+  return html;
+}
+function th(key, label, numeric) {
+  const on = PF.sort === key;
+  return '<th class="sortable' + (on ? " sorted" : "") + '"' + (numeric ? ' style="text-align:right"' : "") + ' data-sort="' + key + '">' +
+    label + '<span class="arrow">' + (on && PF.dir === "asc" ? "↑" : "↓") + '</span></th>';
+}
+
+function activityStrip() {
+  // per-day aggregates over the full 30-day span
+  const W = 940, H = 118, L = 34, R = 8, T = 10, B = 26;
+  const inner = W - L - R, bw = inner / DAYS.length;
+  const maxPolls = Math.max(...DAYS.map(d => d[1]));
+  let bars = "", marks = "", labels = "", gap = "";
+  DAYS.forEach(([day, polls, bundles], i) => {
+    const x = L + i * bw;
+    const h = polls === 0 ? 0 : Math.max(2, (polls / maxPolls) * (H - T - B - 22));
+    const y = H - B - h;
+    if (polls > 0) bars += '<rect x="' + (x + 1.5).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + (bw - 3).toFixed(1) +
+      '" height="' + h.toFixed(1) + '" rx="1.5" fill="var(--text-faint)" opacity="0.45"><title>' + day + " — " + polls + ' polls</title></rect>';
+    const pulls = bundles.filter(b => b[2] === 200).length;
+    if (pulls > 0) {
+      const cx = x + bw / 2, cy = T + 8;
+      marks += '<line x1="' + cx.toFixed(1) + '" y1="' + (cy + 4) + '" x2="' + cx.toFixed(1) + '" y2="' + (H - B) + '" stroke="var(--accent)" stroke-width="1" opacity="0.5"/>';
+      marks += '<circle cx="' + cx.toFixed(1) + '" cy="' + cy + '" r="5" fill="var(--accent)"><title>' + day + " — " + pulls + ' bundle pull' + (pulls > 1 ? "s" : "") + '</title></circle>';
+      if (pulls > 1) marks += '<text x="' + cx.toFixed(1) + '" y="' + (cy + 3.2) + '" text-anchor="middle" font-size="8" font-weight="700" fill="#1a0d05" font-family="var(--mono)">' + pulls + '</text>';
+    }
+    if (i % 4 === 0 || i === DAYS.length - 1) labels += '<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (H - 9) +
+      '" text-anchor="middle" font-size="9.5" fill="var(--text-faint)" font-family="var(--mono)">' + day.slice(5) + '</text>';
+  });
+  // the silent stretch, called out explicitly
+  const firstGap = DAYS.findIndex(d => d[0] === "2026-11-05"), gapLen = 9;
+  const gx = L + firstGap * bw, gwi = gapLen * bw;
+  gap = '<rect x="' + gx.toFixed(1) + '" y="' + T + '" width="' + gwi.toFixed(1) + '" height="' + (H - T - B) +
+    '" fill="var(--err)" opacity="0.07"/>' +
+    '<text x="' + (gx + gwi / 2).toFixed(1) + '" y="' + (T + 46) + '" text-anchor="middle" font-size="10" fill="var(--text-faint)">9 days silent</text>';
+  const yAx = '<text x="' + (L - 6) + '" y="' + (H - B) + '" text-anchor="end" font-size="9.5" fill="var(--text-faint)" font-family="var(--mono)">0</text>' +
+    '<text x="' + (L - 6) + '" y="' + (T + 30) + '" text-anchor="end" font-size="9.5" fill="var(--text-faint)" font-family="var(--mono)">' + maxPolls + '</text>' +
+    '<line x1="' + L + '" y1="' + (H - B) + '" x2="' + (W - R) + '" y2="' + (H - B) + '" stroke="var(--border)" stroke-width="1"/>';
+  return '<div class="panel"><div class="panel-head"><div><h3>Activity · last 30 days</h3>' +
+    '<div class="page-sub">Bars are current.json polls per day (liveness). Dots are bundle pulls.</div></div>' +
+    '<span class="mono" style="font-size:12px;color:var(--text-faint)">2026-10-22 → 2026-11-20</span></div>' +
+    '<div class="actstrip"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="pull and poll activity, 30 days">' +
+    gap + yAx + bars + marks + labels + '</svg>' +
+    '<div class="act-legend">' +
+      '<span class="sw"><i style="background:var(--accent)"></i> bundle pull (/ota/bundle/*)</span>' +
+      '<span class="sw"><i style="background:var(--text-faint);opacity:.45"></i> current.json polls per day</span>' +
+      '<span class="sw"><i style="background:var(--err);opacity:.18"></i> no requests at all</span>' +
+    '</div></div></div>';
+}
+
+function pullsPage() {
+  const all = filteredEvents();
+  const rows = groupRows(sortEvents(all));
+  const pages = Math.max(1, Math.ceil(rows.length / PF.size));
+  if (PF.page > pages) PF.page = pages;
+  const slice = rows.slice((PF.page - 1) * PF.size, PF.page * PF.size);
+  const bundleCount = all.filter(e => e.kind === "bundle" && e.status === 200).length;
+  const pollCount = all.filter(e => e.kind === "poll").length;
+  const builds = Object.keys(PULLS_BY_BUILD).sort().reverse();
+
+  const body = slice.map(r => r.type === "run" ? runRowHtml(r) : eventRowHtml(r.e, false)).join("") ||
+    '<tr><td colspan="7">no events match this filter</td></tr>';
+
+  const pager = '<div class="pager">' +
+    '<span class="pager-readout">' + nf(rows.length) + ' rows (' + nf(all.length) + ' raw events · ' +
+      bundleCount + ' bundle pulls, ' + pollCount + ' polls) · page ' + PF.page + ' of ' + pages + '</span>' +
+    '<button class="btn-ghost" data-page="1" ' + (PF.page === 1 ? "disabled" : "") + '>« first</button>' +
+    '<button class="btn-ghost" data-page="' + (PF.page - 1) + '" ' + (PF.page === 1 ? "disabled" : "") + '>‹ prev</button>' +
+    '<button class="btn-ghost pager-current" disabled>' + PF.page + '</button>' +
+    '<button class="btn-ghost" data-page="' + (PF.page + 1) + '" ' + (PF.page === pages ? "disabled" : "") + '>next ›</button>' +
+    '<button class="btn-ghost" data-page="' + pages + '" ' + (PF.page === pages ? "disabled" : "") + '>last »</button>' +
+  '</div>';
+
+  return `
+<div class="page-head">
+  <div>
+    <h2>OTA pulls</h2>
+    <div class="page-sub">What the device actually fetched, read from the gateway's access log — <code>/ota/*</code> is served off disk by <code>caddy</code> with no process and no database in the path, so the log is the only record that exists. Nothing device-facing changes.</div>
+  </div>
+  <button class="btn btn-ghost" id="pulls-refresh">↻ Refresh</button>
+</div>
+
+<div class="stat-row">
+  <div class="stat"><div class="label">Bundle pulls</div><div class="value">${bundleCount}</div><div class="sub">in ${PF.window === "all" ? "all time" : "the last " + PF.window}</div></div>
+  <div class="stat"><div class="label">Distinct builds pulled</div><div class="value">${Object.keys(PULLS_BY_BUILD).length}</div><div class="sub">of 10 published</div></div>
+  <div class="stat"><div class="label">Last pull</div><div class="value" style="font-size:19px">${timeAgo(LAST_PULL)}</div><div class="sub mono">${clock(LAST_PULL)} · b000024</div></div>
+  <div class="stat"><div class="label">Device last seen</div><div class="value" style="font-size:19px">${timeAgo(LAST_POLL)}</div><div class="sub">${POLLS_TODAY} polls today · liveness only</div></div>
+</div>
+
+<div class="flow-banner" style="margin-top:0">
+  <b>Two event kinds, two meanings.</b> A <b>bundle</b> row is a real download of an immutable build — low volume, high meaning.
+  A <b>poll</b> row is <code>GET /ota/current.json</code> at app launch (<code>Cache-Control: no-store</code>) — high volume, and the only
+  liveness signal there is, since <code>device_state</code> was dropped as permanently empty (D126). A poll is not a pull; the log records
+  no response body, so polls carry no build id.
+</div>
+
+${activityStrip()}
+
+<div class="panel">
+  <div class="panel-head">
+    <div><h3>Event log</h3><div class="page-sub">Ingested into <code>ota_pulls</code> from the gateway access log.</div></div>
+    <label style="font-size:12.5px;color:var(--text-dim);display:flex;gap:6px;align-items:center;">
+      <input type="checkbox" id="pf-collapse" ${PF.collapse ? "checked" : ""} ${PF.sort !== "ts" ? "disabled" : ""}> collapse poll runs
+    </label>
+  </div>
+  <div class="panel-pad" style="padding-bottom:0">
+    <div class="toolbar">
+      <select id="pf-kind">
+        <option value="all" ${PF.kind === "all" ? "selected" : ""}>Kind: all</option>
+        <option value="bundle" ${PF.kind === "bundle" ? "selected" : ""}>bundle pulls only</option>
+        <option value="poll" ${PF.kind === "poll" ? "selected" : ""}>polls only</option>
+      </select>
+      <select id="pf-build">
+        <option value="">Build: all</option>
+        ${builds.map(b => '<option value="' + b + '" ' + (PF.build === b ? "selected" : "") + '>' + b + '</option>').join("")}
+      </select>
+      <select id="pf-window">
+        ${["24h", "7d", "30d", "all"].map(w => '<option value="' + w + '" ' + (PF.window === w ? "selected" : "") + '>Window: ' + (w === "all" ? "all time" : "last " + w) + '</option>').join("")}
+      </select>
+      <input class="search-input" type="search" id="pf-ip" value="${esc(PF.ip)}" placeholder="Source IP contains…">
+      <select id="pf-size">${[25, 50, 100].map(n => '<option value="' + n + '" ' + (PF.size === n ? "selected" : "") + '>' + n + ' / page</option>').join("")}</select>
+      <button class="btn-ghost" id="pf-clear">Clear</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        ${th("ts", "When")}${th("kind", "Kind")}${th("build", "Build")}<th>Path</th>${th("status", "Status")}${th("bytes", "Bytes", true)}${th("ip", "Source IP")}
+      </tr></thead>
+      <tbody id="pulls-body">${body}</tbody>
+    </table>
+  </div>
+  <div class="panel-pad" style="padding-top:12px">
+    ${pager}
+    <div class="inline-note">A collapsed row is a run of consecutive <code>200</code> polls — click it to expand. Non-200 rows are never collapsed: the <code>401</code> on 2026-11-16 is an unauthenticated scan, not the device, and the <code>404</code> on 2026-11-19 is a request for a build deleted from history.</div>
+    <div class="inline-note">Bytes are the gateway's own <code>size</code> field. A <code>206</code> is a resumed download — it counts as the same pull, not a second one.</div>
+  </div>
+</div>`;
+}
+
+/* ===================================================================
+   SURFACE 2 — /mjolnir (Publish history) + 2 columns
+   =================================================================== */
+const PUBLICATIONS = [
+  { build: "b000025", label: "deck C32 descriptions + lexic batch 11", base: "1.5.12", logic: 7, data: 41, cards: 1183, sha: "3f9c…a21e", at: "2026-11-19T22:41:07Z", current: true, superseded: null },
+  { build: "b000024", label: "lexic C31 batch 10", base: "1.5.12", logic: 7, data: 40, cards: 1171, sha: "b70d…4c52", at: "2026-11-18T22:40:55Z", current: false, superseded: null },
+  { build: "b000023", label: "practice C22 grammar notes", base: "1.5.12", logic: 7, data: 39, cards: 1156, sha: "0a14…9e8b", at: "2026-11-17T22:40:41Z", current: false, superseded: null },
+  { build: "b000022", label: "audio re-snapshot", base: "1.5.12", logic: 7, data: 38, cards: 1140, sha: "cc82…1f07", at: "2026-11-14T13:44:12Z", current: false, superseded: null },
+  { build: "b000021", label: "C30 description fix", base: "1.5.12", logic: 7, data: 37, cards: 1140, sha: "9d5e…77aa", at: "2026-11-14T13:11:38Z", current: false, superseded: null },
+  { build: "b000020", label: "lexic C30 batch 9", base: "1.5.12", logic: 7, data: 36, cards: 1140, sha: "41b6…c390", at: "2026-11-14T12:48:02Z", current: false, superseded: null },
+  { build: "b000019", label: "bad patch rev — rolled back", base: "1.5.12", logic: 6, data: 35, cards: 1118, sha: "7e30…02d1", at: "2026-11-04T19:52:10Z", current: false, superseded: "18m" },
+  { build: "b000018", label: "practice C21 listening", base: "1.5.12", logic: 6, data: 34, cards: 1118, sha: "55af…8b6c", at: "2026-11-02T19:30:44Z", current: false, superseded: null },
+  { build: "b000015", label: "reminder-setting patch", base: "1.5.12", logic: 5, data: 31, cards: 1094, sha: "e2b9…d418", at: "2026-10-24T08:12:30Z", current: false, superseded: null },
+  { build: "b000013", label: "first unified-stack publish", base: "1.5.12", logic: 4, data: 28, cards: 1072, sha: "18cd…ff20", at: "2026-10-22T13:02:19Z", current: false, superseded: null },
+];
+const HF = { onlyNever: false };
+
+function historyPage() {
+  const rows = PUBLICATIONS.filter(p => !HF.onlyNever || !(PULLS_BY_BUILD[p.build] || {}).n).map(p => {
+    const pulls = PULLS_BY_BUILD[p.build] || { n: 0, last: null };
+    const never = pulls.n === 0;
+    const liveNever = never && (p.current || !p.superseded);
+    const trCls = never && p.current ? ' class="never-pulled-live"' : "";
+    const pullCell = never
+      ? (p.current
+          ? '<span class="never-tag">never pulled</span>'
+          : p.superseded
+            ? '<span class="never-tag quiet">never pulled</span>'
+            : '<span class="never-tag">never pulled</span>')
+      : '<a href="#" data-pulls-for="' + p.build + '">' + pulls.n + '</a>';
+    const lastCell = never
+      ? (p.superseded
+          ? '<span style="color:var(--text-faint);font-size:12px">superseded ' + p.superseded + ' after publish</span>'
+          : '<span style="color:var(--warn);font-size:12px">published ' + timeAgo(p.at) + ', still not taken</span>')
+      : '<span class="mono">' + clock(pulls.last) + '</span> <span style="color:var(--text-faint);font-size:11.5px">· ' + timeAgo(pulls.last) + '</span>';
+    return '<tr' + trCls + '>' +
+      '<td>' + (p.current ? '<span class="pill pill-ok">● current</span> ' : "") + '<span class="mono">' + p.build + '</span></td>' +
+      '<td class="wrap">' + esc(p.label) + '</td>' +
+      '<td class="mono">' + p.base + '</td>' +
+      '<td class="num">' + p.logic + '</td>' +
+      '<td class="num">' + p.data + '</td>' +
+      '<td class="num">' + nf(p.cards) + '</td>' +
+      '<td class="mono">' + p.sha + '</td>' +
+      '<td class="mono">' + iso(p.at) + '</td>' +
+      '<td class="pullcount num">' + pullCell + '</td>' +
+      '<td>' + lastCell + '</td>' +
+      '<td>' +
+        '<a class="btn-ghost" href="#">download</a>' +
+        '<a class="btn-ghost" href="#">inspect →</a>' +
+        '<button class="btn-ghost" ' + (p.current ? "disabled" : "") + '>set current</button>' +
+        '<button class="btn-ghost">edit label</button>' +
+        '<button class="btn-ghost btn-danger">delete</button>' +
+      '</td>' +
+    '</tr>';
+  }).join("");
+
+  const neverCount = PUBLICATIONS.filter(p => !(PULLS_BY_BUILD[p.build] || {}).n).length;
+  const currentNever = PUBLICATIONS.some(p => p.current && !(PULLS_BY_BUILD[p.build] || {}).n);
+
+  return `
+<div class="page-head"><div><h2>Publish history</h2></div></div>
+
+${currentNever ? `<div class="panel" style="border-color:var(--warn); margin-bottom:16px;">
+  <div class="panel-pad" style="display:flex;gap:12px;align-items:flex-start;">
+    <span style="color:var(--warn);font-size:16px;line-height:1.2">⚠</span>
+    <div style="font-size:12.5px;line-height:1.6">
+      <b style="color:var(--text)">The current build has never been pulled.</b>
+      <code>b000025</code> has been <code>current.json</code> for ${timeAgo("2026-11-19T22:41:07Z")} and the device has polled
+      ${POLLS_TODAY + 6} times since — but never fetched <code>/ota/bundle/b000025.js</code>.
+      <a href="#" data-pulls-for="b000025">Open its pull log →</a>
+    </div>
+  </div>
+</div>` : ""}
+
+<div class="panel">
+  <div class="panel-head">
+    <div><h3>Publications</h3><div class="page-sub">${PUBLICATIONS.length} builds · ${neverCount} never pulled</div></div>
+    <label style="font-size:12.5px;color:var(--text-dim);display:flex;gap:6px;align-items:center;">
+      <input type="checkbox" id="hf-never" ${HF.onlyNever ? "checked" : ""}> only never-pulled
+    </label>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Build</th><th>Label</th><th>Base</th><th>Logic</th><th>Data</th><th>Cards</th><th>sha256</th><th>Published</th>
+        <th style="color:var(--accent-text);text-align:right">Pulls</th><th style="color:var(--accent-text)">Last pulled</th><th></th>
+      </tr></thead>
+      <tbody>${rows || '<tr><td colspan="11">no publications match this filter</td></tr>'}</tbody>
+    </table>
+  </div>
+</div>
+<div class="inline-note">"Pulls" counts <code>200</code> responses on <code>/ota/bundle/&lt;buildId&gt;.js</code> in the gateway access log; a <code>206</code> resume is folded into the same pull and a <code>404</code> is not counted. Click a count to open that build's pull log.</div>
+<div class="inline-note">A build that was never pulled while it was <strong>current</strong> is highlighted — that is the "published and the phone never took it" case. A build superseded minutes after publish is shown as never-pulled too, but quietly: nothing was expected to take it.</div>
+<div class="inline-note">"download" streams that build's exact published bytes, named from its label. "inspect" opens it in the bundle workbench. "set current" repoints <code>current.json</code> at that build (no shell command). "delete" is blocked while a build shipped any occurrence (D93) or is the live current build.</div>
+<div class="inline-note">Logic bundles (<code>/mjolnir/ota</code>) gets no pull columns: a pull is recorded against a published <code>buildId</code>, and a <code>logic_bundles</code> row is an input to a build, never something the device fetches.</div>`;
+}
+
+/* ===================================================================
+   SURFACE 3 — /mjolnir/device (Sync), timeline rebuilt
+   =================================================================== */
+const UID = "q1Px3MgvOZVBdkpM9DKmFBnDnMi1";
+const SF = { state: "ok", open: {} };
+
+const PER_CARD = [
+  { id: "C30014", content: "å bli vant til", side: "N", deck: "Lexic", stage: 3, state: "in rotation", pill: "ok", cf: 12, due: "2026-11-22", resch: 1, flags: "" },
+  { id: "C30014", content: "å bli vant til", side: "E", deck: "Lexic", stage: 3, state: "in rotation", pill: "ok", cf: 5, due: "2026-11-21", resch: 3, flags: '<span class="chip">tagged</span>' },
+  { id: "C31002", content: "forskjellen mellom", side: "N", deck: "Lexic", stage: 200, state: "retired at ceiling", pill: "neutral", cf: 365, due: "2027-11-02", resch: 0, flags: "" },
+  { id: "C21007", content: "Hør og gjenta: «Jeg rekker det ikke i dag.»", side: "A", deck: "Practice", stage: 3, state: "in rotation", pill: "ok", cf: 3, due: "2026-11-20", resch: 6, flags: '<span class="chip">panic</span>' },
+  { id: "C22004", content: "Grammatikk: leddsetning med «fordi»", side: "N", deck: "Practice", stage: 150, state: "parked early", pill: "warn", cf: 1, due: "2026-11-25", resch: 2, flags: "" },
+  { id: "C32001", content: "å ta seg sammen", side: "N", deck: "Lexic", stage: 100, state: "parked early, dormant", pill: "warn", cf: 1, due: "—", resch: 0, flags: "" },
+];
+
+const HORIZON = "2026-11-18T16:42:00+01:00";   // now − 48h: the sweep horizon
+
+// ---- RECENT TIER: userdata_history rows, per PATCH (historyDeltas) ----
+// Kept, not dropped — swept to a rolling 48h window, and its DATA is
+// excluded from mjolnir.sql (the git export is the long-term record).
+const RECENT = [
+  { at: "2026-11-20T16:21:03+01:00", title: "Cards updated",
+    detail: [["totalCards", "+2", "up"]],
+    doc: '{\n  "completedSessions": 43,\n  "inProgressCards": 325,\n  "totalCards": [ /* 1 191 occurrences */ ],\n  "lastCompletedSession": "2026-11-20T13:22:08.640Z"\n}' },
+  { at: "2026-11-20T14:22:08+01:00", title: "Session completed",
+    detail: [["completedSessions", "42 → 43", "up"], ["totalCards", "+3", "up"]],
+    doc: '{\n  "completedSessions": 43,\n  "inProgressCards": 323,\n  "lastCompletedSession": "2026-11-20T13:22:08.640Z"\n}' },
+  { at: "2026-11-20T08:12:55+01:00", title: "Settings updated",
+    detail: [["restDays", "changed", "flat"], ["reminderSetting", "changed", "flat"]], doc: null },
+  { at: "2026-11-19T21:07:12+01:00", title: "Session completed",
+    detail: [["completedSessions", "41 → 42", "up"], ["totalCards", "+3", "up"]], doc: null },
+  { at: "2026-11-19T19:58:40+01:00", title: "Settings updated",
+    detail: [["dailyCards", "changed", "flat"]], doc: null },
+  { at: "2026-11-18T22:41:30+01:00", title: "Session completed",
+    detail: [["completedSessions", "40 → 41", "up"], ["totalCards", "+6", "up"]], doc: null },
+  { at: "2026-11-18T18:02:14+01:00", title: "Cards updated",
+    detail: [["totalCards", "+6", "up"]], doc: null },
+];
+
+// ---- OLDER TIER: one entry per backup commit of userdata/<uid>.json ----
+// Commits newer than the horizon are NOT separate timeline entries — the
+// per-PATCH rows they captured are still in the recent tier, so they appear
+// only as the "archived in …" marker on those rows (the boundary case).
+const EXPORT_LOG = [
+  {
+    date: "2026-11-20", at: "2026-11-20T01:30:12+01:00", sha: "4a7c1e9", title: "Session completed",
+    detail: [["completedSessions", "41 → 42", "up"], ["totalCards", "+3", "up"]], note: null, diff: null, doc: null,
+  },
+  {
+    date: "2026-11-19", at: "2026-11-19T01:30:09+01:00", sha: "9f02b3d", title: "Session completed",
+    detail: [["completedSessions", "40 → 41", "up"], ["totalCards", "+12", "up"]], note: null, diff: null, doc: null,
+  },
+  {
+    date: "2026-11-18", at: "2026-11-18T01:30:11+01:00", sha: "2d81aa5", title: "Progress updated",
+    detail: [["completedSessions", "38 → 40", "up"], ["totalCards", "+4", "up"]],
+    note: "Two sessions landed inside this one entry — at daily resolution the per-session boundary is not recoverable. The 48h tier above is where that detail still exists, until it is swept.",
+    diff: [
+      ["h", "diff --git a/userdata/q1Px3MgvOZVBdkpM9DKmFBnDnMi1.json b/userdata/q1Px3MgvOZVBdkpM9DKmFBnDnMi1.json"],
+      ["h", "--- a/userdata/q1Px3MgvOZVBdkpM9DKmFBnDnMi1.json  (2026-11-17 01:30)"],
+      ["h", "+++ b/userdata/q1Px3MgvOZVBdkpM9DKmFBnDnMi1.json  (2026-11-18 01:30)"],
+      ["h", "@@ -1,8 +1,8 @@"],
+      ["d", '-  "completedSessions": 38,'],
+      ["a", '+  "completedSessions": 40,'],
+      ["d", '-  "lastCompletedSession": "2026-11-16T19:58:21.330Z",'],
+      ["a", '+  "lastCompletedSession": "2026-11-17T20:44:02.118Z",'],
+      ["d", '-  "inProgressCards": 305,'],
+      ["a", '+  "inProgressCards": 309,'],
+      ["h", "@@ -1188,6 +1188,24 @@  totalCards[]"],
+      ["a", '+    { "ID": "C31014", "language": "N", "D": "C31", "Stage": 3, "CF": 1, "Time": 1763510400000 },'],
+      ["a", '+    { "ID": "C31014", "language": "E", "D": "C31", "Stage": 3, "CF": 1, "Time": 1763510400000 },'],
+      ["a", '+    { "ID": "C22004", "language": "N", "D": "C22", "Stage": 3, "CF": 1, "Time": 1763510400000 },'],
+    ],
+    doc: `{
+  "completedSessions": 40,
+  "inProgressCards": 309,
+  "archivedCards": 44,
+  "dailyCards": 15,
+  "lastDeckPulled": 31,
+  "accountCreationDate": "2026-06-14T18:22:04.511Z",
+  "lastCompletedSession": "2026-11-17T20:44:02.118Z",
+  "restDays": ["Sa"],
+  "totalCards": [ /* 1 173 occurrences */ ],
+  "gameDecks": ["C30", "C31", "C32", "C21", "C22"]
+}`,
+  },
+  {
+    date: "2026-11-17", at: "2026-11-17T01:30:08+01:00", sha: "c55e0f1", title: "Settings updated",
+    detail: [["dailyCards", "changed", "flat"], ["reminderSetting", "changed", "flat"], ["restDays", "changed", "flat"]],
+    note: null, diff: null, doc: null,
+  },
+  { gap: true, from: "2026-11-14", to: "2026-11-16", label: "no commit for 3 days",
+    note: "The exported document did not change, so the backup service committed nothing. Not an outage — the device simply did not sync." },
+  {
+    date: "2026-11-13", at: "2026-11-13T01:30:14+01:00", sha: "e31f882", title: "Session completed",
+    detail: [["completedSessions", "35 → 38", "up"], ["totalCards", "+6", "up"]], note: null, diff: null, doc: null,
+  },
+  {
+    date: "2026-11-12", at: "2026-11-12T01:30:07+01:00", sha: "77ba410", title: "Cards updated",
+    detail: [["totalCards", "+24", "up"]], note: null, diff: null, doc: null,
+  },
+];
+
+const GIT_IN_WINDOW = EXPORT_LOG.filter(e => !e.gap && e.at > HORIZON);
+const GIT_OLDER = EXPORT_LOG.filter(e => e.gap || e.at <= HORIZON);
+// which commit captured a given PATCH: the first backup run after it
+function archivedBy(at) { return GIT_IN_WINDOW.concat(EXPORT_LOG.filter(e => !e.gap)).filter(c => c.at > at).sort((a, b) => a.at < b.at ? -1 : 1)[0] || null; }
+
+function deltaHtml(detail) {
+  return detail.map(([label, text, up]) =>
+    '<span>' + label + ' <span class="tl-delta ' + (up === "up" ? "up" : "flat") + '">' + esc(text) + '</span></span>').join(" &nbsp; ");
+}
+
+/* ---- recent tier: per-PATCH rows, exactly today's vocabulary ---- */
+function patchRowHtml(e, i) {
+  const key = "p" + i;
+  const open = SF.open[key] || null;
+  const commit = archivedBy(e.at);
+  const covered = commit ? RECENT.filter(r => r.at <= commit.at && (!archivedBy(r.at) || archivedBy(r.at).sha === commit.sha)) : [];
+  const chip = commit
+    ? '<span class="arch-chip" data-exp="' + key + '" data-mode="arch" title="see this same change at daily fidelity">⇣ archived · ' + commit.sha + '</span>'
+    : '<span class="arch-chip pending">⌛ not archived yet · next run 01:30</span>';
+  let extra = "";
+  if (open === "arch") {
+    const days = [...new Set(covered.map(r => r.at.slice(0, 10)))];
+    const dayspan = days.length === 1 ? days[0] : days[days.length - 1] + " → " + days[0];
+    extra = '<div class="arch-box">' +
+      '<div class="ab-head">the same change, one tier down</div>' +
+      'Commit <b>' + commit.sha + '</b> (' + commit.at.slice(0, 16).replace("T", " ") + ' backup run) is the daily entry that captured this PATCH. ' +
+      'It merged <b>' + covered.length + ' PATCH' + (covered.length === 1 ? "" : "es") + '</b> from ' + dayspan +
+      ' into one entry titled <b>' + commit.title + '</b> — ' + deltaHtml(commit.detail) + '.' +
+      '<ul>' + covered.map(r => '<li><span class="mono">' + r.at.slice(11, 19) + '</span> · ' + r.title + ' · ' + deltaHtml(r.detail) + '</li>').join("") + '</ul>' +
+      '<div style="margin-top:6px">Once this window is swept, <b>only</b> the merged line survives — the ' +
+      (covered.length > 1 ? 'order and the per-PATCH split' : 'exact time of day') + ' below is what is lost.</div>' +
+      '</div>';
+  }
+  return '<div class="tl-row patch-row">' +
+    '<div class="tl-time">' + e.at.slice(11, 19) + '<br><span style="opacity:.8">' + e.at.slice(5, 10) + '</span></div>' +
+    '<div class="tl-rail"><div class="tl-dot ' + (e.title === "Settings updated" ? "" : "ok") + '"></div></div>' +
+    '<div>' +
+      '<div class="tl-title">' + e.title + ' <span class="chip">' + timeAgo(e.at) + '</span> ' + chip + '</div>' +
+      '<div class="tl-detail">' + deltaHtml(e.detail) + '</div>' +
+      '<details class="json-toggle" style="margin-top:4px;"><summary>raw doc</summary><pre>' +
+        esc(e.doc || '{ "…": "this history row\'s full document, fetched on demand from userdata_history" }') + '</pre></details>' +
+      extra +
+    '</div></div>';
+}
+
+/* ---- older tier: one entry per backup commit ---- */
+function exportEntryHtml(e, i) {
+  if (e.gap) {
+    return '<div class="tl-row gap-row">' +
+      '<div class="tl-time">' + e.from + '<br>→ ' + e.to + '</div>' +
+      '<div class="tl-rail"><div class="tl-dot"></div></div>' +
+      '<div><div class="tl-title" style="color:var(--text-dim);font-weight:600">' + e.label + '</div>' +
+      '<div class="tl-detail">' + e.note + '</div></div></div>';
+  }
+  const key = "e" + i;
+  const open = SF.open[key] || null;
+  const prev = GIT_OLDER.slice(i + 1).find(x => !x.gap);
+  let extra = "";
+  if (open === "diff") {
+    const d = e.diff;
+    extra = '<div class="diffbox"><pre>' + (d
+      ? d.map(([t, line]) => '<span class="d-' + ({ h: "hdr", a: "add", d: "del" }[t]) + '">' + esc(line) + '</span>').join("\n")
+      : '<span class="d-hdr">diff against ' + (prev ? prev.date + " (" + prev.sha + ")" : "—") + ' — rendered on demand from the backup repo</span>') +
+      '</pre></div>';
+  } else if (open === "doc") {
+    extra = '<div class="diffbox"><pre>' + esc(e.doc || '{ "…": "this commit\'s full exported document, fetched on demand from the backup repo" }') + '</pre></div>';
+  }
+  return '<div class="tl-row git-row">' +
+    '<div class="tl-time">' + e.date + '<br><span style="opacity:.8">' + timeAgo(e.at) + '</span></div>' +
+    '<div class="tl-rail"><div class="tl-dot"></div></div>' +
+    '<div>' +
+      '<div class="tl-title">' + e.title + ' <span class="commit-sha">' + e.sha + '</span>' +
+        '<span class="chip">' + e.at.slice(11, 16) + ' backup run</span></div>' +
+      '<div class="tl-detail">' + deltaHtml(e.detail) + '</div>' +
+      (e.note ? '<div class="tl-detail" style="color:var(--warn)">⚠ ' + e.note + '</div>' : "") +
+      '<div class="tl-actions">' +
+        '<button class="btn-ghost' + (open === "doc" ? " pager-current" : "") + '" data-exp="' + key + '" data-mode="doc">document</button>' +
+        '<button class="btn-ghost' + (open === "diff" ? " pager-current" : "") + '" data-exp="' + key + '" data-mode="diff">diff vs ' + (prev ? prev.date.slice(5) : "—") + '</button>' +
+      '</div>' +
+      extra +
+    '</div></div>';
+}
+
+function recentTierHtml() {
+  const head = '<div class="tier-head">' +
+    '<span class="tier-name">Last 48 hours</span>' +
+    '<span class="fid-badge patch">per-PATCH · full fidelity</span>' +
+    '<span class="tier-src">userdata_history · Postgres</span></div>';
+  if (SF.state === "norecent") {
+    return head + '<div class="state-box neutral" style="margin-bottom:4px">' +
+      '<span class="sb-icon">⌛</span><div><b>No sync in the last 48 hours.</b> The window is empty, not broken — ' +
+      '<code>userdata_history</code> is swept to 48h, so an idle device leaves this tier blank while the archived tier below is untouched. ' +
+      'Last PATCH on record: <span class="mono">2026-11-17 20:44:02</span> (swept).</div></div>';
+  }
+  return head + RECENT.map(patchRowHtml).join("");
+}
+
+function gitTierHtml() {
+  const div = '<div class="tier-div"><div class="td-label">' +
+    '<span>Older than 48 h — swept, archived only</span>' +
+    '<span class="fid-badge daily">one entry per day</span>' +
+    '<span class="td-when">horizon ' + HORIZON.slice(0, 16).replace("T", " ") + '</span>' +
+    '</div></div>';
+  const caveat = '<div class="grain-note" style="margin:0 0 12px">' +
+    '<span class="gn-icon">⌛</span><div>' +
+    '<b>Below this line the resolution is one entry per day, and that is all there is.</b> ' +
+    'The per-PATCH rows for these days have been swept out of <code>userdata_history</code>; what remains is the git log of ' +
+    '<code>userdata/' + UID + '.json</code>, which the backup service commits once per run (01:30 daily). So several syncs on the same day are ' +
+    '<b>one</b> entry, a day with no change is <b>no</b> entry, and a value that changed and changed back between two runs left no trace at all. ' +
+    'Deltas are inferred by comparing consecutive commits — the same inference the tier above makes between consecutive PATCHes, over coarser input.' +
+    '</div></div>';
+
+  if (SF.state === "down") {
+    return div + '<div class="state-box err">' +
+      '<span class="sb-icon" style="color:var(--err)">⚠</span><div>' +
+      '<b>Archived tier unavailable — the backup service is unreachable.</b> ' +
+      '<code>GET http://backup:8080/exports/' + UID + '/history</code> timed out after 2s.' +
+      '<div style="margin-top:6px">The 48h tier above is unaffected: it is a local Postgres read, and a backup outage degrades this half of the panel, ' +
+      'never the page (D157). Nothing is lost — the commits still exist in <code>tun-backup</code>, they just cannot be listed right now.</div>' +
+      '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+      '<button class="btn" id="exp-retry">↻ Retry archived tier</button>' +
+      '<span style="color:var(--text-faint)">last successful read: ' + timeAgo("2026-11-20T09:14:00+01:00") + ', 6 entries back to 2026-11-12</span>' +
+      '</div></div></div>';
+  }
+  if (SF.state === "empty") {
+    return div + '<div class="state-box neutral">' +
+      '<span class="sb-icon">∅</span><div>' +
+      '<b>Nothing archived yet for this uid.</b> <code>userdata/' + UID + '.json</code> does not exist in <code>tun-backup</code> yet, ' +
+      'so the 48h tier above is the entire history there is.' +
+      '<div style="margin-top:6px">The backup service writes the export on its next run (01:30 Europe/Oslo, daily); the first archived entry appears tomorrow. ' +
+      'Until then, anything swept out of <code>userdata_history</code> is <b>gone</b> — the window is the only copy.</div>' +
+      '<div class="inline-note" style="margin-top:8px">Other uids in the repo: none.</div>' +
+      '</div></div>';
+  }
+  return div + caveat + GIT_OLDER.map(exportEntryHtml).join("");
+}
+
+function exportPanelBody() {
+  const source = '<div class="flow-banner" style="margin:0 0 14px">' +
+    '<b>Two tiers, one timeline.</b> The last 48 hours are per-PATCH rows from <code>userdata_history</code> — kept, but swept to a rolling ' +
+    '48h window, and its data is excluded from <code>mjolnir.sql</code> (the export below is the long-term record, not the dump). ' +
+    'Everything older is one entry per backup commit of <code>userdata/' + UID + '.json</code> in <code>tun-backup</code>. ' +
+    'The two tiers read from different places and <b>fail independently</b>.' +
+    '</div>';
+  return source + '<div class="timeline">' + recentTierHtml() + gitTierHtml() + '</div>' +
+    '<div class="inline-note">Above the line: "raw doc" is that history row\'s full document (<code>historyDoc</code>), and "archived · &lt;sha&gt;" shows the same change as the daily tier recorded it. Below the line: "document" is the commit\'s full export and "diff" is <code>git diff</code> against the previous commit — all fetched on demand, never inlined into the page.</div>';
+}
+
+function syncPage() {
+  return `
+<div class="page-head">
+  <div>
+    <h2>Device sync</h2>
+    <div class="page-sub">Progress reported by the signed-in account, kept as a mirror — this view is read-only.</div>
+  </div>
+  <button class="btn btn-ghost">↻ Refresh</button>
+</div>
+
+<div class="identity-bar">
+  <div class="field">
+    <label>Account (uid)</label>
+    <select><option selected>${UID} — only account on record</option></select>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <div><h3>Progress snapshot</h3><div class="page-sub">From the device's current <code>userdata</code> document.</div></div>
+  </div>
+  <div class="panel-pad">
+    <div class="snap-grid">
+      <div class="snap-item"><div class="label">Completed sessions</div><div class="value">43</div></div>
+      <div class="snap-item"><div class="label">Consistency rate</div><div class="value">—</div></div>
+      <div class="snap-item"><div class="label">Cards in progress</div><div class="value">325</div></div>
+      <div class="snap-item"><div class="label">Cards archived</div><div class="value">46</div></div>
+      <div class="snap-item"><div class="label">Account since</div><div class="value">2026-06-14</div></div>
+      <div class="snap-item"><div class="label">Last completed session</div><div class="value prose">2h ago</div></div>
+    </div>
+    <details class="json-toggle" style="margin-top:16px;"><summary>raw doc</summary><pre>{ "completedSessions": 43, "inProgressCards": 325, … }</pre></details>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <div><h3>Per-card progress</h3><div class="page-sub">Every occurrence with SRS state, joined against card content — 1 191 matching.</div></div>
+  </div>
+  <div class="panel-pad" style="padding-bottom:0;">
+    <div class="toolbar">
+      <input class="search-input" type="search" placeholder="Search card id or content…">
+      <select><option>Deck: all</option><option>Lexic</option><option>Practice</option></select>
+      <select><option>Side: all</option><option>N</option><option>E</option><option>A</option></select>
+      <select><option>State: all</option><option>in rotation</option><option>retired at ceiling</option><option>parked early</option><option>parked early, dormant</option></select>
+      <select><option>Flag: all</option><option>tagged</option><option>panic</option></select>
+      <select><option>Sort: device order</option><option>Card id</option><option>Stage</option><option>Next due</option></select>
+      <select><option>asc</option><option>desc</option></select>
+      <select><option>50 / page</option></select>
+      <button type="button">Filter</button>
+      <button class="btn-ghost">Clear</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Card</th><th>Content</th><th>Side</th><th>Deck</th><th class="num">Stage</th><th>Status</th><th class="num">Interval</th><th>Next due</th><th class="num">Reschedules</th><th>Flags</th></tr></thead>
+      <tbody>${PER_CARD.map(c => '<tr>' +
+        '<td class="mono">' + c.id + '</td>' +
+        '<td class="wrap" style="max-width:280px">' + esc(c.content) + '</td>' +
+        '<td class="mono">' + c.side + '</td>' +
+        '<td>' + c.deck + '</td>' +
+        '<td class="num">' + c.stage + '</td>' +
+        '<td><span class="pill pill-' + c.pill + '">' + c.state + '</span></td>' +
+        '<td class="num">' + c.cf + 'd</td>' +
+        '<td class="mono">' + c.due + '</td>' +
+        '<td class="num">' + c.resch + '</td>' +
+        '<td>' + c.flags + '</td></tr>').join("")}</tbody>
+    </table>
+  </div>
+  <div class="panel-pad" style="padding-top:12px;padding-bottom:14px;">
+    <div class="pager"><span class="pager-readout">1–6 of 1 191 · page 1 of 24</span>
+      <button class="btn-ghost" disabled>« first</button><button class="btn-ghost" disabled>‹ prev</button>
+      <button class="btn-ghost pager-current" disabled>1</button><button class="btn-ghost">next ›</button><button class="btn-ghost">last »</button></div>
+    <div class="inline-note">"Content" is always the card's <strong>N</strong> field (stripped of HTML), the same for every row regardless of which side was reviewed. "Side" is the stored direction letter (N/E/A), never an actual language.</div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <div style="min-width:0">
+      <h3>Sync history</h3>
+      <div class="page-sub">One chronological timeline at two fidelities — per-PATCH for 48 h, one entry per day before that.</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <span style="font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;font-weight:600">mockup state</span>
+      <span class="seg">
+        <button data-sfstate="ok" class="${SF.state === "ok" ? "on" : ""}">both tiers</button>
+        <button data-sfstate="down" class="${SF.state === "down" ? "on" : ""}">backup unreachable</button>
+        <button data-sfstate="empty" class="${SF.state === "empty" ? "on" : ""}">nothing archived</button>
+        <button data-sfstate="norecent" class="${SF.state === "norecent" ? "on" : ""}">no recent syncs</button>
+      </span>
+    </div>
+  </div>
+  <div class="panel-pad">
+    <div id="export-body">${exportPanelBody()}</div>
+  </div>
+</div>`;
+}
+
+/* ===================================================================
+   harness wiring
+   =================================================================== */
+const SURFACES = {
+  pulls: {
+    active: "/mjolnir/device/pulls", render: pullsPage,
+    cap: '<b>Surface 1 — NEW page</b> <code>/mjolnir/device/pulls</code>. <span class="mk-new">Added:</span> the whole page, plus one rail item under Device (Sync · <span class="mk-new">Pulls</span> · Insights). Source: gateway access log → hub\'s new <code>ota_pulls</code> table. The device contract is untouched.',
+  },
+  history: {
+    active: "/mjolnir", render: historyPage,
+    cap: '<b>Surface 2 — MODIFICATION</b> of <code>/mjolnir</code> (Publish history). Existing columns kept verbatim. <span class="mk-new">Added:</span> the <span class="mk-new">Pulls</span> and <span class="mk-new">Last pulled</span> columns, the never-pulled-while-current highlight + banner, and the "only never-pulled" filter. <code>/mjolnir/ota</code> is deliberately unchanged — see the last note on the page.',
+  },
+  sync: {
+    active: "/mjolnir/device", render: syncPage,
+    cap: '<b>Surface 3 — MODIFICATION</b> of <code>/mjolnir/device</code> (Sync). uid picker, progress snapshot, per-card progress and the raw-doc viewer are as today. <span class="mk-new">Rebuilt:</span> the "Sync history" panel is now <span class="mk-new">two tiers in one timeline</span> — per-PATCH from <code>userdata_history</code> (kept, swept to 48 h, data excluded from <code>mjolnir.sql</code>) above a labelled horizon, one entry per backup commit below it. The tiers degrade independently: try the four mockup states in the panel head.',
+  },
+};
+let current = "pulls";
+
+function render() {
+  const s = SURFACES[current];
+  document.getElementById("rail").innerHTML = renderRail(s.active);
+  document.getElementById("content").innerHTML = s.render();
+  document.getElementById("mk-cap").innerHTML = s.cap;
+  document.querySelectorAll(".mk-bar [data-surface]").forEach(b => b.classList.toggle("on", b.dataset.surface === current));
+  window.scrollTo({ top: 0 });
+}
+
+document.addEventListener("click", (ev) => {
+  const t = ev.target.closest("[data-surface], [data-nav], [data-sort], [data-run], [data-page], [data-filter-build], [data-pulls-for], [data-exp], [data-sfstate], #pf-clear, #exp-retry, #theme-btn, #pulls-refresh");
+  if (!t) return;
+
+  if (t.id === "theme-btn") {
+    const root = document.documentElement;
+    const isLight = root.dataset.theme === "light" ||
+      (!root.dataset.theme && window.matchMedia("(prefers-color-scheme: light)").matches);
+    root.dataset.theme = isLight ? "dark" : "light";
+    return;
+  }
+  if (t.dataset.surface) { current = t.dataset.surface; render(); ev.preventDefault(); return; }
+  if (t.dataset.nav) {
+    ev.preventDefault();
+    const map = { "/mjolnir/device/pulls": "pulls", "/mjolnir": "history", "/mjolnir/device": "sync" };
+    if (map[t.dataset.nav]) { current = map[t.dataset.nav]; render(); }
+    return;
+  }
+  if (t.id === "pulls-refresh") { render(); return; }
+  if (t.dataset.sort) {
+    const k = t.dataset.sort;
+    if (PF.sort === k) PF.dir = PF.dir === "desc" ? "asc" : "desc";
+    else { PF.sort = k; PF.dir = k === "ts" ? "desc" : "asc"; }
+    PF.page = 1; render(); return;
+  }
+  if (t.dataset.run) { PF.open[t.dataset.run] = !PF.open[t.dataset.run]; render(); return; }
+  if (t.dataset.page) { PF.page = Number(t.dataset.page); render(); return; }
+  if (t.dataset.filterBuild) { ev.preventDefault(); PF.build = t.dataset.filterBuild; PF.kind = "bundle"; PF.window = "all"; PF.page = 1; render(); return; }
+  if (t.dataset.pullsFor) { ev.preventDefault(); PF.build = t.dataset.pullsFor; PF.kind = "all"; PF.window = "all"; PF.page = 1; current = "pulls"; render(); return; }
+  if (t.id === "pf-clear") { Object.assign(PF, { kind: "all", build: "", window: "30d", ip: "", page: 1, open: {} }); render(); return; }
+  if (t.dataset.exp) {
+    const k = t.dataset.exp, mode = t.dataset.mode;
+    SF.open[k] = SF.open[k] === mode ? null : mode;
+    document.getElementById("export-body").innerHTML = exportPanelBody();
+    return;
+  }
+  if (t.dataset.sfstate) { SF.state = t.dataset.sfstate; render(); return; }
+  if (t.id === "exp-retry") { SF.state = "ok"; render(); return; }
+});
+
+document.addEventListener("change", (ev) => {
+  const id = ev.target.id;
+  if (id === "pf-kind") { PF.kind = ev.target.value; PF.page = 1; render(); }
+  else if (id === "pf-build") { PF.build = ev.target.value; PF.page = 1; render(); }
+  else if (id === "pf-window") { PF.window = ev.target.value; PF.page = 1; render(); }
+  else if (id === "pf-size") { PF.size = Number(ev.target.value); PF.page = 1; render(); }
+  else if (id === "pf-collapse") { PF.collapse = ev.target.checked; PF.page = 1; render(); }
+  else if (id === "hf-never") { HF.onlyNever = ev.target.checked; render(); }
+});
+document.addEventListener("input", (ev) => {
+  if (ev.target.id === "pf-ip") {
+    PF.ip = ev.target.value; PF.page = 1;
+    const v = ev.target.value, pos = ev.target.selectionStart;
+    render();
+    const el = document.getElementById("pf-ip");
+    if (el) { el.focus(); el.setSelectionRange(pos, pos); }
+  }
+});
+
+render();
+</script>

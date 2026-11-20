@@ -1,112 +1,124 @@
+# ota-pull-tracking Specification
+
 ## ADDED Requirements
 
-### Requirement: Bundle downloads are observed at the gateway, without the device participating
-The system SHALL record every request for a published bundle at the gateway
-that serves it, deriving the build's identity from the request path, and SHALL
-NOT require the device to report anything for this record to exist.
+### Requirement: Bundle downloads are observed at the gateway without device participation
+The system SHALL record each download of a published bundle from the gateway,
+without requiring the device to report anything and without changing any byte
+of the device-facing response.
 
-#### Scenario: A device downloads a bundle
-- **WHEN** a bundle is requested from the gateway with a valid credential
-- **THEN** a record exists naming that build's id, the time, the client
-  address, the response status and the number of bytes served
+An earlier approach that required the device to report its own state was built,
+shipped and removed because the device never reported; no requirement here may
+depend on the device reporting.
 
-#### Scenario: No device-side change is needed
-- **WHEN** the recording is in place
-- **THEN** no bundle rebuild, no app patch and no publish is required for the
-  first record to appear
+#### Scenario: A bundle is downloaded
+- **WHEN** a client downloads a published bundle through the gateway
+- **THEN** the download is recorded with its time, the build it was for, the
+  outcome and the source address
 
-#### Scenario: Only bundle downloads are recorded
-- **WHEN** the update descriptor, a media blob or an audio manifest is
-  requested
-- **THEN** no bundle-download record is created for it
+#### Scenario: The device-facing response
+- **WHEN** a bundle download is recorded
+- **THEN** the response's status, headers and body are identical to what they
+  were before recording existed
 
-#### Scenario: A failed or rejected download
-- **WHEN** a bundle request is answered with a non-success status, or the
-  response is cut short
-- **THEN** the record exists and carries that status and the byte count
-  actually served, rather than being dropped
+#### Scenario: A download that did not succeed
+- **WHEN** a request for a bundle returns a non-success status
+- **THEN** it is recorded with that status, and is not counted as a successful
+  pull
 
-### Requirement: Recording a download does not change what the device receives
-The system SHALL NOT alter any byte, header, status code or cache directive of
-a bundle response in order to record it, and SHALL NOT place any process,
-database or network call in that response's path.
+### Requirement: Device liveness is tracked separately from bundle adoption
+The system SHALL record launch-time checks for the current-build pointer as a
+distinct kind of event from bundle downloads, and SHALL NOT present one as the
+other.
 
-#### Scenario: Comparing responses before and after
-- **WHEN** the same bundle is requested before and after the recording is
-  introduced
-- **THEN** the status code, every response header and every response byte are
-  identical
+#### Scenario: A launch-time check
+- **WHEN** a client requests the current-build pointer
+- **THEN** the check is recorded as a liveness event, distinct in kind from a
+  bundle download
 
-#### Scenario: The recording destination fails
-- **WHEN** the destination the record is written to is unwritable or full
-- **THEN** the bundle is still served correctly, and the operator can see that
-  recording failed
+#### Scenario: Liveness carries no build decision
+- **WHEN** a liveness event is displayed
+- **THEN** it is not attributed to any build, because the recorded request
+  carries no such information
 
-### Requirement: Recording a subset of traffic does not disable the gateway's own logging
-The system SHALL keep the gateway's general request log intact when a subset of
-requests is routed to its own destination; a request outside that subset SHALL
-continue to appear in the general log.
+#### Scenario: The noisy kind does not drown the meaningful one
+- **WHEN** liveness events greatly outnumber bundle downloads in a period
+- **THEN** bundle downloads remain individually visible, and consecutive
+  successful liveness events may be grouped
 
-#### Scenario: A request outside the recorded subset
-- **WHEN** any request other than a bundle download is served
-- **THEN** it appears in the gateway's general log and does not appear in the
-  bundle-download record
+#### Scenario: Grouping never hides a fault
+- **WHEN** a liveness event has a non-success status
+- **THEN** it is not grouped away, and remains individually visible
 
-#### Scenario: A bundle download
-- **WHEN** a bundle download is served
-- **THEN** it appears in the bundle-download record
+### Requirement: The record is durable and survives log rotation
+The system SHALL store observed events durably, independently of the transport
+the gateway writes them to, and ingestion SHALL be idempotent so that
+re-reading the same transport inserts no duplicate.
 
-### Requirement: The download record is permanent and survives log rotation
-The system SHALL hold bundle-download records in durable storage independent of
-the gateway's log files, so that a record remains available after the log file
-that carried it has been rotated away or deleted.
+#### Scenario: Re-reading the transport
+- **WHEN** the same log content is ingested more than once
+- **THEN** no event is recorded twice
 
-#### Scenario: The log file is rotated
-- **WHEN** the gateway's log file rolls over and the previous file is removed
-- **THEN** every record already ingested from it is still available
+#### Scenario: The transport is rotated away
+- **WHEN** the gateway rotates or truncates its log
+- **THEN** previously ingested events remain in the durable record
 
-#### Scenario: The same log content is ingested twice
-- **WHEN** ingestion runs twice over log content it has already read
-- **THEN** no duplicate record is created, and the stored counts are unchanged
+#### Scenario: The ingesting service restarts
+- **WHEN** the ingesting service restarts
+- **THEN** it resumes without duplicating or losing already-written events
 
-#### Scenario: Ingestion encounters an unparseable line
-- **WHEN** a line in the log cannot be parsed
-- **THEN** that line is skipped and counted, the remaining lines are still
-  ingested, and the skip is visible to the operator
+### Requirement: Pull activity is visible in the console
+The system SHALL present the recorded events on an operator page, filterable by
+kind, by build and by time window, showing totals, the most recent download,
+and current liveness.
 
-### Requirement: Pulls are displayed per published build, with never-pulled builds visible
-The system SHALL present, for each published build, when it was first and last
-downloaded and how many downloads it has had, and SHALL make a published build
-that has never been downloaded visually distinct rather than absent or
-indistinguishable from one with zero recent activity.
+#### Scenario: Viewing pull activity
+- **WHEN** the operator opens the pulls page
+- **THEN** total bundle downloads, the number of distinct builds downloaded,
+  the most recent download and the most recent liveness event are shown, with
+  the full chronological record below
 
-#### Scenario: A build that has been pulled
-- **WHEN** the operator views the pulls display for a build with downloads on
-  record
-- **THEN** its first-download time, last-download time and download count are
-  shown
+#### Scenario: Filtering
+- **WHEN** the operator filters by kind, build or time window
+- **THEN** only matching events are listed and the listing remains paginable
 
-#### Scenario: A build published but never pulled
-- **WHEN** a build has been published and never downloaded
-- **THEN** it appears in the display, explicitly marked as never pulled
+#### Scenario: A period of silence
+- **WHEN** no event occurred for an extended period
+- **THEN** that silence is apparent from the page rather than having to be
+  inferred from absent rows
 
-#### Scenario: A build identified
-- **WHEN** a build is shown
-- **THEN** its build id is the primary identifier shown, and any
-  human-readable version label is secondary to it
+### Requirement: Published builds show whether they were ever taken
+The system SHALL show, for each published build, how many times it was
+downloaded and when it was last downloaded, and SHALL distinguish a build that
+is current and has never been downloaded from one that was superseded before it
+could be.
 
-### Requirement: The display never claims knowledge it does not have
-The system SHALL NOT present a download as evidence that a build is active,
-running or booted on the device, and SHALL NOT present the observed client
-address as a device or account identity.
+These two states mean opposite things: the first is a fault, the second is
+expected.
 
-#### Scenario: Reading the pulls display
-- **WHEN** the operator views the pulls display
-- **THEN** it states that a download is not an activation, and that the
-  observed address is an address rather than a device or account
+#### Scenario: A current build that was never downloaded
+- **WHEN** the current published build has never been downloaded
+- **THEN** it is flagged as needing attention
 
-#### Scenario: Data that predates the recording
-- **WHEN** builds exist that were published before recording began
-- **THEN** the display distinguishes "never pulled" from "pulled before
-  recording began" or states plainly that no record exists for that period,
-  rather than showing them as never pulled
+#### Scenario: A build superseded before it was downloaded
+- **WHEN** a build was replaced by a later publication before any download
+- **THEN** its absence of downloads is presented as expected, not as a fault
+
+#### Scenario: Build inputs are not shown as pullable
+- **WHEN** a record represents a build input the device never fetches
+- **THEN** no download count is shown against it
+
+### Requirement: The display states what the record cannot know
+The system SHALL NOT present a download as evidence that a build is running on
+a device, and SHALL NOT attribute an event to a device, account or handset
+identity.
+
+#### Scenario: Viewing a download
+- **WHEN** the operator views a recorded download
+- **THEN** it is presented as bytes having been served, not as a build being
+  active on a device
+
+#### Scenario: Source attribution
+- **WHEN** an event's origin is displayed
+- **THEN** it is presented as a network address, with no claim of device or
+  account identity

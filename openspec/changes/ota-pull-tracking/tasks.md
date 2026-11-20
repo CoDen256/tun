@@ -1,97 +1,78 @@
-## 1. The gateway's pull log
+# Tasks — ota-pull-tracking
 
-- [ ] 1.1 In `grind/caddy/Caddyfile`, add a named logger `otapulls` writing
-      `format json` to a file in a mounted volume. **Declare it BEFORE the
-      existing site `log` block** — the last-declared named logger becomes the
-      site default, and getting this backwards silently routes every request in
-      all seven zones into the pull log while stdout goes dark (verified; see
-      `design.md`).
-- [ ] 1.2 Give the existing stdout logger an explicit name that is **not**
-      `default` — `log default` alongside a second named logger fails at
-      startup with an include/exclude error, after printing what looks like a
-      successful boot.
-- [ ] 1.3 Add a comment next to both blocks stating the ordering rule and why,
-      so the next person to edit this file cannot reintroduce the trap.
-- [ ] 1.4 Add `log_name otapulls` inside the existing `handle /ota/*` block,
-      matched to `/ota/bundle/*` only. Change nothing else in that block: not
-      the token gate, not the GET-only gate, not either `Cache-Control` header,
-      not the absence of `precompressed` (D49).
-- [ ] 1.5 Set `roll_size`, `roll_keep` and `roll_keep_for` explicitly rather
-      than inheriting Caddy's defaults — the durability argument depends on
-      knowing the bound.
-- [ ] 1.6 Add the volume: writable in `grind/compose.yaml`, mounted
-      **read-only** into hub in `mjolnir/compose.yaml`.
-- [ ] 1.7 Verify with `caddy adapt --adapter caddyfile` that
-      `srv0.logs.default_logger_name` is the stdout logger's name, NOT
-      `otapulls`. Then verify live with real requests — never by reading the
-      file top to bottom (P56).
+## 1. The gateway logger (read `design.md` §2 first — both traps are silent)
+- [ ] 1.1 Add a named access logger scoped to the OTA paths, writing structured
+      lines to a file on a named volume.
+- [ ] 1.2 Declare it **before** the general site logger. The last-declared named
+      logger becomes the site default, and the wrong order sends all seven
+      zones' traffic to the pull log while stdout goes dark.
+- [ ] 1.3 Do **not** name the general logger `default` — it is reserved, and the
+      container exits 1 right after printing what looks like a successful boot.
+- [ ] 1.4 Put the log-name directive **inside** the existing `handle /ota/*`
+      block. Change no matcher, header, status code, cache directive, `root` or
+      `file_server` line in it.
+- [ ] 1.5 Leave `precompressed` absent (D49) — the body native hashes must stay
+      uncompressed.
+- [ ] 1.6 Comment the declaration order and why it is load-bearing.
+- [ ] 1.7 Verify with `caddy adapt --adapter caddyfile` **and** a live request —
+      never by reading the file top to bottom (P56).
+- [ ] 1.8 Set `roll_size`/`roll_keep`/`roll_keep_for` (tier 2).
 
-## 2. Ingest into ota_pulls
+## 2. Volume wiring
+- [ ] 2.1 Named volume, **writable** at the gateway, **read-only** into hub.
+- [ ] 2.2 Confirm the device plane does not depend on it: with the volume
+      unwritable or absent, bundle requests are still served normally.
 
-- [ ] 2.1 New hub migration creating `ota_pulls` (`build_id`, `at`,
-      `remote_ip`, `status`, `bytes`) with `UNIQUE (at, build_id, remote_ip)`.
-      No foreign key to `publications` — a pull naming an unknown build must be
-      a visible row, not an ingest failure.
-- [ ] 2.2 Write the ingester: read the current log file(s), parse each JSON
-      line, insert `ON CONFLICT DO NOTHING`. No byte-offset bookkeeping — the
-      unique constraint is what makes re-reading safe across rotation.
-- [ ] 2.3 Parse `build_id` from `/ota/bundle/<buildId>.js` and validate it
-      against `^[A-Za-z0-9._-]{1,64}$` (D48). A non-matching URI is a skipped,
-      counted line, never a row.
-- [ ] 2.4 Convert Caddy's float-epoch `ts` to a real timestamp on the way in.
-      Never store the raw float.
-- [ ] 2.5 Skip and count unparseable lines; surface the count rather than
-      failing the ingest or hiding it.
-- [ ] 2.6 Trigger ingestion on a request to the Pulls page, skipped if it ran
-      within the last minute. No scheduler, no background loop.
-- [ ] 2.7 Distinguish "no log file found" from "log file present, no pulls
-      recorded" — they are different states and the page reports each.
+## 3. Ingest and the table
+- [ ] 3.1 Migration for `ota_pulls`, owned by hub (it owns the mjolnir schema).
+- [ ] 3.2 Record both kinds, distinguished: bundle downloads and current-pointer
+      polls. Store the status and the source address for both.
+- [ ] 3.3 Key on `build_id` alone for bundles — a permanent key frozen by the
+      OTA contract. Render the human label as a secondary line from
+      `publications`; never key on it.
+- [ ] 3.4 Make ingest **idempotent** via a dedup key over the event's
+      identifying fields, so re-reading the whole file inserts nothing twice and
+      the record survives rotation.
+- [ ] 3.5 Make it resumable across restarts without duplicating or losing
+      events.
+- [ ] 3.6 Choose the ingest trigger and cooldown (tier 2).
+- [ ] 3.7 Do **not** exclude `ota_pulls` from the backup dump — see
+      `design.md` §9.
 
-## 3. The Pulls page
+## 4. The Pulls page
+- [ ] 4.1 Add `Pulls` to the rail's Device group and the route.
+- [ ] 4.2 Stat row: total downloads, distinct builds, most recent download,
+      most recent liveness.
+- [ ] 4.3 Inline-SVG activity strip over time, making a silent period apparent.
+- [ ] 4.4 Table with timestamp, kind, build, status, bytes, source; sortable and
+      paginated.
+- [ ] 4.5 Filters: kind, build, time window.
+- [ ] 4.6 Bundle rows dominant, poll rows quiet; consecutive **successful** polls
+      collapse into one expandable row.
+- [ ] 4.7 **Never** collapse a non-200 — a 401 scan or a 404 for a deleted build
+      must stay individually visible.
+- [ ] 4.8 State the limits in the UI: a download is not an activation, a poll
+      carries no build id, and a source address is not a device identity.
 
-- [ ] 3.1 Add "Pulls" to the Device group in `mjolnir/hub/src/layout.js`'s
-      `NAV`, after Sync and Insights.
-- [ ] 3.2 Route `GET /mjolnir/device/pulls`, rendering through the shared
-      shell like every other hub page. Build it from `mockups/`.
-- [ ] 3.3 Stat tiles in the existing `.snap-grid`/`.snap-item` style: latest
-      pull, currently published build, distinct builds ever pulled, pulls in
-      the last 30 days.
-- [ ] 3.4 Per-build table, LEFT JOIN from `publications` so a published build
-      with no pulls still gets a row: build id (primary, mono) with the human
-      label secondary, published time, first pulled, last pulled, count.
-- [ ] 3.5 Flag never-pulled builds visibly — a muted pill, not an empty cell.
-- [ ] 3.6 Pull log timeline, reverse-chronological, reusing the real timeline
-      markup. Non-200 and short responses get a warning pill.
-- [ ] 3.7 State the two limits on the page itself: a download is not an
-      activation, and the recorded address is an address, not a device or
-      account.
-- [ ] 3.8 Handle the pre-recording boundary: a build published before the
-      earliest record cannot be known to be unpulled. Either distinguish it
-      from a genuine never-pulled build or state plainly that no data exists
-      before that point — do not render it as never pulled.
-- [ ] 3.9 A pull row whose `build_id` has no `publications` row still renders,
-      marked as an unknown build.
+## 5. Publish history columns
+- [ ] 5.1 Add `Pulls` and `Last pulled`, keeping every existing column.
+- [ ] 5.2 Flag **current and never downloaded** prominently.
+- [ ] 5.3 Render **superseded before any download** quietly — these two mean
+      opposite things and must not be collapsed into one state.
+- [ ] 5.4 Link a pull count through to the Pulls page filtered to that build.
+- [ ] 5.5 Add **no** columns to `/mjolnir/ota` — see `design.md` §7.
 
-## 4. Verify the device plane is untouched
-
-- [ ] 4.1 Capture a bundle response (status, all headers, body sha256) from the
-      dev stack BEFORE the Caddyfile change.
-- [ ] 4.2 Capture it again after, and diff: byte-identical, header-identical,
-      status-identical. This is the one check that must not be skipped.
-- [ ] 4.3 Confirm a non-bundle request still appears in the stdout log and does
-      not appear in `pulls.log`.
-- [ ] 4.4 Confirm bundle serving still works with the log destination
-      unwritable (mount it read-only or fill it), and that the failure is
-      visible to the operator and invisible to the client.
-
-## 5. Record the decisions
-
-- [ ] 5.1 ADR row in `docs/07-decisions.md`: pull tracking is observed at the
-      gateway, not reported by the device — with `015_drop_device_state.sql`'s
-      reasoning cited as what this supersedes and what it does NOT revive.
-- [ ] 5.2 Record the two verified Caddy traps (logger declaration order,
-      reserved `default` name) where this ecosystem keeps its pitfalls, so they
-      survive outside this change folder.
-- [ ] 5.3 Note in `docs/11-ota-contract.md` that bundle downloads are logged at
-      the gateway and that this is passive observation, not a contract change —
-      without altering any contract clause.
+## 6. Verification
+- [ ] 6.1 Walk `acceptance.md` top to bottom against the running stack,
+      producing events with real requests through the gateway and never by
+      inserting rows.
+- [ ] 6.2 Run the byte-for-byte device-facing comparisons (criteria 1–5) and
+      **diff** them rather than eyeballing.
+- [ ] 6.3 Confirm the diff touches no file under `mjolnir/sync/`,
+      `mjolnir/patches/`, `mjolnir/base/`, `mjolnir/builder/`, and does not
+      modify `docs/11-ota-contract.md`.
+- [ ] 6.4 `bin/check-standards.sh` passes.
+- [ ] 6.5 Add an ADR row to `docs/07-decisions.md` recording that the device
+      plane may be **observed** but not altered, and that pull tracking is done
+      at the gateway because the device-reporting approach was already built and
+      removed (D126).

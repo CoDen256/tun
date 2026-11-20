@@ -1,147 +1,115 @@
 # Acceptance criteria — ota-pull-tracking
 
-The review contract for the build phase. Every criterion is a falsifiable,
-observable end state, verifiable in the local dev compose stack
-(`docker compose -f compose.yaml -f compose.dev.yaml up`) with curl, psql and
-claude-in-chrome. None may be verified by reading code or by trusting a log
-line that announces its own success.
+Observable in **dev compose**, via claude-in-chrome for the UI and `curl` plus
+shell for the gateway and the database. No VPS, no real phone, no real TLS.
 
----
+Events are produced by issuing **real requests through the gateway** with the
+OTA bearer token — never by inserting rows by hand. A criterion satisfied by a
+hand-inserted row proves nothing about the observation path, which is the whole
+change.
 
-## Item: "sync — track what bundle and when each bundle was pulled, display it in the UI"
+## The gateway's device-facing behaviour is unchanged
 
-### B1 — A bundle download produces a log line, and nothing else does
-**WHEN** three requests are issued against the dev gateway with a valid OTA
-token — `/ota/bundle/<id>.js`, `/ota/current.json`, and any operator-plane URL
-**THEN** the gateway's `pulls.log` contains **exactly one** line, for the
-bundle, carrying that build id in its `uri`, a `status`, a `size`, a
-`remote_ip` and a `ts`.
+1. Capture a bundle response through the gateway **before and after** the
+   change and diff them: status code, every response header (including
+   `Cache-Control: public, max-age=31536000, immutable`) and the body bytes are
+   **identical**.
+2. Same byte-for-byte comparison for `/ota/current.json`, including
+   `Cache-Control: no-store`.
+3. A request with a wrong or missing OTA bearer token still returns `401` with
+   the same body as before.
+4. A non-GET/HEAD method against `/ota/*` still returns `405` with the same
+   body as before.
+5. The served bundle body is still **uncompressed** at rest — no
+   `precompressed` behaviour was introduced, so the bytes the native code
+   hashes are unchanged.
+6. The diff for this change makes no edit to any matcher, header directive,
+   status code, cache directive, `root` or `file_server` line inside the
+   `/ota/*` handle block.
 
-### B2 — The gateway's general log still works
-**WHEN** the same three requests are issued
-**THEN** `docker compose logs caddy` shows handled-request lines for the two
-non-bundle requests, and shows none for the bundle. (The failure mode this
-catches is real and silent: in the wrong logger declaration order, all three
-land in `pulls.log` and the console log is empty.)
+## The two Caddy traps (verify both; either one ships a broken gateway that looks healthy)
 
-### B3 — The adapted config proves the ordering
-**WHEN** `caddy adapt --adapter caddyfile` is run against the real Caddyfile
-and `apps.http.servers.srv0.logs.default_logger_name` is read
-**THEN** it is the stdout logger's name, **not** `otapulls`.
+7. `caddy adapt --adapter caddyfile` on the new config reports
+   `srv0.logs.default_logger_name` as the **general site logger**, not the OTA
+   logger. This is the trap that silently routes all seven zones' traffic into
+   the pull log.
+8. With the stack up, a request to a **non-OTA** zone appears in the gateway's
+   stdout log and **not** in the pull log file.
+9. A bundle request appears in the pull log file.
+10. The gateway container **starts and stays up**, and its log goes beyond
+    "adapted config to JSON" to actually serving — confirming no reserved
+    logger name was used. Check `docker compose ps` reports it running, not
+    exited.
+11. The Caddyfile carries a comment at the logger declarations explaining that
+    the order is load-bearing and why.
 
-### B4 — The gateway actually starts
-**WHEN** the stack is brought up
-**THEN** the caddy container reaches a running state and stays there for at
-least 30 seconds — not "adapted config to JSON" followed by exit 1, which is
-what a reserved logger name produces and which reads like a successful boot in
-the first four log lines.
+## Ingest
 
-### B5 — The device-plane response is byte-identical
-**WHEN** the same bundle is fetched before and after this change and both
-responses are captured in full
-**THEN** the status code is identical, every response header is identical
-(including both `Cache-Control` values), and the body's sha256 is identical.
+12. After bundle and `current.json` requests, rows appear in `ota_pulls` with
+    the correct kind, time, build id (for bundles), status and source address.
+13. Ingesting the same log content **twice** inserts nothing the second time —
+    verify by counting rows, re-running ingest, and counting again.
+14. Truncate the log file (simulating rotation), then ingest: previously
+    recorded rows are **still present**.
+15. Restart hub: ingest resumes without duplicating or losing events. Issue a
+    request before and after the restart and confirm both are recorded exactly
+    once.
+16. A request for a bundle that does not exist is recorded with its `404`
+    status and is **not** counted as a successful pull anywhere on the UI.
+17. A request with a bad token is recorded with its `401` status.
+18. Hub's mount of the log volume is **read-only** — confirm hub cannot write
+    to it.
+19. With the log volume unwritable or absent, bundle requests are **still
+    served normally** — observation is not a dependency of the device plane.
 
-### B6 — A write method is still rejected
-**WHEN** `PUT /ota/bundle/<id>.js` is issued with a valid token
-**THEN** the response is still 405, as before the change.
+## The Pulls page
 
-### B7 — A missing or wrong token is still rejected identically
-**WHEN** the bundle is requested with no token, and then with a wrong token
-**THEN** both return 401 with the same body, and neither produces a row in
-`ota_pulls` that distinguishes them.
+20. `Pulls` appears in the rail's Device group alongside Sync and Insights, and
+    the route is reachable.
+21. The stat row shows total bundle downloads, distinct builds downloaded, the
+    most recent download, and the most recent liveness event.
+22. The main table lists events newest first with timestamp, kind, build id,
+    status, bytes and source address, and pages.
+23. Filtering by kind shows only that kind; filtering by build id shows only
+    that build's events; filtering by time window excludes events outside it.
+24. Bundle rows are visually dominant and poll rows quiet — distinguishable at
+    a glance without reading the kind column.
+25. Consecutive **successful** polls collapse into one expandable row stating
+    how many, and expanding it reveals the individual events.
+26. A **non-200** poll or bundle request is **never** collapsed into a group
+    and remains individually visible. Produce one with a bad token among a run
+    of good polls and confirm it stands alone.
+27. An extended period with no events is apparent from the activity strip
+    rather than only inferable from absent rows.
+28. The page never describes a download as a build running, active or installed
+    on a device.
+29. The source address is presented as a network address, with no claim of
+    device, account or handset identity.
 
-### B8 — Rows land in the table
-**WHEN** a bundle is downloaded and the Pulls page is then loaded
-**THEN** `SELECT * FROM ota_pulls` contains a row whose `build_id` is that
-build, whose `at` is a real timestamptz within a minute of now (not a float,
-not an epoch integer), and whose `status` and `bytes` match what the gateway
-served.
+## Publish history columns
 
-### B9 — Ingestion is idempotent
-**WHEN** the Pulls page is loaded, `SELECT count(*) FROM ota_pulls` is
-recorded, the ingest's cooldown is bypassed and the page is loaded five more
-times
-**THEN** the count is unchanged.
+30. Publish history shows `Pulls` and `Last pulled` **in addition to** every
+    column it had before — no existing column was removed or reordered away.
+31. Download a published build through the gateway and the count increments and
+    the last-pulled time updates.
+32. A build that is **current and has never been downloaded** is visibly
+    flagged as needing attention.
+33. A build that was **superseded before any download** shows its zero quietly,
+    presented as expected rather than as a fault — visibly different from 32.
+34. `/mjolnir/ota` (Logic bundles) has **no** pull columns.
+35. Clicking a pull count leads to the Pulls page filtered to that build.
 
-### B10 — Ingestion survives rotation
-**WHEN** pulls have been ingested, the gateway's log file is then deleted or
-rolled away, and the Pulls page is loaded
-**THEN** every previously ingested row is still present and the page still
-shows those pulls.
+## Scope and standards
 
-### B11 — A junk log line does not stop ingestion
-**WHEN** a line of non-JSON text, and a line whose `uri` is
-`/ota/bundle/../../etc/passwd`, are appended to the log alongside one valid
-bundle line, and ingestion runs
-**THEN** the valid line produces a row, neither junk line produces a row, no
-exception reaches the page, and the skipped count is visible to the operator.
-
-### B12 — A download is attributed to the right build
-**WHEN** two different build ids are downloaded
-**THEN** `ota_pulls` holds one row per download, each with its own correct
-`build_id`, and the per-build table on the page attributes them separately.
-
-### B13 — A failed download is recorded, not dropped
-**WHEN** a request for a bundle path that does not exist on disk is made with
-a valid token
-**THEN** a row exists carrying the non-success status, and the page's timeline
-renders it with a warning treatment rather than omitting it.
-
-### B14 — The page exists in the rail
-**WHEN** any hub page is opened in a browser
-**THEN** the Device group in the left rail shows a third item, "Pulls", linking
-to `/mjolnir/device/pulls`, and clicking it loads that page.
-
-### B15 — The per-build table shows what it must
-**WHEN** `/mjolnir/device/pulls` is opened after at least two builds have been
-published and one has been pulled twice
-**THEN** the table shows one row per published build; the pulled build shows a
-first-pulled time, a last-pulled time and a count of 2; and the build id is
-rendered as the primary identifier with the human version label beneath it.
-
-### B16 — A never-pulled build is visibly flagged
-**WHEN** a build is published and never downloaded, and the page is opened
-**THEN** its row is present and carries a visible "never pulled" marker — not
-an empty cell, and not absence from the table.
-
-### B17 — The page states its two limits
-**WHEN** the page is read
-**THEN** it states that a download is not an activation, and that the recorded
-value is a network address rather than a device or account identity.
-
-### B18 — The pre-recording boundary is not reported as "never pulled"
-**WHEN** a `publications` row exists whose `created_at` precedes the earliest
-`ota_pulls.at`, and the page is opened
-**THEN** that build is NOT presented as a plain "never pulled" build — it is
-either distinguished as predating the record or the page states that no record
-exists before that time.
-
-### B19 — An unknown build id still renders
-**WHEN** a row exists in `ota_pulls` whose `build_id` has no `publications` row
-**THEN** the page renders it, marked as an unknown build, rather than dropping
-it or erroring.
-
-### B20 — Missing log file is a reported state, not a crash
-**WHEN** the Pulls page is opened on a stack where the log file has never been
-created
-**THEN** the page renders with a message distinguishing "no pull log found"
-from "no pulls recorded", and returns 200 rather than erroring.
-
-### B21 — An unwritable log destination does not break the device plane
-**WHEN** the log destination is made unwritable and a bundle is requested with
-a valid token
-**THEN** the bundle is served with the same status, headers and bytes as
-always, and the operator can see that logging failed.
-
-### B22 — Nothing outside this change's scope was touched
-**WHEN** the full diff is reviewed
-**THEN** no file under `mjolnir/sync/`, `mjolnir/patches/`, `mjolnir/base/`,
-`mjolnir/builder/` or `mjolnir/hub/src/*builder*` is modified, and
-`docs/11-ota-contract.md` has no contract clause altered (a note recording that
-downloads are logged is permitted).
-
-### B23 — Both themes render
-**WHEN** the Pulls page is viewed in light and in dark theme
-**THEN** every pill, table row and timeline entry is legible in both, and the
-page body does not scroll horizontally at a narrow viewport.
+36. No row is recorded for `/blob/*` or `/audio-manifest/*` requests. Issue one
+    of each and confirm.
+37. `git diff` for this change touches no file under `mjolnir/sync/`,
+    `mjolnir/patches/` or `mjolnir/base/`, does not modify
+    `docs/11-ota-contract.md`, and touches nothing under
+    `mjolnir/builder/`.
+38. `bin/check-standards.sh` passes.
+39. The pages render correctly in both light and dark theme, and no table
+    causes the page body to scroll horizontally.
+40. The accepted mockup's Pulls and Publish-history surfaces are reproduced:
+    stat row, activity strip, collapsing poll runs, the filter bar, and the
+    two-state treatment of never-pulled.

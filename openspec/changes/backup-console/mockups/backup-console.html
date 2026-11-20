@@ -1,0 +1,1221 @@
+<title>backup — console</title>
+
+<style>
+/* ──────────────────────────────────────────────────────────────────────
+   Palette, chrome, .stat, .panel, tables, buttons, .pill: copied verbatim
+   from libs/jsservice/layout.js STYLE so this page is the same console.
+   Dark is the :root default; light arrives via prefers-color-scheme; the
+   two :root[data-theme=…] blocks repeat both sets so the toggle wins in
+   either direction.
+   ────────────────────────────────────────────────────────────────────── */
+:root {
+  --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
+  --border: #2a3039; --border-soft: #232832;
+  --text: #e8e6e1; --text-dim: #8b94a3; --text-faint: #566073;
+  --accent: #c6703f; --accent-soft: #c6703f26; --accent-text: #f2b688;
+  --ok: #5bab7e; --ok-soft: #5bab7e1f;
+  --warn: #d4a73d; --warn-soft: #d4a73d1f;
+  --err: #d1453f; --err-soft: #d1453f1f;
+  --radius: 6px;
+  --sans: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f3ef; --bg-elevated: #ffffff; --bg-sunken: #ebe7e0;
+    --border: #e2ddd3; --border-soft: #ece8e0;
+    --text: #221f1a; --text-dim: #6b6660; --text-faint: #9a948a;
+    --accent: #b35a2d; --accent-soft: #b35a2d14; --accent-text: #8a431c;
+    --ok: #2f8a5c; --ok-soft: #2f8a5c14;
+    --warn: #a87c1f; --warn-soft: #a87c1f14;
+    --err: #b23a34; --err-soft: #b23a3414;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f5f3ef; --bg-elevated: #ffffff; --bg-sunken: #ebe7e0;
+  --border: #e2ddd3; --border-soft: #ece8e0;
+  --text: #221f1a; --text-dim: #6b6660; --text-faint: #9a948a;
+  --accent: #b35a2d; --accent-soft: #b35a2d14; --accent-text: #8a431c;
+  --ok: #2f8a5c; --ok-soft: #2f8a5c14;
+  --warn: #a87c1f; --warn-soft: #a87c1f14;
+  --err: #b23a34; --err-soft: #b23a3414;
+}
+:root[data-theme="dark"] {
+  --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
+  --border: #2a3039; --border-soft: #232832;
+  --text: #e8e6e1; --text-dim: #8b94a3; --text-faint: #566073;
+  --accent: #c6703f; --accent-soft: #c6703f26; --accent-text: #f2b688;
+  --ok: #5bab7e; --ok-soft: #5bab7e1f;
+  --warn: #d4a73d; --warn-soft: #d4a73d1f;
+  --err: #d1453f; --err-soft: #d1453f1f;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; max-width: 100%; overflow-x: hidden; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+h1, h2, h3, h4 { text-wrap: balance; font-weight: 650; margin: 0; }
+code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+a { color: var(--accent-text); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.top-bar { display: flex; align-items: center; gap: 14px; padding: 10px 20px; background: var(--bg-sunken); border-bottom: 1px solid var(--border); font-size: 13px; position: sticky; top: 0; z-index: 40; }
+.top-bar strong { font-weight: 700; }
+.top-bar nav { margin-left: auto; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.top-bar nav a { color: var(--text-dim); text-decoration: none; }
+.top-bar nav a:hover { color: var(--text); }
+.top-bar nav a.zone-current { color: var(--accent-text); font-weight: 650; }
+.top-bar nav a.zone-current::before { content: "● "; font-size: 9px; vertical-align: 2px; }
+.top-bar .zone-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 2px; }
+
+.shell { display: flex; min-height: calc(100vh - 41px); }
+.rail { width: 192px; flex: none; border-right: 1px solid var(--border); padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; align-self: flex-start; position: sticky; top: 41px; }
+.rail-group-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint); padding: 12px 10px 6px; }
+.rail-group-label:first-child { padding-top: 2px; }
+.rail a { padding: 7px 10px; border-radius: var(--radius); font-size: 13px; color: var(--text-dim); text-decoration: none; display: flex; align-items: center; gap: 7px; }
+.rail a:hover { background: var(--bg-elevated); color: var(--text); }
+.rail a.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.rail a .dot { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: var(--err); display: none; }
+.rail a.alarm .dot { display: block; }
+
+.content { flex: 1; min-width: 0; padding: 24px 28px 64px; }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+.page-head h2 { font-size: 18px; }
+.page-sub { color: var(--text-dim); font-size: 13px; margin-top: 3px; }
+
+button, .btn { font: inherit; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+button:hover { border-color: var(--text-faint); }
+button[disabled] { cursor: default; opacity: .62; }
+button[disabled]:hover { border-color: var(--border); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #1a0d05; }
+.btn-primary:hover { filter: brightness(1.08); border-color: var(--accent); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--text-dim); padding: 7px 9px; }
+.btn-ghost:hover { background: var(--bg-elevated); color: var(--text); border-color: transparent; }
+.btn-sm { font-size: 11.5px; padding: 4px 9px; }
+
+.panel { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; }
+.panel + .panel { margin-top: 16px; }
+.panel-pad { padding: 18px 20px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border-soft); flex-wrap: wrap; }
+.panel-head h3 { font-size: 13.5px; }
+.panel-head .note { font-size: 11.5px; color: var(--text-faint); font-family: var(--mono); }
+
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+select, input[type="text"], input[type="number"], input[type="search"] { font: inherit; font-size: 13px; background: var(--bg-sunken); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; }
+.spacer { flex: 1; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 9px 14px; white-space: nowrap; }
+thead th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); font-weight: 600; border-bottom: 1px solid var(--border); }
+tbody tr { border-bottom: 1px solid var(--border-soft); }
+tbody tr:last-child { border-bottom: none; }
+td.wrap { white-space: normal; }
+td.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 2px 9px 3px; border-radius: 99px; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill-ok { background: var(--ok-soft); color: var(--ok); }
+.pill-warn { background: var(--warn-soft); color: var(--warn); }
+.pill-err { background: var(--err-soft); color: var(--err); }
+.pill-neutral { background: var(--border-soft); color: var(--text-dim); }
+
+.inline-note { font-size: 12.5px; color: var(--text-faint); margin-top: 6px; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.stat .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); font-weight: 600; }
+.stat .value { font-size: 24px; font-weight: 700; margin-top: 4px; font-family: var(--mono); }
+.stat .value.sm { font-size: 18px; }
+.stat .sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.stat.bad { border-color: var(--err); }
+.stat.bad .value { color: var(--err); }
+.stat.warny { border-color: var(--warn); }
+.stat.warny .value { color: var(--warn); }
+
+.log-line { font-family: var(--mono); font-size: 12px; padding: 3px 0; color: var(--text-dim); }
+.log-line .lvl-ok { color: var(--ok); }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 26px 0 12px; flex-wrap: wrap; }
+.section-head h3 { margin: 0; font-size: 14px; }
+.section-head .note { font-size: 12px; color: var(--text-faint); }
+
+/* ── page-specific additions ───────────────────────────────────────── */
+
+.theme-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.theme-toggle button { border: 0; border-radius: 0; background: transparent; color: var(--text-dim); font-size: 11px; padding: 4px 11px; font-weight: 650; }
+.theme-toggle button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+
+.seg { display: inline-flex; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.seg button { all: unset; cursor: pointer; font-size: 11.5px; font-weight: 650; padding: 5px 10px; color: var(--text-dim); font-family: var(--sans); }
+.seg button:hover { color: var(--text); background: var(--bg-elevated); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+.seg-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 650; margin-right: 2px; }
+
+/* THE HEALTH BANNER. Three states. The two bad ones are deliberately
+   louder than anything else on the page: this service once logged
+   "committed and pushed" with an empty /data for seven hours. */
+.hb { border-radius: 10px; border: 1px solid var(--border); background: var(--bg-elevated); overflow: hidden; margin-bottom: 16px; }
+.hb-top { display: flex; align-items: center; gap: 14px; padding: 15px 18px; flex-wrap: wrap; }
+.hb-ico { width: 34px; height: 34px; flex: none; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 700; background: var(--ok-soft); color: var(--ok); }
+.hb-txt { min-width: 0; }
+.hb-txt .h { font-size: 15px; font-weight: 700; }
+.hb-txt .s { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+.hb-txt .s code { font-size: 11.5px; }
+.hb-act { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hb-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(176px, 1fr)); gap: 1px; background: var(--border); border-top: 1px solid var(--border); }
+.hb-cell { background: var(--bg-elevated); padding: 11px 18px 12px; }
+.hb-cell .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 650; }
+.hb-cell .v { font-size: 15px; font-weight: 700; font-family: var(--mono); font-variant-numeric: tabular-nums; margin-top: 3px; }
+.hb-cell .x { font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
+.hb-cell .v.bad { color: var(--err); }
+.hb-cell .v.warny { color: var(--warn); }
+.hb-cell .v.good { color: var(--ok); }
+
+.hb.state-ok { border-color: var(--ok); }
+.hb.state-fail, .hb.state-stale { border-width: 2px; }
+.hb.state-fail { border-color: var(--err); }
+.hb.state-fail .hb-top { background: var(--err-soft); }
+.hb.state-fail .hb-ico { background: var(--err); color: #fff; }
+.hb.state-stale { border-color: var(--warn); }
+.hb.state-stale .hb-top { background: var(--warn-soft); }
+.hb.state-stale .hb-ico { background: var(--warn); color: #1a0d05; }
+.hb-quote { font-family: var(--mono); font-size: 11.5px; line-height: 1.6; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--bg-sunken); color: var(--text); overflow-x: auto; white-space: pre; }
+.hb.state-ok .hb-quote { color: var(--text-dim); }
+.hb-quote b { color: var(--err); }
+.hb.state-stale .hb-quote b { color: var(--warn); }
+
+/* Run-now phase indicator */
+.phases { display: flex; gap: 0; align-items: stretch; margin-top: 2px; flex-wrap: wrap; }
+.ph { display: flex; align-items: center; gap: 7px; padding: 6px 12px 6px 10px; font-size: 12px; color: var(--text-faint); border: 1px solid var(--border); border-right: 0; background: var(--bg-sunken); }
+.ph:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.ph:last-child { border-right: 1px solid var(--border); border-radius: 0 var(--radius) var(--radius) 0; }
+.ph .n { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--border); flex: none; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; }
+.ph.done { color: var(--text-dim); }
+.ph.done .n { background: var(--ok); border-color: var(--ok); color: #06130c; }
+.ph.now { color: var(--accent-text); background: var(--accent-soft); border-color: var(--accent); font-weight: 650; }
+.ph.now .n { border-color: var(--accent); color: var(--accent-text); animation: spin 1.1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.logbox { font-family: var(--mono); font-size: 11.5px; line-height: 1.65; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 8px; padding: 11px 13px; max-height: 260px; overflow: auto; white-space: pre; }
+.logbox .ok { color: var(--ok); }
+.logbox .warn { color: var(--warn); }
+.logbox .err { color: var(--err); font-weight: 650; }
+.logbox .dim { color: var(--text-faint); }
+.logbox .cursor { color: var(--accent-text); }
+.run-collapsed { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-dim); }
+.run-collapsed .big { font-size: 13px; color: var(--text); font-weight: 650; }
+
+/* expanders (run history / commits) */
+details.row-x { border-bottom: 1px solid var(--border-soft); }
+details.row-x:last-of-type { border-bottom: none; }
+details.row-x > summary { list-style: none; cursor: pointer; display: grid; gap: 14px; align-items: center; padding: 11px 18px; }
+details.row-x > summary::-webkit-details-marker { display: none; }
+details.row-x > summary:hover { background: var(--bg-sunken); }
+details.row-x[open] > summary { background: var(--bg-sunken); }
+.chev { color: var(--text-faint); transition: transform .14s ease; flex: none; width: 12px; }
+details.row-x[open] .chev { transform: rotate(90deg); }
+.run-sum { grid-template-columns: 12px 190px 78px 120px minmax(0, 1fr); }
+.cm-sum { grid-template-columns: 12px 172px 76px minmax(0, 1fr) 100px; }
+@media (max-width: 1080px) {
+  .run-sum, .cm-sum { grid-template-columns: 12px minmax(0, 1fr); }
+  .run-sum > :nth-child(n+3), .cm-sum > :nth-child(n+3) { grid-column: 2; }
+}
+.row-x .when { font-family: var(--mono); font-size: 12px; }
+.row-x .dur { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
+.row-x .what { font-size: 12.5px; color: var(--text-dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.row-x .what b { color: var(--text); font-weight: 650; }
+.row-x .what .del { font-family: var(--mono); }
+.row-x .what .shrink { color: var(--ok); font-weight: 700; font-family: var(--mono); }
+.row-body { padding: 2px 18px 16px; }
+.row-body .meta { display: flex; gap: 20px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-faint); margin: 6px 0 9px; }
+.row-body .meta b { color: var(--text-dim); font-family: var(--mono); font-weight: 650; }
+details.row-x.failed > summary { border-left: 3px solid var(--err); padding-left: 15px; }
+
+.fileline { display: grid; grid-template-columns: minmax(0, 1fr) 92px 86px; gap: 10px; font-family: var(--mono); font-size: 11.5px; padding: 4px 0; border-bottom: 1px solid var(--border-soft); }
+.fileline:last-child { border-bottom: none; }
+.fileline .p { overflow: hidden; text-overflow: ellipsis; }
+.fileline .a { color: var(--ok); text-align: right; }
+.fileline .d { color: var(--err); text-align: right; }
+.fileline .s { color: var(--text-faint); text-align: right; }
+.fh { color: var(--text-faint); font-family: var(--sans); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 650; }
+
+/* sources */
+tr.src-alarm { background: var(--err-soft); }
+tr.src-alarm td { border-bottom-color: var(--err); }
+tr.src-alarm .why { color: var(--err); font-weight: 650; white-space: normal; }
+.delta-good { color: var(--ok); font-weight: 650; }
+.delta-flat { color: var(--text-faint); }
+.headline { background: var(--accent-soft); }
+.headline td { border-bottom-color: var(--accent); }
+.arrowdown { color: var(--ok); font-weight: 700; }
+.ro-tag { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); font-weight: 650; border: 1px solid var(--border); border-radius: 99px; padding: 1px 8px 2px; }
+
+/* userdata export — the new first-class thing */
+.ud { border: 1px solid var(--accent); border-radius: 10px; background: var(--bg-elevated); overflow: hidden; }
+.ud-head { display: flex; align-items: center; gap: 12px; padding: 13px 18px; background: var(--accent-soft); border-bottom: 1px solid var(--accent); flex-wrap: wrap; }
+.ud-head h3 { font-size: 13.5px; }
+.ud-head .new { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; background: var(--accent); color: #1a0d05; padding: 2px 7px 3px; border-radius: 99px; }
+.ud-head .note { margin-left: auto; font-size: 11.5px; color: var(--text-dim); font-family: var(--mono); }
+.uid { font-family: var(--mono); font-size: 12px; }
+
+/* settings */
+.set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.set-cell { background: var(--bg-elevated); padding: 14px 16px 15px; }
+.set-cell .k { font-size: 12px; font-weight: 650; }
+.set-cell .cur { font-size: 11.5px; color: var(--text-faint); margin: 3px 0 8px; font-family: var(--mono); }
+.set-cell .ctl { display: flex; align-items: center; gap: 7px; }
+.set-cell .ctl input { width: 86px; }
+.set-cell .unit { font-size: 12px; color: var(--text-dim); }
+.set-cell .src { font-size: 11px; color: var(--text-faint); margin-top: 7px; line-height: 1.5; }
+.set-cell.dirty { box-shadow: inset 3px 0 0 var(--accent); }
+.save-bar { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.save-msg { font-size: 12.5px; font-weight: 650; }
+.save-msg.ok { color: var(--ok); }
+.ro-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-top: 14px; }
+.ro-fact { border: 1px dashed var(--border); border-radius: 8px; padding: 10px 12px; font-size: 11.5px; }
+.ro-fact .k { color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; font-weight: 650; font-size: 10.5px; }
+.ro-fact .v { font-family: var(--mono); margin-top: 3px; overflow-x: auto; white-space: pre; }
+
+/* restore */
+.rs { display: flex; flex-direction: column; }
+.rs-step { border-top: 1px solid var(--border-soft); padding: 14px 18px; }
+.rs-step:first-child { border-top: 0; }
+.rs-step h4 { font-size: 12.5px; display: flex; align-items: center; gap: 9px; }
+.rs-step h4 .n { font-family: var(--mono); font-size: 11px; color: var(--text-faint); border: 1px solid var(--border); border-radius: 99px; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; flex: none; }
+.rs-step .why { font-size: 12px; color: var(--text-dim); margin: 5px 0 9px; }
+.rs-step.newstep { background: var(--accent-soft); border-left: 3px solid var(--accent); }
+.rs-step.newstep h4 .n { border-color: var(--accent); color: var(--accent-text); }
+.cmd { position: relative; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 8px; }
+.cmd pre { margin: 0; padding: 11px 13px; font-family: var(--mono); font-size: 11.5px; line-height: 1.7; overflow-x: auto; white-space: pre; }
+.cmd .cp { position: absolute; top: 6px; right: 6px; }
+.cmd pre .c { color: var(--text-faint); }
+.warnline { font-size: 12px; color: var(--warn); font-weight: 650; margin-top: 8px; }
+</style>
+
+<div class="top-bar">
+  <strong>tun · backup</strong>
+  <nav>
+    <a href="/mjolnir">workbench</a>
+    <a href="/builder">builder</a>
+    <a href="/stabbur/">stabbur</a>
+    <a href="/smia/">smia</a>
+    <a href="/phonexa/">phonexa</a>
+    <a href="/shadow/">shadow</a>
+    <a href="/backup/" class="zone-current">backup</a>
+    <a href="/adminer">adminer</a>
+    <span class="zone-sep"></span>
+    <span class="theme-toggle" role="group" aria-label="Theme">
+      <button type="button" data-theme="dark" aria-pressed="true">Dark</button>
+      <button type="button" data-theme="light" aria-pressed="false">Light</button>
+    </span>
+  </nav>
+</div>
+
+<div class="shell">
+  <div class="rail">
+    <div class="rail-group-label">Backup</div>
+    <a href="#health" class="active" id="rail-health">Overview<span class="dot"></span></a>
+    <a href="#runs">Run history</a>
+    <div class="rail-group-label">Data</div>
+    <a href="#sources" id="rail-sources">Sources<span class="dot"></span></a>
+    <a href="#userdata">Userdata exports</a>
+    <a href="#commits">Commit history</a>
+    <div class="rail-group-label">Operate</div>
+    <a href="#settings">Settings</a>
+    <a href="#restore">Restore</a>
+  </div>
+
+  <div class="content">
+
+    <div class="page-head">
+      <div>
+        <h2>Backup</h2>
+        <div class="page-sub">4 databases · 2 file mirrors · 1 userdata export per account → <code>git@github.com:…/tun-backup.git</code></div>
+      </div>
+      <div class="toolbar" style="margin:0">
+        <span class="seg-label">Mockup state</span>
+        <span class="seg" role="group" aria-label="Health state">
+          <button type="button" data-state="ok" aria-pressed="true">Healthy</button>
+          <button type="button" data-state="fail" aria-pressed="false">Run failed</button>
+          <button type="button" data-state="stale" aria-pressed="false">Remote stale</button>
+        </span>
+      </div>
+    </div>
+
+    <!-- ══ 1. HEALTH BANNER ══════════════════════════════════════════ -->
+    <div class="hb state-ok" id="hb">
+      <div class="hb-top">
+        <div class="hb-ico" id="hb-ico">✓</div>
+        <div class="hb-txt">
+          <div class="h" id="hb-h">Backed up</div>
+          <div class="s" id="hb-s">A full run finished end to end — dumps, exports, mirrors, commit and push.</div>
+        </div>
+        <div class="hb-act">
+          <span class="pill pill-ok" id="hb-pill">healthy</span>
+          <button type="button" class="btn-ghost btn-sm" id="hb-logs">Open last log ↓</button>
+        </div>
+      </div>
+      <div class="hb-strip">
+        <div class="hb-cell">
+          <div class="k">Last success</div>
+          <div class="v" id="hb-last">2026-11-20 03:04:30Z</div>
+          <div class="x" id="hb-age">6h 12m ago · stamp <code>/data/last-success</code></div>
+        </div>
+        <div class="hb-cell">
+          <div class="k">Next run</div>
+          <div class="v" id="hb-next">in 17h 48m</div>
+          <div class="x" id="hb-nextx">2026-11-21 03:00:12Z · interval 24h</div>
+        </div>
+        <div class="hb-cell">
+          <div class="k">Unpushed commits</div>
+          <div class="v good" id="hb-unpushed">0</div>
+          <div class="x" id="hb-unpushedx">HEAD = origin/main at <code>a71f0c4</code></div>
+        </div>
+        <div class="hb-cell">
+          <div class="k">Container health</div>
+          <div class="v good" id="hb-ch">healthy</div>
+          <div class="x" id="hb-chx">age 22 350s · limit 108 000s</div>
+        </div>
+      </div>
+      <div class="hb-quote" id="hb-quote">[2026-11-20T03:04:30Z] entrypoint: committed and pushed</div>
+    </div>
+
+    <!-- ══ 2. RUN NOW ════════════════════════════════════════════════ -->
+    <div class="panel" id="runnow">
+      <div class="panel-head">
+        <h3>Run now</h3>
+        <span class="note">identical to the scheduled run — does not reset the schedule</span>
+      </div>
+      <div class="panel-pad">
+        <div class="toolbar" style="margin-bottom:12px">
+          <button type="button" class="btn-primary" id="run-btn">Run full backup</button>
+          <span id="run-hint" class="inline-note" style="margin:0">dumps → userdata export → file mirrors → commit → push</span>
+          <span class="spacer"></span>
+          <button type="button" class="btn-ghost btn-sm" id="run-reset" hidden>Reset mockup</button>
+        </div>
+
+        <div class="phases" id="phases" hidden>
+          <div class="ph" data-ph="0"><span class="n">1</span>dumping mjolnir</div>
+          <div class="ph" data-ph="1"><span class="n">2</span>dumping stabbur · phonexa · shadow</div>
+          <div class="ph" data-ph="2"><span class="n">3</span>exporting userdata</div>
+          <div class="ph" data-ph="3"><span class="n">4</span>mirroring blobs · audio</div>
+          <div class="ph" data-ph="4"><span class="n">5</span>committing</div>
+          <div class="ph" data-ph="5"><span class="n">6</span>pushing</div>
+        </div>
+
+        <div class="logbox" id="run-log" hidden></div>
+
+        <div class="run-collapsed" id="run-done" hidden>
+          <span class="pill pill-ok">success</span>
+          <span class="big">4m 18s</span>
+          <span>+3 blobs · +1 userdata · <code>mjolnir.sql</code> 44.1 MB <span class="arrowdown">→</span> 1.7 MB</span>
+          <span class="dim" style="color:var(--text-faint)">commit <code>a71f0c4</code> pushed</span>
+          <span class="spacer"></span>
+          <button type="button" class="btn-sm" id="run-expand">Show log</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 3. RUN HISTORY ════════════════════════════════════════════ -->
+    <div class="section-head" id="runs">
+      <h3>Run history</h3>
+      <span class="note">one file per run under <code>/data/runs/</code> · 41 retained (30 days) · 6 shown</span>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h3 style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint)">
+          started · duration · outcome · what changed
+        </h3>
+        <span class="note">click a row for its full captured log</span>
+      </div>
+
+      <details class="row-x">
+        <summary class="run-sum">
+          <span class="chev">▸</span>
+          <span class="when">2026-11-20 03:00:12Z</span>
+          <span class="dur">4m 18s</span>
+          <span><span class="pill pill-ok">success</span></span>
+          <span class="what"><b>+3 blobs</b>, +1 userdata, <span class="del">mjolnir.sql</span> 44.1 MB <span class="shrink">→ 1.7 MB</span></span>
+        </summary>
+        <div class="row-body">
+          <div class="meta"><span>commit <b>a71f0c4</b></span><span>pushed <b>yes</b></span><span>repo <b>61.4 MB → 19.0 MB</b></span><span>exit <b>0</b></span></div>
+          <div class="logbox">[2026-11-20T03:00:12Z] entrypoint: dumping mjolnir...
+[2026-11-20T03:00:12Z]   excluding job_logs, build_jobs, userdata (data only)
+[2026-11-20T03:01:39Z]   mjolnir.sql 1.7 MB (was 44.1 MB)
+[2026-11-20T03:01:39Z] entrypoint: dumping stabbur...
+[2026-11-20T03:01:52Z] entrypoint: dumping phonexa...
+[2026-11-20T03:02:04Z] entrypoint: dumping shadow...
+[2026-11-20T03:02:11Z] entrypoint: exporting userdata documents...
+[2026-11-20T03:02:11Z]   4 account(s) in userdata
+[2026-11-20T03:02:12Z]   userdata/: 3 -> 4 (1 new, 2 changed)
+[2026-11-20T03:02:12Z] entrypoint: syncing stabbur's blob store...
+[2026-11-20T03:02:12Z]   source volume has 1284 file(s)
+[2026-11-20T03:03:51Z]   blobs/: 1281 -> 1284 (3 new)
+[2026-11-20T03:03:51Z] entrypoint: syncing phonexa's audio tree...
+[2026-11-20T03:03:51Z]   source volume has 206 file(s)
+[2026-11-20T03:04:22Z]   phonexa-audio/: 206 -> 206 (0 new)
+<span class="ok">[2026-11-20T03:04:30Z] entrypoint: committed and pushed</span>
+[2026-11-20T03:04:30Z] entrypoint: sleeping 86400s, next run at 2026-11-21T03:00:12Z</div>
+        </div>
+      </details>
+
+      <details class="row-x">
+        <summary class="run-sum">
+          <span class="chev">▸</span>
+          <span class="when">2026-11-19 03:00:09Z</span>
+          <span class="dur">2m 51s</span>
+          <span><span class="pill pill-neutral">no changes</span></span>
+          <span class="what">nothing staged — every dump byte-identical, 0 new blobs, 0 new audio</span>
+        </summary>
+        <div class="row-body">
+          <div class="meta"><span>commit <b>—</b></span><span>pushed <b>n/a</b></span><span>repo <b>61.4 MB</b></span><span>exit <b>0</b></span></div>
+          <div class="logbox">[2026-11-19T03:00:09Z] entrypoint: dumping mjolnir...
+[2026-11-19T03:01:31Z] entrypoint: dumping stabbur...
+[2026-11-19T03:01:44Z] entrypoint: dumping phonexa...
+[2026-11-19T03:01:56Z] entrypoint: dumping shadow...
+[2026-11-19T03:02:03Z] entrypoint: syncing stabbur's blob store...
+[2026-11-19T03:02:03Z]   source volume has 1281 file(s)
+[2026-11-19T03:02:41Z]   blobs/: 1281 -> 1281 (0 new)
+[2026-11-19T03:02:41Z] entrypoint: syncing phonexa's audio tree...
+[2026-11-19T03:02:41Z]   source volume has 206 file(s)
+[2026-11-19T03:02:58Z]   phonexa-audio/: 206 -> 206 (0 new)
+<span class="dim">[2026-11-19T03:03:00Z] entrypoint: no changes, nothing to commit</span>
+[2026-11-19T03:03:00Z] entrypoint: sleeping 86400s, next run at 2026-11-20T03:00:09Z</div>
+        </div>
+      </details>
+
+      <details class="row-x failed">
+        <summary class="run-sum">
+          <span class="chev">▸</span>
+          <span class="when">2026-11-18 03:00:04Z</span>
+          <span class="dur">1m 46s</span>
+          <span><span class="pill pill-err">failed</span></span>
+          <span class="what" style="color:var(--err);font-weight:650">push failed — committed locally, NOT on the remote</span>
+        </summary>
+        <div class="row-body">
+          <div class="meta"><span>commit <b>4de91bb</b> (local only)</span><span>pushed <b>no</b></span><span>retried at <b>04:00:04Z</b></span><span>exit <b>1</b></span></div>
+          <div class="logbox">[2026-11-18T03:00:04Z] entrypoint: dumping mjolnir...
+[2026-11-18T03:01:10Z] entrypoint: dumping stabbur...
+[2026-11-18T03:01:22Z] entrypoint: dumping phonexa...
+[2026-11-18T03:01:29Z] entrypoint: dumping shadow...
+[2026-11-18T03:01:34Z] entrypoint: syncing stabbur's blob store...
+[2026-11-18T03:01:34Z]   source volume has 1281 file(s)
+[2026-11-18T03:01:44Z]   blobs/: 1270 -> 1281 (11 new)
+[2026-11-18T03:01:44Z] entrypoint: syncing phonexa's audio tree...
+[2026-11-18T03:01:44Z]   source volume has 206 file(s)
+[2026-11-18T03:01:48Z]   phonexa-audio/: 195 -> 206 (11 new)
+<span class="dim">ssh: connect to host github.com port 22: Connection timed out
+fatal: Could not read from remote repository.</span>
+<span class="err">[2026-11-18T03:01:50Z] entrypoint: FATAL push failed — the dumps are committed locally in /data/tun-backup but NOT on the remote</span>
+<span class="err">[2026-11-18T03:01:50Z] entrypoint: run FAILED — nothing was backed up this cycle; this container is now UNHEALTHY</span>
+[2026-11-18T03:01:50Z] entrypoint: sleeping 3600s, next run at 2026-11-18T04:01:50Z</div>
+        </div>
+      </details>
+
+      <details class="row-x">
+        <summary class="run-sum">
+          <span class="chev">▸</span>
+          <span class="when">2026-11-18 04:01:50Z</span>
+          <span class="dur">0m 09s</span>
+          <span><span class="pill pill-ok">success</span></span>
+          <span class="what">no new changes — <b>pushed previously-committed backups</b> (<span class="del">4de91bb</span>)</span>
+        </summary>
+        <div class="row-body">
+          <div class="meta"><span>commit <b>4de91bb</b></span><span>pushed <b>yes</b></span><span>repo <b>61.4 MB</b></span><span>exit <b>0</b></span></div>
+          <div class="logbox">[2026-11-18T04:01:50Z] entrypoint: dumping mjolnir...
+[2026-11-18T04:01:55Z] entrypoint: dumping stabbur, phonexa, shadow...
+[2026-11-18T04:01:57Z]   blobs/: 1281 -> 1281 (0 new)
+[2026-11-18T04:01:58Z]   phonexa-audio/: 206 -> 206 (0 new)
+<span class="warn">[2026-11-18T04:01:59Z] entrypoint: no new changes, but local commits are unpushed — retrying push</span>
+<span class="ok">[2026-11-18T04:01:59Z] entrypoint: pushed previously-committed backups</span>
+[2026-11-18T04:01:59Z] entrypoint: sleeping 86400s, next run at 2026-11-19T04:01:59Z</div>
+        </div>
+      </details>
+
+      <details class="row-x failed">
+        <summary class="run-sum">
+          <span class="chev">▸</span>
+          <span class="when">2026-11-17 03:00:11Z</span>
+          <span class="dur">0m 24s</span>
+          <span><span class="pill pill-err">failed</span></span>
+          <span class="what" style="color:var(--err);font-weight:650">shadow dump empty — aborted, every committed .sql left untouched</span>
+        </summary>
+        <div class="row-body">
+          <div class="meta"><span>commit <b>—</b></span><span>pushed <b>no</b></span><span>cause <b>postgres restarting</b></span><span>exit <b>1</b></span></div>
+          <div class="logbox">[2026-11-17T03:00:11Z] entrypoint: dumping mjolnir...
+[2026-11-17T03:00:28Z] entrypoint: dumping stabbur...
+[2026-11-17T03:00:31Z] entrypoint: dumping phonexa...
+[2026-11-17T03:00:34Z] entrypoint: dumping shadow...
+<span class="dim">pg_dump: error: connection to server at "postgres" (172.19.0.4), port 5432 failed: the database system is starting up</span>
+<span class="err">[2026-11-17T03:00:35Z] entrypoint: FATAL shadow dump is empty — aborting</span>
+<span class="err">[2026-11-17T03:00:35Z] entrypoint: run FAILED — nothing was backed up this cycle; this container is now UNHEALTHY</span>
+[2026-11-17T03:00:35Z] entrypoint: sleeping 3600s, next run at 2026-11-17T04:00:35Z</div>
+        </div>
+      </details>
+
+      <details class="row-x">
+        <summary class="run-sum">
+          <span class="chev">▸</span>
+          <span class="when">2026-11-16 03:00:07Z</span>
+          <span class="dur">3m 44s</span>
+          <span><span class="pill pill-ok">success</span></span>
+          <span class="what"><b>+27 blobs</b>, +4 phonexa-audio, <span class="del">stabbur.sql</span> +41 KB</span>
+        </summary>
+        <div class="row-body">
+          <div class="meta"><span>commit <b>c0b8e2f</b></span><span>pushed <b>yes</b></span><span>repo <b>60.9 MB</b></span><span>exit <b>0</b></span></div>
+          <div class="logbox">[2026-11-16T03:00:07Z] entrypoint: dumping mjolnir...
+[2026-11-16T03:01:28Z] entrypoint: dumping stabbur...
+[2026-11-16T03:01:41Z] entrypoint: dumping phonexa...
+[2026-11-16T03:01:53Z] entrypoint: dumping shadow...
+[2026-11-16T03:02:01Z] entrypoint: syncing stabbur's blob store...
+[2026-11-16T03:02:01Z]   source volume has 1243 file(s)
+[2026-11-16T03:03:28Z]   blobs/: 1216 -> 1243 (27 new)
+[2026-11-16T03:03:28Z] entrypoint: syncing phonexa's audio tree...
+[2026-11-16T03:03:28Z]   source volume has 202 file(s)
+[2026-11-16T03:03:46Z]   phonexa-audio/: 198 -> 202 (4 new)
+<span class="ok">[2026-11-16T03:03:51Z] entrypoint: committed and pushed</span></div>
+        </div>
+      </details>
+
+      <div class="panel-head" style="border-bottom:0;border-top:1px solid var(--border-soft)">
+        <span class="note">6 of 41 retained runs · older than the retention window are pruned, the commits are not</span>
+        <button type="button" class="btn-sm" id="more-runs">Load 20 more</button>
+      </div>
+    </div>
+
+    <!-- ══ 4. SOURCES ════════════════════════════════════════════════ -->
+    <div class="section-head" id="sources">
+      <h3>Sources</h3>
+      <span class="note">as of the run at 2026-11-20 03:00:12Z <span class="ro-tag">read-only</span></span>
+    </div>
+    <div class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>source</th><th>in the repo</th><th class="num">size</th><th class="num">files / rows</th><th>change since previous run</th>
+            </tr>
+          </thead>
+          <tbody id="src-body">
+            <tr class="headline">
+              <td><b>mjolnir</b><div style="font-size:11.5px;color:var(--text-dim);white-space:normal">minus <code>job_logs</code>, <code>build_jobs</code>, and now <code>userdata</code> data</div></td>
+              <td><code>mjolnir.sql</code></td>
+              <td class="num"><b>1.7 MB</b></td>
+              <td class="num">—</td>
+              <td><span class="mono">44.1 MB</span> <span class="arrowdown">→</span> <span class="mono">1.7 MB</span> <span class="delta-good">−42.4 MB (−96%)</span>
+                <div style="font-size:11.5px;color:var(--text-dim);white-space:normal">userdata moved to <code>userdata/*.json</code> — one mutable file per account instead of a re-serialised jsonb blob every day</div></td>
+            </tr>
+            <tr>
+              <td><b>stabbur</b></td><td><code>stabbur.sql</code></td>
+              <td class="num">1.1 MB</td><td class="num">—</td><td><span class="delta-good">+12 KB</span></td>
+            </tr>
+            <tr>
+              <td><b>phonexa</b><div style="font-size:11.5px;color:var(--text-dim);white-space:normal">no table excluded — every table is user data (D147)</div></td>
+              <td><code>phonexa.sql</code></td>
+              <td class="num">692 KB</td><td class="num">—</td><td><span class="delta-good">+4 KB</span></td>
+            </tr>
+            <tr>
+              <td><b>shadow</b></td><td><code>shadow.sql</code></td>
+              <td class="num">368 KB</td><td class="num">—</td><td><span class="delta-good">+1 KB</span></td>
+            </tr>
+            <tr>
+              <td><b>stabbur blobs</b><div style="font-size:11.5px;color:var(--text-dim);white-space:normal">flat, content-addressed, write-once</div></td>
+              <td><code>blobs/</code></td>
+              <td class="num">12.0 MB</td><td class="num">1 284</td><td><span class="delta-good">+3 files</span> <span style="color:var(--text-faint)">(1 281 → 1 284)</span></td>
+            </tr>
+            <tr id="src-audio">
+              <td><b>phonexa audio</b><div style="font-size:11.5px;color:var(--text-dim);white-space:normal">nested <code>lang/&lt;lang&gt;/ingested/&lt;name&gt;.wav</code> · copy-if-absent, never overwritten</div></td>
+              <td><code>phonexa-audio/</code></td>
+              <td class="num">4.7 MB</td>
+              <td class="num" id="src-audio-count">206</td>
+              <td id="src-audio-delta"><span class="delta-flat">no change (206 → 206)</span></td>
+            </tr>
+            <tr>
+              <td><b>userdata exports</b><div style="font-size:11.5px;color:var(--text-dim);white-space:normal">one pretty-printed, key-sorted JSON per account</div></td>
+              <td><code>userdata/</code></td>
+              <td class="num">16.4 KB</td><td class="num">4</td>
+              <td><span class="delta-good">+1 new, 2 changed</span></td>
+            </tr>
+            <tr>
+              <td style="color:var(--text-faint)"><b>smia</b></td>
+              <td style="color:var(--text-faint)">—</td>
+              <td class="num" style="color:var(--text-faint)">—</td>
+              <td class="num" style="color:var(--text-faint)">—</td>
+              <td style="color:var(--text-faint)">not in the backup set — rebuilt by <code>import_*.py</code>, recovery is a re-import</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-head" style="border-bottom:0;border-top:1px solid var(--border-soft)">
+        <span class="note">repo total 19.0 MB · there is deliberately no switch to exclude a source</span>
+      </div>
+    </div>
+
+    <!-- ══ 4b. USERDATA EXPORTS ══════════════════════════════════════ -->
+    <div class="section-head" id="userdata">
+      <h3>Userdata exports</h3>
+      <span class="note">git's history is the version history of device progress</span>
+    </div>
+    <div class="ud">
+      <div class="ud-head">
+        <span class="new">new</span>
+        <h3>One file per account uid</h3>
+        <span class="note">mutable · pretty-printed · keys sorted — so a diff is readable</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>uid</th><th>file</th><th class="num">size</th><th>last changed</th><th class="num">commits touching it</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="uid">q1Px3MgvOZVBdkpM9DKmFBnDnMi1</td>
+              <td><code>userdata/q1Px3MgvOZVBdkpM9DKmFBnDnMi1.json</code></td>
+              <td class="num">6.1 KB</td>
+              <td>2026-11-20 03:02:11Z <span style="color:var(--text-faint)">(this run)</span></td>
+              <td class="num">63</td>
+              <td><span class="pill pill-ok">tracked</span></td>
+            </tr>
+            <tr>
+              <td class="uid">8KtRuW2bQpXeLs41Yc0jVhTzAo93</td>
+              <td><code>userdata/8KtRuW2bQpXeLs41Yc0jVhTzAo93.json</code></td>
+              <td class="num">4.8 KB</td>
+              <td>2026-11-20 03:02:11Z <span style="color:var(--text-faint)">(this run)</span></td>
+              <td class="num">41</td>
+              <td><span class="pill pill-ok">tracked</span></td>
+            </tr>
+            <tr>
+              <td class="uid">mD7vQ9rN1xKbT6gH2sYwEu4ZaPc5</td>
+              <td><code>userdata/mD7vQ9rN1xKbT6gH2sYwEu4ZaPc5.json</code></td>
+              <td class="num">3.4 KB</td>
+              <td>2026-11-20 03:02:11Z <span style="color:var(--accent-text);font-weight:650">(first export)</span></td>
+              <td class="num">1</td>
+              <td><span class="pill pill-ok">new</span></td>
+            </tr>
+            <tr>
+              <td class="uid">Zb4nK8jLfR2mVqY7tXs1Cu6WdEo0</td>
+              <td><code>userdata/Zb4nK8jLfR2mVqY7tXs1Cu6WdEo0.json</code></td>
+              <td class="num">2.1 KB</td>
+              <td>2026-11-06 03:00:18Z <span style="color:var(--text-faint)">(14 days ago)</span></td>
+              <td class="num">3</td>
+              <td><span class="pill pill-neutral">idle</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-pad" style="padding-top:0">
+        <details>
+          <summary style="cursor:pointer;font-size:12.5px;padding:10px 0 6px">Show today's diff for <code>q1Px3MgvOZVBdkpM9DKmFBnDnMi1.json</code></summary>
+          <div class="logbox" style="max-height:200px">diff --git a/userdata/q1Px3MgvOZVBdkpM9DKmFBnDnMi1.json b/userdata/q1Px3MgvOZVBdkpM9DKmFBnDnMi1.json
+<span class="dim">@@ -3,7 +3,7 @@</span>
+   "archivedCards": 118,
+<span class="err">-  "completedSessions": 204,</span>
+<span class="ok">+  "completedSessions": 206,</span>
+   "dailyCards": 15,
+<span class="err">-  "inProgressCards": 31,</span>
+<span class="ok">+  "inProgressCards": 29,</span>
+<span class="err">-  "lastCompletedSession": "2026-11-18T19:41:02.117Z",</span>
+<span class="ok">+  "lastCompletedSession": "2026-11-19T20:07:55.004Z",</span>
+   "lastDeckPulled": 4,</div>
+        </details>
+      </div>
+    </div>
+
+    <!-- ══ 5. SETTINGS ═══════════════════════════════════════════════ -->
+    <div class="section-head" id="settings">
+      <h3>Settings</h3>
+      <span class="note">stored by this service on the state volume — the root <code>.env</code> is only the first-boot default</span>
+    </div>
+    <div class="panel panel-pad">
+      <div class="set-grid">
+        <div class="set-cell" data-set="interval">
+          <div class="k">Schedule interval</div>
+          <div class="cur">current 24h (86 400s)</div>
+          <div class="ctl"><input type="number" value="24" min="1" max="168" step="1"><span class="unit">hours</span></div>
+          <div class="src">stored · first-boot default came from <code>BACKUP_INTERVAL_SECONDS</code>. The container health limit follows it (interval + interval/4).</div>
+        </div>
+        <div class="set-cell" data-set="retry">
+          <div class="k">Retry after a failed run</div>
+          <div class="cur">current 1h (3 600s)</div>
+          <div class="ctl"><input type="number" value="60" min="5" max="1440" step="5"><span class="unit">minutes</span></div>
+          <div class="src">stored · first-boot default came from <code>BACKUP_RETRY_SECONDS</code>. Applies only after a failure, never after a success.</div>
+        </div>
+        <div class="set-cell" data-set="retention">
+          <div class="k">Run-log retention</div>
+          <div class="cur">current 30 days (41 run files, 2.3 MB)</div>
+          <div class="ctl"><input type="number" value="30" min="1" max="365" step="1"><span class="unit">days</span></div>
+          <div class="src">stored · prunes <code>/data/runs/</code> only. Commit history in the backup repo is never pruned.</div>
+        </div>
+      </div>
+      <div class="save-bar">
+        <button type="button" class="btn-primary" id="set-save" disabled>Save settings</button>
+        <button type="button" class="btn-ghost btn-sm" id="set-revert" disabled>Revert</button>
+        <span class="save-msg" id="set-msg"></span>
+      </div>
+      <div class="ro-facts">
+        <div class="ro-fact"><div class="k">Repo URL · environment only</div><div class="v">git@github.com:denyschernyshov/tun-backup.git</div></div>
+        <div class="ro-fact"><div class="k">Deploy key · environment only</div><div class="v">/root/.ssh/id_backup (ro mount)</div></div>
+        <div class="ro-fact"><div class="k">Clone · state volume</div><div class="v">/data/tun-backup @ main</div></div>
+      </div>
+    </div>
+
+    <!-- ══ 6. COMMIT HISTORY ═════════════════════════════════════════ -->
+    <div class="section-head" id="commits">
+      <h3>Commit history</h3>
+      <span class="note">88 commits in <code>tun-backup</code> · 6 shown · this is the long-term history of account data</span>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h3 style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint)">commit · sha · message · size impact</h3>
+        <span class="note">click a commit for its changed files</span>
+      </div>
+
+      <details class="row-x" open>
+        <summary class="cm-sum">
+          <span class="chev">▸</span>
+          <span class="when">2026-11-20 03:04:30Z</span>
+          <span class="dur">a71f0c4</span>
+          <span class="what"><code>backup 2026-11-20T03:04:30Z</code> · 7 files changed</span>
+          <span class="what" style="text-align:right"><span class="shrink">−42.4 MB</span></span>
+        </summary>
+        <div class="row-body">
+          <div class="meta"><span>parent <b>9f21ae8</b></span><span>on remote <b>yes</b></span><span>repo after <b>19.0 MB</b></span></div>
+          <div class="fileline"><span class="fh">path</span><span class="fh a" style="color:var(--text-faint)">added</span><span class="fh s">size</span></div>
+          <div class="fileline"><span class="p">mjolnir.sql</span><span class="a">+1 044</span><span class="s">1.7 MB</span></div>
+          <div class="fileline"><span class="p">stabbur.sql</span><span class="a">+118</span><span class="s">1.1 MB</span></div>
+          <div class="fileline"><span class="p">phonexa.sql</span><span class="a">+37</span><span class="s">692 KB</span></div>
+          <div class="fileline"><span class="p">shadow.sql</span><span class="a">+9</span><span class="s">368 KB</span></div>
+          <div class="fileline"><span class="p">userdata/mD7vQ9rN1xKbT6gH2sYwEu4ZaPc5.json</span><span class="a">+74</span><span class="s">3.4 KB</span></div>
+          <div class="fileline"><span class="p">userdata/q1Px3MgvOZVBdkpM9DKmFBnDnMi1.json</span><span class="a">+3 / −3</span><span class="s">6.1 KB</span></div>
+          <div class="fileline"><span class="p">blobs/ (3 new files)</span><span class="a">bin</span><span class="s">+38 KB</span></div>
+        </div>
+      </details>
+
+      <details class="row-x">
+        <summary class="cm-sum">
+          <span class="chev">▸</span>
+          <span class="when">2026-11-18 03:01:48Z</span>
+          <span class="dur">4de91bb</span>
+          <span class="what"><code>backup 2026-11-18T03:01:48Z</code> · 26 files changed <span class="pill pill-warn" style="margin-left:6px">pushed late</span></span>
+          <span class="what" style="text-align:right"><span class="mono">+2.1 MB</span></span>
+        </summary>
+        <div class="row-body">
+          <div class="meta"><span>parent <b>c0b8e2f</b></span><span>on remote <b>yes, at 04:01:59Z</b></span><span>repo after <b>61.4 MB</b></span></div>
+          <div class="fileline"><span class="p">mjolnir.sql</span><span class="a">+812</span><span class="s">44.1 MB</span></div>
+          <div class="fileline"><span class="p">stabbur.sql</span><span class="a">+204</span><span class="s">1.1 MB</span></div>
+          <div class="fileline"><span class="p">blobs/ (11 new files)</span><span class="a">bin</span><span class="s">+1.4 MB</span></div>
+          <div class="fileline"><span class="p">phonexa-audio/lang/nb/ingested/ (11 new files)</span><span class="a">bin</span><span class="s">+690 KB</span></div>
+        </div>
+      </details>
+
+      <details class="row-x">
+        <summary class="cm-sum">
+          <span class="chev">▸</span>
+          <span class="when">2026-11-16 03:03:51Z</span>
+          <span class="dur">c0b8e2f</span>
+          <span class="what"><code>backup 2026-11-16T03:03:51Z</code> · 35 files changed</span>
+          <span class="what" style="text-align:right"><span class="mono">+3.6 MB</span></span>
+        </summary>
+        <div class="row-body">
+          <div class="meta"><span>parent <b>7a3d550</b></span><span>on remote <b>yes</b></span><span>repo after <b>60.9 MB</b></span></div>
+          <div class="fileline"><span class="p">mjolnir.sql</span><span class="a">+1 190</span><span class="s">44.0 MB</span></div>
+          <div class="fileline"><span class="p">stabbur.sql</span><span class="a">+341</span><span class="s">1.1 MB</span></div>
+          <div class="fileline"><span class="p">phonexa.sql</span><span class="a">+88</span><span class="s">688 KB</span></div>
+          <div class="fileline"><span class="p">blobs/ (27 new files)</span><span class="a">bin</span><span class="s">+2.9 MB</span></div>
+          <div class="fileline"><span class="p">phonexa-audio/ (4 new files)</span><span class="a">bin</span><span class="s">+241 KB</span></div>
+        </div>
+      </details>
+
+      <details class="row-x">
+        <summary class="cm-sum">
+          <span class="chev">▸</span>
+          <span class="when">2026-11-15 03:02:44Z</span>
+          <span class="dur">7a3d550</span>
+          <span class="what"><code>backup 2026-11-15T03:02:44Z</code> · 5 files changed</span>
+          <span class="what" style="text-align:right"><span class="mono">+604 KB</span></span>
+        </summary>
+        <div class="row-body">
+          <div class="meta"><span>parent <b>1c9fe03</b></span><span>on remote <b>yes</b></span><span>repo after <b>57.3 MB</b></span></div>
+          <div class="fileline"><span class="p">mjolnir.sql</span><span class="a">+402</span><span class="s">43.9 MB</span></div>
+          <div class="fileline"><span class="p">stabbur.sql</span><span class="a">+77</span><span class="s">1.0 MB</span></div>
+          <div class="fileline"><span class="p">phonexa.sql</span><span class="a">+21</span><span class="s">684 KB</span></div>
+          <div class="fileline"><span class="p">shadow.sql</span><span class="a">+14</span><span class="s">366 KB</span></div>
+        </div>
+      </details>
+
+      <details class="row-x">
+        <summary class="cm-sum">
+          <span class="chev">▸</span>
+          <span class="when">2026-11-14 03:11:09Z</span>
+          <span class="dur">1c9fe03</span>
+          <span class="what"><code>backup 2026-11-14T03:11:09Z</code> · 6 files changed — <span style="color:var(--accent-text)">first run against the consolidated cluster; <code>smia.sql</code> pruned</span></span>
+          <span class="what" style="text-align:right"><span class="shrink">−223.8 MB</span></span>
+        </summary>
+        <div class="row-body">
+          <div class="meta"><span>parent <b>b55c71a</b></span><span>on remote <b>yes</b></span><span>repo after <b>56.7 MB</b></span></div>
+          <div class="fileline"><span class="p">smia.sql</span><span class="d">deleted</span><span class="s">−223.8 MB</span></div>
+          <div class="fileline"><span class="p">shadow.sql</span><span class="a">new file</span><span class="s">366 KB</span></div>
+          <div class="fileline"><span class="p">mjolnir.sql</span><span class="a">+266</span><span class="s">43.9 MB</span></div>
+          <div class="fileline"><span class="p">stabbur.sql</span><span class="a">+52</span><span class="s">1.0 MB</span></div>
+        </div>
+      </details>
+
+      <details class="row-x">
+        <summary class="cm-sum">
+          <span class="chev">▸</span>
+          <span class="when">2026-11-13 14:22:03Z</span>
+          <span class="dur">b55c71a</span>
+          <span class="what"><code>backup 2026-11-13T14:22:03Z</code> · 1 284 files changed — <span style="color:var(--text-faint)">first commit after the deploy key was fixed</span></span>
+          <span class="what" style="text-align:right"><span class="mono">+280.3 MB</span></span>
+        </summary>
+        <div class="row-body">
+          <div class="meta"><span>parent <b>—</b> (root)</span><span>on remote <b>yes</b></span><span>repo after <b>280.3 MB</b></span></div>
+          <div class="fileline"><span class="p">blobs/ (1 216 new files)</span><span class="a">bin</span><span class="s">+8.9 MB</span></div>
+          <div class="fileline"><span class="p">phonexa-audio/ (198 new files)</span><span class="a">bin</span><span class="s">+4.4 MB</span></div>
+          <div class="fileline"><span class="p">smia.sql</span><span class="a">new file</span><span class="s">223.4 MB</span></div>
+          <div class="fileline"><span class="p">mjolnir.sql</span><span class="a">new file</span><span class="s">42.6 MB</span></div>
+        </div>
+      </details>
+
+      <div class="panel-head" style="border-bottom:0;border-top:1px solid var(--border-soft)">
+        <span class="note">6 of 88 commits</span>
+        <button type="button" class="btn-sm" id="more-commits">Load 20 more</button>
+      </div>
+    </div>
+
+    <!-- ══ 7. RESTORE ════════════════════════════════════════════════ -->
+    <div class="section-head" id="restore">
+      <h3>Restore</h3>
+      <span class="note">run from a clone of <code>tun-backup</code> at the repo root</span>
+    </div>
+    <div class="panel rs">
+      <div class="rs-step">
+        <h4><span class="n">0</span>Get the backup</h4>
+        <div class="why">Any commit is a complete, self-consistent snapshot — pick one, don't merge two.</div>
+        <div class="cmd"><button type="button" class="btn-ghost btn-sm cp">Copy</button><pre>git clone git@github.com:denyschernyshov/tun-backup.git
+cd tun-backup
+git log --oneline -5          <span class="c"># pick the commit to restore</span>
+git checkout a71f0c4</pre></div>
+      </div>
+
+      <div class="rs-step">
+        <h4><span class="n">1</span>A database — <code>mjolnir</code> / <code>stabbur</code> / <code>phonexa</code> / <code>shadow</code></h4>
+        <div class="why">Restore into an EMPTY database and do <b>not</b> run <code>alembic upgrade head</code> first — each dump carries its own <code>CREATE TABLE</code>s and the <code>alembic_version</code> row.</div>
+        <div class="cmd"><button type="button" class="btn-ghost btn-sm cp">Copy</button><pre>docker compose exec postgres \
+    psql -U tunadmin -d postgres -c 'DROP DATABASE phonexa' -c 'CREATE DATABASE phonexa OWNER phonexa'
+
+<span class="c"># load as the SERVICE role, not the superuser (P42)</span>
+docker compose exec -T postgres \
+    psql -v ON_ERROR_STOP=1 -U phonexa phonexa &lt; phonexa.sql</pre></div>
+        <div class="warnline">⚠ <code>ON_ERROR_STOP=1</code> is not optional — without it psql reports success having skipped every failed statement.</div>
+      </div>
+
+      <div class="rs-step newstep">
+        <h4><span class="n">2</span>Account progress — <span class="pill pill-warn" style="margin-left:2px">new step, easy to miss</span></h4>
+        <div class="why"><code>mjolnir.sql</code> no longer carries <code>userdata</code> table data. Restoring <code>mjolnir.sql</code> alone gives you a mjolnir database with <b>zero account progress</b>. Import each account from its committed export.</div>
+        <div class="cmd"><button type="button" class="btn-ghost btn-sm cp">Copy</button><pre><span class="c"># one account</span>
+UID=q1Px3MgvOZVBdkpM9DKmFBnDnMi1
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U mjolnir mjolnir \
+  -c "INSERT INTO userdata (device_id, doc) VALUES ('$UID', \$\$$(cat userdata/$UID.json)\$\$::jsonb)
+      ON CONFLICT (device_id) DO UPDATE SET doc = EXCLUDED.doc"
+
+<span class="c"># every account in the snapshot</span>
+for f in userdata/*.json; do
+  uid=$(basename "$f" .json)
+  docker compose exec -T postgres psql -q -v ON_ERROR_STOP=1 -U mjolnir mjolnir \
+    -c "INSERT INTO userdata (device_id, doc) VALUES ('$uid', \$\$$(cat "$f")\$\$::jsonb)
+        ON CONFLICT (device_id) DO UPDATE SET doc = EXCLUDED.doc"
+done</pre></div>
+        <div class="why" style="margin-top:9px">To roll <b>one</b> account back to an earlier day, read the file out of that commit first — git is the version history:</div>
+        <div class="cmd"><button type="button" class="btn-ghost btn-sm cp">Copy</button><pre>git log --oneline -- userdata/q1Px3MgvOZVBdkpM9DKmFBnDnMi1.json
+git show 7a3d550:userdata/q1Px3MgvOZVBdkpM9DKmFBnDnMi1.json &gt; /tmp/rollback.json</pre></div>
+      </div>
+
+      <div class="rs-step">
+        <h4><span class="n">3</span>stabbur blobs — <code>blobs/</code></h4>
+        <div class="why">Flat and content-addressed, so a copy by name is idempotent.</div>
+        <div class="cmd"><button type="button" class="btn-ghost btn-sm cp">Copy</button><pre>docker compose cp blobs/. stabbur-backend:/blobs/</pre></div>
+      </div>
+
+      <div class="rs-step">
+        <h4><span class="n">4</span>phonexa audio — <code>phonexa-audio/</code></h4>
+        <div class="why">Plain file copy at the same relative paths. The mirror is copy-if-absent, so an edited sample holds its <b>pre-edit</b> audio and a deleted sample is still here (D147).</div>
+        <div class="cmd"><button type="button" class="btn-ghost btn-sm cp">Copy</button><pre>docker compose cp phonexa-audio/. phonexa-backend:/data/audio/
+
+<span class="c"># to refresh ONE file in the backup on purpose:</span>
+docker compose exec backup rm /data/tun-backup/phonexa-audio/lang/nb/ingested/hus.wav</pre></div>
+      </div>
+
+      <div class="rs-step">
+        <h4><span class="n">5</span>smia — not here</h4>
+        <div class="why">Deliberately not backed up. Recovery is a re-import; keep <code>smia/providers/</code> safe instead.</div>
+        <div class="cmd"><button type="button" class="btn-ghost btn-sm cp">Copy</button><pre>docker compose exec smia-backend python -m scripts.bootstrap</pre></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ══ theme toggle (same control the real pages carry) ══════════════════ */
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".theme-toggle button");
+  if (!b) return;
+  document.documentElement.setAttribute("data-theme", b.dataset.theme);
+  for (const x of document.querySelectorAll(".theme-toggle button")) {
+    x.setAttribute("aria-pressed", String(x === b));
+  }
+});
+
+/* ══ 1. the three health states ═══════════════════════════════════════ */
+const hb = document.getElementById("hb");
+const Q = (id) => document.getElementById(id);
+
+const STATES = {
+  ok: {
+    cls: "state-ok", ico: "✓", pill: ["healthy", "pill-ok"],
+    h: "Backed up",
+    s: "A full run finished end to end — dumps, exports, mirrors, commit and push.",
+    last: "2026-11-20 03:04:30Z", lastCls: "",
+    age: "6h 12m ago · stamp <code>/data/last-success</code>",
+    next: "in 17h 48m", nextCls: "", nextx: "2026-11-21 03:00:12Z · interval 24h",
+    unpushed: "0", unpushedCls: "good", unpushedx: "HEAD = origin/main at <code>a71f0c4</code>",
+    ch: "healthy", chCls: "good", chx: "age 22 350s · limit 108 000s",
+    quote: '[2026-11-20T03:04:30Z] entrypoint: committed and pushed',
+    audioZero: false,
+  },
+  fail: {
+    cls: "state-fail", ico: "✕", pill: ["run failed", "pill-err"],
+    h: "Last run FAILED — nothing was backed up this cycle",
+    s: 'Retrying in <b>41m</b>. Every committed <code>.sql</code> was left untouched, and no commit was made — the backup on the remote is the one from <b>2026-11-19 03:00:09Z</b>.',
+    last: "2026-11-19 03:03:00Z", lastCls: "warny",
+    age: "<b style='color:var(--err)'>30h 09m ago</b> — past the 1d 6h health limit",
+    next: "in 41m", nextCls: "warny", nextx: "2026-11-20 10:04:00Z · <b>retry</b> interval 1h, not 24h",
+    unpushed: "0", unpushedCls: "good", unpushedx: "nothing was committed — there is nothing to push",
+    ch: "UNHEALTHY", chCls: "bad", chx: "healthcheck.sh exit 1 · age 108 540s > limit 108 000s",
+    quote: 'pg_dump: error: connection to server at "postgres" (172.19.0.4), port 5432 failed\n<b>[2026-11-20T09:23:11Z] entrypoint: FATAL source for phonexa-audio is empty but the mirror is not — check the volume mount</b>\n<b>[2026-11-20T09:23:11Z] entrypoint: run FAILED — nothing was backed up this cycle; this container is now UNHEALTHY</b>',
+    audioZero: true,
+  },
+  stale: {
+    cls: "state-stale", ico: "!", pill: ["remote stale", "pill-warn"],
+    h: "Committed locally — but the push is failing, so the remote is STALE",
+    s: 'The dumps exist only in <code>/data/tun-backup</code> inside this container. <b>Losing the host loses them.</b> 2 local commits are unpushed and every run since has re-tried the push and failed.',
+    last: "2026-11-18 04:01:59Z", lastCls: "warny",
+    age: "<b style='color:var(--warn)'>2d 5h ago</b> — the last run that reached the remote",
+    next: "in 41m", nextCls: "warny", nextx: "2026-11-20 10:04:00Z · <b>retry</b> interval 1h",
+    unpushed: "2", unpushedCls: "bad", unpushedx: "HEAD <code>a71f0c4</code> · origin/main <code>4de91bb</code>",
+    ch: "UNHEALTHY", chCls: "bad", chx: "healthcheck.sh exit 1 · no stamp written since the push broke",
+    quote: 'ssh: connect to host github.com port 22: Connection timed out\nfatal: Could not read from remote repository.\n<b>[2026-11-20T09:23:08Z] entrypoint: FATAL push of previously-committed backups still failing — the remote is STALE</b>',
+    audioZero: false,
+  },
+};
+
+function applyState(key) {
+  const s = STATES[key];
+  hb.className = "hb " + s.cls;
+  Q("hb-ico").textContent = s.ico;
+  Q("hb-h").textContent = s.h;
+  Q("hb-s").innerHTML = s.s;
+  Q("hb-pill").textContent = s.pill[0];
+  Q("hb-pill").className = "pill " + s.pill[1];
+  Q("hb-last").textContent = s.last;
+  Q("hb-last").className = "v " + s.lastCls;
+  Q("hb-age").innerHTML = s.age;
+  Q("hb-next").textContent = s.next;
+  Q("hb-next").className = "v " + s.nextCls;
+  Q("hb-nextx").innerHTML = s.nextx;
+  Q("hb-unpushed").textContent = s.unpushed;
+  Q("hb-unpushed").className = "v " + s.unpushedCls;
+  Q("hb-unpushedx").innerHTML = s.unpushedx;
+  Q("hb-ch").textContent = s.ch;
+  Q("hb-ch").className = "v " + s.chCls;
+  Q("hb-chx").innerHTML = s.chx;
+  Q("hb-quote").innerHTML = s.quote;
+
+  /* the alarming Sources row: a mirror with files whose source went to 0 */
+  const row = Q("src-audio");
+  if (s.audioZero) {
+    row.classList.add("src-alarm");
+    Q("src-audio-count").innerHTML = "<b style='color:var(--err)'>0</b> <span style='color:var(--text-faint)'>src</span> / 206 <span style='color:var(--text-faint)'>mirror</span>";
+    Q("src-audio-delta").innerHTML = '<span class="why">source volume is EMPTY but the mirror holds 206 files — check the volume mount. The run aborted rather than commit a green, mirror-nothing backup.</span>';
+  } else {
+    row.classList.remove("src-alarm");
+    Q("src-audio-count").textContent = "206";
+    Q("src-audio-delta").innerHTML = '<span class="delta-flat">no change (206 → 206)</span>';
+  }
+
+  /* rail alarm dots — only for the sections that are actually wrong */
+  Q("rail-health").classList.toggle("alarm", key !== "ok");
+  Q("rail-sources").classList.toggle("alarm", !!s.audioZero);
+}
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".seg button[data-state]");
+  if (!b) return;
+  for (const x of document.querySelectorAll(".seg button[data-state]")) {
+    x.setAttribute("aria-pressed", String(x === b));
+  }
+  applyState(b.dataset.state);
+});
+
+Q("hb-logs").addEventListener("click", () => {
+  const first = document.querySelector("#runs + .panel details.row-x");
+  if (first) { first.open = true; first.scrollIntoView({ block: "center", behavior: "smooth" }); }
+});
+
+/* ══ 2. run-now simulation ════════════════════════════════════════════ */
+const runBtn = Q("run-btn"), phases = Q("phases"), runLog = Q("run-log"),
+      runDone = Q("run-done"), runHint = Q("run-hint"), runReset = Q("run-reset");
+
+const SCRIPT = [
+  [0, "[2026-11-20T09:41:03Z] entrypoint: dumping mjolnir..."],
+  [0, "[2026-11-20T09:41:03Z]   excluding job_logs, build_jobs, userdata (data only)"],
+  [0, '[2026-11-20T09:41:21Z]   <span class="ok">mjolnir.sql 1.7 MB</span> (was 44.1 MB)'],
+  [1, "[2026-11-20T09:41:21Z] entrypoint: dumping stabbur..."],
+  [1, "[2026-11-20T09:41:28Z] entrypoint: dumping phonexa..."],
+  [1, "[2026-11-20T09:41:34Z] entrypoint: dumping shadow..."],
+  [2, "[2026-11-20T09:41:39Z] entrypoint: exporting userdata documents..."],
+  [2, "[2026-11-20T09:41:39Z]   4 account(s) in userdata"],
+  [2, "[2026-11-20T09:41:40Z]   userdata/: 4 -> 4 (0 new, 1 changed)"],
+  [3, "[2026-11-20T09:41:40Z] entrypoint: syncing stabbur's blob store..."],
+  [3, "[2026-11-20T09:41:40Z]   source volume has 1284 file(s)"],
+  [3, "[2026-11-20T09:41:52Z]   blobs/: 1284 -> 1284 (0 new)"],
+  [3, "[2026-11-20T09:41:52Z] entrypoint: syncing phonexa's audio tree..."],
+  [3, "[2026-11-20T09:41:52Z]   source volume has 206 file(s)"],
+  [3, "[2026-11-20T09:42:01Z]   phonexa-audio/: 206 -> 206 (0 new)"],
+  [4, "[2026-11-20T09:42:01Z] entrypoint: committing 1 changed file..."],
+  [5, "[2026-11-20T09:42:03Z] entrypoint: pushing to origin/main..."],
+  [5, '<span class="ok">[2026-11-20T09:42:06Z] entrypoint: committed and pushed</span>'],
+  [5, '<span class="dim">[2026-11-20T09:42:06Z] entrypoint: manual run — schedule unchanged, next run at 2026-11-21T03:00:12Z</span>'],
+];
+const PHASE_NAMES = ["dumping mjolnir…", "dumping stabbur · phonexa · shadow…", "exporting userdata…", "mirroring blobs · audio…", "committing…", "pushing…"];
+let timer = null;
+
+function setPhase(i) {
+  for (const el of phases.querySelectorAll(".ph")) {
+    const n = Number(el.dataset.ph);
+    el.classList.toggle("done", n < i);
+    el.classList.toggle("now", n === i);
+  }
+}
+
+runBtn.addEventListener("click", () => {
+  if (timer) return;
+  runBtn.disabled = true;
+  runBtn.innerHTML = '<span style="display:inline-block;animation:spin 1.1s linear infinite">◴</span> Running…';
+  runDone.hidden = true;
+  phases.hidden = false;
+  runLog.hidden = false;
+  runLog.innerHTML = "";
+  runReset.hidden = true;
+  let i = 0;
+  setPhase(0);
+  timer = setInterval(() => {
+    if (i >= SCRIPT.length) {
+      clearInterval(timer); timer = null;
+      setPhase(99);
+      phases.hidden = true;
+      runLog.hidden = true;
+      runDone.hidden = false;
+      runBtn.disabled = false;
+      runBtn.textContent = "Run full backup";
+      runHint.innerHTML = "finished 09:42:06Z · the collapsed result is below";
+      runReset.hidden = false;
+      /* a completed manual run lands in the health banner too */
+      const okBtn = document.querySelector('.seg button[data-state="ok"]');
+      if (okBtn && okBtn.getAttribute("aria-pressed") !== "true") okBtn.click();
+      return;
+    }
+    const [ph, line] = SCRIPT[i++];
+    setPhase(ph);
+    runHint.textContent = PHASE_NAMES[ph];
+    runLog.innerHTML += line + "\n";
+    runLog.scrollTop = runLog.scrollHeight;
+  }, 520);
+});
+
+Q("run-expand").addEventListener("click", () => {
+  runLog.hidden = !runLog.hidden;
+  Q("run-expand").textContent = runLog.hidden ? "Show log" : "Hide log";
+});
+runReset.addEventListener("click", () => {
+  runDone.hidden = true; runLog.hidden = true; phases.hidden = true;
+  runReset.hidden = true;
+  runHint.textContent = "dumps → userdata export → file mirrors → commit → push";
+});
+
+/* ══ 3/6. pagination stubs ════════════════════════════════════════════ */
+for (const id of ["more-runs", "more-commits"]) {
+  Q(id).addEventListener("click", (e) => {
+    e.target.disabled = true;
+    e.target.textContent = "Loading…";
+    setTimeout(() => {
+      e.target.disabled = false;
+      e.target.textContent = "Load 20 more";
+      e.target.previousElementSibling.innerHTML =
+        id === "more-runs"
+          ? "26 of 41 retained runs · older than the retention window are pruned, the commits are not"
+          : "26 of 88 commits";
+    }, 600);
+  });
+}
+
+/* ══ 5. settings save ═════════════════════════════════════════════════ */
+const setSave = Q("set-save"), setRevert = Q("set-revert"), setMsg = Q("set-msg");
+const inputs = [...document.querySelectorAll(".set-cell input")];
+const original = inputs.map((i) => i.value);
+
+function dirtyCheck() {
+  let dirty = false;
+  inputs.forEach((inp, n) => {
+    const d = inp.value !== original[n];
+    inp.closest(".set-cell").classList.toggle("dirty", d);
+    if (d) dirty = true;
+  });
+  setSave.disabled = !dirty;
+  setRevert.disabled = !dirty;
+  if (dirty) setMsg.textContent = "";
+  return dirty;
+}
+inputs.forEach((i) => i.addEventListener("input", dirtyCheck));
+
+setSave.addEventListener("click", () => {
+  setSave.disabled = true;
+  setSave.textContent = "Saving…";
+  setTimeout(() => {
+    setSave.textContent = "Save settings";
+    const changed = [];
+    inputs.forEach((inp, n) => {
+      const cell = inp.closest(".set-cell");
+      if (inp.value !== original[n]) {
+        changed.push(cell.querySelector(".k").textContent.toLowerCase());
+        original[n] = inp.value;
+        const unit = cell.querySelector(".unit").textContent;
+        cell.querySelector(".cur").textContent = "current " + inp.value + " " + unit;
+      }
+    });
+    dirtyCheck();
+    setMsg.className = "save-msg ok";
+    setMsg.innerHTML = "✓ Saved to <code>/data/settings.json</code> — " + changed.join(" + ") +
+      " applied. Next run re-scheduled to <b>2026-11-21 03:00:12Z</b>; the current sleep is interrupted, no restart needed.";
+  }, 550);
+});
+setRevert.addEventListener("click", () => {
+  inputs.forEach((inp, n) => (inp.value = original[n]));
+  dirtyCheck();
+  setMsg.textContent = "";
+});
+
+/* ══ 7. copy buttons ══════════════════════════════════════════════════ */
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".cmd .cp");
+  if (!b) return;
+  const txt = b.parentElement.querySelector("pre").innerText;
+  if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(() => {});
+  b.textContent = "Copied";
+  setTimeout(() => (b.textContent = "Copy"), 1200);
+});
+
+applyState("ok");
+</script>

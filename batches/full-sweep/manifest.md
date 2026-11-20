@@ -27,6 +27,13 @@ Batch opened 2026-11-15 from all triaged packages.
   the two also share the occurrence-cell look (one definition, see
   `card-preview-popup/design.md` §7).
 
+- **Inside "Device sync & userdata storage"** (added 2026-11-20):
+  `backup-console` **before** `userdata-git-history` — the archived tier of the
+  Sync timeline reads backup-console's git-log endpoint, and the userdata export
+  is surfaced on its page. `ota-pull-tracking` is independent of both and may be
+  built in parallel. All three are in one package, so one build session takes
+  them in that order.
+
 All other packages are parallel-safe.
 
 ## Status
@@ -36,7 +43,7 @@ All other packages are parallel-safe.
 | Builder UI rehaul & data versioning | archived — mjolnir: `2026-11-19-flush-record-atomicity`, `2026-11-19-builder-ship-strips` |
 | Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` (item 3 redone by "Card preview redo") |
 | Card preview redo | archived — `mjolnir/openspec/changes/archive/2026-11-20-card-preview-popup` |
-| Device sync & userdata storage | designed (root: `ota-pull-tracking`, `userdata-history-offload`) |
+| Device sync & userdata storage | designed (root: `backup-console`, `userdata-git-history`, `ota-pull-tracking`) |
 | Stabbur merging & dict.cc translations | archived — smia `2026-11-18-dictcc-parsing-fixes`; stabbur `2026-11-18-stabbur-merge-fixes`, `2026-11-18-stabbur-triage-queues` |
 | Shadow studying mode | archived — `shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode` |
 | Calst/pygmalion audio consolidation | archived (smia: `2026-11-15-calst-audio-union`) |
@@ -206,48 +213,122 @@ screenshot after the build; mismatches become new backlog items.
 [ux] mjolnir preview should display a popup of that card dimming out the background. Currently the preview is nothing like the mockup 2026-11-15-assembly-tab-usability/mockups/assembly-tab-usability.html. the colors are different, the class and tag map has to colors, the words are bold, but they shouldn't be. the editor is not that good and flexible. the long divs are not being wrapped, like in the phone. It should be redone, but we still have to use that mockup(only card preview part), maybe improve it a little. Make another independent research on how those are really displayed in the phone and come up with a new mock and design but reuse some of the ideas like the table of avaliable css classes from the previous mack. Maybe i can make a screen and you can verify against it, but later, now let's explore it
 
 ### Device sync & userdata storage
-projects: mjolnir, backup
+projects: mjolnir, backup, grind
+status: **designed 2026-11-20 (REDESIGNED FROM SCRATCH)** — three root changes,
+built in this order: `backup-console` → `userdata-git-history`;
+`ota-pull-tracking` in parallel with either.
 
 [IDEA] sync i should track what bundle and when each bundle was pulled and display it in the ui, if that's not difficult.
 [BUG] the mjolnir syncing of devices is nice, but i think the tun-backup gonna explode from the syncing of the deckstats. i think we have to have one mutable userdata per user and use git to track changes instead of saving the new userdata everytime.
+[ux] backup own ui with own logs hisotry and button for manual backup and cron setup settings
 
-Designed 2026-11-15 → two root `openspec/` changes, independently shippable.
+**The third item was added to this package on 2026-11-20**, at the operator's
+request, because the userdata fix already opens the backup service and giving
+that service a UI is where the export, the run history and the git-backed
+timeline all become visible. Moved verbatim out of the root `BACKLOG.md`.
 
-**`ota-pull-tracking`** (grind + mjolnir). The explosion was measured first, and so was
-the device-tracking dead end: `device_state` already existed and was dropped in
-`015_drop_device_state.sql` because nothing on the device ever reported. So pulls are
-observed AT THE GATEWAY — a second named Caddy logger scoped to `/ota/bundle/*`, ingested
-into a durable `ota_pulls` table deduped on `(at, build_id, remote_ip)` so the record
-survives log rotation. No JS patch, no publish, no device work, no byte of the
-device-facing response changed. Operator decisions: bundle downloads only (not
-`current.json` polls, not `/blob/*`, not `/audio-manifest/*`); **Option A**, a dedicated
-Device → Pulls page, over a panel on the account-scoped Sync page.
+**The 2026-11-15 design was DISCARDED and redone from scratch** on the
+operator's instruction. The two changes it produced — `ota-pull-tracking` and
+`userdata-history-offload` — were deleted unimplemented. Three things from that
+work were kept, because they were *measured* rather than proposed: the two live
+Caddy logger traps (now `ota-pull-tracking/design.md` §2), the D126
+device-reporting dead end, and the ordering rule that the archive must exist
+before the dump exclusion lands.
 
-**`userdata-history-offload`** (backup + mjolnir). Measured: `userdata_history` is
-30.9 MB of a 32 MB `mjolnir.sql` — 73 rows at ~424 KB each, a full copy of the account
-document per PATCH, re-committed to git daily. Operator decisions: exclude its DATA from
-the dump; the **backup service** exports one mutable, key-sorted, pretty-printed
-`userdata/<uid>.json` per account so git's own history becomes the version history (NOT
-`mjolnir-sync`, which would put a write in the device-plane path); 30-day retention on the
-table, swept by hub, which **amends D-S5**. The archive must exist and be verified before
-the exclusion lands — getting that order wrong opens a window where nothing holds the
-history.
+**What the redesign changed, and why**
 
-Verified live during design, not assumed (caddy:2-alpine v2.11.7) — two silent traps,
-recorded in `ota-pull-tracking/design.md`: the **last-declared** named logger becomes the
-site default, so the wrong order sends every request in all seven zones to the OTA pull
-log while stdout goes dark; and `default` is a reserved logger name that exits 1 after
-printing what looks like a successful boot.
+- The explosion was **re-measured and is worse** than recorded in November:
+  `mjolnir.sql` is 44 MB, of which `userdata_history` is **42.4 MB across 82
+  rows** (~517 KB each), against ~2 MB for every other dump combined; the backup
+  repo's `.git` is **106 MB across 88 commits**.
+- `jsonb_pretty` replaces the old design's `jq -S --indent 2`. Verified live:
+  jsonb's stored key order is deterministic (length, then bytewise) and arrays
+  expand one element per line, so a single card's `Stage` change is a
+  single-line diff — and `jq` is **not in the backup image**, so this adds no
+  dependency to the container holding the SSH deploy key.
+- The old design's **30-day retention on `userdata_history`** is gone, replaced
+  by a 48-hour window feeding a two-tier console timeline (below).
+- **`current.json` polls are now tracked too**, where the old design tracked
+  bundle downloads only. They are the only device-liveness signal left after
+  `device_state` was dropped, so they are kept — as liveness, never as pulls,
+  with runs of successful polls collapsing and non-200s never collapsing.
+- Pull counts are added to **Publish history** as well as the dedicated page.
 
-Deferred to the builder (tier 2): Caddy `roll_size`/`roll_keep`/`roll_keep_for` values;
-the exact serializer for the JSON export (`jq -S --indent 2` is the obvious one — any
-serializer with sorted keys and stable output qualifies); ingest cooldown length; the
-retention sweep's trigger point inside hub; how `_check_backup_sources.py` spells its new
-"recovered from the backup repo's own export" category.
+**The operator reversed himself once, deliberately, and both halves matter.**
+Shown that `userdata_history` feeds a working per-PATCH timeline on
+`/mjolnir/device`, he chose to **drop the table outright** and let git be the
+only history. Shown the daily-only replacement in the mockup, he reversed that
+and kept a **short Postgres tail**. The result is two tiers answering different
+questions — per-PATCH for 48h from Postgres, one entry per backup run from git
+before that — with a labelled horizon, per-row fidelity marking, and
+**independent degradation** (the recent tier still renders when backup-console
+is unreachable). A builder must not "simplify" this back to one tier.
 
-Nothing here touches the device plane: no change under `mjolnir/sync/`, `mjolnir/patches/`
-or the APK, and both changes carry an explicit acceptance criterion diffing a real
-device-facing response byte for byte.
+**Decisions locked after operator click-through** (no longer builder choices):
+- `backup-console` is a **separate service**, and the scheduler loop remains the
+  **only writer** to the git clone — the button requests a run, it never
+  performs one, and it runs `run_backup` unchanged.
+- Run records and settings are **files on a state volume, not Postgres** —
+  because a run that fails *because Postgres is down* must still be recorded.
+- Exactly **three** editable settings: schedule interval, retry interval,
+  run-log retention. The operator was offered per-source include/exclude toggles
+  and **declined** them; sources are read-only. `healthcheck.sh` must follow the
+  **stored** interval.
+- The **backup service exports** `userdata/<uid>.json` straight from Postgres.
+  Not mjolnir-sync (a write in the device-plane path) and not hub (a second
+  writer).
+- `userdata` data leaves the dump entirely — the export is the only copy — so a
+  **verified import path is a precondition**, not a follow-up.
+- The existing 106 MB of repo history is **left alone**; growth stops, the past
+  stays. No rewrite, no fresh repo.
+- `backup/compose.yaml` is created and both services move into it, ending
+  `backup` being the one project that cannot run standalone.
+- Backup interval stays **24h**; it is now a knob in the UI rather than a deploy.
+- `/mjolnir/ota` (Logic bundles) gets **no** pull columns — a pull is recorded
+  against a published buildId, and a `logic_bundles` row is a build input the
+  device never fetches.
+
+**A blocker found during design, and solved rather than deferred.** In dev,
+`BACKUP_REPO_URL` is the placeholder `git@github.com:example/tun-backup.git`
+with a placeholder key, so the backup service **has never completed a run in dev
+and cannot** — measured live: `tun-backup-1` is `unhealthy` and has been failing
+to clone hourly since boot. Every criterion about run history, commit history,
+the health banner and the git-backed timeline depends on a run that commits and
+pushes. So `backup-console` ships a **local bare-repo dev remote**, and it is
+task 1 of that change: without it this package would reach the VPS unverified.
+
+**Acceptance criteria deliberately assert mechanism, never size.** The dev
+database holds only test fixtures (18 history rows, 104 kB, uids like
+`uid-console-1`); the 44 MB exists only on the VPS. "mjolnir.sql is under 2 MB"
+would be untestable where the builder works — which is exactly how an item gets
+falsely marked green.
+
+Accepted mockups, both after operator click-through:
+- `backup-console/mockups/backup-console.html` — accepted first pass.
+- `ota-pull-tracking/mockups/device-pulls.html` and
+  `userdata-git-history/mockups/device-pulls.html` (the same file, kept whole so
+  the shared chrome is one reference) — Pulls and Publish history accepted first
+  pass; the Sync surface took one iteration, replacing daily-only with the
+  two-tier timeline after the reversal above.
+
+Nothing here touches the device plane: no change under `mjolnir/sync/`,
+`mjolnir/patches/` or the APK, and all three changes carry acceptance criteria
+diffing real device-facing responses byte for byte.
+
+Deferred to the builder's judgement (tier 2, not guesses):
+- the run-record and settings file formats, and the request-marker mechanism
+- how the scheduler's sleep is made interruptible, provided a requested run is
+  picked up promptly and reported as *queued* until it truly starts
+- Caddy `roll_size`/`roll_keep`/`roll_keep_for`; the ingest trigger and cooldown
+- the `ota_pulls` dedup key's exact columns, provided re-ingesting the same log
+  inserts nothing twice
+- the retention sweep's trigger point inside hub
+- how `bin/_check_backup_sources.py` spells the new "covered by the backup
+  repo's own export" category, provided it still reports a genuinely sourceless
+  exclusion
+- the shape of the internal endpoint backup-console exposes for the archived
+  tier, and caching of parsed git history
+- the activity strip's exact binning, and the poll-run collapse threshold
 
 ### Stabbur merging & dict.cc translations
 projects: stabbur, smia

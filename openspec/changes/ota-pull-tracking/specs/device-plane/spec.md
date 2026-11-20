@@ -1,47 +1,28 @@
-## MODIFIED Requirements
+# device-plane Specification (delta)
 
-### Requirement: The device-facing contract does not change
+## ADDED Requirements
 
-The system SHALL serve every device-facing endpoint with the same paths,
-methods, credentials, headers, status codes and cache directives as before any
-restructuring of the server side.
+### Requirement: Observing the device plane is permitted, altering it is not
+The system SHALL permit recording, logging and displaying facts about device-plane traffic only where doing so changes nothing the device receives and adds no dependency to the device-plane request path.
 
-Observing device-plane traffic — recording that a request happened, and what
-it was for — is explicitly permitted and is not a change to this contract,
-PROVIDED the observation is passive: it SHALL NOT add a process, a database or
-a network call to the request path, SHALL NOT alter any byte the device
-receives, and SHALL NOT be able to fail the request it observes.
+This requirement exists so that a change of this shape is measured against a
+written rule instead of being argued case by case. The device plane is frozen
+because there is an APK in the field that cannot be rolled back; that freeze is
+about **what the device receives**, not about what the operator may know.
 
-#### Scenario: Update descriptor
-- **WHEN** a device requests the current update descriptor with its credential
-- **THEN** the response content, status and cache directives are unchanged, and
-  the descriptor is never cached
+#### Scenario: Adding observation to a device-plane route
+- **WHEN** logging or recording is added for a device-plane route
+- **THEN** the route's status codes, headers, body bytes, cache directives and
+  authentication behaviour are unchanged, verified by comparing a real response
+  before and after
 
-#### Scenario: Bundle and media
-- **WHEN** a device requests a bundle, a media blob or an audio manifest
-- **THEN** the response is unchanged and marked immutable
+#### Scenario: Observation must not become a dependency
+- **WHEN** the mechanism that records device-plane traffic is unavailable,
+  failing or full
+- **THEN** device-plane requests continue to be served exactly as before
 
-#### Scenario: Compression
-- **WHEN** a bundle is served compressed
-- **THEN** the hash and size the device verifies still describe the
-  uncompressed bundle
-
-#### Scenario: Write attempt
-- **WHEN** a non-read method is used against a device-facing update path
-- **THEN** it is rejected
-
-#### Scenario: Missing or wrong credential
-- **WHEN** a device-facing update request carries no credential or a wrong one
-- **THEN** it is rejected without distinguishing the two cases
-
-#### Scenario: Observing a device-plane request
-- **WHEN** a device-plane request is recorded for later inspection
-- **THEN** the bytes the device receives, the status code, every header and
-  every cache directive are identical to what they would have been without the
-  recording, and no service is introduced into the request path
-
-#### Scenario: The observation sink is unavailable
-- **WHEN** the destination the observation is written to is full, unwritable or
-  missing
-- **THEN** the device-plane request is still served normally, and the failure
-  is visible to the operator rather than to the device
+#### Scenario: Altering the device-facing contract
+- **WHEN** a change would alter any byte, header, status code or cache
+  directive the device receives
+- **THEN** it is outside what this requirement permits, regardless of how
+  beneficial it appears
