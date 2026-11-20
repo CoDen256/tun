@@ -38,8 +38,70 @@ log() {
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
 }
 
+# ---- THE DEV REMOTE (backup-console task 1) --------------------------------
+# Measured 2026-11-20, before this existed: in dev BACKUP_REPO_URL is the
+# placeholder `git@github.com:example/tun-backup.git` with BACKUP_SSH_KEY_PATH
+# pointing at /dev/null, so this service had NEVER completed a single run on
+# the operator's machine — `tun-backup-1` was `unhealthy`, failing to clone
+# every hour since boot. Nothing about run history, commit history or the
+# health banner can be verified against a service that never ran.
+#
+# So: when BACKUP_REPO_URL is a LOCAL ABSOLUTE PATH, create it as a **bare**
+# repository if it is not one yet. Bare is not a detail — you cannot push to a
+# non-bare repository's checked-out branch, so a plain directory as the remote
+# fails at the last step of the run, which is the step most worth exercising.
+#
+# PRODUCTION IS UNTOUCHED AND CANNOT REACH THIS. The guard is the shape of the
+# URL: `git@github.com:...` is not an absolute path, so every line below is
+# dead code on the VPS. No new variable, no new mode flag, nothing to forget
+# to switch off — the dev configuration IS `BACKUP_REPO_URL=/dev-remote/...`
+# in the root .env (see .env.example).
+#
+# It also seeds ONE commit on `main`. An empty bare repo clones with an unborn
+# HEAD and no upstream, and `git push --quiet` with no upstream is a fatal
+# error — so a freshly initialised, commit-less remote would fail the first
+# run for a reason that has nothing to do with the backup. Found by running
+# it, not by reading it.
+init_local_remote_if_needed() {
+  case "$BACKUP_REPO_URL" in
+    /*) ;;
+    *) return 0 ;;   # a real remote (ssh/https) — nothing to do, ever
+  esac
+  if [ -d "$BACKUP_REPO_URL" ] && git -C "$BACKUP_REPO_URL" rev-parse --is-bare-repository >/dev/null 2>&1; then
+    return 0
+  fi
+  if [ -e "$BACKUP_REPO_URL" ] && [ ! -d "$BACKUP_REPO_URL" ]; then
+    log "entrypoint: FATAL BACKUP_REPO_URL=$BACKUP_REPO_URL exists and is not a directory" >&2
+    return 1
+  fi
+  log "entrypoint: BACKUP_REPO_URL is a local path — initialising a bare dev remote at $BACKUP_REPO_URL"
+  # Every step checked explicitly, exactly like the clone below and for the
+  # same errexit-suppression reason documented there.
+  mkdir -p "$BACKUP_REPO_URL" || { log "entrypoint: FATAL mkdir $BACKUP_REPO_URL failed" >&2; return 1; }
+  git init --bare --initial-branch=main "$BACKUP_REPO_URL" >/dev/null \
+    || { log "entrypoint: FATAL git init --bare failed" >&2; return 1; }
+  seed=$(mktemp -d) || { log "entrypoint: FATAL mktemp for the remote seed failed" >&2; return 1; }
+  if ! (
+        set -e
+        git -C "$seed" init --initial-branch=main -q
+        git -C "$seed" config user.email "backup@tun.local"
+        git -C "$seed" config user.name "tun git-backup"
+        printf 'local dev remote for the tun backup service\n' > "$seed/README.md"
+        git -C "$seed" add README.md
+        git -C "$seed" commit -q -m "initialise the local dev backup remote"
+        git -C "$seed" push -q "$BACKUP_REPO_URL" main:main
+      ); then
+    log "entrypoint: FATAL seeding the local dev remote failed" >&2
+    rm -rf "$seed"
+    return 1
+  fi
+  rm -rf "$seed"
+  log "entrypoint: local dev remote ready (bare, one commit on main)"
+}
+
 run_backup() {
   if [ ! -d "$BACKUP_REPO/.git" ]; then
+    init_local_remote_if_needed || { log "entrypoint: FATAL could not prepare the local dev remote" >&2; return 1; }
     log "entrypoint: cloning $BACKUP_REPO_URL (first run)..."
     # Every step here is checked explicitly, for the SAME reason the dump
     # section below documents at length: this function is called as

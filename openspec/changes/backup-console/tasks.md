@@ -1,12 +1,12 @@
 # Tasks — backup-console
 
 ## 1. Make a backup run possible in dev (do this first — everything else is unverifiable without it)
-- [ ] 1.1 Add a dev configuration in which the backup remote is a **local bare**
+- [x] 1.1 Add a dev configuration in which the backup remote is a **local bare**
       git repository (not a plain checkout — you cannot push to a non-bare
       repo's current branch). No SSH, no network.
-- [ ] 1.2 Confirm live: clone succeeds, a full run dumps all four databases,
+- [x] 1.2 Confirm live: clone succeeds, a full run dumps all four databases,
       commits, and pushes; `git log` in the bare remote shows the commit.
-- [ ] 1.3 Document the dev remote where an operator will find it, and keep the
+- [x] 1.3 Document the dev remote where an operator will find it, and keep the
       production path (real URL + deploy key) untouched.
 
 ## 2. Move the backup project onto its own compose file

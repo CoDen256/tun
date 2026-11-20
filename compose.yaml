@@ -126,6 +126,10 @@ services:
       # The repo clone persists across restarts (D-C4) — cloned by the
       # container on first boot, never a host bind mount.
       - backup-repo-clone:/data
+      # THE DEV REMOTE (backup-console task 1). Empty and unused in
+      # production: entrypoint.sh touches it only when BACKUP_REPO_URL is a
+      # local absolute path, which on the VPS it is not.
+      - backup-dev-remote:/dev-remote
       - stabbur-blobs:/stabbur-blobs:ro
       # phonexa's audio is a NESTED tree (lang/<lang>/ingested/<name>.wav)
       # whose files can be rewritten in place by Formant Lab's sample trim,
@@ -140,3 +144,5 @@ services:
 volumes:
   backup-repo-clone:
     name: tun_backup-repo-clone
+  backup-dev-remote:
+    name: tun_backup-dev-remote
