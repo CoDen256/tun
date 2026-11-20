@@ -79,6 +79,14 @@ services:
       - ../mjolnir/data:/srv:ro                   # served read-only; publishing writes from the host
       - caddy_data:/data                 # TLS certs — LOSING THIS MEANS RE-ISSUING CERTS
       - caddy_config:/config
+      # THE OTA PULL LOG (ota-pull-tracking 2.1). Writable here, where the
+      # `ota_pulls` logger in caddy/Caddyfile writes it; mounted READ-ONLY
+      # into mjolnir-hub, which ingests it. Losing this volume loses at most
+      # the lines not yet ingested — the record is the `ota_pulls` TABLE, and
+      # /ota/* is served off disk whether this mount works, fills up or is
+      # missing entirely (2.2): Caddy's file writer failing does not fail a
+      # request.
+      - ota_pull_log:/var/log/caddy
 
   # `decks`, `publications`, `build_jobs`, `occurrence_shipments`,
 
@@ -90,3 +98,12 @@ volumes:
     name: mjolnir_caddy_data
   caddy_config:
     name: mjolnir_caddy_config
+  ota_pull_log:
+    # EXPLICIT NAME, for the same reason `tun_backup-state` has one: this
+    # volume is shared across two compose FILES (here and
+    # ../mjolnir/compose.yaml), and without a pinned name a standalone
+    # `cd mjolnir && docker compose up` and a root bring-up would resolve
+    # two different, differently-prefixed volumes — hub would then ingest an
+    # empty file and report "no pulls" with a perfectly healthy gateway
+    # writing to the other one.
+    name: tun_ota-pull-log

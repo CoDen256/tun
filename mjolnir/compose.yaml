@@ -82,6 +82,15 @@ services:
       # CLOSED (libs/pyservice/auth.py rejects when the configured token is empty),
       # and a publicly-known fallback is the opposite of that.
       INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      # ota-pull-tracking: where the gateway's OTA access log is mounted,
+      # below. Typed HERE, on the line above its own mount, rather than
+      # defaulted in hub/src/config.js — a guessed path is a path that can be
+      # wrong silently, and with this unset the ingest simply does not run
+      # (no pulls recorded, nothing broken). It is a MOUNT POINT, not a
+      # configuration value shared between projects: the gateway's own mount
+      # in grind/compose.yaml is that container's filesystem layout, exactly
+      # like `/srv`, `/data` and `/state` elsewhere in this stack.
+      OTA_PULL_LOG_DIR: /var/log/caddy
     volumes:
       - .:/app
       # libs/ mounted at /libs, NOT /app/libs, so that the SAME relative
@@ -92,6 +101,12 @@ services:
       - ../libs:/libs:ro
       - /app/node_modules
       - /app/hub/node_modules
+      # THE OTA PULL LOG, READ-ONLY, AND THE `:ro` IS THE DESIGN (2.1).
+      # hub ingests this file into `ota_pulls`; it must never be able to
+      # write, truncate or roll it — the gateway owns it, and a console that
+      # could edit the device plane's access log is a console that can
+      # rewrite the only evidence of what the phone fetched.
+      - ota_pull_log:/var/log/caddy:ro
     healthcheck:
       # monorepo-merge 4.4: same four-key shape as phonexa-backend's reference
       # healthcheck. The *predicate* has to differ, and here is why.
@@ -233,9 +248,18 @@ services:
       retries: 5
       start_period: 15s
 
-# No `volumes:` section any more. mjolnir's postgres data moved into the
-# shared cluster (D155) and its caddy volumes moved to `grind/` with the
-# gateway (unified-auth). The key itself has to go, not just its contents:
-# a `volumes:` key with nothing but comments under it parses as null and
-# makes `docker compose config` PANIC inside ApplyInclude, with a Go stack
-# trace naming no file (P43).
+# ONE volume, and it is not mjolnir's own. mjolnir's postgres data moved into
+# the shared cluster (D155) and its caddy volumes moved to `grind/` with the
+# gateway (unified-auth), which left this key empty — and an empty `volumes:`
+# key, with nothing but comments under it, parses as null and makes
+# `docker compose config` PANIC inside ApplyInclude with a Go stack trace
+# naming no file (P43). So it came back only when it had real content:
+# `ota_pull_log` (ota-pull-tracking 2.1), declared identically in
+# grind/compose.yaml, which is the service that WRITES it. Both declarations
+# pin the same explicit `name:` on purpose — see grind/compose.yaml's own
+# comment: without it, a standalone bring-up and a root bring-up would be two
+# different volumes and hub would ingest an empty file while the gateway
+# happily wrote to the other one.
+volumes:
+  ota_pull_log:
+    name: tun_ota-pull-log

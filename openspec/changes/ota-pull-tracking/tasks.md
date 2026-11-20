@@ -1,26 +1,26 @@
 # Tasks — ota-pull-tracking
 
 ## 1. The gateway logger (read `design.md` §2 first — both traps are silent)
-- [ ] 1.1 Add a named access logger scoped to the OTA paths, writing structured
+- [x] 1.1 Add a named access logger scoped to the OTA paths, writing structured
       lines to a file on a named volume.
-- [ ] 1.2 Declare it **before** the general site logger. The last-declared named
+- [x] 1.2 Declare it **before** the general site logger. The last-declared named
       logger becomes the site default, and the wrong order sends all seven
       zones' traffic to the pull log while stdout goes dark.
-- [ ] 1.3 Do **not** name the general logger `default` — it is reserved, and the
+- [x] 1.3 Do **not** name the general logger `default` — it is reserved, and the
       container exits 1 right after printing what looks like a successful boot.
-- [ ] 1.4 Put the log-name directive **inside** the existing `handle /ota/*`
+- [x] 1.4 Put the log-name directive **inside** the existing `handle /ota/*`
       block. Change no matcher, header, status code, cache directive, `root` or
       `file_server` line in it.
-- [ ] 1.5 Leave `precompressed` absent (D49) — the body native hashes must stay
+- [x] 1.5 Leave `precompressed` absent (D49) — the body native hashes must stay
       uncompressed.
-- [ ] 1.6 Comment the declaration order and why it is load-bearing.
-- [ ] 1.7 Verify with `caddy adapt --adapter caddyfile` **and** a live request —
+- [x] 1.6 Comment the declaration order and why it is load-bearing.
+- [x] 1.7 Verify with `caddy adapt --adapter caddyfile` **and** a live request —
       never by reading the file top to bottom (P56).
-- [ ] 1.8 Set `roll_size`/`roll_keep`/`roll_keep_for` (tier 2).
+- [x] 1.8 Set `roll_size`/`roll_keep`/`roll_keep_for` (tier 2).
 
 ## 2. Volume wiring
-- [ ] 2.1 Named volume, **writable** at the gateway, **read-only** into hub.
-- [ ] 2.2 Confirm the device plane does not depend on it: with the volume
+- [x] 2.1 Named volume, **writable** at the gateway, **read-only** into hub.
+- [x] 2.2 Confirm the device plane does not depend on it: with the volume
       unwritable or absent, bundle requests are still served normally.
 
 ## 3. Ingest and the table

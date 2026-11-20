@@ -163,4 +163,54 @@ case "$OPERATOR_HASH" in
 esac
 
 echo "grind: derived the operator hash from OPERATOR_TOKEN (bcrypt, cost 10)"
+
+# ---------------------------------------------------------------------------
+# THE OTA PULL LOG, AND WHY ITS PATH IS PROBED HERE RATHER THAN TYPED IN THE
+# CADDYFILE (ota-pull-tracking 2.2).
+#
+# caddy/Caddyfile declares a second, named access logger (`ota_pulls`) that
+# writes /ota/* requests to a file on a shared volume, which mjolnir-hub
+# ingests read-only. Observing the device plane is permitted; becoming a
+# DEPENDENCY of it is not (D166).
+#
+# MEASURED 2026-11-20, with that volume mounted `:ro` by mistake:
+#
+#   {"level":"error","msg":"loading initial config: loading new config:
+#    setting up custom log 'ota_pulls': opening log writer ...:
+#    open /var/log/caddy/ota-pulls.log: read-only file system"}
+#   tun-caddy-1   restarting
+#
+# Caddy opens and validates every log writer at config-load time and refuses
+# to start if one of them fails — there is no "optional output" and no
+# degraded mode. With `restart: unless-stopped` that is an infinite crash
+# loop, and because the gateway is the ONLY process on the device path it
+# takes /ota/*, /blob/*, /audio-manifest/* and /mjolnir/userdata/* down with
+# it. A misplaced `:ro` on a LOGGING volume must never be able to do that.
+#
+# So the writability of the log directory is decided HERE, in shell, where a
+# failure can be reported and worked around instead of being fatal:
+#
+#   writable   -> the real path, hub ingests it, pull tracking works.
+#   not        -> a container-local path, nothing ingests it, a loud WARN
+#                 says exactly that, and the DEVICE PLANE IS UNAFFECTED.
+#
+# The fallback is deliberately inside the container's own writable layer and
+# not /dev/null: `roll_size` on /dev/null would have Caddy rename the device
+# node.
+OTA_PULL_LOG_DIR=/var/log/caddy
+OTA_PULL_LOG="$OTA_PULL_LOG_DIR/ota-pulls.log"
+if ! { mkdir -p "$OTA_PULL_LOG_DIR" 2>/dev/null && touch "$OTA_PULL_LOG" 2>/dev/null; }; then
+  OTA_PULL_LOG=/tmp/ota-pulls-fallback.log
+  echo "grind: WARN  $OTA_PULL_LOG_DIR is not writable, so OTA pull tracking is OFF." >&2
+  echo "grind:       Writing the OTA access log to $OTA_PULL_LOG instead, which NOTHING" >&2
+  echo "grind:       ingests: mjolnir-hub's Pulls page will stop gaining rows (already" >&2
+  echo "grind:       recorded rows are safe — the table is the record, the file is only" >&2
+  echo "grind:       transport). Check that the \`ota_pull_log\` volume is mounted" >&2
+  echo "grind:       READ-WRITE here and read-only in mjolnir-hub, not the other way" >&2
+  echo "grind:       round. The device plane is unaffected and is still being served." >&2
+  touch "$OTA_PULL_LOG" 2>/dev/null || true
+fi
+export OTA_PULL_LOG
+echo "grind: OTA pull log -> $OTA_PULL_LOG"
+
 exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile

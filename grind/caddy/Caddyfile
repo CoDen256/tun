@@ -160,7 +160,98 @@
 }
 
 {$TUN_SITE_ADDRESS} {
-	log {
+	# ---- ACCESS LOGGING: THE DECLARATION ORDER BELOW IS LOAD-BEARING ----
+	# (ota-pull-tracking 1.2/1.6. Both traps re-verified live against
+	# caddy:2-alpine v2.11.7 on 2026-11-20 with `caddy adapt` AND a real
+	# request, which is the same rule the X-Tun-Operator comment below
+	# states about compiled route order after it was wrong by five routes,
+	# P56.)
+	#
+	# TRAP 1 — THE LAST-DECLARED NAMED LOGGER BECOMES THE SITE DEFAULT.
+	# Read straight off `srv0.logs.default_logger_name` in the adapted JSON:
+	#
+	#   ota_pulls first, site second  ->  default_logger_name = "site"      OK
+	#   site first, ota_pulls second  ->  default_logger_name = "ota_pulls"  BROKEN
+	#
+	# In the broken order EVERY request in ALL SEVEN ZONES is written into
+	# the OTA pull log and stdout goes completely dark. Nothing errors, the
+	# gateway starts, serves, and looks perfectly healthy. So `ota_pulls`
+	# MUST stay above `site`, and a reviewer must confirm it with
+	#
+	#   docker compose exec caddy caddy adapt --adapter caddyfile \
+	#     --config /etc/caddy/Caddyfile | ... .default_logger_name
+	#
+	# never by reading this file top to bottom.
+	#
+	# TRAP 2 — `default` IS A RESERVED LOGGER NAME. `log default { … }`
+	# alongside a second named logger makes the container print
+	# "adapted config to JSON" and then EXIT 1 with no further message at
+	# all — which reads as a successful boot if you only look at the first
+	# few lines. That is why the general logger is called `site` and not
+	# `default`. Do not "tidy" the name.
+	#
+	# WHAT THIS DOES NOT DO: it changes nothing any client receives. Access
+	# logging is post-response; no status code, header, cache directive or
+	# body byte is touched, and the /ota/* block below keeps its exact
+	# shape. Observation of the device plane is permitted precisely because
+	# it is invisible to the device (D166).
+	log ota_pulls {
+		# The file lives on a named volume, writable here and mounted
+		# READ-ONLY into mjolnir-hub, which ingests it into `ota_pulls`
+		# (hub owns the mjolnir schema). The file is a TRANSPORT, not the
+		# record: Caddy rolls it, hub's ingest is idempotent, and the table
+		# survives both.
+		#
+		# THE PATH IS AN ENV PLACEHOLDER, AND THAT IS NOT A STYLE CHOICE.
+		# MEASURED 2026-11-20, with the volume mounted `:ro`:
+		#
+		#   loading initial config: setting up custom log 'ota_pulls':
+		#   open /var/log/caddy/ota-pulls.log: read-only file system
+		#
+		# and the container went into `restarting` — i.e. an UNWRITABLE LOG
+		# TARGET TOOK THE WHOLE GATEWAY DOWN, device plane included, in a
+		# `restart: unless-stopped` crash loop. Caddy validates every log
+		# writer at config-load time and refuses to start if one cannot be
+		# opened; there is no "optional output". That is observation
+		# becoming a dependency of the device plane, which is exactly what
+		# this change may not do.
+		#
+		# So `grind/entrypoint.sh` PROBES the directory before Caddy ever
+		# starts and exports this variable: the real path when it is
+		# writable, a container-local fallback (nothing ingests it, and a
+		# loud WARN says so) when it is not. /ota/* is then served normally
+		# no matter what state the volume is in, and the worst case is that
+		# the operator's pull page stops gaining rows.
+		output file {$OTA_PULL_LOG} {
+			roll_size 8MiB
+			roll_keep 5
+			roll_keep_for 720h
+		}
+		# `filter`, not plain `json`, for one security reason: the default
+		# JSON access log serializes the REQUEST HEADERS, and every real
+		# /ota/* request carries `Authorization: Bearer <OTA_TOKEN>`. The
+		# device credential must not be written to a file that a second
+		# service reads and that `backup` would carry off-host. Headers,
+		# response headers and the TLS block are dropped outright; what is
+		# left is ts, remote/client ip, method, uri, status and size —
+		# exactly the fields hub ingests.
+		format filter {
+			wrap json
+			fields {
+				request>headers delete
+				resp_headers delete
+				request>tls delete
+				user_id delete
+			}
+		}
+	}
+
+	# The general site logger. NAMED (trap 2) and DECLARED SECOND (trap 1).
+	# Byte-identical in behaviour to the anonymous `log { output stdout;
+	# format console }` it replaces — the adapter auto-named that one `log0`
+	# and made it the site default; this one is called `site` and is the
+	# site default for the same reason: it is declared last.
+	log site {
 		output stdout
 		format console
 	}
@@ -209,6 +300,17 @@
 
 	# ---- /ota/* : token-gated, read-only -------------------------------
 	handle /ota/* {
+		# ota-pull-tracking 1.4: THE ONLY LINE THIS CHANGE ADDED TO THIS
+		# BLOCK. It routes this route's access log to the `ota_pulls`
+		# logger declared at the top of the site block; it compiles to a
+		# `vars` handler setting `access_logger_names`, so it sets a
+		# variable and checks nothing. No matcher, header, status code,
+		# cache directive, `root` or `file_server` line below was touched,
+		# and `precompressed` stays absent (D49 — the body native hashes
+		# must always be the uncompressed bundle). Verified byte-for-byte
+		# with bin/device-baseline.sh before and after.
+		log_name ota_pulls
+
 		@bad_token not header Authorization "Bearer {$OTA_TOKEN}"
 		respond @bad_token "unauthorized" 401 {
 			close
