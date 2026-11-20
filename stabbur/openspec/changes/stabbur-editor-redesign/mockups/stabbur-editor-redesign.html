@@ -1,0 +1,1148 @@
+<title>Stabbur Editor Redesign</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Charis+SIL:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Schibsted+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: one editor, three contexts. Phone = header + segmented tabs + pinned verdict bar.
+   Desktop = headword band, three quiet zones (Word | Sound | Meaning), grammar as one line. */
+:root{
+  --bg:#fbfbfc; --surface:#ffffff; --sunk:#f2f3f5; --ink:#101318; --ink-2:#3a3f47; --mute:#6c727d; --faint:#a3a8b0;
+  --line:#e6e8ec; --line-2:#d4d7dd; --accent:#2747d0; --accent-ink:#ffffff; --accent-soft:#e9edfb; --val:#1f3a8f;
+  --ok:#1d7f55; --warn:#a66a12; --danger:#bf3434; --danger-soft:#fbecec; --wave:#cdd1d8;
+  --chrome:#eceef1; --scrim:rgba(16,19,24,.28); --shadow:0 18px 50px rgba(16,19,24,.16);
+  --f-hw:"Schibsted Grotesk","Inter",system-ui,sans-serif;
+  --f-ui:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-ipa:"Charis SIL","Noto Sans","Doulos SIL","Gentium Plus","Lucida Grande","Segoe UI",serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1013; --surface:#14171b; --sunk:#1b1e23; --ink:#eceef1; --ink-2:#c2c6cd; --mute:#8f95a0; --faint:#5b616a;
+  --line:#24282e; --line-2:#333841; --accent:#8aa2ff; --accent-ink:#0a0e1c; --accent-soft:#1b2342; --val:#b9c8ff;
+  --ok:#4cc38a; --warn:#e0a84a; --danger:#f07a7a; --danger-soft:#3a1b1d; --wave:#3a3f47;
+  --chrome:#08090b; --scrim:rgba(0,0,0,.55); --shadow:0 18px 50px rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1013; --surface:#14171b; --sunk:#1b1e23; --ink:#eceef1; --ink-2:#c2c6cd; --mute:#8f95a0; --faint:#5b616a;
+  --line:#24282e; --line-2:#333841; --accent:#8aa2ff; --accent-ink:#0a0e1c; --accent-soft:#1b2342; --val:#b9c8ff;
+  --ok:#4cc38a; --warn:#e0a84a; --danger:#f07a7a; --danger-soft:#3a1b1d; --wave:#3a3f47;
+  --chrome:#08090b; --scrim:rgba(0,0,0,.55); --shadow:0 18px 50px rgba(0,0,0,.5); color-scheme:dark}
+
+/* value colour candidates (mockup switch) */
+:root[data-val="blue"]{--val:#0b5cff} :root[data-val="teal"]{--val:#00897b} :root[data-val="violet"]{--val:#7c3aed} :root[data-val="orange"]{--val:#d9480f}
+@media (prefers-color-scheme: dark){
+ :root[data-val="blue"]:not([data-theme="light"]){--val:#82adff} :root[data-val="teal"]:not([data-theme="light"]){--val:#4fd1c0}
+ :root[data-val="violet"]:not([data-theme="light"]){--val:#b79cff} :root[data-val="orange"]:not([data-theme="light"]){--val:#ff9b5e}}
+:root[data-theme="dark"][data-val="blue"]{--val:#82adff} :root[data-theme="dark"][data-val="teal"]{--val:#4fd1c0}
+:root[data-theme="dark"][data-val="violet"]{--val:#b79cff} :root[data-theme="dark"][data-val="orange"]{--val:#ff9b5e}
+.rhtml{font-size:15px;line-height:1.6;color:var(--ink);max-width:68ch}
+.rhtml p{margin:0 0 10px}.rhtml ul{margin:0 0 10px;padding-left:20px}.rhtml em{font-style:normal;font-weight:600;color:var(--val)}
+.rhtml table{border-collapse:collapse;margin:6px 0 12px;font-size:14px}.rhtml th,.rhtml td{border-bottom:1px solid var(--line);padding:5px 14px 5px 0;text-align:left}.rhtml th{font-weight:600;color:var(--mute);font-size:12px}
+.htmlsrc{font:13px/1.5 var(--f-mono)!important}
+.swr{display:flex;gap:10px;align-items:center}
+.sw{width:30px;height:30px;border-radius:50%;background:var(--c);border:2px solid var(--bg);box-shadow:0 0 0 1px var(--line-2);position:relative;cursor:pointer;flex:none}
+.sw[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink)}
+.swc{background:conic-gradient(#e53935,#fdd835,#43a047,#1e88e5,#8e24aa,#e53935)}
+.swc[aria-pressed="true"]{background:var(--c)}
+.swc input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--chrome);color:var(--ink);font:15px/1.45 var(--f-ui);-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0;padding:0}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+svg.i.s{width:13px;height:13px}
+
+/* ---------- mockup chrome (outside the app) ---------- */
+.mock{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;background:var(--chrome);border-bottom:1px solid var(--line-2);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:8px;
+  display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:12.5px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:60;background:var(--chrome)}
+.mock .tag{font:500 10.5px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.mseg{display:flex;border:1px solid var(--line-2);border-radius:7px;overflow:hidden;background:var(--surface)}
+.mseg button{padding:5px 10px;color:var(--ink-2);white-space:nowrap}
+.mseg button+button{border-left:1px solid var(--line-2)}
+.mseg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.mpages{overflow-x:auto;max-width:100%;scrollbar-width:none}
+.mock .sp{flex:1}
+.stage{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px;display:flex;justify-content:center}
+.vp-desktop .stage{padding:0}
+
+/* ---------- device ---------- */
+.device{position:relative;background:var(--bg);overflow:hidden;display:flex;flex-direction:column}
+.vp-phone .device{width:min(390px,100%);height:min(844px,calc(100dvh - var(--mockh,52px) - 32px));min-height:560px;border:1px solid var(--line-2);border-radius:26px;box-shadow:var(--shadow)}
+.vp-desktop .device{width:100%;height:calc(100dvh - var(--mockh,52px));min-height:560px}
+.scroll{flex:1;overflow-y:auto;overflow-x:hidden;min-height:0}
+.wrap{padding:0 20px}
+.vp-desktop .wrap{max-width:1240px;margin:0 auto;padding:0 max(16px,min(48px,4vw))}
+
+/* app top line */
+.top{display:flex;align-items:center;gap:14px;height:48px;border-bottom:1px solid var(--line)}
+.wm{font:700 15px var(--f-hw);letter-spacing:-.01em}
+.wm i{font-style:normal;color:var(--accent)}
+.nav{display:flex;gap:2px;margin-left:auto;overflow-x:auto;scrollbar-width:none}
+.nav button{padding:6px 6px;border-radius:6px;color:var(--mute);font-size:13.5px;white-space:nowrap}
+.nav button[aria-current="page"]{color:var(--ink);font-weight:500}
+.nav button:hover{color:var(--ink)}
+.vp-desktop .top{height:56px}
+
+/* ---------- editor head ---------- */
+.belt{display:flex;align-items:center;gap:12px;padding-top:14px}
+.qbtn{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;font-weight:500;padding:4px 0;min-width:0;white-space:nowrap}
+.qbtn svg.i{color:var(--mute)}
+.pos{margin-left:auto;font:500 12.5px var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pos b{color:var(--ink);font-weight:500}
+.track{height:2px;background:var(--line);margin-top:8px;position:relative}
+.track span{position:absolute;inset:0 auto 0 0;background:var(--ink-2)}
+.eh{padding-top:16px}
+.meta{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--mute);min-height:28px;flex-wrap:wrap}
+.meta .dot,.dotsep{width:3px;height:3px;border-radius:50%;background:var(--faint);display:inline-block}
+.st{display:inline-flex;align-items:center;gap:5px}
+.st::before{content:"";width:7px;height:7px;border-radius:50%;border:1.5px solid var(--faint)}
+.st.ready{color:var(--ok)}.st.ready::before{background:var(--ok);border-color:var(--ok)}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-2);border-radius:999px;padding:2px 10px;font-size:12.5px;color:var(--ink-2);background:var(--surface)}
+.chip:hover{border-color:var(--ink-2)}
+.meta .chip{margin-left:auto}
+.tpill{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px 0 11px;border-radius:999px;background:var(--ink);color:var(--bg);font:500 12.5px var(--f-ui);white-space:nowrap;flex:none}
+.tpill svg.i{width:12px;height:12px}
+.hwrow{display:flex;align-items:center;gap:6px;min-width:0}
+.hw{flex:1;min-width:0;border:0;background:transparent;resize:none;overflow:hidden;color:var(--ink);font:600 32px/1.1 var(--f-hw);letter-spacing:-.025em;padding:4px 0 6px;outline:none;border-bottom:1px solid transparent}
+.hw:focus{border-bottom-color:var(--accent)}
+.hw::placeholder{color:var(--faint)}
+.vp-desktop .hw{font-size:60px;letter-spacing:-.03em}
+@supports (field-sizing:content){.hwrow .hw{field-sizing:content;flex:0 1 auto;width:auto;min-width:4ch}}
+.hwrow .grow{flex:1}
+.bari .pfb{height:44px;border-radius:10px;padding:0 14px}
+.vp-phone .bari .pfb{padding:0;width:44px;justify-content:center}
+.vp-phone .bari .pfb svg.i{width:20px;height:20px}
+.vp-phone .bari .ib{min-width:40px;padding:0 6px}
+.vp-phone .bari .pri{font-size:14px;padding:0 12px}
+.pfb{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 10px;border-radius:9px;border:1px solid var(--line-2);font-size:13.5px;font-weight:500;color:var(--ink);background:var(--surface);flex:none;white-space:nowrap}
+.pfb svg.i{color:var(--accent);width:16px;height:16px}
+.pfb:hover{border-color:var(--accent)}
+.pfb.spin svg.i{animation:rot .8s linear infinite}
+.vp-desktop .hwrow .tpill{align-self:flex-end;margin:0 0 16px 10px}
+
+/* tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line);margin-top:12px;padding:0 6px!important}
+.tabs button{display:flex;align-items:center;justify-content:center;gap:5px;height:44px;color:var(--mute);font-size:13.5px;white-space:nowrap;font-weight:500;position:relative}
+.tabs button[aria-selected="true"]{color:var(--ink)}
+.tabs button[aria-selected="true"]::after{content:"";position:absolute;left:14%;right:14%;bottom:-1px;height:2px;background:var(--ink)}
+.tabs button.opt{color:var(--faint);font-weight:400}
+.tabs button.opt[aria-selected="true"]{color:var(--ink-2)}
+.mk{display:inline-flex;align-items:center;gap:3px;font:500 10px var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums}
+.mk::before{content:"";width:6px;height:6px;border-radius:50%;border:1.4px solid var(--faint)}
+.mk.full::before{background:var(--ok);border-color:var(--ok)}
+.mk.opt::before{border-style:dashed}
+.pane{padding:22px 0 28px;display:flex;flex-direction:column;gap:26px}
+
+/* fields: labels are small uppercase tracked, values are 16px ink */
+.f{display:flex;flex-direction:column;gap:4px;min-width:0}
+.fl{display:flex;align-items:center;gap:7px;min-height:28px}
+.fl label,.fl .lb{font:600 10.5px/1 var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.fl .grow{flex:1}
+.prov{font:400 10.5px var(--f-mono);color:var(--mute);border:1px solid var(--line-2);border-radius:3px;padding:0 4px;line-height:15px}
+.opt-tag{font:400 10.5px var(--f-mono);color:var(--faint)}
+.sg{position:relative;width:30px;height:28px;display:inline-grid;place-items:center;color:var(--mute);border-radius:6px;flex:none}
+.sg:hover{color:var(--accent);background:var(--accent-soft)}
+.sg b{position:absolute;top:0;right:-2px;min-width:15px;height:15px;border-radius:8px;background:var(--accent);color:var(--accent-ink);font:500 9.5px/15px var(--f-mono);padding:0 3px;text-align:center}
+.in{width:100%;border:0;border-bottom:1px solid var(--line);background:transparent;padding:6px 0 7px;font-size:16px;color:var(--val);outline:none;border-radius:0}
+.selbtn span{color:var(--val)}
+.selbtn.none span{color:var(--faint)}
+.lang{color:var(--val)!important}
+.in:focus{border-bottom-color:var(--accent)}
+.in::placeholder{color:var(--faint)}
+.in.ipa{font:19px var(--f-ipa)}
+textarea.in{resize:none;line-height:1.45;overflow:hidden;min-height:34px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 2px}
+.ch{font-size:13.5px;border:1px solid var(--line-2);border-radius:999px;padding:3px 11px;color:var(--ink-2);white-space:nowrap}
+.ch:hover{border-color:var(--ink-2)}
+.ch[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.ch.dash{border-style:dashed;color:var(--mute)}
+.custin{width:140px;border:0;border-bottom:1px solid var(--accent);background:transparent;font-size:13.5px;padding:3px 2px;outline:none}
+.para{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px}
+.para .f{gap:0}
+.para .k{font-size:11px;color:var(--faint);letter-spacing:.02em}
+.para .in{font-size:15px}
+.nopara{font-size:13.5px;color:var(--faint);padding:4px 0}
+.rows{display:flex;flex-direction:column}
+.row{display:flex;align-items:flex-start;gap:10px;border-bottom:1px solid var(--line)}
+.row .in{border-bottom:0}
+.row:focus-within{border-bottom-color:var(--accent)}
+.lang{flex:none;margin-top:8px;height:22px;min-width:30px;padding:0 6px;border:1px solid var(--line-2);border-radius:5px;font:500 11px var(--f-mono);color:var(--ink-2);text-transform:uppercase}
+.lang:hover{border-color:var(--ink-2)}
+.x{width:28px;height:34px;display:grid;place-items:center;color:var(--faint);flex:none}
+.x:hover{color:var(--danger)}
+.x svg.i{width:15px;height:15px}
+.add{align-self:flex-start;font-size:13.5px;color:var(--accent);padding:8px 0 0}
+.ex .in{font-size:15.5px}
+.empty{font-size:13.5px;color:var(--faint);padding:8px 0;border-bottom:1px dashed var(--line-2)}
+.selbtn{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border-bottom:1px solid var(--line);padding:6px 0 7px;font-size:16px}
+.selbtn span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.selbtn.none span{color:var(--faint)}
+.selbtn svg.i{color:var(--mute);width:14px;height:14px}
+.selbtn:hover{border-bottom-color:var(--ink-2)}
+
+/* audio */
+.player{display:flex;align-items:center;gap:12px;padding:8px 0 4px}
+.play{width:42px;height:42px;border-radius:50%;border:1px solid var(--line-2);display:grid;place-items:center;flex:none;color:var(--ink)}
+.play:hover{border-color:var(--ink)}
+.play svg.i{width:16px;height:16px;fill:currentColor;stroke:none}
+.wv{flex:1;min-width:0;height:56px;touch-action:none;cursor:ew-resize}
+.wv svg{width:100%;height:56px;display:block}
+.arange{display:flex;gap:10px;font:12px var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums;padding-left:54px;flex-wrap:wrap}
+.aacts{display:flex;gap:4px 16px;flex-wrap:wrap;padding-top:10px}
+.lnk{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--ink-2);padding:4px 0}
+.lnk:hover{color:var(--accent)}
+.lnk svg.i{width:15px;height:15px}
+.cap{font:11px var(--f-mono);color:var(--faint)}
+.noaudio{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px dashed var(--line-2);color:var(--faint);font-size:13.5px}
+
+.rule{font-size:14px;color:var(--ink-2);line-height:1.55;padding-top:6px;max-width:60ch}
+.rule em{font-style:normal;color:var(--ink);font-weight:500}
+
+/* desktop editor */
+.dmeta{display:flex;align-items:center;gap:16px;padding-top:26px;flex-wrap:wrap}
+.dmeta .meta{flex:1}
+.simline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--mute)}
+.simline button.nm{color:var(--ink-2);border-bottom:1px solid var(--line-2)}
+.simline button.nm:hover{color:var(--accent);border-color:var(--accent)}
+.zones{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0;border-top:1px solid var(--line);margin-top:18px}
+.zone{padding:22px 32px 30px;display:flex;flex-direction:column;gap:22px;min-width:0}
+.zone:first-child{padding-left:0}
+.zone:last-child{padding-right:0}
+.zone+.zone{border-left:1px solid var(--line)}
+.zh{display:flex;align-items:center;gap:10px;font:600 16px var(--f-hw);letter-spacing:-.01em;color:var(--ink)}
+.gline{display:flex;align-items:center;gap:14px;border-top:1px solid var(--line);padding:14px 0;font-size:13.5px;color:var(--mute);flex-wrap:wrap}
+.gline .zh{color:var(--mute);font-size:15px}
+.gline .selbtn{width:auto;min-width:260px;font-size:14px;border-bottom-color:var(--line)}
+.gbody{padding:0 0 24px}
+
+/* ---------- bar ---------- */
+.bar{flex:none;border-top:1px solid var(--line);background:var(--surface);padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));position:relative;z-index:8}
+.vp-phone .bar{padding-bottom:16px}
+.bari{display:flex;align-items:center;gap:6px}
+.vp-desktop .bari{max-width:1240px;margin:0 auto;padding:0 max(16px,min(48px,4vw));gap:8px}
+.ib{height:44px;min-width:44px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;gap:7px;color:var(--ink-2);padding:0 10px;font-size:14px;white-space:nowrap}
+.ib:hover{background:var(--sunk);color:var(--ink)}
+.ib.del:hover{color:var(--danger);background:var(--danger-soft)}
+.pri{min-width:0;height:44px;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:15px;display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:0 18px;flex:1;white-space:nowrap}
+.pri:hover{filter:brightness(1.07)}
+.pri.clean{background:var(--sunk);color:var(--mute);font-weight:500}
+.sec{height:44px;border-radius:10px;border:1px solid var(--line-2);font-weight:500;padding:0 16px;flex:1;white-space:nowrap;color:var(--ink)}
+.sec:hover{border-color:var(--ink-2)}
+.vp-desktop .bari .pri,.vp-desktop .bari .sec{flex:0 0 auto;min-width:200px}
+.vp-desktop .bari .sp{flex:1}
+kbd{font:500 10.5px var(--f-mono);color:var(--faint);border:1px solid var(--line-2);border-radius:3px;padding:0 4px;line-height:15px}
+.pri kbd{color:inherit;opacity:.7;border-color:currentColor}
+.vp-phone kbd{display:none}
+.stseg{display:flex;border:1px solid var(--line-2);border-radius:10px;height:44px;overflow:hidden;flex:none}
+.stseg button{padding:0 9px;font-size:13.5px;color:var(--mute)}
+.stseg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.dirty::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* popovers + menus */
+.pop{position:absolute;z-index:30;right:12px;bottom:70px;min-width:230px;background:var(--surface);border:1px solid var(--line-2);border-radius:12px;box-shadow:var(--shadow);padding:6px}
+.vp-desktop .pop{right:max(16px,calc((100% - 1240px)/2 + 48px))}
+.pop button{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border-radius:8px;font-size:14px;text-align:left;color:var(--ink)}
+.pop button:hover{background:var(--sunk)}
+.pop button .sp{flex:1}
+.pop button.danger{color:var(--danger)}
+.pop .q{padding:10px 10px 4px;font-size:14px}
+.pop .q small{display:block;color:var(--mute);font-size:12.5px;padding-top:2px}
+.pop .two{display:flex;gap:6px;padding:8px 4px 4px}
+.pop .two button{justify-content:center;border:1px solid var(--line-2)}
+.pop .two button.danger{background:var(--danger);color:var(--surface);border-color:var(--danger)}
+.menu{position:absolute;z-index:36;min-width:170px;max-width:min(300px,calc(100% - 24px));max-height:320px;overflow-y:auto;background:var(--surface);border:1px solid var(--line-2);border-radius:11px;box-shadow:var(--shadow);padding:5px}
+.menu.up{transform:translateY(-100%)}
+.menu .mh{font:600 10px var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);padding:8px 10px 4px}
+.mi{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 10px;border-radius:7px;font-size:14px;color:var(--ink-2)}
+.mi:hover{background:var(--sunk);color:var(--ink)}
+.mi .ck{width:14px;display:grid;place-items:center;color:var(--accent);flex:none}
+.mi[aria-checked="true"]{color:var(--ink);font-weight:500}
+.toast{position:absolute;left:50%;bottom:84px;transform:translate(-50%,8px);background:var(--ink);color:var(--bg);font-size:13.5px;padding:9px 14px;border-radius:9px;opacity:0;transition:.2s;z-index:40;white-space:nowrap;pointer-events:none;max-width:92%;overflow:hidden;text-overflow:ellipsis}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- sheet (animates only on first open) ---------- */
+.sheetwrap{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;justify-content:flex-end}
+.scrim{position:absolute;inset:0;background:var(--scrim)}
+.sheet{position:relative;background:var(--surface);border-radius:16px 16px 0 0;max-height:86%;display:flex;flex-direction:column}
+.vp-desktop .sheetwrap{flex-direction:row;justify-content:flex-end}
+.vp-desktop .sheet{width:min(460px,100%);max-height:none;height:100%;border-radius:0;border-left:1px solid var(--line-2)}
+.sheetwrap.anim .scrim{animation:fade .18s}
+.sheetwrap.anim .sheet{animation:up .22s cubic-bezier(.2,.8,.2,1)}
+.vp-desktop .sheetwrap.anim .sheet{animation:side .22s cubic-bezier(.2,.8,.2,1)}
+@keyframes up{from{transform:translateY(30px);opacity:.4}}
+@keyframes side{from{transform:translateX(30px);opacity:.4}}
+@keyframes fade{from{opacity:0}}
+.grab{width:36px;height:4px;border-radius:2px;background:var(--line-2);margin:8px auto 0}
+.vp-desktop .grab{display:none}
+.sh{display:flex;align-items:center;gap:10px;padding:12px 20px 6px}
+.sh h3{margin:0;font:600 17px var(--f-hw);letter-spacing:-.01em}
+.sh .sp{flex:1}
+.shq{display:flex;align-items:center;gap:8px;padding:6px 20px 12px;border-bottom:1px solid var(--line)}
+.shq .in{font-size:15px;flex:1}
+.spin svg{animation:rot .7s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.shb{overflow-y:auto;padding:4px 20px 24px;flex:1;min-height:0}
+.shfoot{display:flex;gap:8px;padding:12px 20px 16px;border-top:1px solid var(--line)}
+.prv{margin-top:14px;border:1px solid var(--line-2);border-radius:10px;padding:0 12px;overflow:hidden}
+.prv .cd:last-child,.prv .none:last-child{border-bottom:0}
+.prv .cd.asm{margin:6px 0 2px}
+.prvh{display:flex;align-items:center;gap:8px;font:600 12.5px var(--f-mono);color:var(--ink);background:var(--sunk);margin:0 -12px;padding:6px 12px;min-height:34px;border-bottom:1px solid var(--line-2)}
+.prvh .n{color:var(--faint);font-variant-numeric:tabular-nums}
+.prvh .sp{flex:1}
+.prvh .c{color:var(--faint);font-weight:400;white-space:nowrap}
+.pqb{font:11.5px var(--f-ui);color:var(--mute);display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:5px;max-width:45%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pqb:hover{color:var(--accent);background:var(--accent-soft)}
+.pqb.over{color:var(--accent);font-family:var(--f-mono)}
+.pqrow{display:flex;align-items:center;gap:6px;padding:2px 0 6px}
+.pqrow .in{font:13.5px var(--f-mono);padding:4px 0}
+.pqrow .ib{height:30px;min-width:30px;padding:0 6px;font-size:12px}
+.cd{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.cd .v{flex:1;min-width:0}
+.cd .v b{font-weight:500;font-size:15px;overflow-wrap:anywhere}
+.cd .v b.ipa{font:400 18px var(--f-ipa)}
+.cd .v small{display:block;font:11.5px var(--f-mono);color:var(--mute);overflow-wrap:anywhere}
+.cd .lg{font:500 11px var(--f-mono);color:var(--mute);text-transform:uppercase;width:20px;flex:none}
+.pm{display:inline-block;vertical-align:2px;margin-left:7px;font:500 9.5px/15px var(--f-mono);padding:0 5px;border-radius:3px;background:var(--accent-soft);color:var(--accent)}
+.use{height:30px;padding:0 12px;border-radius:7px;border:1px solid var(--line-2);font-size:13px;font-weight:500;flex:none}
+.use:hover{border-color:var(--accent);color:var(--accent)}
+.use.done{border-color:transparent;color:var(--ok)}
+.cd.asm{background:var(--sunk);margin:6px -10px 2px;padding:9px 10px;border-radius:8px;border:0}
+.pl{width:32px;height:32px;border-radius:50%;border:1px solid var(--line-2);display:grid;place-items:center;flex:none;color:var(--ink)}
+.pl:hover{border-color:var(--ink)}
+.pl svg.i{width:12px;height:12px;fill:currentColor;stroke:none}
+.mt{border-collapse:collapse;font-size:13.5px;margin:2px 0 4px}
+.mt th{font:400 11.5px var(--f-ui);color:var(--mute);text-align:left;padding:2px 14px 2px 0;white-space:nowrap;vertical-align:top}
+.mt td{padding:2px 0;color:var(--ink);font-weight:500}
+.cd.inf{align-items:flex-start}
+.cd.inf .use{margin-top:4px}
+.none{font-size:13px;color:var(--faint);padding:6px 0 8px;border-bottom:1px solid var(--line)}
+.ext{display:flex;flex-direction:column;padding-top:22px}
+.ext .t{font:600 10px var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);padding-bottom:4px}
+.ext a{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mute);text-decoration:none;padding:6px 0}
+.ext a:hover{color:var(--accent)}
+.ext a .sp{flex:1}
+.ext a svg.i{width:14px;height:14px}
+.shf{font-size:12px;color:var(--faint);padding-top:18px}
+.shf button{color:var(--mute);text-decoration:underline;text-underline-offset:2px}
+
+/* similar / merge */
+.sim{padding:14px 0;border-bottom:1px solid var(--line)}
+.simt{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.simt b{font:600 19px var(--f-hw);letter-spacing:-.01em}
+.simt small{color:var(--mute);font-size:12.5px}
+.sima{display:flex;gap:14px;padding-top:6px}
+.dir{display:flex;border:1px solid var(--line-2);border-radius:9px;overflow:hidden;margin-top:12px}
+.dir button{flex:1;padding:8px 8px;font-size:13px;color:var(--mute);line-height:1.25}
+.dir button+button{border-left:1px solid var(--line-2)}
+.dir button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.dirnote{font-size:12.5px;color:var(--mute);padding:8px 0 4px}
+.dirnote b{color:var(--ink);font-weight:600}
+.takes{display:flex;flex-direction:column;padding-top:4px}
+.take{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);min-height:44px}
+.take .k{width:96px;flex:none;font:600 10px var(--f-ui);letter-spacing:.09em;text-transform:uppercase;color:var(--mute)}
+.take .v{flex:1;min-width:0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.take .v.ipa{font-family:var(--f-ipa);font-size:16px}
+.take.dis{opacity:.45}
+.take.dis .v{cursor:default}
+.tg{width:34px;height:20px;border-radius:10px;background:var(--line-2);position:relative;flex:none;transition:background .15s}
+.tg::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--surface);transition:left .15s}
+.tg[aria-pressed="true"]{background:var(--accent)}
+.tg[aria-pressed="true"]::after{left:16px}
+.mergebtn{margin-top:12px;width:100%;flex:none}
+
+/* ---------- list pages ---------- */
+.ph{display:flex;align-items:baseline;gap:12px;padding:24px 0 14px;flex-wrap:wrap}
+.ph h1{margin:0;font:600 30px var(--f-hw);letter-spacing:-.02em}
+.vp-desktop .ph h1{font-size:40px}
+.ph .n{font:13px var(--f-mono);color:var(--mute)}
+.ph .sp{flex:1}
+.btn-s{height:36px;border-radius:8px;border:1px solid var(--line-2);padding:0 14px;font-size:14px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.btn-s:hover{border-color:var(--ink-2)}
+.btn-p{height:36px;border-radius:8px;background:var(--accent);color:var(--accent-ink);padding:0 14px;font-size:14px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.srch{display:flex;align-items:center;gap:10px}
+.srch .box{flex:1;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line-2);color:var(--mute);min-width:0}
+.srch .box:focus-within{border-color:var(--accent)}
+.srch .in{border:0}
+.fbtn{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--ink-2);height:34px;padding:0 4px;white-space:nowrap}
+.fbtn b,.fbx b{font:500 10px/16px var(--f-mono);background:var(--accent);color:var(--accent-ink);border-radius:8px;min-width:16px;text-align:center;padding:0 4px}
+.fbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:14px 0 0}
+.fbx{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--line-2);border-radius:8px;font-size:13px;color:var(--ink-2);white-space:nowrap}
+.fbx:hover{border-color:var(--ink-2)}
+.fbx.on{border-color:var(--ink);color:var(--ink)}
+.fbx svg.i{width:12px;height:12px;color:var(--mute)}
+.fbar .sp{flex:1}
+.achips{display:flex;flex-wrap:wrap;gap:6px;padding-top:12px;align-items:center}
+.ac{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:3px 6px 3px 10px}
+.ac svg.i{width:12px;height:12px}
+.clr{font-size:12.5px;color:var(--mute);text-decoration:underline;text-underline-offset:2px;margin-left:4px}
+.lmeta{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--mute);padding-top:12px}
+.lmeta .sp{flex:1}
+.sortb{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink-2)}
+.sortb svg.i{width:12px;height:12px}
+.fsec{padding:14px 0 4px}
+.fsec .lb{font:600 10.5px var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--mute);display:block;padding-bottom:6px}
+.fc{font-size:13px;color:var(--ink-2);border:1px solid var(--line-2);border-radius:999px;padding:4px 11px}
+.fc[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.nlist{margin-top:10px;border-top:1px solid var(--line)}
+.nrow{display:block;width:100%;text-align:left;padding:12px 0;border-bottom:1px solid var(--line)}
+.nrow:hover .nhw{color:var(--accent)}
+.ntop{display:flex;align-items:center;gap:10px}
+.nhw{font:600 17.5px var(--f-hw);letter-spacing:-.01em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ngl{display:flex;align-items:center;gap:9px;color:var(--faint)}
+.ngl svg.i{width:14px;height:14px}
+.ngl .off{opacity:.35}
+.nsub{font-size:13px;color:var(--mute);padding-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sdot{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--faint);display:inline-block}
+.sdot.ready{background:var(--ok);border-color:var(--ok)}
+.pager{display:flex;align-items:center;justify-content:center;gap:16px;padding:18px 0 28px;font:13px var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums}
+.pager button{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;color:var(--ink-2);font-size:18px}
+.pager button:hover{background:var(--sunk)}
+.pager .pg{color:var(--ink);font-weight:500}
+.nores{padding:28px 0;color:var(--mute);font-size:14px}
+.tbl{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px}
+.tbl th{font:600 10.5px var(--f-ui);letter-spacing:.09em;text-transform:uppercase;color:var(--faint);text-align:left;padding:8px 12px 8px 0;border-bottom:1px solid var(--line-2)}
+.tbl td{padding:11px 12px 11px 0;border-bottom:1px solid var(--line);color:var(--ink-2);white-space:nowrap}
+.tbl td:first-child{font:600 16px var(--f-hw);color:var(--ink);letter-spacing:-.01em;white-space:normal}
+.tbl tr{cursor:pointer}
+.tbl tbody tr:hover td:first-child{color:var(--accent)}
+.tbl .num{font-family:var(--f-mono);font-size:12.5px;color:var(--mute);font-variant-numeric:tabular-nums}
+.cbar{display:inline-block;width:44px;height:3px;background:var(--line);border-radius:2px;vertical-align:middle;position:relative;overflow:hidden}
+.cbar i{position:absolute;inset:0 auto 0 0;background:var(--ink-2)}
+.tblw{overflow-x:auto}
+
+/* settings */
+.sets{display:flex;flex-direction:column;max-width:720px;padding-bottom:40px}
+.sg2{padding:22px 0 8px;border-top:1px solid var(--line)}
+.sg2:first-child{border-top:0}
+.sg2 h2{margin:0 0 6px;font:600 16px var(--f-hw);letter-spacing:-.01em;color:var(--ink)}
+.sg2 .hint{font-size:13px;color:var(--mute);margin:0 0 8px}
+.si{display:flex;align-items:center;gap:8px 16px;padding:12px 0;flex-wrap:wrap}
+.si .t{flex:1 1 200px;font-size:14.5px}
+.si .t small{display:block;color:var(--mute);font-size:12.5px}
+.seg{display:flex;border:1px solid var(--line-2);border-radius:8px;overflow:hidden}
+.seg button{padding:6px 12px;font-size:13px;color:var(--mute)}
+.seg button+button{border-left:1px solid var(--line-2)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.stepper{display:flex;align-items:center;border:1px solid var(--line-2);border-radius:8px;overflow:hidden}
+.stepper button{width:32px;height:30px;color:var(--ink-2);font-size:16px}
+.stepper button:hover{background:var(--sunk)}
+.stepper span{min-width:30px;text-align:center;font:14px var(--f-mono);font-variant-numeric:tabular-nums}
+.txt-in{width:120px;border:0;border-bottom:1px solid var(--line-2);background:transparent;font:14px var(--f-mono);padding:4px 2px;color:var(--ink)}
+.pk{padding:10px 0 6px}
+.pk .kh{display:flex;align-items:baseline;gap:8px;font:600 10.5px var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--mute);padding-bottom:6px}
+.pk .kh small{font:400 12px var(--f-ui);letter-spacing:0;text-transform:none;color:var(--faint)}
+.plist{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.plist li{display:flex;align-items:center;gap:10px;height:42px;border-bottom:1px solid var(--line);background:var(--bg)}
+.plist li.drag{background:var(--surface);box-shadow:var(--shadow);position:relative;z-index:2;border-radius:6px}
+.plist .h{width:30px;height:40px;display:grid;place-items:center;color:var(--faint);cursor:grab;touch-action:none}
+.plist .o{font:12px var(--f-mono);color:var(--faint);width:14px;font-variant-numeric:tabular-nums}
+.plist .nm{flex:1;font:14px var(--f-mono)}
+.plist li.off .nm{color:var(--faint);text-decoration:line-through}
+.plist .lk{font:10.5px var(--f-mono);color:var(--faint)}
+
+/* grammar pages */
+.glist{border-top:1px solid var(--line)}
+.grow2{display:flex;align-items:baseline;gap:12px;width:100%;text-align:left;padding:14px 0;border-bottom:1px solid var(--line)}
+.grow2 b{font:600 17px var(--f-hw);letter-spacing:-.01em;flex:1}
+.grow2:hover b{color:var(--accent)}
+.grow2 small{font:12.5px var(--f-mono);color:var(--mute);white-space:nowrap}
+.gdet{max-width:720px;padding-bottom:40px;display:flex;flex-direction:column;gap:22px}
+.gdet .ttl{font:600 30px var(--f-hw);letter-spacing:-.02em;border:0;border-bottom:1px solid transparent;background:transparent;width:100%;padding:4px 0;outline:none;color:var(--ink)}
+.gdet .ttl:focus{border-color:var(--accent)}
+.gdet .ttl{resize:none;overflow:hidden;line-height:1.15}
+.vp-phone .gdet .ttl{font-size:25px}
+.back{display:inline-flex;align-items:center;gap:4px;color:var(--mute);font-size:13.5px;padding-top:18px}
+.back:hover{color:var(--ink)}
+.linked{display:flex;flex-wrap:wrap;gap:6px}
+</style>
+
+<div class="mock" id="mock">
+  <span class="tag">Mockup</span>
+  <div class="mseg mpages" id="mPages"></div>
+  <span class="sp"></span>
+  <div class="mseg" id="mVp"><button data-vp="phone">Phone</button><button data-vp="desktop">Desktop</button></div>
+  <span class="tag">Theme &amp; value colour: Settings → Appearance</span>
+</div>
+<div class="stage"><div class="device" id="device"></div></div>
+<input type="file" id="fileIn" accept="audio/*" hidden>
+
+<script>
+(()=>{
+/* ---------------- icons ---------------- */
+const P={
+ spark:'<path d="M12 3.5l1.6 4.9 4.9 1.6-4.9 1.6L12 16.5l-1.6-4.9L5.5 10l4.9-1.6z"/><path d="M18.5 15.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z"/>',
+ trash:'<path d="M4.5 7h15M9.5 7V4.8h5V7M6.5 7l.8 12.2h9.4L17.5 7"/>',
+ skip:'<path d="M6 6l6 6-6 6M13 6l6 6-6 6"/>',
+ prev:'<path d="M9 14.5L4.5 10 9 5.5"/><path d="M4.5 10h10a5 5 0 010 10H12"/>',
+ more:'<circle cx="5.5" cy="12" r="1.1"/><circle cx="12" cy="12" r="1.1"/><circle cx="18.5" cy="12" r="1.1"/>',
+ play:'<path d="M8 5.5v13l10.5-6.5z"/>',
+ pause:'<path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/>',
+ x:'<path d="M6 6l12 12M18 6L6 18"/>',
+ rerun:'<path d="M19.5 12a7.5 7.5 0 11-2.2-5.3"/><path d="M19.5 4.5v4h-4"/>',
+ back:'<path d="M14.5 5.5L8 12l6.5 6.5"/>',
+ dup:'<rect x="8.5" y="8.5" width="11" height="11" rx="1.5"/><path d="M15.5 8.5V5.5a1 1 0 00-1-1h-9a1 1 0 00-1 1v9a1 1 0 001 1h3"/>',
+ up:'<path d="M12 15.5V4.5M7.5 9L12 4.5 16.5 9"/><path d="M4.5 15v4.5h15V15"/>',
+ clip:'<rect x="6" y="5" width="12" height="15.5" rx="1.5"/><path d="M9.5 5V3.5h5V5"/><path d="M9 11h6M9 14.5h4"/>',
+ ext:'<path d="M10 5H5.5v13.5H19V14"/><path d="M13.5 4.5h6v6M19.5 4.5l-8 8"/>',
+ drag:'<circle cx="9" cy="7" r=".9"/><circle cx="15" cy="7" r=".9"/><circle cx="9" cy="12" r=".9"/><circle cx="15" cy="12" r=".9"/><circle cx="9" cy="17" r=".9"/><circle cx="15" cy="17" r=".9"/>',
+ search:'<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.6-4.6"/>',
+ filter:'<path d="M4 6.5h16M7 12h10M10 17.5h4"/>',
+ snd:'<path d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3z"/><path d="M15.5 9a4 4 0 010 6M18 6.5a7.5 7.5 0 010 11"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>',
+ merge:'<path d="M6 4.5v4.5a4 4 0 004 4h8"/><path d="M14.5 9.5L18 13l-3.5 3.5"/><path d="M6 19.5v-6"/>',
+ caret:'<path d="M7 10l5 5 5-5"/>',
+ check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+ pen:'<path d="M15 5l4 4L8.5 19.5H4.5v-4z"/>',
+ sort:'<path d="M8 5v14M4.5 15.5L8 19l3.5-3.5M16 19V5M12.5 8.5L16 5l3.5 3.5"/>'
+};
+const ic=(n,c='')=>`<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------------- domain ---------------- */
+const TYPES=['word','expression','listening','pronunciation','grammar'];
+const POS=['substantiv','adjektiv','verb','adverb','preposisjon','konjunksjon'];
+const POSAB={substantiv:'subst',adjektiv:'adj',verb:'verb',adverb:'adv',preposisjon:'prep',konjunksjon:'konj'};
+const LANGS=['en','de','fr','sv','es'];
+const PARA={substantiv:['ubestemt entall','bestemt entall','ubestemt flertall','bestemt flertall'],
+ verb:['infinitiv','presens','preteritum','perfektum'],
+ adjektiv:['hankjønn / hunkjønn','intetkjønn','flertall / bestemt','komparativ','superlativ']};
+const KINDS={pos:'Part of speech',ipa:'Pronunciation',translations:'Translations',inflections:'Inflections',examples:'Examples',audio:'Audio',stt:'Text from audio'};
+const LINKP=['forvo','filmot'];
+const QUEUES=[['captures','Drafts · captures',52],['all','Drafts · all origins',118],['noaudio','No audio yet',37],['nolemma','Lemma missing',9]];
+const RULES=[
+ {id:'v2',t:'Inversjon — verbet på plass to',b:'<p>I en helsetning står det finitte verbet alltid som <em>andre ledd</em>.</p><p>Starter setningen med noe annet enn subjektet, bytter subjekt og verbal plass:</p><table><tr><th>Forfelt</th><th>Verbal</th><th>Subjekt</th><th>Resten</th></tr><tr><td>Hun</td><td>kommer</td><td>—</td><td>i dag.</td></tr><tr><td>I dag</td><td>kommer</td><td>hun.</td><td></td></tr></table><ul><li>Gjelder også spørsmål med spørreord: <em>Hvor bor du?</em></li><li>Ikke i leddsetninger.</li></ul>',ex:['I morgen reiser vi til Bergen.','Nå må vi komme i vei.']},
+ {id:'selvom',t:'Leddsetning med «selv om»',b:'«Selv om» innleder en innrømmelsesleddsetning. Setningsadverbialet står <em>foran</em> verbet i leddsetningen: <em>selv om han ikke kom</em>.',ex:['Selv om det regnet, gikk vi tur.']},
+ {id:'seg',t:'Refleksive verb med «seg»',b:'Refleksivt pronomen viser tilbake til subjektet: <em>meg, deg, seg, oss, dere, seg</em>. Mange faste uttrykk krever det: <em>komme seg i vei</em>.',ex:['Han satte seg ned.','Vi må skynde oss.']},
+ {id:'kjonn',t:'Ord med to kjønn',b:'Noen substantiv kan brukes både som hankjønn og intetkjønn uten endring i betydning: <em>en do / et do</em>. Bøyningen følger kjønnet du velger.',ex:['Hvor er doen?','Doet er opptatt.']}
+];
+const MULT={h:60,d:1440,w:10080,mo:43200};
+const mins=u=>{if(u==='now')return 0;const m=String(u).match(/(\d+)\s*(mo|h|d|w)/);return m?+m[1]*MULT[m[2]]:0;};
+let nid=100;
+const mk=o=>{const n=Object.assign({id:++nid,text:'',type:'word',pos:'',lemma:'',infl:{},ipa:'',tr:[],ex:[],audio:null,rule:'',status:'draft',prov:{},upd:'1 d',origin:'manual',sim:[],c:{}},o);n.updMin=mins(n.upd);n.created=n.created??n.updMin+(nid%7)*1440;return n;};
+const NOTES=[
+ mk({text:'komme i vei',type:'expression',pos:'verb',lemma:'komme i vei',origin:'capture',
+  infl:{infinitiv:'å komme i vei',presens:'kommer i vei',preteritum:'kom i vei',perfektum:'har kommet i vei'},
+  ipa:'ˈkɔmə iː ˈʋæɪ',tr:[{lang:'en',text:'get going'},{lang:'en',text:'get under way'}],
+  ex:['Vi må komme i vei før det blir mørkt.','Endelig kom arbeidet i vei igjen.'],
+  audio:{from:'pygmalion',dur:1.62,a:.14,b:.86,seed:2.1},prov:{pos:'dict_cc',inflections:'ordbokene',ipa:'smia-ipa',translations:'dict_cc',examples:'ordbokene',audio:'pygmalion'},upd:'2 h',
+  c:{pos:{dict_cc:[{v:'verb',ctx:'[verb] å komme i vei',pos:'verb'}],ordbokene:[{v:'verb',ctx:'fast uttrykk',pos:'verb'}]},
+   ipa:{'smia-ipa':[{v:'ˈkɔmə iː ˈʋæɪ',ctx:'assembled from single words',asm:1},{v:'ˈkɔmə',ctx:'komme'},{v:'iː',ctx:'i'},{v:'ˈʋæɪ',ctx:'vei'}],wiktionary:[{v:'²kɔmːə',ctx:'komme · østnorsk'}]},
+   translations:{dict_cc:[{lang:'en',v:'get going',ctx:'[verb] å komme i vei',pos:'verb'},{lang:'en',v:'get under way',ctx:'[verb] å komme i vei',pos:'verb'},{lang:'de',v:'loskommen',ctx:'[verb] å komme i vei',pos:'verb'},{lang:'en',v:'start',ctx:'[noun] det å komme i vei',pos:'substantiv'}],glosbe:[{lang:'en',v:'set off',ctx:'glosbe · 3 sources'},{lang:'de',v:'aufbrechen',ctx:'glosbe · 1 source'}],deepl:[{lang:'en',v:'get going',ctx:'machine'},{lang:'de',v:'in Gang kommen',ctx:'machine'}]},
+   inflections:{ordbokene:[{v:{infinitiv:'å komme i vei',presens:'kommer i vei',preteritum:'kom i vei',perfektum:'har kommet i vei'},ctx:'sterkt verb · komme'}],'smia-inflect':[]},
+   examples:{ordbokene:[{v:'Vi må komme i vei før det blir mørkt.'},{v:'Endelig kom arbeidet i vei igjen.'}],tatoeba:[{v:'Nå må vi komme i vei.'},{v:'Det tok lang tid å komme i vei om morgenen.'}],glosbe:[]},
+   audio:{pygmalion:[{ctx:'komme i vei',dur:1.62}],dict_cc:[{ctx:'[verb] å komme i vei',dur:1.31,pos:'verb'},{ctx:'[noun] det å komme i vei',dur:1.44,pos:'substantiv'}]},
+   stt:{'smia-stt':[{v:'komme i vei',ctx:'from current audio · 227–1393 ms'}]}}}),
+ mk({text:'stille',pos:'adjektiv',lemma:'stille',origin:'capture',infl:{'hankjønn / hunkjønn':'stille',intetkjønn:'stille','flertall / bestemt':'stille',komparativ:'stillere',superlativ:'stillest'},prov:{pos:'dict_cc',inflections:'ordbokene'},upd:'5 h',
+  c:{pos:{dict_cc:[{v:'adjektiv',ctx:'[adj] stille',pos:'adjektiv'},{v:'verb',ctx:'[verb] å stille',pos:'verb'}],ordbokene:[{v:'adjektiv',ctx:'stille adj.',pos:'adjektiv'},{v:'verb',ctx:'stille verb',pos:'verb'}]},
+   ipa:{'smia-ipa':[{v:'ˈstɪlə',ctx:'stille'}],wiktionary:[{v:'²stɪlːə',ctx:'stille · østnorsk'}]},
+   translations:{dict_cc:[{lang:'en',v:'quiet',ctx:'[adj] stille',pos:'adjektiv'},{lang:'en',v:'still',ctx:'[adj] stille',pos:'adjektiv'},{lang:'de',v:'still',ctx:'[adj] stille',pos:'adjektiv'},{lang:'en',v:'to place',ctx:'[verb] å stille',pos:'verb'},{lang:'en',v:'to ask (a question)',ctx:'[verb] stille et spørsmål',pos:'verb'},{lang:'de',v:'stellen',ctx:'[verb] å stille',pos:'verb'}],glosbe:[{lang:'en',v:'calm',ctx:'glosbe · 4 sources'}],deepl:[{lang:'en',v:'silent',ctx:'machine'}]},
+   inflections:{ordbokene:[{v:{'hankjønn / hunkjønn':'stille',intetkjønn:'stille','flertall / bestemt':'stille',komparativ:'stillere',superlativ:'stillest'},ctx:'adj. · ubøyelig i positiv'}],'smia-inflect':[{v:{infinitiv:'å stille',presens:'stiller',preteritum:'stilte',perfektum:'har stilt'},ctx:'as verb'}]},
+   examples:{ordbokene:[{v:'Det var helt stille i skogen.'},{v:'Hun stilte et godt spørsmål.'}],tatoeba:[{v:'Vær stille, barna sover.'}],glosbe:[]},
+   audio:{pygmalion:[{ctx:'stille',dur:.84}],dict_cc:[{ctx:'[adj] stille',dur:.7,pos:'adjektiv'},{ctx:'[verb] å stille',dur:.75,pos:'verb'}]},stt:{'smia-stt':[]}}}),
+ mk({text:'bil',pos:'substantiv',lemma:'bil',origin:'capture',infl:{'ubestemt entall':'en bil','bestemt entall':'bilen','ubestemt flertall':'biler','bestemt flertall':'bilene'},ipa:'biːl',tr:[{lang:'en',text:'car'}],prov:{pos:'dict_cc',inflections:'ordbokene',ipa:'smia-ipa',translations:'dict_cc'},upd:'1 d',
+  c:{pos:{dict_cc:[{v:'substantiv',ctx:'[noun] bil m',pos:'substantiv'}],ordbokene:[{v:'substantiv',ctx:'bil m.',pos:'substantiv'}]},
+   ipa:{'smia-ipa':[{v:'biːl',ctx:'bil'}],wiktionary:[{v:'biːl',ctx:'bil'}]},
+   translations:{dict_cc:[{lang:'en',v:'car',ctx:'[noun] bil',pos:'substantiv'},{lang:'en',v:'automobile',ctx:'[noun] bil',pos:'substantiv'},{lang:'de',v:'Auto',ctx:'[noun] bil',pos:'substantiv'},{lang:'de',v:'Wagen',ctx:'[noun] bil',pos:'substantiv'}],glosbe:[{lang:'en',v:'motor car',ctx:'glosbe · 2 sources'}],deepl:[{lang:'en',v:'car',ctx:'machine'}]},
+   inflections:{ordbokene:[{v:{'ubestemt entall':'en bil','bestemt entall':'bilen','ubestemt flertall':'biler','bestemt flertall':'bilene'},ctx:'hankjønn'}],'smia-inflect':[{v:{'ubestemt entall':'en bil','bestemt entall':'bilen','ubestemt flertall':'biler','bestemt flertall':'bilane'},ctx:'nynorsk'}]},
+   examples:{ordbokene:[{v:'Bilen står parkert utenfor huset.'}],tatoeba:[{v:'Vi tok bilen til hytta.'},{v:'Har du bil?'}],glosbe:[]},
+   audio:{pygmalion:[{ctx:'bil',dur:.58}],dict_cc:[{ctx:'[noun] bil',dur:.52,pos:'substantiv'}]},stt:{'smia-stt':[]}}}),
+ mk({text:'do',pos:'substantiv',lemma:'do',origin:'import',infl:{'ubestemt entall':'en do / et do','bestemt entall':'doen / doet','ubestemt flertall':'doer / do','bestemt flertall':'doene'},ipa:'duː',tr:[{lang:'en',text:'toilet'},{lang:'en',text:'loo'},{lang:'de',text:'Klo'}],ex:['Hvor er doen?'],rule:'kjonn',
+  audio:{from:'dict_cc',dur:.61,a:.08,b:.92,seed:5.4},prov:{inflections:'ordbokene',audio:'dict_cc'},upd:'3 d',
+  c:{pos:{dict_cc:[{v:'substantiv',ctx:'[noun] do m/n',pos:'substantiv'}],ordbokene:[]},ipa:{'smia-ipa':[{v:'duː',ctx:'do'}],wiktionary:[]},
+   translations:{dict_cc:[{lang:'en',v:'toilet',ctx:'[noun] do',pos:'substantiv'},{lang:'en',v:'loo',ctx:'[noun] do · Br.',pos:'substantiv'},{lang:'de',v:'Klo',ctx:'[noun] do',pos:'substantiv'}],glosbe:[{lang:'en',v:'bathroom',ctx:'glosbe'}],deepl:[]},
+   inflections:{ordbokene:[{v:{'ubestemt entall':'en do / et do','bestemt entall':'doen / doet','ubestemt flertall':'doer / do','bestemt flertall':'doene'},ctx:'hankjønn eller intetkjønn'}],'smia-inflect':[]},
+   examples:{ordbokene:[{v:'Hvor er doen?'},{v:'Doet er opptatt.'}],tatoeba:[],glosbe:[]},audio:{pygmalion:[{ctx:'do',dur:.5}],dict_cc:[{ctx:'[noun] do',dur:.61,pos:'substantiv'}]},stt:{'smia-stt':[{v:'do',ctx:'from current audio'}]}}})
+];
+const OTHER=[
+ mk({text:'komme seg i vei',type:'expression',pos:'verb',lemma:'komme seg i vei',ipa:'ˈkɔmə sæɪ iː ˈʋæɪ',tr:[{lang:'en',text:'get oneself going'}],ex:['Han kom seg aldri i vei.'],infl:{infinitiv:'å komme seg i vei',presens:'kommer seg i vei',preteritum:'kom seg i vei',perfektum:'har kommet seg i vei'},audio:{from:'pygmalion',dur:1.9,a:.1,b:.9,seed:1},rule:'seg',upd:'6 d',origin:'capture'}),
+ mk({text:'komme i gang',type:'expression',pos:'verb',lemma:'komme i gang',tr:[{lang:'en',text:'get started'}],status:'ready',ex:['Nå kan vi komme i gang.'],upd:'2 w'}),
+ mk({text:'bilen',pos:'substantiv',lemma:'bil',ipa:'ˈbiːlən',tr:[{lang:'de',text:'das Auto'}],ex:['Bilen står parkert utenfor huset.'],audio:{from:'dict_cc',dur:.7,a:.1,b:.9,seed:3},upd:'4 d',origin:'capture'}),
+ mk({text:'å ha lyst på',type:'expression',pos:'verb',lemma:'ha lyst på',ipa:'hɑː lʏst poː',tr:[{lang:'en',text:'to fancy'}],ex:['Jeg har lyst på is.'],status:'ready',audio:{dur:1.2},upd:'3 w',origin:'import'}),
+ mk({text:'selv om',pos:'konjunksjon',lemma:'selv om',tr:[{lang:'en',text:'even though'}],status:'ready',rule:'selvom',audio:{dur:.9},upd:'1 w'}),
+ mk({text:'uansett',pos:'adverb',lemma:'uansett',ipa:'ˈʉːɑnˌsɛt',tr:[{lang:'en',text:'regardless'}],ex:['Jeg kommer uansett.'],status:'ready',audio:{dur:.8},upd:'2 w',origin:'import'}),
+ mk({text:'hytte',pos:'substantiv',lemma:'hytte',ipa:'ˈhʏtːə',tr:[{lang:'en',text:'cabin'}],ex:['Vi drar på hytta i helgen.'],status:'ready',audio:{dur:.7},upd:'1 mo',origin:'import'}),
+ mk({text:'Toget er forsinket på grunn av signalfeil.',type:'listening',tr:[{lang:'en',text:'The train is delayed due to a signal fault.'}],audio:{dur:2.9},upd:'5 d',origin:'capture'}),
+ mk({text:'skjønt',type:'pronunciation',pos:'konjunksjon',ipa:'ʃœnt',tr:[{lang:'en',text:'although'}],status:'ready',audio:{dur:.6},upd:'2 mo'}),
+ mk({text:'Hvis jeg hadde visst det',type:'grammar',tr:[{lang:'en',text:'If I had known'}],rule:'v2',upd:'1 w'})
+];
+NOTES[0].sim=[OTHER[0].id,OTHER[1].id]; NOTES[2].sim=[OTHER[2].id];
+const ALL=()=>[...NOTES,...OTHER].filter(n=>!n.gone);
+const byId=id=>ALL().find(n=>n.id==id);
+
+/* ---------------- state ---------------- */
+const narrow=innerWidth<760;
+const S={page:'triage',vp:narrow?'phone':'desktop',tab:'word',qi:0,qpos:14,qtot:52,queue:'captures',noteId:NOTES[2].id,newId:null,
+ sheet:null,menu:null,confirm:null,pick:null,dirty:false,q:'',clipNote:false,gr:null,customPos:false,prefilling:false,
+ F:{status:'any',type:[],pos:[],origin:[],audio:'any',missing:[],within:'any'},sort:'updated',
+ settings:{theme:'auto',val:'blue',custom:'#c2185b',timing:'on_open',navsave:'autosave',qprefill:true,langs:'en, de',exn:3,exp:2},
+ prov:{pos:['dict_cc','ordbokene'],ipa:['smia-ipa','wiktionary'],translations:['dict_cc','glosbe','deepl'],inflections:['ordbokene','smia-inflect'],examples:['ordbokene','tatoeba','glosbe'],audio:['pygmalion','dict_cc','forvo','filmot'],stt:['smia-stt']},
+ off:{}};
+const NEWN=mk({text:'ta seg sammen',type:'expression',upd:'now',isNew:1,
+ c:{pos:{dict_cc:[{v:'verb',ctx:'[verb] å ta seg sammen',pos:'verb'}],ordbokene:[{v:'verb',ctx:'fast uttrykk',pos:'verb'}]},
+  ipa:{'smia-ipa':[{v:'ˈtɑː sæɪ ˈsɑmːən',ctx:'assembled from single words',asm:1},{v:'ˈtɑː',ctx:'ta'},{v:'sæɪ',ctx:'seg'},{v:'ˈsɑmːən',ctx:'sammen'}],wiktionary:[]},
+  translations:{dict_cc:[{lang:'en',v:'pull oneself together',ctx:'[verb] å ta seg sammen',pos:'verb'},{lang:'de',v:'sich zusammenreißen',ctx:'[verb] å ta seg sammen',pos:'verb'},{lang:'en',v:'get a grip',ctx:'[verb] ugs.',pos:'verb'}],glosbe:[{lang:'en',v:'compose oneself',ctx:'glosbe · 2 sources'}],deepl:[{lang:'en',v:'pull yourself together',ctx:'machine'}]},
+  inflections:{ordbokene:[{v:{infinitiv:'å ta seg sammen',presens:'tar seg sammen',preteritum:'tok seg sammen',perfektum:'har tatt seg sammen'},ctx:'sterkt verb · ta'}],'smia-inflect':[]},
+  examples:{ordbokene:[{v:'Nå må du ta deg sammen!'}],tatoeba:[{v:'Hun tok seg sammen og gikk videre.'}],glosbe:[]},
+  audio:{pygmalion:[{ctx:'ta seg sammen',dur:1.4}],dict_cc:[]},stt:{'smia-stt':[]}}});
+S.newId=NEWN.id; OTHER.push(NEWN);
+
+/* example candidates carry the provider's context, like translations do */
+{const EXC={ordbokene:'ordbokene · eksempel under oppslaget',tatoeba:'tatoeba · has an en translation',glosbe:'glosbe · parallel corpus'};
+ [...NOTES,NEWN].forEach(n=>{const E=(n.c||{}).examples||{};for(const p in E)E[p].forEach((c,i)=>{if(!c.ctx)c.ctx=p==='ordbokene'&&n.pos?`ordbokene · ${n.pos} · ${n.lemma||n.text}`:EXC[p];});});}
+const cur=()=>S.page==='triage'?NOTES[S.qi]:S.page==='new'?byId(S.newId):byId(S.noteId);
+const isPara=n=>PARA[n.pos];
+const hasA=n=>!!(n.audio&&n.audio.dur);
+
+/* completeness */
+function groups(n){
+ const w=[!!n.text,!!n.type,!!n.pos,!!n.lemma]; if(isPara(n)) w.push(PARA[n.pos].every(k=>(n.infl[k]||'').trim()));
+ const s=[hasA(n),!!n.ipa.trim()];
+ const m=[n.tr.some(t=>t.text.trim()),n.ex.some(e=>e.trim())];
+ const g=n.type==='grammar'?[!!n.rule]:[];
+ const c=a=>[a.filter(Boolean).length,a.length];
+ return {word:c(w),sound:c(s),meaning:c(m),grammar:g.length?c(g):[n.rule?1:0,0]};
+}
+const completeness=n=>{const g=groups(n);const d=g.word[0]+g.sound[0]+g.meaning[0],t=g.word[1]+g.sound[1]+g.meaning[1];return d/t;};
+function mkr(gk,n){const [d,t]=groups(n)[gk];
+ if(gk==='grammar'&&t===0) return n.rule?'<span class="mk full" title="linked"></span>':'<span class="mk opt" title="optional"></span>';
+ return d===t?'<span class="mk full" title="complete"></span>':`<span class="mk" title="missing something">${d}/${t}</span>`;}
+
+/* candidates */
+function cands(n,kind){const src=(n.c||{})[kind]||{};return S.prov[kind].filter(p=>!S.off[kind+':'+p]&&!LINKP.includes(p)).map(p=>({p,list:src[p]||[]}));}
+function ccount(n,kind){return cands(n,kind).reduce((a,x)=>a+x.list.length,0);}
+function ordered(n,list){ // part of speech orders, never filters
+ if(!n.pos) return list;
+ return [...list.filter(c=>c.pos===n.pos),...list.filter(c=>c.pos!==n.pos)];
+}
+
+/* ---------------- render helpers ---------------- */
+const sgb=(kind,n)=>{const c=ccount(n,kind);return `<button class="sg" data-act="sheet" data-kind="${kind}" aria-label="Suggest ${KINDS[kind]}" title="Suggest ${KINDS[kind].toLowerCase()}">${ic('spark')}${c?`<b>${c}</b>`:''}</button>`;};
+const prov=(n,k)=>n.prov[k]?`<span class="prov" title="prefilled by ${n.prov[k]}">${n.prov[k]}</span>`:'';
+const lab=(txt,n,kind,forId,extra='')=>`<div class="fl"><label ${forId?`for="${forId}"`:''}>${txt}</label>${kind?prov(n,kind):''}${extra}<span class="grow"></span>${kind?sgb(kind,n):''}</div>`;
+const pickBtn=(k,label,cls,extra='')=>`<button class="${cls}" data-act="pick" data-pick="${k}" ${extra} aria-haspopup="listbox">${label}</button>`;
+
+function secWord(n){
+ const p=isPara(n), custom=n.pos&&!POS.includes(n.pos);
+ return `
+ <div class="f">${lab('Part of speech',n,'pos')}
+  ${S.customPos||custom?`<input class="in" id="f_posc" data-f="posc" value="${esc(custom?n.pos:'')}" placeholder="custom part of speech" aria-label="Custom part of speech">`:pickBtn('pos',`<span>${n.pos?esc(n.pos):'—'}</span>${ic('caret')}`,'selbtn'+(n.pos?'':' none'))}</div>
+ <div class="f">${lab('Lemma',n,null,'f_lemma')}<input class="in" id="f_lemma" data-f="lemma" value="${esc(n.lemma)}" placeholder="dictionary form"></div>
+ <div class="f">${lab('Inflections',n,p?'inflections':null)}
+  ${p?`<div class="para">${PARA[n.pos].map((k,i)=>`<div class="f"><span class="k">${k}</span><input class="in" id="f_inf${i}" aria-label="${k}" data-f="infl" data-k="${esc(k)}" value="${esc(n.infl[k]||'')}"></div>`).join('')}</div>`
+   :`<div class="nopara">${n.pos?`No paradigm for ${esc(n.pos)}`:'Choose a part of speech to see its paradigm'}</div>`}</div>`;
+}
+function wave(a){
+ const N=64,W=640,H=56; let s='';
+ for(let i=0;i<N;i++){const env=Math.pow(Math.sin(Math.PI*(i+.5)/N),.55);
+  const h=Math.max(3,(.25+.75*Math.abs(Math.sin(i*.43+a.seed)*Math.cos(i*.17+a.seed*1.7)))*env*(H-8));
+  const x=i*(W/N)+2,f=(i+.5)/N,inS=f>=a.a&&f<=a.b;
+  s+=`<rect x="${x.toFixed(1)}" y="${((H-h)/2).toFixed(1)}" width="5" height="${h.toFixed(1)}" rx="2" fill="${inS?'var(--accent)':'var(--wave)'}"/>`;}
+ const ax=a.a*W,bx=a.b*W;
+ return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Waveform with selection">
+ <rect x="${ax}" y="0" width="${bx-ax}" height="${H}" fill="var(--accent-soft)"/>${s}
+ <rect x="${ax-1}" y="0" width="2" height="${H}" fill="var(--accent)"/><rect x="${bx-1}" y="0" width="2" height="${H}" fill="var(--accent)"/>
+ <rect id="phd" x="-10" y="0" width="2" height="${H}" fill="var(--ink)"/></svg>`;
+}
+const ms=a=>`${Math.round(a.a*a.dur*1000)}–${Math.round(a.b*a.dur*1000)} ms`;
+function secSound(n){
+ const a=hasA(n)?Object.assign(n.audio,{a:n.audio.a??.1,b:n.audio.b??.9,seed:n.audio.seed??3,from:n.audio.from||'stored'}):null;
+ return `
+ <div class="f">${lab('Audio',n,'audio')}
+  ${a?`<div class="player"><button class="play" data-act="play" aria-label="Play selection">${ic('play')}</button><div class="wv" id="wv">${wave(a)}</div></div>
+   <div class="arange"><span id="arng">${ms(a)}</span><span>of ${a.dur.toFixed(2)} s</span><span>· ${esc(a.from)}</span></div>`
+   :`<div class="noaudio">${ic('snd')} No audio yet</div>`}
+  <div class="aacts"><button class="lnk" data-act="clip">${ic('clip')} Use URL from clipboard</button><button class="lnk" data-act="upload">${ic('up')} Upload file</button></div>
+  ${S.clipNote?'<span class="cap">mockup only: clipboard read is simulated</span>':''}
+ </div>
+ <div class="f">${lab('Pronunciation · IPA',n,'ipa','f_ipa')}<input class="in ipa" id="f_ipa" data-f="ipa" value="${esc(n.ipa)}" placeholder="/ … /" spellcheck="false"></div>`;
+}
+function secMeaning(n){
+ return `
+ <div class="f">${lab('Translations',n,'translations')}
+  <div class="rows">${n.tr.map((t,i)=>`<div class="row">${pickBtn('trl:'+i,esc(t.lang),'lang','aria-label="Language '+esc(t.lang)+'"')}<input class="in" data-f="trt" data-i="${i}" value="${esc(t.text)}" aria-label="Translation"><button class="x" data-act="trdel" data-i="${i}" aria-label="Remove translation">${ic('x')}</button></div>`).join('')||'<div class="empty">No translations</div>'}</div>
+  <button class="add" data-act="tradd">+ Add translation</button></div>
+ <div class="f ex">${lab('Examples',n,'examples')}
+  <div class="rows">${n.ex.map((e,i)=>`<div class="row"><textarea class="in" rows="1" data-f="ex" data-i="${i}" aria-label="Example ${i+1}">${esc(e)}</textarea><button class="x" data-act="exdel" data-i="${i}" aria-label="Remove example">${ic('x')}</button></div>`).join('')||'<div class="empty">No examples</div>'}</div>
+  <button class="add" data-act="exadd">+ Add example</button></div>`;
+}
+function ruleBtn(n){const r=RULES.find(x=>x.id===n.rule);return pickBtn('rule',`<span>${r?esc(r.t):'No rule linked'}</span>${ic('caret')}`,'selbtn'+(r?'':' none'));}
+function secGrammar(n){
+ const r=RULES.find(x=>x.id===n.rule);
+ return `<div class="f"><div class="fl"><label>Grammar rule</label>${n.type==='grammar'?'':'<span class="opt-tag">optional</span>'}</div>${ruleBtn(n)}
+ ${r?`<div class="rule">${r.b}</div><button class="add" data-act="openrule" data-v="${r.id}">Open rule</button>`:''}</div>`;
+}
+
+function headBelt(){
+ const q=QUEUES.find(x=>x[0]===S.queue);
+ return `<div class="belt">${pickBtn('queue',`${esc(q[1])} ${ic('caret')}`,'qbtn')}
+  <span class="pos"><b>${S.qpos}</b> / ${S.qtot}</span></div><div class="track"><span style="width:${(S.qpos/S.qtot*100).toFixed(1)}%"></span></div>`;
+}
+const typePill=n=>pickBtn('type',`${esc(n.type)} ${ic('caret')}`,'tpill','title="Type"');
+const prefillBtn=()=>`<button class="pfb ${S.prefilling?'spin':''}" data-act="prefill" aria-label="Prefill" title="Prefill: fill every empty field from the first provider">${ic('spark')}${S.vp==='phone'?'':'Prefill'}${S.vp==='desktop'&&S.page==='triage'?' <kbd>L</kbd>':''}</button>`;
+
+function metaBits(n,ctx){
+ const bits=[];
+ if(ctx==='new') bits.push('New note'); else bits.push(`<span class="st ${n.status}">${n.status}</span>`);
+ if(n.pos) bits.push(esc(n.pos));
+ if(n.copyOf) bits.push('copy of '+esc(n.copyOf));
+ return bits.join('<span class="dot"></span>');
+}
+function editor(ctx){
+ const n=cur(), desk=S.vp==='desktop', sim=n.sim.map(byId).filter(Boolean);
+ const hwIn=`<textarea class="hw" id="f_text" data-f="text" rows="1" placeholder="Norwegian text" aria-label="Text" spellcheck="false">${esc(n.text)}</textarea>${sgb('stt',n)}`;
+ if(!desk){
+  const chip=sim.length?`<button class="chip" data-act="similar">${ic('merge','s')} ${sim.length} similar</button>`:'';
+  const T=[['word','Word'],['sound','Sound'],['meaning','Meaning'],['grammar','Grammar']];
+  const body={word:secWord,sound:secSound,meaning:secMeaning,grammar:secGrammar}[S.tab](n);
+  return `<div class="wrap">${ctx==='triage'?headBelt():''}
+   <div class="eh"><div class="meta">${typePill(n)}${metaBits(n,ctx)}${chip}</div>
+   <div class="hwrow">${hwIn}</div></div></div>
+   <div class="tabs wrap" role="tablist">${T.map(([k,l])=>`<button role="tab" class="${k==='grammar'&&n.type!=='grammar'?'opt':''}" aria-selected="${S.tab===k}" data-act="tab" data-v="${k}">${l}<span data-mk="${k}">${mkr(k,n)}</span></button>`).join('')}</div>
+   <div class="wrap"><div class="pane" role="tabpanel">${body}</div></div>`;
+ }
+ const r=RULES.find(x=>x.id===n.rule);
+ return `<div class="wrap">${ctx==='triage'?headBelt():''}
+  <div class="dmeta"><div class="meta">${metaBits(n,ctx)}</div>
+   <div class="simline">${sim.length?`Similar ${sim.map(s=>`<button class="nm" data-act="similar" data-v="${s.id}">${esc(s.text)}</button>`).join('<span class="dotsep"></span>')} <button class="lnk" data-act="similar" style="margin-left:6px">${ic('merge')} Review &amp; merge</button>`:'<span style="color:var(--faint)">No similar notes</span>'}</div></div>
+  <div class="hwrow">${hwIn}${typePill(n)}</div>
+  <div class="zones">
+   <section class="zone"><div class="zh">Word <span data-mk="word">${mkr('word',n)}</span></div>${secWord(n)}</section>
+   <section class="zone"><div class="zh">Sound <span data-mk="sound">${mkr('sound',n)}</span></div>${secSound(n)}</section>
+   <section class="zone"><div class="zh">Meaning <span data-mk="meaning">${mkr('meaning',n)}</span></div>${secMeaning(n)}</section>
+  </div>
+  <div class="gline"><span class="zh">Grammar <span data-mk="grammar">${mkr('grammar',n)}</span></span>${n.type==='grammar'?'':'<span class="opt-tag">optional</span>'}${ruleBtn(n)}${r?`<button class="add" style="padding:0" data-act="openrule" data-v="${r.id}">Open rule</button>`:''}</div>
+  ${r?`<div class="gbody"><div class="rule">${r.b}</div></div>`:''}
+ </div>`;
+}
+
+/* bars */
+function bar(ctx){
+ const d=S.vp==='desktop', n=cur();
+ if(ctx==='triage') return `<div class="bar"><div class="bari">
+  <button class="ib del" data-act="t-del" aria-label="Delete">${ic('trash')}${d?'Delete <kbd>D</kbd>':''}</button>
+  ${d?`<button class="ib" data-act="t-skip" aria-label="Skip">${ic('skip')}Skip <kbd>S</kbd></button>`:''}
+  <button class="ib" data-act="t-prev" aria-label="Previous">${ic('prev')}${d?'Previous <kbd>T</kbd>':''}</button>
+  ${d?'<span class="sp"></span>':''}
+  <button class="ib" data-act="menu" aria-label="More actions">${ic('more')}</button>
+  ${prefillBtn()}
+  <button class="pri" data-act="t-ready">Ready &amp; next <kbd>R</kbd></button></div></div>`;
+ if(ctx==='note') return `<div class="bar"><div class="bari">
+  <button class="ib" data-act="go" data-v="notes" aria-label="Back to notes">${ic('back')}${d?'Notes':''}</button>
+  <div class="stseg" role="group" aria-label="Status"><button data-act="status" data-v="draft" aria-pressed="${n.status==='draft'}">Draft</button><button data-act="status" data-v="ready" aria-pressed="${n.status==='ready'}">Ready</button></div>
+  ${d?`<button class="ib" data-act="dup" aria-label="Duplicate note">${ic('dup')}Duplicate</button>`:''}
+  ${d?'<span class="sp"></span>':''}
+  <button class="ib" data-act="menu" aria-label="More actions">${ic('more')}</button>
+  ${prefillBtn()}
+  <button class="pri ${S.dirty?'':'clean'}" data-act="save" id="savebtn">${S.dirty?'<span class="dirty"></span>Save':'Saved'}</button></div></div>`;
+ return `<div class="bar"><div class="bari">${prefillBtn()}${d?'<span class="sp"></span>':''}
+  <button class="sec" data-act="new-save" data-v="draft">Save draft</button>
+  <button class="pri" data-act="new-save" data-v="ready">Save as ready</button></div></div>`;
+}
+function pop(){
+ if(S.confirm) return `<div class="pop" role="dialog"><div class="q">Delete “${esc(cur().text)}”?<small>The note and its audio are removed. This cannot be undone.</small></div><div class="two"><button data-act="cancel">Cancel</button><button class="danger" data-act="del-yes">Delete</button></div></div>`;
+ if(S.menu==='triage') return `<div class="pop" role="menu">${S.vp==='phone'?'<button data-act="t-skip">Skip<span class="sp"></span><kbd>S</kbd></button>':''}<button data-act="tdup">Duplicate note</button><button data-act="t-back">Send to back<span class="sp"></span><kbd>E</kbd></button><button data-act="t-save">Save<span class="sp"></span><kbd>M</kbd></button></div>`;
+ if(S.menu==='note') return `<div class="pop" role="menu"><button data-act="dup">Duplicate note</button><button class="danger" data-act="n-del">Delete note</button></div>`;
+ return '';
+}
+
+/* ---------------- custom picker menus ---------------- */
+const FDEF={
+ status:{l:'Status',single:1,o:[['any','Any'],['draft','Draft'],['ready','Ready']]},
+ type:{l:'Type',o:TYPES.map(t=>[t,t])},
+ pos:{l:'Part of speech',o:POS.map(t=>[t,t])},
+ origin:{l:'Origin',o:[['manual','Manual'],['capture','Capture'],['import','Import']]},
+ audio:{l:'Audio',single:1,o:[['any','Any'],['has','Has audio'],['none','No audio']]},
+ missing:{l:'Missing',o:[['ipa','No IPA'],['tr','No translation'],['ex','No examples'],['lemma','No lemma']]},
+ within:{l:'Updated',single:1,o:[['any','Any time'],['today','Today'],['week','This week'],['month','This month']]}
+};
+const SORTS=[['updated','Recently updated'],['created','Recently created'],['az','Text A–Z'],['complete','Least complete first']];
+function pickDef(k){
+ const n=cur();
+ if(k==='pos') return {h:'Part of speech',o:[['','—'],...POS.map(t=>[t,t]),['__c','custom…']],get:()=>n.pos,set:v=>{if(v==='__c'){S.customPos=true;return;}n.pos=v;S.customPos=false;delete n.prov.pos;dirty();}};
+ if(k==='type') return {h:'Type',o:TYPES.map(t=>[t,t]),get:()=>n.type,set:v=>{n.type=v;dirty();}};
+ if(k.startsWith('trl:')){const i=+k.slice(4);return {h:'Language',o:LANGS.map(l=>[l,l]),get:()=>n.tr[i].lang,set:v=>{n.tr[i].lang=v;dirty();}};}
+ if(k==='rule') return {h:'Grammar rule',o:[['','No rule linked'],...RULES.map(r=>[r.id,r.t])],get:()=>n.rule,set:v=>{n.rule=v;dirty();}};
+ if(k==='queue') return {h:'Queue',o:QUEUES.map(q=>[q[0],`${q[1]} · ${q[2]}`]),get:()=>S.queue,set:v=>{S.queue=v;S.qtot=QUEUES.find(q=>q[0]===v)[2];S.qpos=1;S.qi=0;S.tab='word';toast('Queue: '+QUEUES.find(q=>q[0]===v)[1]);}};
+ if(k==='sort') return {h:'Sort by',o:SORTS,get:()=>S.sort,set:v=>{S.sort=v;}};
+ if(k.startsWith('f:')){const f=k.slice(2),D=FDEF[f];return {h:D.l,o:D.o,multi:!D.single,get:()=>S.F[f],set:v=>fToggle(f,v)};}
+}
+function menuHtml(){
+ if(!S.pick) return '';
+ const D=pickDef(S.pick.k),val=D.get();
+ const on=v=>D.multi?val.includes(v):val===v;
+ return `<div class="menu ${S.pick.up?'up':''}" role="listbox" style="left:${S.pick.x}px;top:${S.pick.y}px">${D.h?`<div class="mh">${D.h}</div>`:''}${D.o.map(([v,l])=>`<button class="mi" role="option" data-act="pickv" data-v="${esc(v)}" aria-checked="${on(v)}"><span class="ck">${on(v)?ic('check','s'):''}</span>${esc(l)}</button>`).join('')}</div>`;
+}
+function openPick(btn){
+ const r=btn.getBoundingClientRect(),d=dev.getBoundingClientRect();
+ const x=Math.max(8,Math.min(r.left-d.left,d.width-232));
+ const below=d.bottom-r.bottom, up=below<260&&(r.top-d.top)>below;
+ S.pick={k:btn.dataset.pick,x,y:up?r.top-d.top-4:r.bottom-d.top+4,up};
+}
+
+/* ---------------- sheets ---------------- */
+function sheetShell(label,title,inner,foot=''){
+ const a=S.sheet.anim?'anim':'';
+ return `<div class="sheetwrap ${a}"><div class="scrim" data-act="close"></div><div class="sheet" role="dialog" aria-label="${esc(label)}">
+  <div class="grab"></div><div class="sh"><h3>${title}</h3><span class="sp"></span><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div>${inner}${foot}</div></div>`;
+}
+function sheet(){
+ if(!S.sheet) return '';
+ const k=S.sheet.kind;
+ if(k==='filters') return filterSheet();
+ const n=cur();
+ if(k==='similar') return simSheet(n);
+ const q=S.sheet.q, pq=S.sheet.pq, po=S.sheet.pqOpen;
+ let body='';
+ cands(n,k).forEach(({p,list},pi)=>{
+  const over=pq[p]!==undefined&&pq[p]!==q, pqv=over?pq[p]:q;
+  body+=`<div class="prv"><div class="prvh"><span class="n">${pi+1}</span>${p}
+   <button class="pqb ${over?'over':''}" data-act="pqedit" data-p="${p}" title="Query for ${p} only">${over?'“'+esc(pqv)+'”':ic('pen','s')+' query'}</button>
+   <span class="sp"></span><span class="c">${list.length||'no'} result${list.length===1?'':'s'}</span></div>`;
+  if(po[p]) body+=`<div class="pqrow"><input class="in" data-f="pq" data-p="${p}" value="${esc(pqv)}" aria-label="Query for ${p}" spellcheck="false"><button class="ib" data-act="pqreset" data-p="${p}" title="Back to the shared query">Reset</button><button class="ib ${S.sheet.pspin===p?'spin':''}" data-act="prerun" data-p="${p}" aria-label="Run ${p} again">${ic('rerun')}</button></div>`;
+  if(!list.length) body+=`<div class="none">Nothing for “${esc(pqv)}”</div>`;
+  const L=(k==='translations'||k==='audio'||k==='pos')?ordered(n,list):list;
+  L.forEach(c=>body+=candRow(n,k,p,c,list.indexOf(c)));
+  body+='</div>';
+ });
+ const off=S.prov[k].filter(p=>S.off[k+':'+p]);
+ if(k==='audio'){
+  const links=S.prov.audio.filter(p=>LINKP.includes(p));
+  body+=`<div class="ext"><span class="t">Open elsewhere</span>${links.map(p=>`<a href="${p==='forvo'?'https://forvo.com/search/'+encodeURIComponent(q)+'/no/':'https://filmot.com/search/'+encodeURIComponent(q)+'/1?lang=no'}" target="_blank" rel="noopener">${p}<span class="sp"></span>${ic('ext')}</a>`).join('')}</div>
+   <div class="aacts"><button class="lnk" data-act="clip">${ic('clip')} Use URL from clipboard</button><button class="lnk" data-act="upload">${ic('up')} Upload file</button></div>`;
+ }
+ body+=`<div class="shf">Order follows Settings · <button data-act="go" data-v="settings">Provider order</button>${off.length?` · ${off.length} switched off`:''}</div>`;
+ return sheetShell(KINDS[k]+' suggestions',KINDS[k],`<div class="shq"><input class="in" id="shq" data-f="q" value="${esc(q)}" aria-label="Shared query" spellcheck="false"><button class="ib ${S.sheet.spin?'spin':''}" data-act="rerun" aria-label="Run all providers again">${ic('rerun')}</button></div><div class="shb">${body}</div>`);
+}
+function used(n,k,c){
+ if(k==='translations') return n.tr.some(t=>t.text===c.v&&t.lang===c.lang);
+ if(k==='examples') return n.ex.includes(c.v);
+ if(k==='pos') return n.pos===c.v;
+ if(k==='ipa') return c.asm?n.ipa===c.v:(' '+n.ipa+' ').includes(' '+c.v+' ');
+ if(k==='inflections') return Object.keys(c.v).every(x=>n.infl[x]===c.v[x]);
+ if(k==='stt') return n.text===c.v;
+ if(k==='audio') return hasA(n)&&n.audio.from===c.prov&&n.audio.dur===c.dur;
+ return false;
+}
+function candRow(n,k,p,c,i){
+ c.prov=p; const u=used(n,k,c);
+ const pm=(n.pos&&c.pos===n.pos&&(k==='translations'||k==='audio'))?`<span class="pm" title="matches ${n.pos}">${POSAB[n.pos]||n.pos}</span>`:'';
+ const btn=`<button class="use ${u?'done':''}" data-act="use" data-p="${p}" data-i="${i}">${u?'Used':(k==='ipa'&&c.asm?'Replace':'Use')}</button>`;
+ if(k==='inflections') return `<div class="cd inf"><div class="v"><table class="mt">${Object.entries(c.v).map(([a,b])=>`<tr><th>${esc(a)}</th><td>${esc(b)}</td></tr>`).join('')}</table>${c.ctx?`<small>${esc(c.ctx)}</small>`:''}</div>${btn}</div>`;
+ if(k==='audio') return `<div class="cd"><button class="pl" data-act="cplay" aria-label="Play">${ic('play')}</button><div class="v"><b>${esc(c.ctx||p)}</b>${pm}<small>${c.dur.toFixed(2)} s</small></div>${btn}</div>`;
+ const v=k==='ipa'?`<b class="ipa">${esc(c.v)}</b>`:`<b>${esc(c.v)}</b>`;
+ const lead=k==='translations'?`<span class="lg">${c.lang}</span>`:'';
+ return `<div class="cd ${c.asm?'asm':''}">${lead}<div class="v">${v}${pm}${c.ctx?`<small>${esc(c.ctx)}</small>`:''}</div>${btn}</div>`;
+}
+const TAKES=[['text','Text'],['lemma','Lemma'],['pos','Part of speech'],['infl','Inflections'],['audio','Audio'],['ipa','IPA'],['tr','Translations'],['ex','Examples']];
+function tval(o,k){if(k==='tr')return o.tr.map(t=>t.lang+' '+t.text).join(', ');if(k==='ex')return o.ex.join(' · ');if(k==='infl')return Object.values(o.infl).join(' · ');if(k==='audio')return hasA(o)?(o.audio.from||'audio')+' · '+o.audio.dur.toFixed(2)+' s':'';if(k==='ipa')return o.ipa?'/'+o.ipa+'/':'';return o[k]||'';}
+function simSheet(n){
+ const sim=n.sim.map(byId).filter(Boolean), sh=S.sheet;
+ const body=sim.map(o=>{
+  const open=sh.open==o.id, tk=sh.take||{}, into=sh.dir!=='out';
+  const from=into?o:n, keep=into?n:o;
+  const cnt=TAKES.filter(([k])=>tk[k]&&tval(from,k)).length;
+  return `<div class="sim"><div class="simt"><b>${esc(o.text)}</b><small><span class="st ${o.status}">${o.status}</span> · ${o.type}${o.pos?' · '+o.pos:''}</small></div>
+  <div class="sima"><button class="lnk" data-act="simopen" data-v="${o.id}">${ic('ext')} Open</button><button class="lnk" data-act="mergeopen" data-v="${o.id}" aria-expanded="${open}">${ic('merge')} ${open?'Hide merge':'Merge…'}</button></div>
+  ${open?`<div class="dir" role="group" aria-label="Merge direction"><button data-act="mdir" data-v="in" aria-pressed="${into}">Into this note</button><button data-act="mdir" data-v="out" aria-pressed="${!into}">This note into “${esc(o.text)}”</button></div>
+   <div class="dirnote">${into?`<b>${esc(n.text)}</b> survives. Take from <b>${esc(o.text)}</b>, which is then deleted.`:`<b>${esc(o.text)}</b> survives. Take from <b>${esc(n.text)}</b> (this note), which is then deleted.`}</div>
+   <div class="takes">${TAKES.map(([k,l])=>{const v=tval(from,k),on=!!tk[k]&&!!v;
+    return `<div class="take ${v?'':'dis'}"><span class="k">${l}</span>${k==='audio'&&v?`<button class="pl" data-act="cplay" aria-label="Play ${esc(from.text)} audio">${ic('play')}</button>`:''}<span class="v ${k==='ipa'?'ipa':''}" ${v?`data-act="take" data-v="${k}"`:''}>${v?esc(v):'<span style="color:var(--faint)">empty</span>'}</span><button class="tg" ${v?`data-act="take" data-v="${k}"`:'disabled'} aria-pressed="${on}" aria-label="Take ${l}"></button></div>`;}).join('')}
+   <button class="pri mergebtn" data-act="merge" data-v="${o.id}">Merge ${cnt} field${cnt===1?'':'s'} · keep “${esc(keep.text)}”</button></div>`:''}</div>`;}).join('');
+ return sheetShell('Similar notes','Similar notes',`<div class="shb">${body||'<div class="none">No similar notes</div>'}<div class="shf">Taking IPA replaces the survivor's transcription. Translations and examples are added.</div></div>`);
+}
+function filterSheet(){
+ const L=filtered();
+ const sec=(f)=>{const D=FDEF[f];return `<div class="fsec"><span class="lb">${D.l}</span><div class="chips">${D.o.map(([v,l])=>{const on=D.single?S.F[f]===v:S.F[f].includes(v);return `<button class="fc" data-act="fset" data-k="${f}" data-v="${v}" aria-pressed="${on}">${l}</button>`;}).join('')}</div></div>`;};
+ const inner=`<div class="shb">${Object.keys(FDEF).map(sec).join('')}
+  <div class="fsec"><span class="lb">Sort by</span><div class="chips">${SORTS.map(([v,l])=>`<button class="fc" data-act="sortset" data-v="${v}" aria-pressed="${S.sort===v}">${l}</button>`).join('')}</div></div></div>`;
+ return sheetShell('Filters','Filters',inner,`<div class="shfoot"><button class="sec" data-act="freset">Reset</button><button class="pri" data-act="close">Show ${L.length} note${L.length===1?'':'s'}</button></div>`);
+}
+
+/* ---------------- notes list ---------------- */
+function fToggle(f,v){const D=FDEF[f];if(D.single)S.F[f]=(S.F[f]===v&&v!=='any')?'any':v;else{const a=S.F[f];const i=a.indexOf(v);i<0?a.push(v):a.splice(i,1);}}
+function filtered(){
+ const F=S.F,q=S.q.toLowerCase();
+ const W={today:1440,week:10080,month:43200};
+ const miss={ipa:n=>!n.ipa,tr:n=>!n.tr.length,ex:n=>!n.ex.length,lemma:n=>!n.lemma};
+ let L=ALL().filter(n=>!n.isNew).filter(n=>
+  (F.status==='any'||n.status===F.status)&&(!F.type.length||F.type.includes(n.type))&&(!F.pos.length||F.pos.includes(n.pos))&&
+  (!F.origin.length||F.origin.includes(n.origin))&&(F.audio==='any'||(F.audio==='has')===hasA(n))&&
+  F.missing.every(m=>miss[m](n))&&(F.within==='any'||n.updMin<=W[F.within])&&
+  (!q||n.text.toLowerCase().includes(q)||n.tr.some(t=>t.text.toLowerCase().includes(q))));
+ const cmp={updated:(a,b)=>a.updMin-b.updMin,created:(a,b)=>a.created-b.created,az:(a,b)=>a.text.localeCompare(b.text,'nb'),complete:(a,b)=>completeness(a)-completeness(b)}[S.sort];
+ return L.sort(cmp);
+}
+function activeChips(){
+ const out=[];
+ for(const f in FDEF){const D=FDEF[f];
+  if(D.single){if(S.F[f]!=='any')out.push([f,S.F[f],(f==='status'?'':'')+D.o.find(o=>o[0]===S.F[f])[1].toLowerCase()]);}
+  else S.F[f].forEach(v=>out.push([f,v,D.o.find(o=>o[0]===v)[1].toLowerCase()]));}
+ return out;
+}
+function notesPage(){
+ const d=S.vp==='desktop', L=filtered(), A=activeChips();
+ const sortL=SORTS.find(s=>s[0]===S.sort)[1];
+ const chips=A.length?`<div class="achips">${A.map(([f,v,l])=>`<button class="ac" data-act="frm" data-k="${f}" data-v="${v}" aria-label="Remove filter ${esc(l)}">${esc(l)} ${ic('x')}</button>`).join('')}<button class="clr" data-act="freset">Clear all</button></div>`:'';
+ const sub=n=>[n.type,n.pos,n.tr[0]&&n.tr[0].text,n.upd].filter(Boolean).map(esc).join(' · ');
+ const rows=!L.length?`<div class="nores">No notes match these filters.</div>`:d?`<div class="tblw"><table class="tbl"><thead><tr><th>Text</th><th>Type</th><th>Part of speech</th><th>Translation</th><th>Origin</th><th>Status</th><th>Audio</th><th>Complete</th><th>Updated</th></tr></thead><tbody>
+  ${L.map(n=>`<tr data-act="open" data-v="${n.id}" tabindex="0"><td>${esc(n.text)}</td><td>${n.type}</td><td>${n.pos||'<span style="color:var(--faint)">—</span>'}</td><td>${esc(n.tr[0]?n.tr[0].text:'')}</td><td>${n.origin}</td><td><span class="st ${n.status}">${n.status}</span></td><td style="color:var(--faint)">${hasA(n)?ic('snd','s'):'—'}</td><td><span class="cbar"><i style="width:${Math.round(completeness(n)*100)}%"></i></span></td><td class="num">${n.upd}</td></tr>`).join('')}</tbody></table></div>`
+  :`<div class="nlist">${L.map(n=>`<button class="nrow" data-act="open" data-v="${n.id}"><div class="ntop"><span class="nhw">${esc(n.text)}</span><span class="ngl"><span class="${hasA(n)?'':'off'}" title="${hasA(n)?'has audio':'no audio'}">${ic('snd')}</span><span class="sdot ${n.status}" title="${n.status}"></span></span></div><div class="nsub">${sub(n)}</div></button>`).join('')}</div>`;
+ const fb=d?`<div class="fbar">${Object.keys(FDEF).map(f=>{const D=FDEF[f],c=D.single?(S.F[f]!=='any'?1:0):S.F[f].length;return pickBtn('f:'+f,`${D.l}${c?` <b>${D.single?D.o.find(o=>o[0]===S.F[f])[1]:c}</b>`:''} ${ic('caret')}`,'fbx'+(c?' on':''));}).join('')}<span class="sp"></span>${pickBtn('sort',`${ic('sort')} ${sortL} ${ic('caret')}`,'fbx')}</div>`:'';
+ return `<div class="wrap"><div class="ph"><h1>Notes</h1><span class="n">${L.length} of ${ALL().filter(n=>!n.isNew).length}</span><span class="sp"></span>
+  ${d?`<button class="btn-s" data-act="triage-these">Triage these</button>`:''}<button class="btn-p" data-act="go" data-v="new">${ic('plus')} New note</button></div>
+  <div class="srch"><label class="box">${ic('search')}<input class="in" id="srch" data-f="search" placeholder="Search text or translation" value="${esc(S.q)}"></label>
+   ${d?'':`<button class="fbtn" data-act="fsheet">${ic('filter')} Filters ${A.length?`<b>${A.length}</b>`:''}</button>`}</div>
+  ${fb}${chips}
+  ${d?'':`<div class="lmeta"><span>${L.length} note${L.length===1?'':'s'}</span><span class="sp"></span>${pickBtn('sort',`${ic('sort')} ${sortL} ${ic('caret')}`,'sortb')}</div>`}
+  ${rows}
+  ${!d&&A.length?`<div style="padding-top:12px"><button class="btn-s" data-act="triage-these">Triage these ${L.length}</button></div>`:''}
+  <div class="pager"><button data-act="toast" data-v="First page" aria-label="Previous page">‹</button><span class="pg">1</span><button data-act="toast" data-v="Last page" aria-label="Next page">›</button><span>1–${L.length} of ${L.length}</span></div></div>`;
+}
+function settingsPage(){
+ const s=S.settings;
+ const seg=(key,opts)=>`<div class="seg">${opts.map(([v,l])=>`<button data-act="set" data-k="${key}" data-v="${v}" aria-pressed="${s[key]===v}">${l}</button>`).join('')}</div>`;
+ const step=key=>`<div class="stepper"><button data-act="step" data-k="${key}" data-v="-1" aria-label="Fewer">−</button><span>${s[key]}</span><button data-act="step" data-k="${key}" data-v="1" aria-label="More">+</button></div>`;
+ return `<div class="wrap"><div class="ph"><h1>Settings</h1></div><div class="sets">
+ <section class="sg2"><h2>Appearance</h2>
+  <div class="si"><div class="t">Theme<small>Auto follows the device</small></div>${seg('theme',[['auto','Auto'],['light','Light'],['dark','Dark']])}</div>
+  <div class="si"><div class="t">Value colour<small>the colour of everything you type</small></div><div class="swr">${[['blue','#0b5cff'],['teal','#00897b'],['violet','#7c3aed'],['orange','#d9480f']].map(([k,c])=>`<button class="sw" data-act="set" data-k="val" data-v="${k}" aria-pressed="${s.val===k}" aria-label="${k}" title="${k}" style="--c:${c}"></button>`).join('')}<label class="sw swc" title="Custom" aria-pressed="${s.val==='custom'}" style="--c:${s.custom}"><input type="color" id="s_valc" data-f="valc" value="${s.custom}" aria-label="Custom value colour"></label></div></div>
+  <div class="si"><div class="t" style="flex:1 1 100%"><small>Preview</small><span style="color:var(--val);font-size:16px">komme i vei · get going</span></div></div></section>
+ <section class="sg2"><h2>Triage prefilling</h2>
+  <div class="si"><div class="t">Run providers<small>for every empty field</small></div>${seg('timing',[['on_open','On open'],['on_demand','On Prefill']])}</div>
+  <div class="si"><div class="t">Leaving a note<small>Send to back, Skip, Previous</small></div>${seg('navsave',[['autosave','Autosave'],['manual','Manual']])}</div></section>
+ <section class="sg2"><h2>Provider order</h2><p class="hint">Drag to reorder. The first enabled provider prefills; suggestion sheets list them in this order.</p>
+  ${Object.keys(S.prov).map(k=>`<div class="pk"><div class="kh">${KINDS[k]}${k==='audio'?'<small>forvo and filmot open externally</small>':''}</div>
+   <ul class="plist" data-kind="${k}">${S.prov[k].map((p,i)=>`<li data-p="${p}" class="${S.off[k+':'+p]?'off':''}"><span class="h" tabindex="0" role="button" aria-label="Move ${p}">${ic('drag')}</span><span class="o">${i+1}</span><span class="nm">${p}</span>${LINKP.includes(p)?'<span class="lk">link</span>':''}<button class="tg" data-act="poff" data-k="${k}" data-v="${p}" aria-pressed="${!S.off[k+':'+p]}" aria-label="Enable ${p}"></button></li>`).join('')}</ul></div>`).join('')}</section>
+ <section class="sg2"><h2>Lookups</h2>
+  <div class="si"><div class="t">Query starts prefilled<small>per-provider queries start from the shared one</small></div><button class="tg" data-act="qpre" aria-pressed="${s.qprefill}" aria-label="Query starts prefilled"></button></div>
+  <div class="si"><div class="t">Translation languages</div><input class="txt-in" id="s_langs" value="${esc(s.langs)}" aria-label="Translation languages"></div></section>
+ <section class="sg2"><h2>Examples prefill</h2>
+  <div class="si"><div class="t">Sentences to prefill</div>${step('exn')}</div>
+  <div class="si"><div class="t">Providers to try</div>${step('exp')}</div></section>
+ </div></div>`;
+}
+function grammarPage(){
+ if(S.gr){const r=RULES.find(x=>x.id===S.gr), used=ALL().filter(n=>n.rule===r.id);
+  return `<div class="wrap"><button class="back" data-act="grback">${ic('back')} Grammar</button><div class="gdet" style="padding-top:10px">
+   <textarea class="ttl" id="g_t" rows="1" aria-label="Title">${esc(r.t)}</textarea>
+   <div class="f"><div class="fl"><label for="g_b">Explanation</label><span class="grow"></span><button class="pqb" data-act="gedit">${S.gedit?'Show rendered':ic('pen','s')+' Edit HTML'}</button></div>${S.gedit?`<textarea class="in htmlsrc" id="g_b" rows="8" data-f="ghtml" data-v="${r.id}">${esc(r.b)}</textarea>`:`<div class="rhtml">${r.b}</div>`}</div>
+   <div class="f"><div class="fl"><span class="lb">Used by ${used.length} note${used.length===1?'':'s'}</span></div><div class="linked">${used.map(n=>`<button class="chip" data-act="open" data-v="${n.id}">${esc(n.text)}</button>`).join('')||'<span class="nopara">No notes yet</span>'}</div></div>
+   <div style="display:flex;gap:10px;padding-top:8px"><button class="btn-s" data-act="toast" data-v="Rule deleted (mockup)" style="color:var(--danger)">Delete</button><span style="flex:1"></span><button class="btn-p" data-act="toast" data-v="Rule saved">Save rule</button></div></div></div>`;}
+ return `<div class="wrap"><div class="ph"><h1>Grammar</h1><span class="n">${RULES.length} rules</span><span class="sp"></span><button class="btn-p" data-act="toast" data-v="New rule (mockup)">${ic('plus')} New rule</button></div>
+  <div class="glist">${RULES.map(r=>{const c=ALL().filter(n=>n.rule===r.id).length;return `<button class="grow2" data-act="gr" data-v="${r.id}"><b>${esc(r.t)}</b><small>${c} note${c===1?'':'s'}</small></button>`;}).join('')}</div></div>`;
+}
+
+/* ---------------- main render ---------------- */
+const PAGES=[['triage','Triage'],['note','Note'],['new','New note'],['notes','Notes'],['settings','Settings'],['grammar','Grammar']];
+const dev=document.getElementById('device');
+function render(keepScroll){
+ document.documentElement.classList.toggle('vp-phone',S.vp==='phone');
+ document.documentElement.classList.toggle('vp-desktop',S.vp==='desktop');
+ document.getElementById('mPages').innerHTML=PAGES.map(([k,l])=>`<button data-pg="${k}" aria-pressed="${S.page===k}">${l}</button>`).join('');
+ document.querySelectorAll('#mVp button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.vp===S.vp));
+ applyLook();
+ const sc=dev.querySelector('.scroll'), st=keepScroll&&sc?sc.scrollTop:0;
+ const shb=dev.querySelector('.shb'), shst=shb?shb.scrollTop:0;
+ const ctx=['triage','note','new'].includes(S.page)?S.page:null;
+ const navAt={triage:'triage',note:'notes',new:'notes',notes:'notes',settings:'settings',grammar:'grammar'}[S.page];
+ const top=`<div class="wrap"><div class="top"><span class="wm">stabbur<i>.</i></span><nav class="nav">${[['triage','Triage'],['notes','Notes'],['grammar','Grammar'],['settings','Settings']].map(([k,l])=>`<button data-act="go" data-v="${k}" ${navAt===k?'aria-current="page"':''}>${l}</button>`).join('')}</nav></div></div>`;
+ const main=ctx?editor(ctx):S.page==='notes'?notesPage():S.page==='settings'?settingsPage():grammarPage();
+ dev.innerHTML=`<div class="scroll" id="scroll">${top}${main}</div>${ctx?bar(ctx):''}${pop()}${sheet()}${menuHtml()}<div class="toast" id="toast"></div>`;
+ if(keepScroll) dev.querySelector('.scroll').scrollTop=st;
+ const nb=dev.querySelector('.shb'); if(nb&&S.sheet&&!S.sheet.anim) nb.scrollTop=shst;
+ if(S.sheet) S.sheet.anim=false; // the open animation runs once, on first render only
+ autosize(); bindDrag(); bindWave();
+}
+function autosize(){dev.querySelectorAll('textarea.in,textarea.hw,textarea.ttl').forEach(t=>{t.style.height='auto';t.style.height=t.scrollHeight+'px';});}
+function refresh(){const n=cur();if(!n)return;dev.querySelectorAll('[data-mk]').forEach(el=>el.innerHTML=mkr(el.dataset.mk,n));}
+let tt;function toast(m){const t=dev.querySelector('#toast');if(!t)return;t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),1900);}
+function dirty(){if(S.page!=='note')return;if(!S.dirty){S.dirty=true;const b=dev.querySelector('#savebtn');if(b){b.classList.remove('clean');b.innerHTML='<span class="dirty"></span>Save';}}}
+function openSheet(o){S.sheet=Object.assign({anim:true},o);S.pick=null;}
+
+/* ---------------- actions ---------------- */
+function useCand(p,i){
+ const n=cur(),k=S.sheet.kind,c=n.c[k][p][i];
+ if(k==='pos'){n.pos=c.v;}
+ else if(k==='ipa'){n.ipa=c.asm?c.v:(n.ipa.trim()?n.ipa.trim()+' '+c.v:c.v);}
+ else if(k==='translations'){n.tr.push({lang:c.lang,text:c.v});}
+ else if(k==='examples'){n.ex.push(c.v);}
+ else if(k==='inflections'){n.infl={...n.infl,...c.v};}
+ else if(k==='audio'){n.audio={from:p,dur:c.dur,a:.1,b:.9,seed:i+p.length};}
+ else if(k==='stt'){n.text=c.v;}
+ n.prov[k]=p; dirty();
+ if(['pos','inflections','audio','stt'].includes(k)) S.sheet=null;
+ render(true); toast((k==='ipa'&&!c.asm?'Appended':'Used')+' from '+p);
+}
+function advance(d,msg){S.qi=(S.qi+d+NOTES.length)%NOTES.length;S.qpos=Math.max(1,Math.min(S.qtot,S.qpos+d));S.tab='word';S.menu=null;S.confirm=null;S.sheet=null;render();if(msg)toast(msg);}
+function prefill(){
+ const n=cur(); let f=0;
+ const first=k=>{for(const {p,list} of cands(n,k)){const L=ordered(n,list).filter(c=>!c.asm);if(L.length)return {p,c:L[0]};}return null;};
+ if(!n.pos){const r=first('pos');if(r){n.pos=r.c.v;n.prov.pos=r.p;f++;}}
+ if(isPara(n)&&!PARA[n.pos].every(k=>n.infl[k])){const r=first('inflections');if(r){n.infl={...r.c.v};n.prov.inflections=r.p;f++;}}
+ if(!n.ipa){const src=(n.c.ipa||{})['smia-ipa']||[];const asm=src.find(c=>c.asm);const r=asm?{p:'smia-ipa',c:asm}:first('ipa');if(r){n.ipa=r.c.v;n.prov.ipa=r.p;f++;}}
+ if(!n.tr.length){const r=first('translations');if(r){n.tr.push({lang:r.c.lang,text:r.c.v});n.prov.translations=r.p;f++;}}
+ if(!n.ex.length){const r=first('examples');if(r){n.ex.push(r.c.v);n.prov.examples=r.p;f++;}}
+ if(!hasA(n)){const r=first('audio');if(r){n.audio={from:r.p,dur:r.c.dur,a:.1,b:.9,seed:4};n.prov.audio=r.p;f++;}}
+ if(f)dirty();
+ S.prefilling=true;S.menu=null;render(true);
+ setTimeout(()=>{S.prefilling=false;render(true);toast(f?`Prefilled ${f} empty field${f>1?'s':''}`:'Nothing empty to prefill');},450);
+}
+let playing=null;
+function playSel(btn){
+ const n=cur(),a=n.audio;if(!a)return;
+ if(playing){cancelAnimationFrame(playing);playing=null;btn.innerHTML=ic('play');const p=dev.querySelector('#phd');if(p)p.setAttribute('x',-10);return;}
+ btn.innerHTML=ic('pause');const t0=performance.now(),len=(a.b-a.a)*a.dur*1000;
+ const step=t=>{const f=Math.min(1,(t-t0)/len),p=dev.querySelector('#phd');if(p)p.setAttribute('x',(a.a+(a.b-a.a)*f)*640-1);
+  if(f<1)playing=requestAnimationFrame(step);else{playing=null;btn.innerHTML=ic('play');if(p)p.setAttribute('x',-10);}};
+ playing=requestAnimationFrame(step);
+}
+function bindWave(){
+ const w=dev.querySelector('#wv');if(!w)return;
+ let h=null;
+ const frac=e=>{const r=w.getBoundingClientRect();return Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));};
+ const move=e=>{if(!h)return;const a=cur().audio,f=frac(e);if(h==='a')a.a=Math.min(f,a.b-.05);else a.b=Math.max(f,a.a+.05);w.innerHTML=wave(a);dev.querySelector('#arng').textContent=ms(a);dirty();};
+ w.addEventListener('pointerdown',e=>{const a=cur().audio,f=frac(e);h=Math.abs(f-a.a)<Math.abs(f-a.b)?'a':'b';w.setPointerCapture(e.pointerId);move(e);});
+ w.addEventListener('pointermove',move);
+ w.addEventListener('pointerup',()=>h=null);
+}
+function bindDrag(){
+ dev.querySelectorAll('.plist').forEach(ul=>{
+  const sync=()=>{S.prov[ul.dataset.kind]=[...ul.children].map(li=>li.dataset.p);[...ul.children].forEach((li,i)=>li.querySelector('.o').textContent=i+1);};
+  ul.querySelectorAll('.h').forEach(h=>{
+   const li=h.parentElement;
+   h.addEventListener('pointerdown',e=>{e.preventDefault();h.setPointerCapture(e.pointerId);li.classList.add('drag');
+    const mv=ev=>{const sibs=[...ul.children].filter(x=>x!==li);const after=sibs.find(s=>{const r=s.getBoundingClientRect();return ev.clientY<r.top+r.height/2;});ul.insertBefore(li,after||null);};
+    const up=()=>{li.classList.remove('drag');h.removeEventListener('pointermove',mv);h.removeEventListener('pointerup',up);sync();toast('Order saved');};
+    h.addEventListener('pointermove',mv);h.addEventListener('pointerup',up);});
+   h.addEventListener('keydown',e=>{if(e.key==='ArrowUp'&&li.previousElementSibling){ul.insertBefore(li,li.previousElementSibling);sync();h.focus();e.preventDefault();}
+    if(e.key==='ArrowDown'&&li.nextElementSibling){ul.insertBefore(li.nextElementSibling,li);sync();h.focus();e.preventDefault();}});
+  });
+ });
+}
+function go(p){S.page=p;S.sheet=null;S.menu=null;S.confirm=null;S.pick=null;S.tab='word';S.customPos=false;if(p!=='grammar')S.gr=null;if(p==='note')S.dirty=false;render();}
+function preTake(o){const n=cur(),into=S.sheet.dir!=='out',from=into?o:n,keep=into?n:o,t={};
+ TAKES.forEach(([k])=>{const mine=tval(keep,k),theirs=tval(from,k);t[k]=!!theirs&&(!mine||k==='tr'||k==='ex')&&mine!==theirs;});S.sheet.take=t;}
+function doMerge(id){
+ const o=byId(id),n=cur(),t=S.sheet.take,into=S.sheet.dir!=='out';
+ const from=into?o:n, keep=into?n:o; let c=0;
+ if(t.text&&from.text){keep.text=from.text;c++;} if(t.lemma&&from.lemma){keep.lemma=from.lemma;c++;}
+ if(t.pos&&from.pos){keep.pos=from.pos;c++;}
+ if(t.infl&&Object.keys(from.infl).length){keep.infl={...from.infl};c++;}
+ if(t.audio&&hasA(from)){keep.audio=JSON.parse(JSON.stringify(from.audio));c++;}
+ if(t.ipa&&from.ipa){keep.ipa=from.ipa;keep.prov.ipa='merge';c++;} // merge REPLACES IPA
+ if(t.tr){from.tr.forEach(x=>{if(!keep.tr.some(y=>y.text===x.text&&y.lang===x.lang))keep.tr.push({...x});});c++;}
+ if(t.ex){from.ex.forEach(x=>{if(!keep.ex.includes(x))keep.ex.push(x);});c++;}
+ from.gone=true; keep.sim=keep.sim.filter(x=>x!==from.id);
+ S.sheet=null;
+ if(into){dirty();render(true);toast(`Merged ${c} field${c===1?'':'s'} · “${from.text}” removed`);return;}
+ if(S.page==='triage'){const i=NOTES.indexOf(n);NOTES.splice(i,1);S.qtot--;S.qi=S.qi%NOTES.length;S.tab='word';render();toast(`Merged into “${keep.text}” · this note removed`);return;}
+ S.noteId=keep.id;S.page='note';S.dirty=false;render();toast(`Merged into “${keep.text}” · opened it`);
+}
+
+document.addEventListener('click',e=>{
+ const pg=e.target.closest('[data-pg]'); if(pg){go(pg.dataset.pg);return;}
+ const vp=e.target.closest('[data-vp]'); if(vp){S.vp=vp.dataset.vp;S.pick=null;render();measure();return;}
+ if(!dev.contains(e.target))return;
+ const b=e.target.closest('[data-act]');
+ if(!b){if(S.menu||S.confirm||S.pick){S.menu=S.confirm=S.pick=null;render(true);}return;}
+ const a=b.dataset.act,v=b.dataset.v,n=cur();
+ if((S.menu||S.confirm)&&!b.closest('.pop')&&!['menu','t-del','n-del'].includes(a)){S.menu=S.confirm=null;}
+ if(S.pick&&a!=='pickv'&&a!=='pick'){S.pick=null;}
+ switch(a){
+  case 'go':go(v);break;
+  case 'tab':S.tab=v;render(true);break;
+  case 'pick':{if(S.pick&&S.pick.k===b.dataset.pick){S.pick=null;}else openPick(b);render(true);break;}
+  case 'pickv':{const D=pickDef(S.pick.k);D.set(v);if(!D.multi)S.pick=null;render(true);break;}
+  case 'pos':n.pos=n.pos===v?'':v;S.customPos=false;delete n.prov.pos;dirty();render(true);break;
+  case 'poscustom':S.customPos=true;render(true);dev.querySelector('#f_posc')?.focus();break;
+  case 'sheet':openSheet({kind:b.dataset.kind,q:b.dataset.kind==='stt'?'current audio':(S.settings.qprefill?(n.lemma||n.text):''),pq:{},pqOpen:{}});render(true);break;
+  case 'close':S.sheet=null;render(true);break;
+  case 'rerun':S.sheet.spin=1;render(true);setTimeout(()=>{if(S.sheet){S.sheet.spin=0;render(true);const ov=Object.keys(S.sheet.pq).filter(p=>S.sheet.pq[p]!==S.sheet.q).length;toast(`Ran ${cands(n,S.sheet.kind).length} providers${ov?` · ${ov} with its own query`:''}`);}},650);break;
+  case 'pqedit':{const p=b.dataset.p;S.sheet.pqOpen[p]=!S.sheet.pqOpen[p];render(true);if(S.sheet.pqOpen[p])dev.querySelector(`[data-f="pq"][data-p="${p}"]`)?.focus();break;}
+  case 'pqreset':{const p=b.dataset.p;delete S.sheet.pq[p];S.sheet.pqOpen[p]=false;render(true);toast(p+' uses the shared query again');break;}
+  case 'prerun':{const p=b.dataset.p;S.sheet.pspin=p;render(true);setTimeout(()=>{if(S.sheet){S.sheet.pspin=null;render(true);toast(`Ran ${p} with “${S.sheet.pq[p]??S.sheet.q}”`);}},650);break;}
+  case 'use':useCand(b.dataset.p,+b.dataset.i);break;
+  case 'cplay':b.innerHTML=ic('pause');setTimeout(()=>{b.innerHTML=ic('play');},900);break;
+  case 'play':playSel(b);break;
+  case 'tradd':n.tr.push({lang:'en',text:''});dirty();render(true);{const A=dev.querySelectorAll('[data-f="trt"]');A[A.length-1]?.focus();}break;
+  case 'trdel':n.tr.splice(+b.dataset.i,1);dirty();render(true);break;
+  case 'exadd':n.ex.push('');dirty();render(true);{const A=dev.querySelectorAll('[data-f="ex"]');A[A.length-1]?.focus();}break;
+  case 'exdel':n.ex.splice(+b.dataset.i,1);dirty();render(true);break;
+  case 'clip':n.audio={from:'url · nrk.no/…/lyd-4471.mp3',dur:2.4,a:.2,b:.7,seed:7.3};n.prov.audio='clipboard';S.clipNote=true;dirty();S.sheet=null;render(true);toast('Captured from clipboard');break;
+  case 'upload':document.getElementById('fileIn').click();break;
+  case 'similar':openSheet({kind:'similar',open:v?+v:null,take:{},dir:'in'});if(v)preTake(byId(+v));render(true);break;
+  case 'mergeopen':if(S.sheet.open==v)S.sheet.open=null;else{S.sheet.open=+v;preTake(byId(+v));}render(true);break;
+  case 'mdir':S.sheet.dir=v;preTake(byId(S.sheet.open));render(true);break;
+  case 'take':S.sheet.take[v]=!S.sheet.take[v];render(true);break;
+  case 'merge':doMerge(+v);break;
+  case 'simopen':S.noteId=+v;go('note');toast('Opened '+byId(+v).text);break;
+  case 'menu':S.menu=S.menu?null:(S.page==='triage'?'triage':'note');S.confirm=null;render(true);break;
+  case 't-del':case 'n-del':S.menu=null;S.confirm='delete';render(true);break;
+  case 'cancel':S.confirm=null;render(true);break;
+  case 'del-yes':S.confirm=null;if(S.page==='triage'){S.qtot--;advance(0,'Deleted “'+n.text+'”');}else{n.gone=true;go('notes');toast('Deleted “'+n.text+'”');}break;
+  case 't-ready':n.status='ready';advance(1,'“'+n.text+'” is ready');break;
+  case 't-skip':advance(1,'Skipped');break;
+  case 't-prev':advance(-1,'Back to previous');break;
+  case 't-back':advance(1,'Sent to the back of the queue');break;
+  case 't-save':S.menu=null;render(true);toast('Saved');break;
+  case 'prefill':prefill();break;
+  case 'status':n.status=v;dirty();render(true);break;
+  case 'save':S.dirty=false;render(true);toast('Saved');break;
+  case 'dup':{const c=JSON.parse(JSON.stringify(n));c.id=++nid;c.status='draft';c.copyOf=n.text;c.upd='now';c.updMin=0;c.created=0;c.sim=[];c.isNew=0;OTHER.push(c);S.noteId=c.id;S.menu=null;S.dirty=false;S.page='note';render();toast('Duplicated — opened copy');break;}
+  case 'new-save':n.status=v;n.isNew=0;S.noteId=n.id;S.page='note';S.dirty=false;
+   {const nn=mk({type:'word',upd:'now',isNew:1,c:{}});OTHER.push(nn);S.newId=nn.id;} render();toast(v==='ready'?'Saved as ready':'Saved as draft');break;
+  case 'open':S.noteId=+v;go('note');break;
+  case 'fsheet':openSheet({kind:'filters'});render(true);break;
+  case 'fset':fToggle(b.dataset.k,v);render(true);break;
+  case 'sortset':S.sort=v;render(true);break;
+  case 'frm':{const f=b.dataset.k;if(FDEF[f].single)S.F[f]='any';else S.F[f]=S.F[f].filter(x=>x!==v);render(true);break;}
+  case 'freset':S.F={status:'any',type:[],pos:[],origin:[],audio:'any',missing:[],within:'any'};S.sort='updated';render(true);break;
+  case 'triage-these':S.queue='all';S.qtot=filtered().length||1;S.qpos=1;go('triage');toast('Triaging the current filter');break;
+  case 'set':S.settings[b.dataset.k]=v;applyLook();render(true);toast('Saved');break;
+  case 'step':{const k=b.dataset.k;S.settings[k]=Math.max(1,Math.min(10,S.settings[k]+ +v));render(true);break;}
+  case 'qpre':S.settings.qprefill=!S.settings.qprefill;render(true);break;
+  case 'poff':{const key=b.dataset.k+':'+v;S.off[key]=!S.off[key];render(true);break;}
+  case 'gr':S.gr=v;S.gedit=false;render();break;
+  case 'gedit':S.gedit=!S.gedit;render(true);break;
+  case 'tdup':{const c=JSON.parse(JSON.stringify(n));c.id=++nid;c.status='draft';c.copyOf=n.text;c.upd='now';c.updMin=0;c.sim=[];NOTES.splice(S.qi+1,0,c);S.qtot++;S.menu=null;render(true);toast('Duplicated — the copy is next in the queue');break;}
+  case 'grback':S.gr=null;render();break;
+  case 'openrule':S.page='grammar';S.gr=v;S.sheet=null;render();break;
+  case 'toast':toast(v);break;
+ }
+});
+document.addEventListener('input',e=>{
+ const el=e.target,f=el.dataset.f;if(!f)return;const n=cur();
+ if(f==='search'){S.q=el.value;const pos=el.selectionStart;render(true);const s=dev.querySelector('#srch');s.focus();s.setSelectionRange(pos,pos);return;}
+ if(f==='q'){S.sheet.q=el.value;return;}
+ if(f==='pq'){S.sheet.pq[el.dataset.p]=el.value;return;}
+ if(f==='valc'){S.settings.custom=el.value;S.settings.val='custom';applyLook();el.parentElement.style.setProperty('--c',el.value);dev.querySelectorAll('.sw').forEach(x=>x.setAttribute('aria-pressed',x.classList.contains('swc')));return;}
+ if(f==='ghtml'){RULES.find(r=>r.id===el.dataset.v).b=el.value;return;}
+ if(!n)return;
+ if(f==='text'){n.text=el.value.replace(/\n/g,' ');if(!CSS.supports('field-sizing','content')){el.style.height='auto';el.style.height=el.scrollHeight+'px';}} else if(f==='lemma')n.lemma=el.value; else if(f==='ipa')n.ipa=el.value;
+ else if(f==='posc'){n.pos=el.value.trim();}
+ else if(f==='infl')n.infl[el.dataset.k]=el.value;
+ else if(f==='trt')n.tr[+el.dataset.i].text=el.value;
+ else if(f==='ex'){n.ex[+el.dataset.i]=el.value;el.style.height='auto';el.style.height=el.scrollHeight+'px';}
+ dirty();refresh();
+});
+dev.addEventListener('scroll',()=>{if(S.pick){S.pick=null;dev.querySelector('.menu')?.remove();}},true);
+document.getElementById('fileIn').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const n=cur();n.audio={from:'upload · '+f.name,dur:1.8,a:.05,b:.95,seed:f.size%9};n.prov.audio='upload';S.sheet=null;dirty();render(true);toast('Uploaded '+f.name);e.target.value='';});
+document.addEventListener('keydown',e=>{
+ if(e.key==='Enter'&&e.target.classList&&e.target.classList.contains('hw')){e.preventDefault();return;}
+ if(e.key==='Escape'&&(S.sheet||S.menu||S.confirm||S.pick)){S.sheet=S.menu=S.confirm=S.pick=null;render(true);return;}
+ if(S.page!=='triage'||S.sheet||S.confirm||e.metaKey||e.ctrlKey||e.altKey)return;
+ if(/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))return;
+ const map={d:'t-del',s:'t-skip',t:'t-prev',r:'t-ready',e:'t-back',m:'t-save',l:'prefill'};
+ const act=map[e.key.toLowerCase()];if(!act)return;e.preventDefault();
+ const fake=document.createElement('button');fake.dataset.act=act;fake.hidden=true;dev.appendChild(fake);fake.click();fake.remove();
+});
+function measure(){document.documentElement.style.setProperty('--mockh',document.getElementById('mock').offsetHeight+'px');}
+addEventListener('resize',measure);
+function applyLook(){const r=document.documentElement,s=S.settings;if(s.theme==='auto')delete r.dataset.theme;else r.dataset.theme=s.theme;r.dataset.val=s.val;if(s.val==='custom')r.style.setProperty('--val',s.custom);else r.style.removeProperty('--val');}
+render();measure();
+})();
+</script>
