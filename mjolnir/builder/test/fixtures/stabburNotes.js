@@ -28,7 +28,7 @@ export function fixtureNote(overrides = {}) {
     pos: "substantiv",
     lemma: "hus",
     inflections: { article: "et", sg_indef: "hus", sg_def: "huset", pl_indef: "hus", pl_def: "husene" },
-    context_text: "Jeg bor i et hus.",
+    examples: ["Jeg bor i et hus."],
     audio_blob: `${id}-sha256`,
     audio_sel_ms: [0, 1200],
     grammar_rule_id: null,

@@ -103,6 +103,19 @@ function transcriptionHtml(note){
   return `[&ensp;${ipa} ]`
 }
 
+// projector-examples-column D1/D2: the X face of word and expression cards is
+// the note's `examples` list (stabbur's read API, stabbur-editor-redesign D6),
+// in stored order, joined by `<br>` inside the same wrapper the old
+// newline-replacement produced — so single-newline data projects
+// byte-identically. An empty or absent list is an empty X. There is
+// deliberately NO fallback to the field `examples` replaced: a stale stabbur
+// shows up as missing examples in the forecast's content diff instead of
+// silently "working".
+function examplesHtml(note){
+  const examples = Array.isArray(note.examples) ? note.examples : [];
+  return examples.length ? `<div class="left">${examples.join('<br>')}</div>` : "";
+}
+
 const PROJECTORS = {
   // D91: word/expression's occurrence set drops `N` — the word is never
   // quizzed text-first, it only ever appears on reveal. The `N` *content*
@@ -110,14 +123,14 @@ const PROJECTORS = {
   word: (note) => ({
     N: `<div class="center">${wordHeadlineHtml(note)}</div>`,
     E: translationsHtml(note),
-    X: note.context_text ? `<div class="left">${note.context_text.replaceAll('\n', '<br>')}</div>` : "",
+    X: examplesHtml(note),
     A: "N",
     occurrences: ["A", "E"],
   }),
   expression: (note) => ({
     N: `<div class="center">${note.text}</div>`,
     E: translationsHtml(note),
-    X: note.context_text ? `<div class="left">${note.context_text.replaceAll('\n', '<br>')}</div>` : "",
+    X: examplesHtml(note),
     A: "N",
     occurrences: ["A", "E"],
   }),

@@ -24,7 +24,7 @@ const NOTE_FIELDS = [
   "pos",
   "lemma",
   "inflections",
-  "context_text",
+  "examples",
   "audio_blob",
   "audio_sel_ms",
   "grammar_rule_id",
