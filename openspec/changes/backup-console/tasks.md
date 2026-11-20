@@ -10,12 +10,12 @@
       production path (real URL + deploy key) untouched.
 
 ## 2. Move the backup project onto its own compose file
-- [ ] 2.1 Create `backup/compose.yaml` holding the existing `backup` service
+- [x] 2.1 Create `backup/compose.yaml` holding the existing `backup` service
       definition verbatim, plus the `backup-repo-clone` volume declaration
       (keep its explicit `name: tun_backup-repo-clone` — this is what stops the
       existing clone being orphaned).
-- [ ] 2.2 Remove both from the root `compose.yaml` and `include:` the new file.
-- [ ] 2.3 Verify `cd backup && docker compose up` works standalone, and that
+- [x] 2.2 Remove both from the root `compose.yaml` and `include:` the new file.
+- [x] 2.3 Verify `cd backup && docker compose up` works standalone, and that
       the root stack still resolves the shared volumes referenced from other
       projects' compose files.
 

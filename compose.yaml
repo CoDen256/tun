@@ -43,6 +43,12 @@ include:
   # only — `include:` order decides nothing but which definition of a
   # colliding name wins, and `shadow-backend` collides with nothing.
   - ./shadow/compose.yaml
+  # backup owns its own compose file since `backup-console` — it was the
+  # one project declared inline here, and so the one project that could
+  # not be brought up standalone. The `backup-repo-clone` volume moved
+  # with it and keeps its explicit `name: tun_backup-repo-clone`, so the
+  # existing clone is the same volume before and after the move.
+  - ./backup/compose.yaml
 
 services:
   # One database-exploration tool for the one cluster (D-T3, D155). Log in as
@@ -63,86 +69,3 @@ services:
       ADMINER_DEFAULT_SERVER: postgres
     ports:
       - "127.0.0.1:8082:8080"
-
-  # compose-backup-service (D-C1..D-C5): a real service, not a host script
-  # plus crontab. Connects to each Postgres over the network with a real
-  # password (D-C1) — no Docker socket is mounted at all.
-  #
-  # Run one cycle by hand:
-  #   docker compose run --rm -e RUN_ONCE=1 backup
-  #
-  # `stabbur-blobs` and `phonexa-audio-data` are referenced directly even
-  # though they are declared in those projects' own compose files — `include:`
-  # makes that work with no extra declaration here (D-C2).
-  #
-  # Covers ALL FIVE databases — mjolnir, stabbur, smia, phonexa, shadow.
-  # smia joined the set with D155: it had never been backed up at all, while
-  # being the only database carrying 2.7M rows of imported corpora.
-  backup:
-    build: ./backup
-    restart: unless-stopped
-    # A Postgres container goes through its own init-then-restart startup:
-    # reachable on the network but refusing connections for a few seconds.
-    # Without waiting for health, the first run can race it and dump nothing.
-    # entrypoint.sh's atomic dump-then-rename already stops a failed dump from
-    # corrupting the backup repo; this avoids the failure in the first place.
-    depends_on:
-      # One cluster now (D155), and the BOOTSTRAP rather than the bare server:
-      # dumping before the databases exist would produce five empty files.
-      postgres-init:
-        condition: service_completed_successfully
-    environment:
-      BACKUP_REPO_URL: ${BACKUP_REPO_URL:?set BACKUP_REPO_URL in the root .env}
-      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
-      # ONE password now (D155). The four per-database keys this file used to
-      # carry existed because Postgres applies a password only when it
-      # initialises a fresh data directory, so three live volumes still held
-      # the literals they were created with. Restoring into a fresh cluster is
-      # exactly the moment that constraint lifts — entrypoint.sh derives each
-      # role password as "<POSTGRES_PASSWORD>_<db>", the same rule
-      # postgres/init/bootstrap.sh used to create them.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}
-      BACKUP_RETRY_SECONDS: ${BACKUP_RETRY_SECONDS:-3600}
-    # A HEALTHCHECK THAT REFLECTS WHETHER A BACKUP HAS ACTUALLY HAPPENED.
-    # This service used to be in bin/_check_services.py's
-    # NO_HEALTHCHECK_BY_DESIGN set, and a container that had produced no
-    # backup at all for seven hours (failed clone, placeholder deploy key)
-    # read as "Up 7 hours" and passed check-standards.sh. Liveness was never
-    # the question here — the process stays up perfectly well while backing
-    # up nothing. healthcheck.sh reads the stamp entrypoint.sh writes only
-    # after a run's push returns.
-    #
-    # start_period covers the first run: the container clones, dumps five
-    # databases and pushes before it can stamp anything, and a failing probe
-    # inside the start period leaves the container "starting" rather than
-    # unhealthy.
-    healthcheck:
-      test: ["CMD", "/healthcheck.sh"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 300s
-    volumes:
-      # The repo clone persists across restarts (D-C4) — cloned by the
-      # container on first boot, never a host bind mount.
-      - backup-repo-clone:/data
-      # THE DEV REMOTE (backup-console task 1). Empty and unused in
-      # production: entrypoint.sh touches it only when BACKUP_REPO_URL is a
-      # local absolute path, which on the VPS it is not.
-      - backup-dev-remote:/dev-remote
-      - stabbur-blobs:/stabbur-blobs:ro
-      # phonexa's audio is a NESTED tree (lang/<lang>/ingested/<name>.wav)
-      # whose files can be rewritten in place by Formant Lab's sample trim,
-      # which is why entrypoint.sh's copy loop is recursive and why its
-      # copy-if-absent rule has a documented staleness consequence (D147).
-      - phonexa-audio-data:/phonexa-audio:ro
-      # Exactly one mounted private key file (D-C3) — not the operator's whole
-      # ~/.ssh. known_hosts is managed inside the named volume
-      # (StrictHostKeyChecking=accept-new on first connect).
-      - ${BACKUP_SSH_KEY_PATH:?set BACKUP_SSH_KEY_PATH in the root .env}:/root/.ssh/id_backup:ro
-
-volumes:
-  backup-repo-clone:
-    name: tun_backup-repo-clone
-  backup-dev-remote:
-    name: tun_backup-dev-remote

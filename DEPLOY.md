@@ -371,6 +371,7 @@ still read for its own values either way.
 | `cd phonexa && docker compose --env-file ../.env up` | `5050` backend |
 | `cd shadow && docker compose --env-file ../.env up` | `5051` backend |
 | `cd mjolnir && docker compose --env-file ../.env up` | nothing extra — but it does publish 80/443, so don't run it beside the root stack |
+| `cd backup && docker compose --env-file ../.env up` | nothing — the console is reached through the gateway only. Brings up postgres, stabbur and phonexa too, because it mirrors their volumes |
 
 Every project `include:`s `postgres/compose.yaml`, whose own override
 publishes the cluster on `127.0.0.1:5439` — the one database port there is
