@@ -121,9 +121,28 @@ export async function archiveCoverage(config, uid) {
     return { ok: true, present: !!result.present, coveredThroughEpoch: null, newest: null };
   }
   const newest = commits.reduce((a, b) => (b.epoch > a.epoch ? b : a));
+
+  // THE FILE MUST STILL EXIST AT HEAD, NOT MERELY HAVE EXISTED ONCE.
+  //
+  // `git log -- userdata/<uid>.json` returns every commit that TOUCHED the
+  // path — including the commit that DELETED it. So an account that was
+  // exported and later pruned comes back with a full, recent commit list, and
+  // taking `max(epoch)` over it reports coverage "through now" for a file
+  // that is no longer in the archive at all. The sweep would then be free to
+  // delete that account's history, including the final deletion row D-S5
+  // writes — which the comment above names as the one thing that must be
+  // held forever.
+  //
+  // `present` is the stat of the file at HEAD, so this is the check that
+  // makes the paragraph above true in both the never-exported case AND the
+  // exported-then-pruned case. Found in review, 2026-11-21.
+  if (!result.present) {
+    return { ok: true, present: false, coveredThroughEpoch: null, newest };
+  }
+
   return {
     ok: true,
-    present: !!result.present,
+    present: true,
     coveredThroughEpoch: newest.epoch,
     newest,
   };

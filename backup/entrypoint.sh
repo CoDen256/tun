@@ -211,12 +211,39 @@ EOF
       || { log "entrypoint: FATAL rename of userdata/$uid.json failed" >&2; return 1; }
   done
 
+  # ZERO ACCOUNTS WITH A NON-EMPTY ARCHIVE IS A FAULT, NOT A PRUNE
+  # INSTRUCTION — and this guard is the whole reason the restore path works.
+  #
+  # The check above covers the query FAILING. It does not cover the query
+  # SUCCEEDING WITH ZERO ROWS, and that is not a hypothetical: it is the
+  # documented state halfway through a restore. `mjolnir.sql` no longer
+  # carries the account tables' data (userdata-git-history), so restoring it
+  # brings `userdata` back EMPTY by design; this service is
+  # `restart: unless-stopped` and runs once at boot, so without this guard the
+  # next run would list zero accounts, prune every `userdata/*.json`, and
+  # `git add -A` would stage the deletions and commit and PUSH them — removing
+  # the archive from HEAD at the exact moment it is the only copy of the
+  # operator's progress. Found in review, 2026-11-21, before it ran.
+  #
+  # So this is the same rule the two file mirrors below already apply —
+  # "source is empty but the mirror is not — check the mount" — applied to
+  # accounts. Refusing to prune costs a stale file that the next successful
+  # run overwrites. Pruning costs the recovery path. The asymmetry decides it,
+  # the same way it decides the ordering in design.md §5.
+  local existing
+  existing=$(ls -1A "$dir" 2>/dev/null | grep -c '\.json$' || true)
+  if [ -z "${uids//[[:space:]]/}" ] && [ "${existing:-0}" -gt 0 ]; then
+    log "entrypoint: FATAL the userdata table lists NO accounts while $existing archived export(s) exist — refusing to prune them" >&2
+    log "  if this is a restore in progress, the archive is intact: import it (see DEPLOY.md) and this run will succeed" >&2
+    log "  if every account really was deleted, remove userdata/*.json from the clone by hand once" >&2
+    return 1
+  fi
+
   # Prune the export of an account that has LEFT the table, exactly as the
   # loop below prunes the dump of a database that left the backup set — and
   # for the same reason: a file that sits in the repo forever, dated and
   # plausible, reads as a current archive of an account nothing exports any
-  # more. Safe only because the uid list above is a CHECKED step: this line is
-  # never reached with an empty list caused by a failure.
+  # more. Reached only with a NON-EMPTY account list, per the guard above.
   local pruned=0 name path
   for path in "$dir"/*.json; do
     [ -e "$path" ] || continue
