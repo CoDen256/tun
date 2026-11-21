@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change similar-notes-merge. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Related notes are surfaced without being requested
 The system SHALL show the notes related to the one the operator is working
 on, wherever notes are edited or triaged, without requiring a separate
@@ -83,48 +85,60 @@ sentences is not meaningful.
 - **THEN** no spelling-based similarity is reported for it
 
 ### Requirement: Individual fields can be taken from a related note
-A related note's fields SHALL be offerable individually, each next to a
-preview of the value that would be taken. Staging a take SHALL NOT change
-anything on its own; only committing the merge applies it.
+A related note's fields SHALL be offerable individually. Each field SHALL be
+a row showing a preview of the value that would be taken, and a toggle.
+Staging a take SHALL NOT change anything on its own. Only committing the
+merge applies it.
 
-Takeable fields SHALL include `text`, `lemma`, `translations`,
-`transcription`, `inflections`, `context_text` and the audio reference.
-`status`, `origin` and `import_ref` SHALL remain untakeable.
+Takeable fields SHALL be listed in exactly this order, with no section
+headers: text, lemma, part of speech, inflections, audio, IPA
+(transcription), translations, examples. The audio row SHALL carry a play
+button that plays the audio that would be taken. A field that is empty on
+the source SHALL be shown disabled. `status`, `origin` and `import_ref` SHALL
+remain untakeable.
 
 Each take SHALL be **additive** or **replacive**, fixed per field:
+- `translations` and `examples` are **additive**. The survivor's own values
+  are kept, and values it already has are not duplicated.
+- text, lemma, part of speech, inflections, transcription and the audio
+  reference are **replacive**.
 
-- `translations` and `context_text` are **additive** — the survivor's own
-  value is never discarded.
-- `inflections`, `transcription`, `text`, `lemma` and the audio reference
-  are **replacive**.
+Taking inflections SHALL also take the source's part of speech, always.
 
-Taking `inflections` SHALL also take the source's part of speech, always —
-not only when the survivor has none. A paradigm whose part of speech does
-not reach the survivor renders into fields that do not exist on it.
-
-Each take control SHALL state its operation where the operator reads it,
-both on the control itself and in the summary shown before committing.
+The merge sheet SHALL state in its own text which takes replace and which
+add.
 
 #### Scenario: Taking context keeps the survivor's own
-- **GIVEN** the survivor has a context sentence and the related note has a different one
-- **WHEN** "take context" is staged and the merge is committed
-- **THEN** the survivor's context contains both sentences, the taken one appended on a new line below the survivor's own
+- **GIVEN** the survivor has the example "Hvor er doen?" and the related note has "Doet er opptatt."
+- **WHEN** "examples" is taken and the merge is committed
+- **THEN** the survivor's examples are ["Hvor er doen?", "Doet er opptatt."]
 
 #### Scenario: Identical context is not duplicated
-- **GIVEN** the survivor's context and the related note's context are the same text
-- **WHEN** "take context" is staged and the merge is committed
-- **THEN** the survivor's context is unchanged and the sentence appears once
+- **GIVEN** both notes have the example "Hvor er doen?"
+- **WHEN** "examples" is taken and the merge is committed
+- **THEN** the sentence appears once
 
 #### Scenario: Taking inflections replaces the paradigm and the part of speech
 - **GIVEN** the survivor has a filled paradigm and a part of speech
-- **WHEN** "take inflections" is staged from a related note with a different paradigm and part of speech, and the merge is committed
+- **WHEN** "inflections" is taken from a related note with a different paradigm and part of speech, and the merge is committed
 - **THEN** the survivor's paradigm is the related note's, with no slot surviving from its own
 - **AND** the survivor's part of speech is the related note's
 
 #### Scenario: Each control says what it will do
-- **WHEN** the take controls are shown
-- **THEN** the controls for translations and context are labelled as adding
-- **AND** the controls for inflections, IPA, audio, text and lemma are labelled as replacing
+- **WHEN** the merge sheet is shown
+- **THEN** its text states that IPA, audio, text, lemma, part of speech and inflections replace, and that translations and examples are added
+
+#### Scenario: Taking part of speech alone
+- **WHEN** only "part of speech" is taken and the merge is committed
+- **THEN** the survivor's part of speech is the source's, and its inflections are unchanged
+
+#### Scenario: Listening before taking audio
+- **WHEN** the operator presses play on the audio take row
+- **THEN** the source note's audio plays, and nothing is staged by doing so
+
+#### Scenario: Take order
+- **WHEN** the take rows are shown
+- **THEN** they read top to bottom: text, lemma, part of speech, inflections, audio, IPA, translations, examples
 
 ### Requirement: Merging is many-to-one and never automatic
 A merge SHALL be an explicit operator action in which one survivor absorbs
@@ -215,3 +229,31 @@ prevents it from being absorbed or having its fields taken.
 - **THEN** that note's editor opens in a new tab
 - **AND** the originally open note is still shown, unchanged, in the original tab
 
+### Requirement: A merge can run in either direction
+For each related note, the merge sheet SHALL offer a direction switch:
+- **"Into this note"**: the open note survives and absorbs the related one.
+- **"This note into '<other>'"**: the related note survives and absorbs the
+  open one.
+
+The sheet SHALL show:
+- which note survives and which is deleted
+- the take toggles, with the absorbed note's values as previews
+
+The commit button SHALL name the survivor ("Merge N fields · keep '<survivor>'").
+
+The rule that only a draft may be absorbed stands. When the open note is
+ready, the second direction SHALL be disabled, with the reason shown.
+
+After a merge that absorbed the open note:
+- in triage, the belt advances
+- from the Notes list, the survivor opens
+
+#### Scenario: Merging this note away
+- **GIVEN** draft "bilen" is open from the Notes list and ready note "bil" is similar to it
+- **WHEN** the operator picks "This note into 'bil'", takes translations, and commits
+- **THEN** "bilen" is deleted, "bil" opens holding both notes' translations, and the toast names "bil" as kept
+
+#### Scenario: A ready note cannot be merged away
+- **GIVEN** the open note is ready
+- **WHEN** the merge sheet is shown
+- **THEN** "This note into '<other>'" is disabled and explains that only a draft can be merged away

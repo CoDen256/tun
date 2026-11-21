@@ -6,33 +6,39 @@ TBD — defines the operator-facing note editing surface: in-editor audio
 playback/trim/replace, a raw-JSON view of the stored record alongside the
 structured form, and PoS-driven inflection field prefill when creating a
 word note.
+
 ## Requirements
+
 ### Requirement: Audio can be listened to, trimmed, and replaced from the editor
-The system SHALL provide in-editor audio playback, a trim control that sets
-`audio_sel_ms`, and a way to replace a note's `audio_blob` with a newly
-uploaded file, without requiring the operator to leave the editor or handle
-raw millisecond values directly.
+The system SHALL provide in-editor audio playback with a waveform whose
+selection the operator drags to set `audio_sel_ms`. The selection SHALL be
+shown in milliseconds, with the total duration and the audio's source.
+
+Two controls SHALL replace a note's audio:
+- **Upload file** stores a chosen file through the existing blob upload.
+- **Use URL from clipboard** reads the clipboard on that click and captures
+  the audio at the URL found there, through the existing link capture.
+
+When the clipboard cannot be read or holds no URL, the system SHALL say so
+and change nothing. The system SHALL NOT offer a free-text audio-link input.
 
 #### Scenario: Adjusting a trim range
-- **WHEN** the operator drags a trim handle in the editor
-- **THEN** `audio_sel_ms` updates to match, and a preview plays back exactly
-  the selected range
+- **WHEN** the operator drags a selection edge on the waveform
+- **THEN** `audio_sel_ms` updates to match, the ms readout updates, and playback plays exactly the selected range
+
+#### Scenario: Replacing audio from the clipboard
+- **GIVEN** the clipboard holds a direct mp3 URL
+- **WHEN** the operator clicks "Use URL from clipboard"
+- **THEN** the audio at that URL is captured and becomes the note's audio, and no URL text box was shown at any point
+
+#### Scenario: Clipboard without a URL
+- **GIVEN** the clipboard holds plain text that is not a URL
+- **WHEN** the operator clicks "Use URL from clipboard"
+- **THEN** a message says the clipboard holds no URL, and the note's audio is unchanged
 
 #### Scenario: Replacing audio
 - **WHEN** the operator uploads a new audio file for a note
-- **THEN** the new file is stored via the existing blob-upload endpoint and
-  the note's `audio_blob` is updated to reference it; the previous blob is
-  left untouched in storage (content-addressed, per `blob-storage`)
-
-### Requirement: The note's raw stored record is viewable alongside the structured form
-The system SHALL provide a toggle showing the note's full stored
-representation as formatted JSON, without requiring a separate tool or
-database access.
-
-#### Scenario: Viewing raw JSON
-- **WHEN** the operator opens the raw-JSON toggle
-- **THEN** the exact fields and values the API would return for that note
-  are shown, matching the structured form currently on screen
+- **THEN** the new file is stored via the existing blob-upload endpoint and the note's `audio_blob` references it, and the previous blob is left untouched in storage
 
 ### Requirement: Creating a word note prefills inflection fields by part of speech
 The system SHALL present the correct set of inflection fields for the
@@ -233,53 +239,6 @@ open empty instead.
   collapses it again without having retried
 - **THEN** that row's next retry uses the panel's shared query value, not a
   stale override — regardless of what the override had been prefilled with
-
-### Requirement: Translation suggestions are grouped by target language
-The system SHALL group translation suggestions by target language, showing
-the operator's configured default target languages, and SHALL let the
-operator add further target languages to the same panel.
-
-When the operator uses a candidate for a language that already has a
-translation on the note, the system SHALL follow the operator's configured
-merge mode: either extending the existing translation for that language
-with the new candidate, separated by a slash, or adding a separate
-translation row for that language.
-
-Changing the merge mode SHALL affect only subsequent actions. It SHALL NOT
-rewrite translations already stored on any note.
-
-#### Scenario: Opening the translations suggestion panel
-- **WHEN** the operator clicks "Suggest translations"
-- **THEN** the panel shows one group per configured default target
-  language, each listing every configured translation provider's result for
-  that language
-
-#### Scenario: Adding a target language
-- **WHEN** the operator enters a language code and adds it to the panel
-- **THEN** a new group appears for that language with the same providers
-  queried against it, without affecting the existing language groups
-
-#### Scenario: Using the first translation for a language
-- **WHEN** the operator uses a candidate for a language the note has no
-  translation for yet
-- **THEN** a translation row is added for that language, regardless of
-  merge mode
-
-#### Scenario: Using a second translation while appending
-- **WHEN** the note already has an English translation, the merge mode is
-  to append, and the operator uses a second English candidate
-- **THEN** that language's existing translation is extended with the new
-  candidate separated by a slash, and no second English row is added
-
-#### Scenario: Using a second translation while keeping rows separate
-- **WHEN** the note already has an English translation, the merge mode is
-  to keep rows separate, and the operator uses a second English candidate
-- **THEN** a second English translation row is added, leaving the first
-  unchanged
-
-#### Scenario: Other languages are unaffected
-- **WHEN** the operator uses a candidate within one language group
-- **THEN** any other language's chosen translation is left untouched
 
 ### Requirement: Noun inflection fields are grouped by article, singular, and plural
 The system SHALL render a `substantiv` note's inflection fields as three
@@ -558,33 +517,37 @@ and appear to the operator to have done nothing.
 - **THEN** a cached answer is acceptable and no cache bypass is requested
 
 ### Requirement: The context field offers provider-sourced example sentences
-The system SHALL provide a combined suggest control for the note's context
-field — the same toggle, live editable shared query, and per-provider rows
-used by the other suggestion kinds — querying with the note's `text` and
-opening a panel listing one row per configured examples provider, each with
-its candidate sentences and an action writing a chosen sentence into the
-context field.
+The note's examples field SHALL be a list of separate rows, one plain
+Norwegian sentence each. The operator can edit, add and remove each row
+individually.
+
+The examples suggest button SHALL open the examples sheet:
+- querying with the note's text
+- showing one box per configured examples provider
+
+Using a candidate SHALL add it as a new row. It SHALL NOT join it to an
+existing one.
 
 Candidates SHALL be presented as Norwegian sentences only. The system SHALL
-NOT pair an example with a translation or present one as a translation
-candidate, since example lookup answers how a word is used in Norwegian and
-translation is a separate kind.
+NOT pair an example with a translation, or present one as a translation
+candidate.
 
 #### Scenario: Suggesting a context sentence
-- **WHEN** the operator opens the context field's suggest control
-- **THEN** a panel opens showing one row per configured examples provider,
-  each listing that provider's candidate sentences with an action that
-  writes a chosen one into the context field
+- **WHEN** the operator opens the examples suggest button
+- **THEN** a sheet opens with one box per configured examples provider, each listing candidate sentences with their context line and a Use action
+
+#### Scenario: Using an example adds a row
+- **GIVEN** a note with one example
+- **WHEN** the operator uses an example candidate
+- **THEN** the note shows two separate example rows, and the first is unchanged
 
 #### Scenario: The query comes from the note's text
-- **WHEN** the operator opens the context field's suggest control on a note
-  with `text = "legge til"`
+- **WHEN** the operator opens the examples sheet on a note with `text = "legge til"`
 - **THEN** the query shown and used is `"legge til"`
 
 #### Scenario: A provider with no examples
 - **WHEN** a configured provider has no example for the queried word
-- **THEN** that provider's row reports an empty result rather than an
-  error, and the other providers' rows are unaffected
+- **THEN** that provider's box reports "Nothing for" the query rather than an error, and the other boxes are unaffected
 
 #### Scenario: Examples are not translated
 - **WHEN** any example candidate is shown
@@ -682,3 +645,38 @@ offer to apply a value outside that set.
   supported parts of speech
 - **THEN** the mapped value is offered for applying
 
+### Requirement: Translation candidates are tagged by language and always add a row
+The system SHALL query every configured translation provider for each of
+the operator's configured target languages. It SHALL list the candidates
+inside each provider's box, every candidate carrying a tag naming its
+language. Target languages come only from Settings. The sheet SHALL NOT
+offer its own control for adding a language.
+
+Using a translation candidate SHALL always add a new translation row with
+that candidate's language and text. It SHALL NEVER extend an existing row's
+text. No merge-mode preference exists.
+
+#### Scenario: Candidates carry their language
+- **GIVEN** Settings lists target languages en and de
+- **WHEN** the operator opens the translations sheet
+- **THEN** each provider box lists its en and de candidates, each row tagged with its language
+
+#### Scenario: Using a second translation for the same language
+- **WHEN** the note already has the English translation "get going" and the operator uses the English candidate "get under way"
+- **THEN** a second English row "get under way" is added and the first row still reads exactly "get going"
+
+#### Scenario: No slash-joined text is ever produced
+- **WHEN** the operator uses any number of translation candidates
+- **THEN** no translation row's text contains a joined " / " that the operator did not type
+
+### Requirement: forvo and filmot are external links, not inputs
+The audio sheet SHALL list forvo and filmot only as small "Open elsewhere"
+links at its bottom:
+- in their Settings order
+- each opening the provider's search for the current query in a new tab
+
+Neither SHALL show an input field.
+
+#### Scenario: External links at the bottom
+- **WHEN** the audio sheet opens
+- **THEN** the pygmalion and dict_cc boxes come first, and forvo and filmot appear below them as links with no input fields

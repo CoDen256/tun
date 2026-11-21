@@ -35,13 +35,11 @@ to report back which notes it consumed or what it did with them.
   and stabbur's own state is unaffected by the pull having happened
 
 ### Requirement: The response shape matches the documented contract exactly
-The system SHALL return each note with exactly the fields specified in this
-change's `design.md` (D-N4) — no field renamed, omitted, or added without a
-corresponding update to that contract.
+The system SHALL return each note with exactly the fields of the documented
+read contract (D-N4), with one amendment from `stabbur-editor-redesign`:
+`examples`, an array of strings, replaces `context_text`. No other field is
+renamed, omitted or added.
 
 #### Scenario: A consumer built against the documented shape
-- **WHEN** a consumer parses the read API's response using the field names
-  and types from `design.md` D-N4
-- **THEN** every field is present with the documented name and type
-</content>
-</invoke>
+- **WHEN** a consumer parses the read API's response using the documented field names and types
+- **THEN** every field is present with the documented name and type, `examples` is an array of strings, and no `context_text` field is present
