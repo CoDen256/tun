@@ -626,6 +626,20 @@ export async function runPublish(
     // logged, matching the no-op run having no job at all, above).
     phase = "pull";
     await log(buildJobId, `pulled ${eligibleNotesById.size} eligible notes from stabbur (source_lang=${sourceLang})`);
+    // projector-examples-column: say how many pulled notes carry examples, so
+    // a stale stabbur (no `examples` key at all) or a note set with no
+    // examples is visible in the run log instead of silently empty X faces.
+    {
+      const pulled = [...eligibleNotesById.values()];
+      const withKey = pulled.filter((n) => Array.isArray(n.examples)).length;
+      const withExamples = pulled.filter((n) => Array.isArray(n.examples) && n.examples.length).length;
+      await log(
+        buildJobId,
+        withKey === pulled.length
+          ? `examples: ${withExamples} of ${pulled.length} eligible notes carry examples (projected onto X)`
+          : `examples: WARNING — ${pulled.length - withKey} of ${pulled.length} eligible notes have no \`examples\` field; stabbur is not on the examples schema, so their X faces will be empty`
+      );
+    }
     await log(
       buildJobId,
       `assign: ${decksToMint.reduce((n, [, notes]) => n + notes.length, 0)} newly-eligible across ${decksToMint.length} deck(s): ${decksToMint.map(([d, notes]) => `${d}×${notes.length}`).join(", ")}`
