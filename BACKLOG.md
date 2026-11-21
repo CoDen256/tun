@@ -41,6 +41,10 @@
 [ux] the shadow website constantly has icon of using my mic, even if record not pressed. 
 [ux] phone ui , put pull for nav/name of book, chapter nav, "more", exit and sentence on one/two lines to make it more compact
 [ux] phone shadow  should provide installable "app", if that's easy to do?
+[ux] shadow add chapterwise read where it will automatically read sentence by sentence of the whole chapter, probably even not trimming, but when stopped at a sentence it should play trimmed and then i would be able to continue as usual
+[ux] add option to split chapter anywhere
+[ux] opening a new sentence should play it immediately
+[ux] ready, next is a little laggy, waitning for something
 
 [bug] provider pygmalion no entry for målende, målene
 
