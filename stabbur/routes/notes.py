@@ -1148,7 +1148,9 @@ def register_notes_routes(app):
     def duplicate_note(note_id):
         with session_scope() as db:
             original = db.get(Note, note_id)
-            if original is None:
+            # A tombstoned note has left every list; copying it would bring
+            # deleted content back under a new id.
+            if original is None or original.deleted_at is not None:
                 return jsonify({"error": "not found"}), 404
             duplicate = Note(
                 status="draft",
