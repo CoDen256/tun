@@ -100,14 +100,31 @@ export async function archiveVersion(config, uid, sha, { diff = false } = {}) {
 // not reach the archive" and "the archive covers nothing" must both come back
 // as null, because the sweep's rule is "delete only what the archive already
 // covers" and the safe answer to an unanswerable question is "nothing".
+// AN ACCOUNT WITH NO EXPORT AT ALL COMES BACK AS null AND IS HELD FOREVER,
+// and that is correct rather than an oversight. The export is written per row
+// of `userdata`, so an account whose document has been deleted has no file —
+// its history rows are represented by nothing, and deleting them would be
+// deleting the only record that the account ever existed or was removed
+// (D-S5 writes a final history row on deletion for exactly that reason). A
+// deleted account also stops producing rows, so holding them costs a bounded
+// handful, which is the cheaper side of this trade by a wide margin.
 export async function archiveCoverage(config, uid) {
-  const result = await archiveHistory(config, uid, { limit: 1 });
+  // The whole listing, not `limit: 1`: `git log` returns commits in GRAPH
+  // order, which is only coincidentally chronological, and the coverage bound
+  // must be the LATEST moment the archive represents. Taking the first row
+  // would under-report coverage on any repo whose history is not perfectly
+  // linear in time — which held the sweep back on real data here.
+  const result = await archiveHistory(config, uid, { limit: 200 });
   if (!result.ok) return { ok: false, reason: result.reason, coveredThroughEpoch: null };
-  const newest = result.commits?.[0] || null;
+  const commits = result.commits || [];
+  if (!commits.length) {
+    return { ok: true, present: !!result.present, coveredThroughEpoch: null, newest: null };
+  }
+  const newest = commits.reduce((a, b) => (b.epoch > a.epoch ? b : a));
   return {
     ok: true,
     present: !!result.present,
-    coveredThroughEpoch: newest ? newest.epoch : null,
+    coveredThroughEpoch: newest.epoch,
     newest,
   };
 }

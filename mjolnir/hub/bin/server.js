@@ -13,6 +13,8 @@ import { migrate } from "../src/migrate.js";
 import { seedDecks } from "../src/decks.js";
 import { createBootstrap } from "../../../libs/jsservice/bootstrap.js";
 import { startIngestLoop } from "../src/otaPulls.js";
+import { sweepHistory } from "../src/userdata.js";
+import { archiveCoverage } from "../src/archive.js";
 
 const config = loadConfig();
 const pool = getPool();
@@ -62,3 +64,54 @@ createServer(pool, config, boot).listen(port, () => {
 // two simultaneous page loads walking the file twice, not to throttle a timer
 // that already is the throttle.
 startIngestLoop({ intervalMs: 60000 });
+
+// userdata-git-history 5.4 — THE SWEEP'S TRIGGER POINT (a tier-2 decision).
+//
+// A BACKGROUND TIMER HERE, AND DELIBERATELY NOT ON PAGE LOAD. The OTA ingest
+// above runs on page load as well, because reading an access log is a read
+// and opening the page is exactly when it should be current. This is not that:
+// the sweep DELETES, and the Sync page says of itself "this view is read-only"
+// — a destructive side effect behind a read-only page is a surprise, and the
+// one surprise this ecosystem cannot afford is the one that removes data.
+//
+// Hourly. The window is 48h, so the resolution of the sweep itself is
+// irrelevant to what survives; what matters is that it runs unattended, which
+// a page-load trigger cannot promise on a console nobody opens for a week.
+//
+// NOT AWAITED, AND ITS OWN FAILURES ARE ITS OWN. With no database, with
+// backup-console stopped, or with nothing archived, `sweepHistory` holds off
+// and deletes nothing — the archive coverage callback returns null for every
+// uncertain answer, and that is the whole guard (task 5.2).
+const SWEEP_INTERVAL_MS = 3600 * 1000;
+
+async function runSweep() {
+  if (!boot.dbReady()) return;
+  try {
+    const result = await sweepHistory({
+      // The coverage callback is the ONLY thing standing between the sweep
+      // and the archive, so it is kept trivial and fail-closed: any failure
+      // inside archiveCoverage already comes back as a null epoch.
+      coverage: async (uid) => (await archiveCoverage(config, uid)).coveredThroughEpoch,
+    });
+    if (!result.ran) {
+      console.log(`[mjolnir-workbench] history sweep did not run: ${result.reason}`);
+      return;
+    }
+    const held = result.accounts.filter((a) => a.held).length;
+    if (result.deleted > 0 || held > 0) {
+      console.log(
+        `[mjolnir-workbench] history sweep: ${result.deleted} row(s) deleted outside the ${result.retentionHours}h window`
+        + (held ? `, ${held} account(s) held back because the archive does not cover them` : "")
+      );
+    }
+  } catch (err) {
+    // A failed sweep is a table that stays large, which is survivable. It
+    // must never be a reason this process stops serving.
+    console.error(`[mjolnir-workbench] history sweep failed: ${err.message}`);
+  }
+}
+
+// A first pass shortly after boot, then hourly. The delay lets the migration
+// and the first archive read settle rather than racing them.
+setTimeout(runSweep, 60 * 1000).unref?.();
+setInterval(runSweep, SWEEP_INTERVAL_MS).unref?.();

@@ -50,11 +50,11 @@ deletes anything. A dropped history row is gone; a large dump is merely large.
       (already begun by `backup-console`; keep the two consistent).
 
 ## 5. The sweep (last, and irreversible)
-- [ ] 5.1 Add a retention sweep for `userdata_history` to hub, window 48h.
-- [ ] 5.2 Make it refuse to delete a period not already represented in the
+- [x] 5.1 Add a retention sweep for `userdata_history` to hub, window 48h.
+- [x] 5.2 Make it refuse to delete a period not already represented in the
       committed archive — the sweep must not be able to outrun the archive.
-- [ ] 5.3 Make it idempotent.
-- [ ] 5.4 Decide and record the trigger point inside hub (tier 2).
+- [x] 5.3 Make it idempotent.
+- [x] 5.4 Decide and record the trigger point inside hub (tier 2).
 
 ## 6. The Sync page's two-tier timeline
 - [x] 6.1 **Keep** `historyDeltas`, `summarizeDelta` and `historyDoc`. This
@@ -76,15 +76,15 @@ deletes anything. A dropped history row is gone; a large dump is merely large.
       per-card table and current-document viewer.
 
 ## 7. Verification
-- [ ] 7.1 Walk `acceptance.md` top to bottom against the running stack.
-- [ ] 7.2 Run the byte-for-byte device-contract comparisons (25–27) against the
+- [x] 7.1 Walk `acceptance.md` top to bottom against the running stack.
+- [x] 7.2 Run the byte-for-byte device-contract comparisons (25–27) against the
       baseline captured in 1.3. These must be **diffed**, not eyeballed.
-- [ ] 7.3 Confirm the diff touches no file under `mjolnir/sync/`,
+- [x] 7.3 Confirm the diff touches no file under `mjolnir/sync/`,
       `mjolnir/patches/`, `mjolnir/base/`, and does not modify
       `docs/11-ota-contract.md`.
-- [ ] 7.4 Verify commit ordering per criteria 19–20.
-- [ ] 7.5 `bin/check-standards.sh` passes.
-- [ ] 7.6 Add an ADR row to `docs/07-decisions.md`: the archive replaces
+- [x] 7.4 Verify commit ordering per criteria 19–20.
+- [x] 7.5 `bin/check-standards.sh` passes.
+- [x] 7.6 Add an ADR row to `docs/07-decisions.md`: the archive replaces
       append-only history as the record of account state, amending D-S5, and
       the two-tier console reversal is recorded with both halves of the
       operator's decision.

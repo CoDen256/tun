@@ -424,3 +424,64 @@ export async function latestHistoryAt(uid) {
   );
   return rows.length ? rows[0].at : null;
 }
+
+// ---- the retention sweep (userdata-git-history task 5) --------------------
+//
+// THE IRREVERSIBLE HALF OF THIS CHANGE. A deleted history row is gone; an
+// un-excluded dump is merely large. Everything below is written from that
+// asymmetry.
+//
+// THE RULE: delete a row only when BOTH are true — it is older than the
+// retention window, AND the committed archive already covers its period. The
+// second half is what stops the sweep outrunning the archive, and it is
+// deliberately written so that every uncertain answer means "delete nothing":
+// `coverage(uid)` returns null when the archive is unreachable, when nothing
+// has been archived for that account, and when it cannot be parsed. A backup
+// service that has been down for a week therefore holds the sweep off for a
+// week, and the table grows — which is the correct failure, because the
+// alternative is deleting the only copy of a period nothing archived.
+//
+// IDEMPOTENT BY CONSTRUCTION: the predicate is absolute (a timestamp bound),
+// not relative to what a previous run did, so a second run over unchanged
+// data matches no rows and deletes nothing.
+export async function sweepHistory({ coverage, retentionHours = HISTORY_RETENTION_HOURS } = {}) {
+  if (typeof coverage !== "function") {
+    // Refused rather than defaulted. A sweep with no way to ask what the
+    // archive covers is exactly the thing this guard exists to prevent, and
+    // "no archive client configured" must never silently become "delete
+    // everything older than the window".
+    return { ran: false, reason: "no archive coverage source was supplied — refusing to sweep", deleted: 0, accounts: [] };
+  }
+
+  const windowCutoff = new Date(Date.now() - retentionHours * 3600 * 1000);
+  const { rows: uidRows } = await query("SELECT DISTINCT device_id FROM userdata_history");
+
+  const accounts = [];
+  let deleted = 0;
+  for (const { device_id: uid } of uidRows) {
+    const covered = await coverage(uid);
+    if (covered === null || covered === undefined) {
+      accounts.push({ uid, deleted: 0, held: true, reason: "the archive does not cover this account (absent, empty or unreachable)" });
+      continue;
+    }
+    // The EARLIER of the two bounds. The window alone would outrun a stale
+    // archive; the archive alone would delete rows the operator can still
+    // usefully see at full fidelity.
+    const archiveCutoff = new Date(covered * 1000);
+    const cutoff = archiveCutoff < windowCutoff ? archiveCutoff : windowCutoff;
+    const { rowCount } = await query(
+      "DELETE FROM userdata_history WHERE device_id = $1 AND at < $2",
+      [uid, cutoff]
+    );
+    deleted += rowCount || 0;
+    accounts.push({
+      uid,
+      deleted: rowCount || 0,
+      held: false,
+      cutoff: cutoff.toISOString(),
+      boundedBy: archiveCutoff < windowCutoff ? "archive" : "window",
+    });
+  }
+
+  return { ran: true, deleted, retentionHours, windowCutoff: windowCutoff.toISOString(), accounts };
+}
