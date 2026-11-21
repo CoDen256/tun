@@ -349,3 +349,21 @@ def test_smia_unreachable_degrades_to_stored_order_rather_than_failing(client, m
     monkeypatch.setattr(smia_client, "get", fake_get)
     resp = client.get("/api/settings", headers=AUTH)
     assert resp.status_code == 200
+
+
+def test_pos_and_stt_have_their_own_provider_order(client, monkeypatch):
+    """stabbur-editor-redesign C17: part of speech is reconciled against the
+    inflections catalogue but ordered independently; stt against smia's own
+    stt catalogue."""
+    _mock_catalogue(monkeypatch, {"inflections": ["ordbank", "dictcc_api"], "stt": ["hf_whisper"]})
+    body = client.get("/api/settings", headers=AUTH).get_json()
+    assert body["providers"]["pos"]["order"] == ["ordbank", "dictcc_api"]
+    assert body["providers"]["stt"]["order"] == ["hf_whisper"]
+
+    resp = client.patch(
+        "/api/settings", json={"providers": {"pos": {"order": ["dictcc_api", "ordbank"], "disabled": ["ordbank"]}}}, headers=AUTH
+    )
+    assert resp.status_code == 200
+    providers = resp.get_json()["providers"]
+    assert providers["pos"] == {"order": ["dictcc_api", "ordbank"], "disabled": ["ordbank"], "primary": "dictcc_api"}
+    assert providers["inflections"]["order"] == ["ordbank", "dictcc_api"]  # untouched

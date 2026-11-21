@@ -131,6 +131,12 @@ def test_duplicating_an_unknown_note_is_404(client):
     assert client.post("/api/notes/nope/duplicate", headers=AUTH).status_code == 404
 
 
+def test_duplicating_a_tombstoned_note_is_404(client):
+    note = _create(client, status="ready")
+    assert client.delete(f"/api/notes/{note['id']}", headers=AUTH).status_code == 200  # ready -> tombstone
+    assert client.post(f"/api/notes/{note['id']}/duplicate", headers=AUTH).status_code == 404
+
+
 # ----------------------------------------------- notes browser (2.3) --
 
 def test_pos_and_audio_filters_combine(client):

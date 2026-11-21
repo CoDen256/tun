@@ -90,7 +90,11 @@
   // forvo/filmot have no API — smia answers `{candidates: [], url}` — so they
   // are links at the bottom of the audio sheet, never boxes (design D9).
   const LINKP = ['forvo', 'filmot'];
-  const SETTINGS_KINDS = [['ipa', 'Pronunciation'], ['translations', 'Translations'], ['inflections', 'Inflections'], ['examples', 'Examples'], ['tts', 'Audio']];
+  // Settings lists, in the reference's order. `pos` is its own list (served
+  // from the inflections lookup, ordered independently); `stt` is smia's.
+  const SETTINGS_KINDS = [['pos', 'Part of speech'], ['ipa', 'Pronunciation'], ['translations', 'Translations'], ['inflections', 'Inflections'], ['examples', 'Examples'], ['tts', 'Audio'], ['stt', 'Text from audio']];
+  // Which Settings provider list a sheet follows (the endpoint is API_KIND).
+  const PREF_KIND = { pos: 'pos', inflections: 'inflections', ipa: 'ipa', translations: 'translations', examples: 'examples', audio: 'tts', stt: 'stt' };
   const LANG_FALLBACK = ['en', 'de', 'fr', 'sv', 'es'];
   const NAV = [['triage', 'Triage'], ['notes', 'Notes'], ['grammar', 'Grammar'], ['settings', 'Settings']];
 
@@ -277,7 +281,11 @@
   // Grammar HTML is operator content behind auth, but it is rendered, so
   // scripts and handlers must not run (design D13): drop executable and
   // embedding elements, every on* attribute, and javascript:/data: URLs.
-  const UNSAFE_TAGS = 'script,style,iframe,frame,frameset,object,embed,link,meta,base,form,noscript,template';
+  // SVG's SMIL elements (animate, set, …) can rewrite an href to a
+  // javascript: URL, so they go too (both spellings: SVG names are
+  // case-sensitive to selectors).
+  const UNSAFE_TAGS = 'script,style,iframe,frame,frameset,object,embed,link,meta,base,form,noscript,template,'
+    + 'animate,animateMotion,animatemotion,animateTransform,animatetransform,set,handler,listener';
   function sanitizeHtml(html) {
     const doc = new DOMParser().parseFromString(`<body>${html || ''}</body>`, 'text/html');
     doc.body.querySelectorAll(UNSAFE_TAGS).forEach((el) => el.remove());
@@ -287,7 +295,8 @@
         const val = a.value.replace(/[\s\u0000-\u001f]/g, '').toLowerCase();
         if (name.startsWith('on') || name === 'srcdoc'
           || (['href', 'src', 'xlink:href', 'action', 'formaction', 'background', 'poster'].includes(name)
-            && (val.startsWith('javascript:') || val.startsWith('vbscript:') || val.startsWith('data:text')))) {
+            && (val.startsWith('javascript:') || val.startsWith('vbscript:') || val.startsWith('data:text')))
+          || (['values', 'to', 'from', 'by'].includes(name) && (val.includes('javascript:') || val.includes('vbscript:')))) {
           el.removeAttribute(a.name);
         }
       });
@@ -494,11 +503,12 @@
 
   /* ------------------------------------------------------ suggestions -- */
   function kindProviders(kind) {
-    if (kind === 'stt') {
+    const prefs = settings().providers || {};
+    if (kind === 'stt' && !prefs.stt) {
       const list = (S.catalog && S.catalog.stt) || [];
       return { enabled: list, off: 0, links: [] };
     }
-    const info = (settings().providers || {})[API_KIND[kind]] || { order: [], disabled: [] };
+    const info = prefs[PREF_KIND[kind]] || { order: [], disabled: [] };
     const dis = new Set(info.disabled || []);
     const order = info.order || [];
     let enabled = order.filter((p) => !dis.has(p));
@@ -595,7 +605,7 @@
         list: cs.filter((c) => c.text).map((c) => ({ v: c.text, ctx: [p, c.sense, c.source].filter(Boolean).join(' · ') })),
       };
     }
-    if (kind === 'audio') return { list: cs.map((c) => ({ sha: c.sha256, v: c.context || '', tag: contextPosTag(c.context) })) };
+    if (kind === 'audio') return { list: cs.map((c) => ({ sha: c.sha256, v: c.context || q, tag: contextPosTag(c.context) })) };
     return { list: [] };
   }
 
@@ -999,7 +1009,7 @@
       }
       body += audioActions();
     }
-    body += `<div class="shf">${k === 'stt' ? 'Providers come from smia' : 'Order follows Settings · <button data-act="go" data-v="settings">Provider order</button>'}${off ? ` · ${off} switched off` : ''}</div>`;
+    body += `<div class="shf">Order follows Settings · <button data-act="go" data-v="settings">Provider order</button>${off ? ` · ${off} switched off` : ''}</div>`;
     const spinning = S.sheet.spin && enabled.some((p) => st.P[p] && st.P[p].loading);
     return sheetShell(`${KINDS[k]} suggestions`, KINDS[k], `<div class="shq"><input class="in" id="shq" data-f="q" value="${esc(q)}" aria-label="Shared query" spellcheck="false" ${k === 'stt' ? 'readonly' : ''}><button class="ib ${spinning ? 'spin' : ''}" data-act="rerun" aria-label="Run all providers again">${ic('rerun')}</button></div><div class="shb">${body}</div>`);
   }
@@ -1200,7 +1210,7 @@
       <section class="sg2"><h2>Provider order</h2><p class="hint">Drag to reorder. The first enabled provider prefills; suggestion sheets list them in this order.</p>
         ${SETTINGS_KINDS.map(([k, label]) => {
     const info = providers[k] || { order: [], disabled: [] };
-    const hint = k === 'tts' ? '<small>forvo and filmot open externally</small>' : k === 'inflections' ? '<small>also answers part of speech</small>' : '';
+    const hint = k === 'tts' ? '<small>forvo and filmot open externally</small>' : '';
     return `<div class="pk"><div class="kh">${label}${hint}</div>
           ${info.order.length ? `<ul class="plist" data-kind="${k}">${info.order.map((p, i) => { const off = (info.disabled || []).includes(p); return `<li data-p="${esc(p)}" class="${off ? 'off' : ''}"><span class="h" tabindex="0" role="button" aria-label="Move ${esc(p)}">${ic('drag')}</span><span class="o">${i + 1}</span><span class="nm">${esc(p)}</span>${LINKP.includes(p) ? '<span class="lk">link</span>' : ''}<button class="tg" data-act="poff" data-k="${k}" data-v="${esc(p)}" aria-pressed="${!off}" aria-label="Enable ${esc(p)}"></button></li>`; }).join('')}</ul>` : '<div class="nopara">No providers — smia did not list any for this kind.</div>'}</div>`;
   }).join('')}</section>
@@ -1791,6 +1801,11 @@
       return;
     }
     if (E.ctx === 'triage') {
+      // The survivor may be further along the belt: its queue entry must be
+      // the merged row, or reaching it would show (and a verdict would save
+      // back) the pre-merge copy, silently undoing the merge.
+      const si = T.queue.findIndex((n) => n.id === r.body.id);
+      if (si !== -1) T.queue[si] = r.body;
       dropFromQueue(absorbed);
       await showTriageNote();
       toast(`Merged into “${o.text}” · this note removed`);
@@ -2239,7 +2254,11 @@
       if (!CSS.supports('field-sizing', 'content')) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; }
     } else if (f === 'lemma') { F.lemma = el.value; E.lemmaDirty = true; delete E.prov.lemma; }
     else if (f === 'ipa') { F.transcription = el.value; delete E.prov.ipa; }
-    else if (f === 'posc') { F.pos = el.value.trim(); delete E.prov.pos; }
+    else if (f === 'posc') {
+      F.pos = el.value.trim(); delete E.prov.pos;
+      const np = app.querySelector('.nopara');
+      if (np && !SHAPES[F.pos]) np.textContent = F.pos ? `No paradigm for ${F.pos}` : 'Choose a part of speech to see its paradigm';
+    }
     else if (f === 'infl') { F.inflections[el.dataset.k] = el.value; delete E.prov.inflections; }
     else if (f === 'trt') { F.translations[+el.dataset.i].text = el.value; delete E.prov.translations; }
     else if (f === 'ex') { F.examples[+el.dataset.i] = el.value; el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; delete E.prov.examples; }
@@ -2275,7 +2294,6 @@
       const langs = el.value.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
       patchSettings({ default_target_langs: langs });
     }
-    if (f === 'posc' && E) render();
   });
 
   document.addEventListener('keydown', (e) => {

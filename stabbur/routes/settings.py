@@ -18,6 +18,15 @@ import smia_client
 from db.session import session_scope
 from routes.enrich import ENRICHABLE_KINDS
 
+# stabbur-editor-redesign (C17): the Settings page orders providers for two
+# more editor fields than stabbur proxies as enrichment kinds. "pos" has no
+# smia endpoint of its own — the part-of-speech sheet reads the inflections
+# lookup's reported pos — so it is reconciled against the INFLECTIONS
+# catalogue, but ordered (and switched off) independently of the paradigm
+# list. "stt" is smia's own speech-to-text kind (text from audio).
+PROVIDER_KINDS = (*ENRICHABLE_KINDS, "pos", "stt")
+CATALOGUE_SOURCE = {"pos": "inflections"}
+
 ALLOWED_SETTINGS_KEYS = {
     "override_prefill", "default_target_langs", "providers", "prefill_timing",
     "triage_navigate_save", "examples_count", "examples_max_providers",
@@ -41,7 +50,8 @@ def _fetch_catalogue() -> dict:
 def _serialize(db) -> dict:
     scalars = settings_store.read_scalars(db)
     catalogue = _fetch_catalogue()
-    scalars["providers"] = settings_store.resolve_providers(db, catalogue, ENRICHABLE_KINDS)
+    catalogue = {**catalogue, **{kind: catalogue.get(src, []) for kind, src in CATALOGUE_SOURCE.items()}}
+    scalars["providers"] = settings_store.resolve_providers(db, catalogue, PROVIDER_KINDS)
     # stabbur-triage-queues D1: the triage selector reads its queues from
     # here, so they ride along with every settings read.
     scalars["triage_queues"] = settings_store.read_queues(db)
@@ -96,8 +106,8 @@ def _validate_patch_body(body: dict) -> str | None:
         if not isinstance(providers, dict):
             return "providers must be an object keyed by kind"
         for kind, kind_update in providers.items():
-            if kind not in ENRICHABLE_KINDS:
-                return f"unknown kind {kind!r}; must be one of {list(ENRICHABLE_KINDS)}"
+            if kind not in PROVIDER_KINDS:
+                return f"unknown kind {kind!r}; must be one of {list(PROVIDER_KINDS)}"
             if not isinstance(kind_update, dict):
                 return f"providers.{kind} must be an object"
             if "order" in kind_update:
@@ -220,5 +230,5 @@ def register_settings_routes(app):
                 custom = body.get("value_color_custom", current["value_color_custom"])
                 if color == "custom" and not custom:
                     return jsonify({"error": "value_color 'custom' requires value_color_custom"}), 400
-            settings_store.write(db, body, ENRICHABLE_KINDS)
+            settings_store.write(db, body, PROVIDER_KINDS)
             return jsonify(_serialize(db)), 200

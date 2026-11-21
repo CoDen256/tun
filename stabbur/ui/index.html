@@ -6,7 +6,7 @@
   <title>stabbur</title>
   <script>
     // Appearance before first paint (stabbur-editor-redesign D12). The server
-    // substitutes the stored theme + value colour into __STABBUR_LOOK__
+    // substitutes the stored theme + value colour into the JSON.parse below
     // (app.py); when it could not read them (database down, D157) the copy
     // this browser cached on its last visit is used instead, then the
     // defaults. ui.js re-confirms against GET /api/settings after load.
