@@ -1,4461 +1,2312 @@
-// ui.js — the operator console's client logic (vanilla JS, no framework,
-// no build step — matches smia's/mjolnir's UI convention, D46).
+// ui.js — stabbur's operator console (vanilla JS, no framework, no build
+// step — D46).
 //
-// Hash-based routing: #/notes, #/notes/:id, #/grammar, #/grammar/:id,
-// #/new-note, #/new-grammar. One `<section class="page">` per route, shown/
-// hidden via the `.active` class.
+// stabbur-editor-redesign: ONE editor serves the triage belt, a note opened
+// from the Notes list, and New note (design D1). Its look and interaction are
+// the locked reference, openspec/changes/stabbur-editor-redesign/mockups/
+// stabbur-editor-redesign.html (D2), and this file is deliberately shaped like
+// that mockup: the whole app is rendered from state into #app, every click
+// re-renders, and typing only updates values, done-markers and the Save state.
+//
+// State lives in five objects:
+//   S — shell: page, layout, open sheet/menu/popover, cached settings
+//   E — the editor session for the note on screen (null when none)
+//   T — the triage belt: queues, the in-memory queue, the undo history
+//   N — the Notes list: filters, sort, page, rows
+//   G — the grammar pages
+//
+// Hash routes: #/triage, #/notes, #/notes/:id, #/new-note, #/grammar,
+// #/grammar/:id, #/grammar/new, #/settings.
 
-// Empty at the domain root (local dev); the mount prefix (e.g. "/stabbur")
-// once reverse-proxied — set by app.py's ui_index() templating in
-// index.html from the proxy's X-Forwarded-Prefix header. Every absolute
-// API/blob request below goes through this so the same bundle works
-// unmodified at either mount point.
-const API_BASE = window.STABBUR_PREFIX || '';
+'use strict';
 
-const INFLECTION_SHAPES = {
-  substantiv: ['article', 'sg_indef', 'sg_def', 'pl_indef', 'pl_def'],
-  adjektiv: ['positiv', 'nøytrum', 'flertall', 'komparativ', 'superlativ'],
-  verb: ['infinitiv', 'presens', 'preteritum', 'perfektum'],
-  adverb: ['form'],
-};
+(() => {
+  // Empty at the domain root (local dev); the mount prefix (e.g. "/stabbur")
+  // behind the gateway — substituted into index.html by app.py from the
+  // proxy's X-Forwarded-Prefix header.
+  const API_BASE = window.STABBUR_PREFIX || '';
+  const app = document.getElementById('app');
 
-// Grammatically meaningful row grouping for the inflection fields —
-// substantiv only (singular forms, then plural forms); every other PoS
-// falls back to the default flat layout (inflection-rows-and-fill
-// design.md D1 — no row-grouping was requested for adjektiv/verb/adverb,
-// and an arbitrary N-per-row chunk there would carry no actual meaning).
-const INFLECTION_ROW_GROUPS = {
-  substantiv: [['article'], ['sg_indef', 'sg_def'], ['pl_indef', 'pl_def']],
-};
+  /* ------------------------------------------------------------- icons -- */
+  const P = {
+    spark: '<path d="M12 3.5l1.6 4.9 4.9 1.6-4.9 1.6L12 16.5l-1.6-4.9L5.5 10l4.9-1.6z"/><path d="M18.5 15.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z"/>',
+    trash: '<path d="M4.5 7h15M9.5 7V4.8h5V7M6.5 7l.8 12.2h9.4L17.5 7"/>',
+    skip: '<path d="M6 6l6 6-6 6M13 6l6 6-6 6"/>',
+    prev: '<path d="M9 14.5L4.5 10 9 5.5"/><path d="M4.5 10h10a5 5 0 010 10H12"/>',
+    more: '<circle cx="5.5" cy="12" r="1.1"/><circle cx="12" cy="12" r="1.1"/><circle cx="18.5" cy="12" r="1.1"/>',
+    play: '<path d="M8 5.5v13l10.5-6.5z"/>',
+    pause: '<path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/>',
+    x: '<path d="M6 6l12 12M18 6L6 18"/>',
+    rerun: '<path d="M19.5 12a7.5 7.5 0 11-2.2-5.3"/><path d="M19.5 4.5v4h-4"/>',
+    back: '<path d="M14.5 5.5L8 12l6.5 6.5"/>',
+    dup: '<rect x="8.5" y="8.5" width="11" height="11" rx="1.5"/><path d="M15.5 8.5V5.5a1 1 0 00-1-1h-9a1 1 0 00-1 1v9a1 1 0 001 1h3"/>',
+    up: '<path d="M12 15.5V4.5M7.5 9L12 4.5 16.5 9"/><path d="M4.5 15v4.5h15V15"/>',
+    clip: '<rect x="6" y="5" width="12" height="15.5" rx="1.5"/><path d="M9.5 5V3.5h5V5"/><path d="M9 11h6M9 14.5h4"/>',
+    ext: '<path d="M10 5H5.5v13.5H19V14"/><path d="M13.5 4.5h6v6M19.5 4.5l-8 8"/>',
+    drag: '<circle cx="9" cy="7" r=".9"/><circle cx="15" cy="7" r=".9"/><circle cx="9" cy="12" r=".9"/><circle cx="15" cy="12" r=".9"/><circle cx="9" cy="17" r=".9"/><circle cx="15" cy="17" r=".9"/>',
+    search: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.6-4.6"/>',
+    filter: '<path d="M4 6.5h16M7 12h10M10 17.5h4"/>',
+    snd: '<path d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3z"/><path d="M15.5 9a4 4 0 010 6M18 6.5a7.5 7.5 0 010 11"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    merge: '<path d="M6 4.5v4.5a4 4 0 004 4h8"/><path d="M14.5 9.5L18 13l-3.5 3.5"/><path d="M6 19.5v-6"/>',
+    caret: '<path d="M7 10l5 5 5-5"/>',
+    check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+    pen: '<path d="M15 5l4 4L8.5 19.5H4.5v-4z"/>',
+    sort: '<path d="M8 5v14M4.5 15.5L8 19l3.5-3.5M16 19V5M12.5 8.5L16 5l3.5 3.5"/>',
+  };
+  const ic = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const KNOWN_POS_VALUES = ['substantiv', 'adjektiv', 'verb', 'adverb', 'preposisjon', 'konjunksjon'];
+  /* ------------------------------------------------------------ domain -- */
+  const TYPES = ['word', 'expression', 'listening', 'pronunciation', 'grammar'];
+  const POS = ['substantiv', 'adjektiv', 'verb', 'adverb', 'preposisjon', 'konjunksjon'];
+  const POSAB = { substantiv: 'subst', adjektiv: 'adj', verb: 'verb', adverb: 'adv', preposisjon: 'prep', konjunksjon: 'konj' };
 
-// Only `word` notes carry a meaningful lemma/PoS; only `grammar` notes have
-// no transcription (their E side is a Norwegian answer, not a sound clip).
-const TYPE_VISIBLE_FIELDS = {
-  word: { lemma: true, pos: true, transcription: true },
-  expression: { lemma: false, pos: false, transcription: true },
-  listening: { lemma: false, pos: false, transcription: true },
-  pronunciation: { lemma: false, pos: false, transcription: true },
-  grammar: { lemma: false, pos: false, transcription: false },
-};
+  // The stored inflection keys per part of speech, with the label the editor
+  // shows for each. The keys are the data model's (unchanged); the labels are
+  // the mockup's. `article` is the noun's own field (the indefinite form is
+  // stored without it), shown first so the row reads "en | bil".
+  const SHAPES = {
+    substantiv: [['article', 'artikkel'], ['sg_indef', 'ubestemt entall'], ['sg_def', 'bestemt entall'], ['pl_indef', 'ubestemt flertall'], ['pl_def', 'bestemt flertall']],
+    adjektiv: [['positiv', 'hankjønn / hunkjønn'], ['nøytrum', 'intetkjønn'], ['flertall', 'flertall / bestemt'], ['komparativ', 'komparativ'], ['superlativ', 'superlativ']],
+    verb: [['infinitiv', 'infinitiv'], ['presens', 'presens'], ['preteritum', 'preteritum'], ['perfektum', 'perfektum']],
+    adverb: [['form', 'form']],
+  };
+  // Inflections count toward the done-markers only for these — the same
+  // three routes/notes.py's completeness (and so the list's Complete column
+  // and its least-complete sort) counts, so the marker and the column agree.
+  const PARADIGM_POS = ['substantiv', 'adjektiv', 'verb'];
+  const shapeKeys = (pos) => (SHAPES[pos] || []).map(([k]) => k);
+  const shapeLabel = (key) => {
+    for (const shape of Object.values(SHAPES)) for (const [k, l] of shape) if (k === key) return l;
+    return key.replace(/_/g, ' ');
+  };
 
-function setFieldVisible(fieldId, visible) {
-  const field = document.getElementById(fieldId);
-  if (!field) return;
-  field.style.display = visible ? '' : 'none';
-  const row = field.closest('.field-row');
-  if (row) {
-    const anyHidden = Array.from(row.children).some((c) => c.style.display === 'none');
-    row.classList.toggle('single', anyHidden);
+  const KINDS = { pos: 'Part of speech', ipa: 'Pronunciation', translations: 'Translations', inflections: 'Inflections', examples: 'Examples', audio: 'Audio', stt: 'Text from audio' };
+  // Which smia endpoint (and which Settings provider list) a sheet reads.
+  // Part of speech has no endpoint of its own: it reads the inflections
+  // lookup's reported `pos` (smia-enrichment-panel design D5).
+  const API_KIND = { pos: 'inflections', inflections: 'inflections', ipa: 'ipa', translations: 'translations', examples: 'examples', audio: 'tts' };
+  // forvo/filmot have no API — smia answers `{candidates: [], url}` — so they
+  // are links at the bottom of the audio sheet, never boxes (design D9).
+  const LINKP = ['forvo', 'filmot'];
+  const SETTINGS_KINDS = [['ipa', 'Pronunciation'], ['translations', 'Translations'], ['inflections', 'Inflections'], ['examples', 'Examples'], ['tts', 'Audio']];
+  const LANG_FALLBACK = ['en', 'de', 'fr', 'sv', 'es'];
+  const NAV = [['triage', 'Triage'], ['notes', 'Notes'], ['grammar', 'Grammar'], ['settings', 'Settings']];
+
+  // smia's `_pos_for()` fallback tokens, mapped onto the canonical six.
+  const POS_FALLBACK_MAP = { prep: 'preposisjon', konj: 'konjunksjon', sbu: 'konjunksjon', subst: 'substantiv' };
+  function canonicalPos(raw) {
+    if (!raw) return null;
+    return POS.includes(raw) ? raw : (POS_FALLBACK_MAP[raw] || null);
   }
-}
 
-function applyTypeFieldVisibility(prefix, type) {
-  const vis = TYPE_VISIBLE_FIELDS[type] || { lemma: true, pos: true, transcription: true };
-  setFieldVisible(`${prefix}_lemma_field`, vis.lemma);
-  setFieldVisible(`${prefix}_pos_field`, vis.pos);
-  setFieldVisible(`${prefix}_transcription_field`, vis.transcription);
-  // Gated on whether this type has a pos at all, NOT on whether pos is
-  // currently set (that used to double as the section's visibility switch
-  // — ui.js:448 — which hid the "Look up paradigm"/"Suggest part of
-  // speech" controls themselves on exactly the no-pos note this change's
-  // whole-paradigm apply exists for, an unreachable chicken-and-egg found
-  // live while verifying task 4.1). The fields *inside* still only
-  // populate once a pos is set (updateEditInflectionFields and friends).
-  setFieldVisible(`${prefix}_inflections_field`, vis.pos);
-}
-
-// PoS select + "Custom…" text fallback, shared shape between the note
-// editor (e_*) and the new-note form (c_*).
-function setPosValue(selectId, customId, pos) {
-  const select = document.getElementById(selectId);
-  const custom = document.getElementById(customId);
-  if (!pos) {
-    select.value = '';
-    custom.style.display = 'none';
-    custom.value = '';
-  } else if (KNOWN_POS_VALUES.includes(pos)) {
-    select.value = pos;
-    custom.style.display = 'none';
-    custom.value = '';
-  } else {
-    select.value = '__custom__';
-    custom.style.display = 'block';
-    custom.value = pos;
+  // stabbur-triage-queues D5: part of speech ORDERS candidates, it never
+  // filters them. Only a LEADING BRACKETED tag counts ("[verb] å komme i
+  // vei"); dictcc_static's unbracketed "noun Br." is deliberately untagged.
+  // Tags are normalised on both sides — dict.cc is English, stabbur Norwegian.
+  const POS_TAG_ALIASES = {
+    noun: 'substantiv', substantiv: 'substantiv', verb: 'verb', adj: 'adjektiv', adjective: 'adjektiv', adjektiv: 'adjektiv',
+    adv: 'adverb', adverb: 'adverb', prep: 'preposisjon', preposisjon: 'preposisjon', conj: 'konjunksjon', konjunksjon: 'konjunksjon',
+  };
+  function normalizePosTag(raw) {
+    if (!raw) return null;
+    const key = String(raw).trim().toLowerCase().replace(/\.$/, '');
+    return POS_TAG_ALIASES[key] || key || null;
   }
-}
+  function contextPosTag(context) {
+    const m = context ? /^\s*\[([^\]]+)\]/.exec(context) : null;
+    return m ? normalizePosTag(m[1]) : null;
+  }
+  // A stable partition: candidates matching the note's part of speech first.
+  // With no part of speech, or no match, the provider's order is untouched.
+  function orderByPos(list, notePos) {
+    const wanted = normalizePosTag(notePos);
+    if (!wanted) return list.slice();
+    const match = list.filter((c) => c.tag === wanted);
+    if (!match.length) return list.slice();
+    return match.concat(list.filter((c) => c.tag !== wanted));
+  }
 
-function getPosValue(selectId, customId) {
-  const select = document.getElementById(selectId);
-  if (select.value === '__custom__') return document.getElementById(customId).value || null;
-  return select.value || null;
-}
-
-function wirePosCustomToggle(selectId, customId, onChange) {
-  document.getElementById(selectId).addEventListener('change', () => {
-    const select = document.getElementById(selectId);
-    const custom = document.getElementById(customId);
-    if (select.value === '__custom__') {
-      custom.style.display = 'block';
-      custom.focus();
-    } else {
-      custom.style.display = 'none';
-      custom.value = '';
+  // Norwegian paradigm forms carry their grammatical marker in running text
+  // (å ringe, har ringt, en ring); once filed under their own labelled field
+  // the marker is stripped. A superlativ "strengest/strengeste" keeps the
+  // first form.
+  const INFL_PREFIX_STOPWORDS = { infinitiv: ['å'], perfektum: ['har', 'er'], sg_indef: ['en', 'et', 'ei'], sg_def: ['en', 'et', 'ei'] };
+  function normalizeInflectionValue(field, value) {
+    if (typeof value !== 'string') return value;
+    let out = value;
+    if (field === 'superlativ' && out.includes('/')) out = out.split('/')[0].trim();
+    const stop = INFL_PREFIX_STOPWORDS[field];
+    if (stop) {
+      const tokens = out.trim().split(/\s+/);
+      if (tokens.length > 1 && stop.includes(tokens[0].toLowerCase())) out = tokens.slice(1).join(' ');
     }
-    if (onChange) onChange();
-  });
-}
-
-// smia's `_pos_for()` fallback: the raw first ORDKLASSE token, for a
-// boy_gruppe `_SLOT_MAPS` doesn't shape-map. `substantiv`/`adjektiv`/`verb`/
-// `adverb` already arrive canonical from `_SLOT_MAPS` and pass through
-// unchanged below; `prep`/`konj`/`sbu` map cleanly onto the other two
-// canonical values `_SLOT_MAPS` never produces on its own, and `subst`
-// (invariable nouns, boy_gruppe `substantiv, ubøy`) is the same class as
-// plain `substantiv`, just a paradigm shape with nothing to fill — found by
-// querying the real table live (design.md Risks), not in the originally
-// proposed list. Every other raw token (`pron`, `det`, `interj`, `symb`,
-// `fork`, and rarer ones like `inf-merke`/`pref`) has no canonical
-// equivalent and is deliberately left unmapped — shown, never offered
-// (design D3). One map, used by both the whole-paradigm apply and the
-// part-of-speech suggest control, so they cannot disagree (task 3.3).
-const POS_FALLBACK_MAP = { prep: 'preposisjon', konj: 'konjunksjon', sbu: 'konjunksjon', subst: 'substantiv' };
-
-function canonicalPos(rawPos) {
-  if (!rawPos) return null;
-  const mapped = KNOWN_POS_VALUES.includes(rawPos) ? rawPos : (POS_FALLBACK_MAP[rawPos] || null);
-  console.assert(mapped === null || KNOWN_POS_VALUES.includes(mapped), `canonicalPos: non-canonical output for ${rawPos}`);
-  return mapped;
-}
-
-// The new-note form's PoS select is `c_pos` (no `_select` suffix, unlike
-// e_/t_) — a pre-existing naming inconsistency, not introduced here.
-function posFieldIdsFor(prefix) {
-  return prefix === 'c' ? { select: 'c_pos', custom: 'c_pos_custom' } : { select: `${prefix}_pos_select`, custom: `${prefix}_pos_custom` };
-}
-
-// Generic re-render of a form's inflection fields by prefix — the same
-// hide/show-by-shape logic every one of updateEditInflectionFields/
-// updateTriageInflectionFields/updateNewNoteInflectionFields already has,
-// factored out so the new pos-setting actions (whole-paradigm apply, pos
-// suggest) can drive all three forms without duplicating that glue or
-// touching those functions' existing call sites. The section's own
-// visibility is driven by type, not by pos (applyTypeFieldVisibility) —
-// this only (re)populates the fields inside it.
-function refreshInflectionFieldsForPrefix(prefix, pos, values) {
-  if (INFLECTION_SHAPES[pos]) renderInflectionFields(`${prefix}_inflections_fields`, pos, values);
-  else document.getElementById(`${prefix}_inflections_fields`).innerHTML = '';
-}
-
-// Carries forward whatever the operator already typed (if anything), else
-// the note's own stored inflections when the new pos matches what the note
-// already had — same carry-forward idiom as the existing manual pos-select
-// change handler, reused here so a pos set via apply/suggest doesn't drop
-// values whose keys exist in both the old and new shape (task 2.6).
-function carryForwardInflectionValues(prefix, newPos) {
-  const typedValues = readInflectionFields(`${prefix}_inflections_fields`);
-  if (Object.values(typedValues).some((v) => v)) return typedValues;
-  const note = prefix === 'e' ? currentNote : prefix === 't' ? currentTriageNote : null;
-  return (note && note.pos === newPos) ? note.inflections : null;
-}
-
-// unified-auth 4.5: there is no token to paste any more. The operator
-// authenticates ONCE at the gateway (Basic, username `operator`) and the
-// browser attaches that credential to every same-origin request this page
-// makes, including `<audio src=...>` — which is the exact reason /blob/ and
-// the TTS preview needed carve-outs before. Kept as a function returning {}
-// so the ~40 call sites stay one edit away from any future header.
-function authHeaders() {
-  return {};
-}
-
-async function api(path, options = {}) {
-  const resp = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: { ...(options.headers || {}), ...authHeaders() },
-  });
-  const text = await resp.text();
-  let body;
-  try { body = JSON.parse(text); } catch { body = text; }
-  return { status: resp.status, body };
-}
-
-function qs(params) {
-  const usp = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== null && v !== undefined && v !== '') usp.set(k, v);
+    return out;
   }
-  const s = usp.toString();
-  return s ? `?${s}` : '';
-}
-
-function fmtDate(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-function statusPill(status) {
-  return `<span class="pill ${status === 'ready' ? 'pill-ok' : 'pill-warn'}">${status}</span>`;
-}
-
-// stabbur-triage-queues task 2.4: Status and Audio were full-width text
-// columns over one-word values, which pushed the seven-column table past its
-// container. As glyphs they carry the same information in ~34px and give the
-// width back to Text. `title` plus `aria-label` so the meaning is reachable
-// by hover AND by a screen reader — a bare glyph would be neither.
-function statusGlyph(status) {
-  const ready = status === 'ready';
-  const label = ready ? 'ready' : 'draft';
-  return `<span class="glyph ${ready ? 'g-ok' : 'g-draft'}" title="${label}" aria-label="${label}" role="img">${ready ? '●' : '◐'}</span>`;
-}
-
-function audioGlyph(audioBlob) {
-  const label = audioBlob ? 'has audio' : 'no audio';
-  return `<span class="glyph ${audioBlob ? 'g-ok' : 'g-none'}" title="${label}" aria-label="${label}" role="img">${audioBlob ? '●' : '–'}</span>`;
-}
-
-function audioPill(audioBlob) {
-  return audioBlob
-    ? `<span class="pill pill-ok">✓ attached</span>`
-    : `<span class="pill pill-err">— missing</span>`;
-}
-
-// design.md D9: origin is read-only in the editor (it's immutable once
-// set, so offering it as a form input would be a lie). For origin=import,
-// show the source name rather than the raw import_ref JSON.
-function originLabel(note) {
-  if (note.origin === 'import') {
-    const source = note.import_ref && note.import_ref.source;
-    return `imported from ${escapeHtml(source || '?')}`;
+  // The article cut off sg_indef/sg_def is the noun's own `article` field.
+  function deriveArticleToken(paradigm) {
+    const source = paradigm && (paradigm.sg_indef || paradigm.sg_def);
+    if (typeof source !== 'string') return null;
+    const tokens = source.trim().split(/\s+/);
+    return tokens.length > 1 && INFL_PREFIX_STOPWORDS.sg_indef.includes(tokens[0].toLowerCase()) ? tokens[0].toLowerCase() : null;
   }
-  return escapeHtml(note.origin);
-}
 
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
-}
-
-// ------------------------------------------------- translation list field --
-
-function addTranslationRow(containerId, lang, text, onChange) {
-  const container = document.getElementById(containerId);
-  const row = document.createElement('div');
-  row.className = 'translation-row';
-  row.innerHTML = `
-    <input type="text" class="t-lang" placeholder="lang" value="${escapeHtml(lang || '')}">
-    <input type="text" class="t-text" placeholder="translation">
-    <button type="button" class="btn-ghost t-remove">✕</button>
-  `;
-  row.querySelector('.t-text').value = text || '';
-  row.querySelector('.t-remove').addEventListener('click', () => { row.remove(); if (onChange) onChange(); });
-  row.querySelectorAll('input').forEach((inp) => inp.addEventListener('input', () => { if (onChange) onChange(); }));
-  container.appendChild(row);
-  return row;
-}
-
-function renderTranslationRows(containerId, translations, onChange) {
-  const container = document.getElementById(containerId);
-  container.innerHTML = '';
-  (translations || []).forEach((t) => addTranslationRow(containerId, t.lang, t.text, onChange));
-}
-
-function readTranslationRows(containerId) {
-  return Array.from(document.querySelectorAll(`#${containerId} .translation-row`))
-    .map((row) => ({ lang: row.querySelector('.t-lang').value, text: row.querySelector('.t-text').value }))
-    .filter((t) => t.lang || t.text);
-}
-
-// -------------------------------------------------- inflection fields UI --
-
-// Norwegian paradigm forms read naturally with their grammatical marker in
-// front (å ringe, har ringt, en ring) — useful in running text from a
-// dictionary, redundant once the value is filed under its own
-// already-labeled field (infinitiv/perfektum/sg_indef say what the marker
-// would have said). Stripped at every point a value is rendered or stored —
-// typed in by hand, filled from a provider's paradigm, or taken from a
-// similar note — not just one of them, so the field never holds the marker
-// twice in two different ways.
-const INFLECTION_FIELD_PREFIX_STOPWORDS = {
-  infinitiv: ['å'],
-  perfektum: ['har', 'er'],
-  sg_indef: ['en', 'et', 'ei'],
-  sg_def: ['en', 'et', 'ei'],
-};
-
-// A provider's superlativ answer is often two forms joined by "/" — the
-// bare superlative and its definite form (usually just +e, e.g.
-// "strengest/strengeste") — one field holds one form, so only the first is
-// kept; the +e definite variant is derivable and not worth a second field.
-const INFLECTION_FIELD_SLASH_VARIANT_FIELDS = new Set(['superlativ']);
-
-// The article cut off sg_indef/sg_def by normalizeInflectionValue isn't
-// noise to discard — it's the note's own `article` field, just not yet
-// filed there. Looked up from the raw (pre-strip) paradigm value, so this
-// has to run before/alongside normalizeInflectionValue, not after.
-function deriveArticleToken(paradigmValues) {
-  if (!paradigmValues) return null;
-  const stopwords = INFLECTION_FIELD_PREFIX_STOPWORDS.sg_indef;
-  const source = paradigmValues.sg_indef || paradigmValues.sg_def;
-  if (typeof source !== 'string') return null;
-  const tokens = source.trim().split(/\s+/);
-  if (tokens.length > 1 && stopwords.includes(tokens[0].toLowerCase())) return tokens[0].toLowerCase();
-  return null;
-}
-
-function normalizeInflectionValue(field, value) {
-  if (typeof value !== 'string') return value;
-  let out = value;
-  if (INFLECTION_FIELD_SLASH_VARIANT_FIELDS.has(field) && out.includes('/')) {
-    out = out.split('/')[0].trim();
+  // Lemma follows a guess derived from the text until it is edited directly:
+  // a leading article / infinitive marker and a trailing particle are
+  // stripped ("å legge til" -> "legge").
+  const LEMMA_PREFIX_STOPWORDS = new Set(['en', 'ei', 'et', 'å']);
+  const LEMMA_SUFFIX_STOPWORDS = new Set(['til', 'ut', 'inn', 'opp', 'ned', 'av', 'på', 'i', 'om', 'for', 'fra', 'med', 'etter', 'over', 'under', 'sammen']);
+  function deriveLemmaGuess(text) {
+    const tokens = (text || '').trim().split(/\s+/).filter(Boolean);
+    if (tokens.length <= 1) return tokens[0] || '';
+    let start = 0;
+    let end = tokens.length - 1;
+    while (start < end && LEMMA_PREFIX_STOPWORDS.has(tokens[start].toLowerCase())) start += 1;
+    while (end > start && LEMMA_SUFFIX_STOPWORDS.has(tokens[end].toLowerCase())) end -= 1;
+    return tokens.slice(start, end + 1).join(' ');
   }
-  const stopwords = INFLECTION_FIELD_PREFIX_STOPWORDS[field];
-  if (stopwords) {
-    const tokens = out.trim().split(/\s+/);
-    if (tokens.length > 1 && stopwords.includes(tokens[0].toLowerCase())) out = tokens.slice(1).join(' ');
+  // Examples and audio search the whole phrase, only a leading article or
+  // infinitive marker stripped.
+  function deriveExamplesQuery(text) {
+    const tokens = (text || '').trim().split(/\s+/).filter(Boolean);
+    if (tokens.length <= 1) return tokens[0] || '';
+    let start = 0;
+    while (start < tokens.length - 1 && LEMMA_PREFIX_STOPWORDS.has(tokens[start].toLowerCase())) start += 1;
+    return tokens.slice(start).join(' ');
   }
-  return out;
-}
 
-function inflectionFieldHtml(field, value) {
-  const stripped = normalizeInflectionValue(field, value);
-  return `
-    <div class="inflection-field">
-      <label>${escapeHtml(field.replace(/_/g, ' '))}</label>
-      <input type="text" data-inflection-field="${field}" value="${escapeHtml(stripped || '')}">
-    </div>
-  `;
-}
+  // stabbur stores the macro-language "no"; smia's providers want "nb".
+  const smiaLang = (sourceLang) => (sourceLang === 'no' ? 'nb' : (sourceLang || 'nb'));
 
-function renderInflectionFields(containerId, pos, values) {
-  const container = document.getElementById(containerId);
-  const shape = INFLECTION_SHAPES[pos];
-  if (!shape) {
-    container.innerHTML = '';
-    return;
+  // The gap marker for a token smia resolved nothing for — an assembled
+  // transcription with a hole in it must LOOK like one.
+  const TRANSCRIPTION_GAP = '…';
+
+  /* --------------------------------------------------------------- api -- */
+  async function api(path, options = {}) {
+    let resp;
+    try {
+      resp = await fetch(`${API_BASE}${path}`, options);
+    } catch (err) {
+      return { status: 0, body: { error: `network error: ${err.message}` } };
+    }
+    const text = await resp.text();
+    let body;
+    try { body = JSON.parse(text); } catch { body = text; }
+    return { status: resp.status, body };
   }
-  const groups = INFLECTION_ROW_GROUPS[pos];
-  if (!groups) {
-    container.innerHTML = shape.map((field) => inflectionFieldHtml(field, values && values[field])).join('');
-    return;
+  const jsonReq = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const errMsg = (r, fallback = 'Something went wrong') => (r && r.body && r.body.error) || (r && r.status ? `${fallback} (${r.status})` : fallback);
+  function qs(params) {
+    const usp = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== '') usp.set(k, v); });
+    const s = usp.toString();
+    return s ? `?${s}` : '';
   }
-  container.innerHTML = groups
-    .map((group) => `<div class="inflection-row">${group.map((field) => inflectionFieldHtml(field, values && values[field])).join('')}</div>`)
-    .join('');
-}
+  const blobUrl = (sha) => `${API_BASE}/blob/${sha}`;
+  const previewUrl = (sha) => `${API_BASE}/api/enrich/tts/preview/${sha}`;
 
-function readInflectionFields(containerId) {
-  const out = {};
-  document.querySelectorAll(`#${containerId} [data-inflection-field]`).forEach((input) => {
-    out[input.dataset.inflectionField] = normalizeInflectionValue(input.dataset.inflectionField, input.value);
-  });
-  return out;
-}
+  /* ------------------------------------------------------------- state -- */
+  const mq = window.matchMedia('(min-width: 960px)');
+  const S = {
+    page: 'notes', id: null, vp: mq.matches ? 'desktop' : 'phone',
+    settings: null, catalog: null, rules: null,
+    tab: 'word', sheet: null, menu: null, confirm: null, pick: null,
+    playKey: null, clipBusy: false,
+    copyOf: {}, // note id -> the text of the note it was duplicated from (this session)
+  };
+  let E = null;
+  const T = {
+    queues: [], selectedId: null, adhoc: null, counts: {},
+    queue: [], index: 0, history: [], loading: false, truncated: false, busy: false,
+  };
+  const N = {
+    F: blankFilters(), sort: 'updated', q: '', limit: 50, offset: 0,
+    rows: [], total: 0, all: null, loading: false, seq: 0, error: null,
+  };
+  const G = { list: null, rule: null, used: [], edit: false, title: '', html: '', isNew: false, loading: false };
 
-// --------------------------------------------------- grammar rule select --
+  function blankFilters() { return { status: 'any', type: [], pos: [], origin: [], audio: 'any', missing: [], within: 'any' }; }
 
-async function populateGrammarRuleSelect(selectEl, currentValue) {
-  const { status, body } = await api('/api/grammar_rules?sort=title_asc');
-  const options = ['<option value="">— none —</option>'];
-  if (status === 200) {
-    body.forEach((r) => options.push(`<option value="${r.id}">${escapeHtml(r.title)} (#${r.id})</option>`));
+  /* -------------------------------------------------- settings + look -- */
+  const DEFAULT_SETTINGS = {
+    default_target_langs: ['en', 'de'], providers: {}, prefill_timing: 'on_open', triage_navigate_save: 'autosave',
+    examples_count: 3, examples_max_providers: 1, override_prefill: true, theme: 'auto', value_color: 'blue', value_color_custom: null,
+  };
+  const settings = () => S.settings || DEFAULT_SETTINGS;
+
+  // Theme + value colour (D12). The same three attributes index.html's
+  // inline script sets before first paint; cached for that script's
+  // fallback when the server cannot read them.
+  function applyLook(s) {
+    const r = document.documentElement;
+    if (s.theme === 'light' || s.theme === 'dark') r.dataset.theme = s.theme; else delete r.dataset.theme;
+    r.dataset.val = s.value_color || 'blue';
+    if (s.value_color === 'custom' && s.value_color_custom) r.style.setProperty('--val', s.value_color_custom);
+    else r.style.removeProperty('--val');
+    try {
+      localStorage.setItem('stabbur_look', JSON.stringify({ theme: s.theme, value_color: s.value_color, value_color_custom: s.value_color_custom }));
+    } catch { /* private mode */ }
   }
-  selectEl.innerHTML = options.join('');
-  selectEl.value = currentValue != null ? String(currentValue) : '';
-}
+  async function loadSettings() {
+    const r = await api('/api/settings');
+    if (r.status === 200) { S.settings = r.body; applyLook(r.body); }
+    return settings();
+  }
+  async function patchSettings(updates, okMsg = 'Saved') {
+    const r = await api('/api/settings', jsonReq('PATCH', updates));
+    if (r.status === 200) { S.settings = r.body; applyLook(r.body); if (okMsg) toast(okMsg); } else toast(errMsg(r, 'Could not save'));
+    render();
+    return r.status === 200;
+  }
+  async function loadCatalog() {
+    if (S.catalog) return S.catalog;
+    const r = await api('/api/enrich/providers');
+    if (r.status === 200) S.catalog = r.body;
+    return S.catalog || {};
+  }
+  async function loadRules(force) {
+    if (S.rules && !force) return S.rules;
+    const r = await api('/api/grammar_rules?sort=title_asc');
+    S.rules = r.status === 200 ? r.body : (S.rules || []);
+    return S.rules;
+  }
+  const ruleById = (id) => (S.rules || []).find((r) => r.id === id) || null;
 
-// ---------------------------------------------------------------- router --
-
-const routes = {
-  notes: renderNotesList,
-  'notes-detail': renderNoteDetail,
-  grammar: renderGrammarList,
-  'grammar-detail': renderGrammarDetail,
-  'new-note': renderNewNote,
-  'new-grammar': renderNewGrammar,
-  settings: renderSettings,
-  triage: renderTriage,
-};
-
-function parseHash() {
-  const hash = location.hash.replace(/^#\/?/, '');
-  const parts = hash.split('/').filter(Boolean);
-  if (parts.length === 0) return { route: 'notes', id: null };
-  if (parts[0] === 'notes' && parts[1]) return { route: 'notes-detail', id: parts[1] };
-  if (parts[0] === 'grammar' && parts[1]) return { route: 'grammar-detail', id: parts[1] };
-  if (routes[parts[0]]) return { route: parts[0], id: null };
-  return { route: 'notes', id: null };
-}
-
-function showPage(route) {
-  document.querySelectorAll('.page').forEach((el) => el.classList.remove('active'));
-  const pageId = {
-    notes: 'page-notes',
-    'notes-detail': 'page-note-detail',
-    grammar: 'page-grammar',
-    'grammar-detail': 'page-grammar-detail',
-    'new-note': 'page-new-note',
-    'new-grammar': 'page-new-grammar',
-    settings: 'page-settings',
-    triage: 'page-triage',
-  }[route];
-  document.getElementById(pageId).classList.add('active');
-
-  const railRoute = route.startsWith('notes') ? 'notes' : route.startsWith('grammar') ? 'grammar' : route;
-  document.querySelectorAll('.rail a').forEach((a) => {
-    a.classList.toggle('active', a.dataset.route === railRoute);
-  });
-}
-
-async function router() {
-  const { route, id } = parseHash();
-  showPage(route);
-  await routes[route](id);
-}
-
-window.addEventListener('hashchange', router);
-window.addEventListener('DOMContentLoaded', router);
-
-// ------------------------------------------------------------ notes list --
-
-const NOTES_PAGE_SIZES = [20, 50, 100];
-const notesListState = {
-  status: '', type: '', origin: '', sortField: 'updated', sortDir: 'desc',
-  // Paging is server-side (design D4), so the page is state the client has
-  // to hold. `offset` resets to 0 on every filter change (task 2.5) — a
-  // filter change produces a different result set, and keeping the old
-  // offset would land the operator in the middle of it, or past its end.
-  limit: 50, offset: 0,
-};
-
-function notesListResetPage() {
-  notesListState.offset = 0;
-}
-
-function wireChipGroup(containerId, onChange) {
-  const group = document.getElementById(containerId);
-  group.querySelectorAll('.chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      group.querySelectorAll('.chip').forEach((c) => c.classList.remove('active'));
-      chip.classList.add('active');
-      onChange(chip.dataset.value);
+  // Grammar HTML is operator content behind auth, but it is rendered, so
+  // scripts and handlers must not run (design D13): drop executable and
+  // embedding elements, every on* attribute, and javascript:/data: URLs.
+  const UNSAFE_TAGS = 'script,style,iframe,frame,frameset,object,embed,link,meta,base,form,noscript,template';
+  function sanitizeHtml(html) {
+    const doc = new DOMParser().parseFromString(`<body>${html || ''}</body>`, 'text/html');
+    doc.body.querySelectorAll(UNSAFE_TAGS).forEach((el) => el.remove());
+    doc.body.querySelectorAll('*').forEach((el) => {
+      Array.from(el.attributes).forEach((a) => {
+        const name = a.name.toLowerCase();
+        const val = a.value.replace(/[\s\u0000-\u001f]/g, '').toLowerCase();
+        if (name.startsWith('on') || name === 'srcdoc'
+          || (['href', 'src', 'xlink:href', 'action', 'formaction', 'background', 'poster'].includes(name)
+            && (val.startsWith('javascript:') || val.startsWith('vbscript:') || val.startsWith('data:text')))) {
+          el.removeAttribute(a.name);
+        }
+      });
     });
-  });
-}
+    return doc.body.innerHTML;
+  }
 
-wireChipGroup('notesStatusChips', (value) => { notesListState.status = value; notesListResetPage(); renderNotesList(); });
-wireChipGroup('notesTypeChips', (value) => { notesListState.type = value; notesListResetPage(); renderNotesList(); });
-wireChipGroup('notesOriginChips', (value) => { notesListState.origin = value; notesListResetPage(); renderNotesList(); });
+  /* -------------------------------------------------------------- toast -- */
+  const toastEl = document.createElement('div');
+  toastEl.className = 'toast';
+  toastEl.id = 'toast';
+  toastEl.setAttribute('role', 'status');
+  let toastTimer;
+  function toast(m) {
+    toastEl.textContent = m;
+    toastEl.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('on'), 2400);
+  }
 
-function wireSortableHeaders(theadSelector, state, defaultDirs, onChange) {
-  document.querySelectorAll(`${theadSelector} .sort-th`).forEach((th) => {
-    th.addEventListener('click', () => {
-      const field = th.dataset.sort;
-      if (state.sortField === field) {
-        state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
-      } else {
-        state.sortField = field;
-        state.sortDir = defaultDirs[field] || 'asc';
+  /* ------------------------------------------------------------- audio -- */
+  // One player for the editor's selection, one for previews (candidates,
+  // merge takes, reuse rows). Kept outside the DOM so a re-render never
+  // interrupts playback.
+  const PLAYER = new Audio();
+  const PREVIEW = new Audio();
+  PREVIEW.preload = 'none';
+  let playRaf = null;
+  const waveCache = {}; // sha -> 'loading' | { dur, peaks|null }
+  const durCache = {}; // url -> seconds | 'loading'
+
+  function stopAudio() {
+    PLAYER.pause();
+    PREVIEW.pause();
+    if (playRaf) cancelAnimationFrame(playRaf);
+    playRaf = null;
+    S.playKey = null;
+  }
+  function metaDuration(url) {
+    return new Promise((resolve) => {
+      const a = new Audio();
+      a.preload = 'metadata';
+      const done = (v) => { a.src = ''; resolve(v); };
+      a.addEventListener('loadedmetadata', () => done(Number.isFinite(a.duration) ? a.duration : 0), { once: true });
+      a.addEventListener('error', () => done(0), { once: true });
+      setTimeout(() => done(0), 15000);
+      a.src = url;
+    });
+  }
+  function durationOf(url) {
+    const d = durCache[url];
+    if (d === undefined) {
+      durCache[url] = 'loading';
+      metaDuration(url).then((v) => { durCache[url] = v; scheduleRender(); });
+      return null;
+    }
+    return d === 'loading' ? null : d;
+  }
+  async function loadWave(sha) {
+    if (!sha || waveCache[sha]) return;
+    waveCache[sha] = 'loading';
+    try {
+      const buf = await (await fetch(blobUrl(sha))).arrayBuffer();
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AC();
+      const dec = await ctx.decodeAudioData(buf);
+      if (ctx.close) ctx.close();
+      const data = dec.getChannelData(0);
+      const bars = 64;
+      const step = Math.max(1, Math.floor(data.length / bars));
+      const peaks = [];
+      for (let i = 0; i < bars; i += 1) {
+        let m = 0;
+        for (let j = 0; j < step; j += 1) { const v = Math.abs(data[i * step + j] || 0); if (v > m) m = v; }
+        peaks.push(m);
       }
-      document.querySelectorAll(`${theadSelector} .sort-th`).forEach((el) => {
-        const active = el.dataset.sort === state.sortField;
-        el.classList.toggle('sort-active', active);
-        el.querySelector('.sort-caret').textContent = active ? (state.sortDir === 'asc' ? '▲' : '▼') : '';
+      const mx = Math.max(...peaks) || 1;
+      waveCache[sha] = { dur: dec.duration, peaks: peaks.map((p) => p / mx) };
+    } catch {
+      // A file the browser cannot decode still plays and trims: fall back to
+      // the element's own metadata for the duration, with a flat waveform.
+      waveCache[sha] = { dur: await metaDuration(blobUrl(sha)), peaks: null };
+    }
+    scheduleRender();
+  }
+  function previewToggle(key, url) {
+    if (S.playKey === key) { stopAudio(); render(); return; }
+    stopAudio();
+    PREVIEW.src = url;
+    S.playKey = key;
+    PREVIEW.play().catch(() => { S.playKey = null; toast('Could not play that recording'); render(); });
+    render();
+  }
+  PREVIEW.addEventListener('ended', () => { S.playKey = null; scheduleRender(); });
+
+  /* ----------------------------------------------------------- the form -- */
+  function normInfl(infl) {
+    const out = {};
+    Object.entries(infl || {}).forEach(([k, v]) => { out[k] = normalizeInflectionValue(k, v == null ? '' : String(v)); });
+    return out;
+  }
+  function formFrom(n) {
+    return {
+      text: n.text || '', type: n.type || 'word', pos: n.pos || '', lemma: n.lemma || '',
+      inflections: normInfl(n.inflections), audio_blob: n.audio_blob || null, audio_sel_ms: n.audio_sel_ms || null,
+      transcription: n.transcription || '',
+      translations: (n.translations || []).map((t) => ({ lang: t.lang || '', text: t.text || '' })),
+      examples: (n.examples || []).slice(), grammar_rule_id: n.grammar_rule_id ?? null,
+      status: n.status || 'draft', source_lang: n.source_lang || 'no',
+    };
+  }
+  // What a save sends. Translations and examples are separate values end to
+  // end; blank rows are simply not values. Inflections carry only the
+  // current part of speech's fields — or, for a part of speech without a
+  // paradigm, whatever was stored, untouched.
+  function payload(f, withStatus) {
+    let inflections;
+    if (SHAPES[f.pos]) {
+      inflections = {};
+      shapeKeys(f.pos).forEach((k) => {
+        const v = normalizeInflectionValue(k, (f.inflections[k] || '').trim());
+        if (v) inflections[k] = v;
       });
-      onChange();
-    });
-  });
-}
-
-wireSortableHeaders('#page-notes thead', notesListState, { text: 'asc', updated: 'desc' }, () => { notesListResetPage(); renderNotesList(); });
-document.querySelector('#page-notes thead .sort-th[data-sort="updated"]').classList.add('sort-active');
-document.querySelector('#page-notes thead .sort-th[data-sort="updated"] .sort-caret').textContent = '▼';
-
-async function renderNotesList() {
-  const status = notesListState.status;
-  const type = notesListState.type;
-  const origin = notesListState.origin;
-  const sort = `${notesListState.sortField}_${notesListState.sortDir}`;
-  const q = document.getElementById('notesSearch').value.trim();
-  const { limit, offset } = notesListState;
-
-  const { status: httpStatus, body } = await api(
-    `/api/notes/authoring${qs({ status, type, origin, sort, q, limit, offset })}`
-  );
-  const tbody = document.getElementById('notesTableBody');
-  if (httpStatus !== 200) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">${escapeHtml(JSON.stringify(body))}</td></tr>`;
-    renderNotesPager(0);
-    return;
-  }
-
-  // The route answers with a paged envelope (design D4): this page's rows,
-  // plus the total and the breakdown over the FILTERED set. The breakdown
-  // deliberately comes from the server — computing it from `rows` would
-  // silently turn "69 missing audio" into "however many of these 20 are".
-  const rows = body.notes || [];
-  const total = body.total || 0;
-  const counts = body.counts || { ready: 0, draft: 0, missing_audio: 0 };
-  document.getElementById('notesSummary').textContent =
-    `${total} total · ${counts.ready} ready · ${counts.draft} draft · ${counts.missing_audio} missing audio`;
-
-  if (!rows.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">${
-      total ? 'No notes on this page — the filters changed under it.' : 'No notes match these filters.'
-    }</td></tr>`;
-    renderNotesPager(total);
-    return;
-  }
-
-  tbody.innerHTML = rows.map((n) => `
-    <tr data-id="${n.id}">
-      <td class="trunc"><strong>${escapeHtml(n.text)}</strong></td>
-      <td>${escapeHtml(n.type)}</td>
-      <td>${escapeHtml(n.pos || '—')}</td>
-      <td class="col-icon">${statusGlyph(n.status)}</td>
-      <td class="col-icon">${audioGlyph(n.audio_blob)}</td>
-      <td class="trunc">${escapeHtml((n.translations && n.translations[0] && n.translations[0].text) || '—')}</td>
-      <td class="mono">${fmtDate(n.updated_at)}</td>
-    </tr>
-  `).join('');
-
-  tbody.querySelectorAll('tr[data-id]').forEach((row) => {
-    row.addEventListener('click', () => { location.hash = `#/notes/${row.dataset.id}`; });
-  });
-
-  renderNotesPager(total);
-}
-
-// task 2.5: the slice-of-total readout, page navigation and the page-size
-// choice. The readout is 1-indexed because it is prose for a human ("41-60
-// of 312"), while `offset` stays 0-indexed because it is an API parameter.
-function renderNotesPager(total) {
-  const pager = document.getElementById('notesPager');
-  if (!pager) return;
-  const { limit, offset } = notesListState;
-  const from = total === 0 ? 0 : offset + 1;
-  const to = Math.min(offset + limit, total);
-  const pageCount = Math.max(1, Math.ceil(total / limit));
-  const current = Math.floor(offset / limit) + 1;
-
-  const sizeOptions = NOTES_PAGE_SIZES
-    .map((n) => `<option value="${n}"${n === limit ? ' selected' : ''}>${n}</option>`)
-    .join('');
-
-  // Elide the middle of a long run rather than rendering 40 buttons: first,
-  // last, and a window around the current page.
-  const pages = [];
-  for (let p = 1; p <= pageCount; p += 1) {
-    if (p === 1 || p === pageCount || Math.abs(p - current) <= 2) pages.push(p);
-    else if (pages[pages.length - 1] !== '…') pages.push('…');
-  }
-
-  pager.innerHTML = `
-    <span class="pager-count">${total === 0 ? 'nothing to show' : `${from}–${to} of ${total}`}</span>
-    <label for="notesPageSize">Per page</label>
-    <select id="notesPageSize" aria-label="Rows per page">${sizeOptions}</select>
-    <div class="pager-pages">
-      <button type="button" class="btn-ghost" data-page-rel="-1" ${current <= 1 ? 'disabled' : ''}>‹ Prev</button>
-      ${pages.map((p) => (p === '…'
-        ? '<span class="pager-gap">…</span>'
-        : `<button type="button" data-page="${p}"${p === current ? ' aria-current="page"' : ''}>${p}</button>`)).join('')}
-      <button type="button" class="btn-ghost" data-page-rel="1" ${current >= pageCount ? 'disabled' : ''}>Next ›</button>
-    </div>`;
-
-  pager.querySelector('#notesPageSize').addEventListener('change', (e) => {
-    notesListState.limit = Number(e.target.value);
-    notesListResetPage();
-    renderNotesList();
-  });
-  pager.querySelectorAll('[data-page]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      notesListState.offset = (Number(btn.dataset.page) - 1) * notesListState.limit;
-      renderNotesList();
-    });
-  });
-  pager.querySelectorAll('[data-page-rel]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const next = current + Number(btn.dataset.pageRel);
-      if (next < 1 || next > pageCount) return;
-      notesListState.offset = (next - 1) * notesListState.limit;
-      renderNotesList();
-    });
-  });
-}
-
-// stabbur-triage-queues D3: the second entry point. The notes browser's
-// filters and a queue's filters are the same vocabulary, so this hands over
-// an UNSAVED queue rather than building a parallel one — the operator can
-// then name and save it from the belt, or not. A queue is just a filter set
-// that was given a name.
-document.getElementById('notesTriageTheseBtn').addEventListener('click', () => {
-  const filters = {};
-  if (notesListState.status) filters.status = notesListState.status;
-  if (notesListState.type) filters.type = notesListState.type;
-  if (notesListState.origin) filters.origin = notesListState.origin;
-  const q = document.getElementById('notesSearch').value.trim();
-  if (q) filters.q = q;
-
-  triageQueueState.adhoc = {
-    adhoc: true,
-    name: 'These results',
-    filters,
-    sort: `${notesListState.sortField}_${notesListState.sortDir}`,
-  };
-  location.hash = '#/triage';
-});
-
-let notesSearchDebounce;
-document.getElementById('notesSearch').addEventListener('input', () => {
-  clearTimeout(notesSearchDebounce);
-  notesSearchDebounce = setTimeout(() => { notesListResetPage(); renderNotesList(); }, 250);
-});
-
-// ----------------------------------------------------------- note detail --
-
-const EDIT_FIELD_IDS = [
-  'type', 'source_lang', 'text', 'transcription', 'pos', 'lemma',
-  'context_text', 'grammar_rule_id', 'status',
-];
-
-let currentNote = null;
-
-// The stored note is assigned from several places (load, save, audio
-// attach, selection edit). The similar-notes dirty strip compares the open
-// form against it, so EVERY one of those has to refresh the strip — and the
-// strip went stale after a save precisely because the save sites did not
-// know it existed. Routing the assignment through one setter makes that
-// structural instead of a convention each new call site has to remember.
-function setCurrentNote(note) {
-  currentNote = note;
-  updateSimilarDirtyStrip('e');
-}
-let waveformState = null; // { durationMs, selStart, selEnd, dragging }
-
-async function renderNoteDetail(id) {
-  const { status, body: note } = await api(`/api/notes/${id}`);
-  if (status !== 200) {
-    document.getElementById('noteDetailTitle').textContent = 'Not found';
-    document.getElementById('noteDetailSub').textContent = '';
-    return;
-  }
-  setCurrentNote(note);
-
-  document.getElementById('noteDetailTitle').textContent = note.text;
-  document.getElementById('noteDetailSub').innerHTML =
-    `${escapeHtml(note.type)} · ${escapeHtml(note.pos || '—')} · ${statusPill(note.status)} · ` +
-    `${originLabel(note)} · ` +
-    `created ${fmtDate(note.created_at)} · updated ${fmtDate(note.updated_at)}`;
-
-  document.getElementById('e_text').value = note.text || '';
-  document.getElementById('e_lemma').value = note.lemma || '';
-  document.getElementById('e_type').value = note.type;
-  setPosValue('e_pos_select', 'e_pos_custom', note.pos);
-  document.getElementById('e_source_lang').value = note.source_lang || '';
-  document.getElementById('e_status').value = note.status;
-  document.getElementById('e_transcription').value = note.transcription || '';
-  renderTranslationRows('e_translations_list', note.translations, updateNoteJsonView);
-  document.getElementById('e_context_text').value = note.context_text || '';
-  await populateGrammarRuleSelect(document.getElementById('e_grammar_rule_id'), note.grammar_rule_id);
-  document.getElementById('noteSaveResult').textContent = '';
-
-  updateEditInflectionFields(note.pos, note.inflections);
-  updateEditFieldVisibility();
-  resetSuggestQueries('e');
-  updateNoAudioWarning();
-  updateNoteJsonView();
-  renderAudioSection(note);
-  loadSimilarNotes('e', note.id);
-}
-
-function currentInflectionShapeField() {
-  const pos = getPosValue('e_pos_select', 'e_pos_custom');
-  return INFLECTION_SHAPES[pos] ? pos : null;
-}
-
-function updateEditInflectionFields(pos, values) {
-  const shapedPos = INFLECTION_SHAPES[pos] ? pos : null;
-  if (shapedPos) renderInflectionFields('e_inflections_fields', shapedPos, values);
-  else document.getElementById('e_inflections_fields').innerHTML = '';
-}
-
-function updateEditFieldVisibility() {
-  const type = document.getElementById('e_type').value;
-  document.getElementById('e_grammar_rule_field').style.display = type === 'grammar' ? 'block' : 'none';
-  applyTypeFieldVisibility('e', type);
-}
-
-document.getElementById('e_type').addEventListener('change', updateEditFieldVisibility);
-wirePosCustomToggle('e_pos_select', 'e_pos_custom', () => {
-  const pos = getPosValue('e_pos_select', 'e_pos_custom');
-  // Carry forward whatever's currently typed into the inflection fields
-  // (e.g. the operator just corrected the PoS spelling) rather than
-  // resetting them — renderInflectionFields only picks out the keys the
-  // new shape actually has, so stale keys from a different shape are
-  // harmlessly dropped.
-  const typedValues = readInflectionFields('e_inflections_fields');
-  const hasTypedValues = Object.values(typedValues).some((v) => v);
-  const values = hasTypedValues
-    ? typedValues
-    : (currentNote && currentNote.pos === pos ? currentNote.inflections : null);
-  updateEditInflectionFields(pos, values);
-  updateNoteJsonView();
-});
-document.getElementById('e_add_translation').addEventListener('click', () => {
-  addTranslationRow('e_translations_list', '', '', updateNoteJsonView);
-});
-
-function readEditForm() {
-  const shapedPos = currentInflectionShapeField();
-  const inflections = shapedPos
-    ? readInflectionFields('e_inflections_fields')
-    : (currentNote?.inflections ?? {});
-
-  return {
-    text: document.getElementById('e_text').value,
-    lemma: document.getElementById('e_lemma').value || null,
-    type: document.getElementById('e_type').value,
-    pos: getPosValue('e_pos_select', 'e_pos_custom'),
-    source_lang: document.getElementById('e_source_lang').value,
-    status: document.getElementById('e_status').value,
-    transcription: document.getElementById('e_transcription').value || null,
-    translations: readTranslationRows('e_translations_list'),
-    inflections,
-    context_text: document.getElementById('e_context_text').value || null,
-    grammar_rule_id: document.getElementById('e_grammar_rule_id').value
-      ? Number(document.getElementById('e_grammar_rule_id').value)
-      : null,
-  };
-}
-
-function updateNoteJsonView() {
-  if (!currentNote) return;
-  const merged = { ...currentNote, ...readEditForm() };
-  document.getElementById('noteJsonView').textContent = JSON.stringify(merged, null, 2);
-}
-
-function updateNoAudioWarning() {
-  if (!currentNote) return;
-  const status = document.getElementById('e_status').value;
-  const hasAudio = !!currentNote.audio_blob;
-  document.getElementById('e_no_audio_warning').style.display =
-    (status === 'ready' && !hasAudio) ? 'block' : 'none';
-}
-
-document.getElementById('noteEditForm').addEventListener('input', () => {
-  updateNoteJsonView();
-  updateNoAudioWarning();
-  syncSuggestQueries('e');
-});
-
-document.getElementById('noteSaveBtn').addEventListener('click', async () => {
-  if (!currentNote) return;
-  const payload = readEditForm();
-  const { status, body } = await api(`/api/notes/${currentNote.id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  const result = document.getElementById('noteSaveResult');
-  if (status === 200) {
-    setCurrentNote(body);
-    result.textContent = 'Saved.';
-    document.getElementById('noteDetailSub').innerHTML =
-      `${escapeHtml(body.type)} · ${escapeHtml(body.pos || '—')} · ${statusPill(body.status)} · ` +
-      `${originLabel(body)} · ` +
-      `created ${fmtDate(body.created_at)} · updated ${fmtDate(body.updated_at)}`;
-    updateNoteJsonView();
-    updateNoAudioWarning();
-  } else {
-    result.textContent = `Error: ${JSON.stringify(body)}`;
-  }
-});
-
-document.getElementById('noteDeleteBtn').addEventListener('click', async () => {
-  if (!currentNote) return;
-  const willTombstone = currentNote.status === 'ready';
-  const msg = willTombstone
-    ? 'This note is ready, so it may already have been pulled by Mjølnir. Deleting it tombstones the id (not a hard delete) — continue?'
-    : 'This draft note has never been eligible for pull — deleting it removes the row entirely (hard delete). Continue?';
-  if (!confirm(msg)) return;
-
-  const { status } = await api(`/api/notes/${currentNote.id}`, { method: 'DELETE' });
-  if (status === 204 || status === 200) {
-    location.hash = '#/notes';
-  } else {
-    document.getElementById('noteSaveResult').textContent = 'Delete failed.';
-  }
-});
-
-document.getElementById('uploadAudioBtn').addEventListener('click', async () => {
-  if (!currentNote) return;
-  const fileInput = document.getElementById('e_audio_file');
-  if (!fileInput.files[0]) return;
-
-  const form = new FormData();
-  form.append('audio', fileInput.files[0]);
-  const uploadResp = await fetch(`${API_BASE}/blobs`, { method: 'POST', headers: authHeaders(), body: form });
-  const uploadBody = await uploadResp.json();
-  if (uploadResp.status !== 200) {
-    document.getElementById('noteSaveResult').textContent = `Upload failed: ${JSON.stringify(uploadBody)}`;
-    return;
-  }
-
-  const { status, body } = await api(`/api/notes/${currentNote.id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ audio_blob: uploadBody.sha256, audio_sel_ms: null }),
-  });
-  if (status === 200) {
-    setCurrentNote(body);
-    fileInput.value = '';
-    document.getElementById('noteSaveResult').textContent = 'Audio replaced.';
-    updateNoAudioWarning();
-    updateNoteJsonView();
-    renderAudioSection(currentNote);
-  } else {
-    document.getElementById('noteSaveResult').textContent = `Attach failed: ${JSON.stringify(body)}`;
-  }
-});
-
-// --------------------------------------------------------- audio + trim --
-
-async function renderAudioSection(note) {
-  const none = document.getElementById('noteAudioNone');
-  const player = document.getElementById('noteAudioPlayer');
-  // "Propose from audio" only makes sense once a note actually has audio to
-  // transcribe — stt-text-suggest change.
-  document.getElementById('e_stt_toggle').style.display = note.audio_blob ? 'inline-block' : 'none';
-  if (!note.audio_blob) {
-    none.style.display = 'block';
-    player.style.display = 'none';
-    waveformState = null;
-    closeSuggestPanel(document.getElementById('e_stt_suggest'));
-    return;
-  }
-  none.style.display = 'none';
-  player.style.display = 'block';
-
-  const audioEl = document.getElementById('audioElement');
-  audioEl.src = `${API_BASE}/blob/${note.audio_blob}`;
-
-  let durationMs = 0;
-  try {
-    const resp = await fetch(audioEl.src);
-    const buf = await resp.arrayBuffer();
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AudioCtx();
-    const decoded = await ctx.decodeAudioData(buf);
-    durationMs = decoded.duration * 1000;
-    drawWaveform(decoded);
-    ctx.close && ctx.close();
-  } catch (e) {
-    // Decoding can fail on malformed/test fixtures — fall back to the
-    // <audio> element's own metadata once it loads, trim still works.
-    await new Promise((resolve) => {
-      audioEl.addEventListener('loadedmetadata', resolve, { once: true });
-      audioEl.load();
-    });
-    durationMs = (audioEl.duration || 0) * 1000;
-  }
-
-  const sel = note.audio_sel_ms && note.audio_sel_ms.length === 2 ? note.audio_sel_ms : [0, durationMs];
-  waveformState = { durationMs, selStart: sel[0], selEnd: sel[1], dragging: null };
-  updateTrimHandles();
-}
-
-function drawWaveform(audioBuffer) {
-  const canvas = document.getElementById('audioWaveformCanvas');
-  const ctx2d = canvas.getContext('2d');
-  const width = canvas.width, height = canvas.height;
-  ctx2d.clearRect(0, 0, width, height);
-  const data = audioBuffer.getChannelData(0);
-  const step = Math.ceil(data.length / width);
-  ctx2d.strokeStyle = getComputedStyle(canvas).color;
-  ctx2d.lineWidth = 1.4;
-  ctx2d.globalAlpha = 0.6;
-  ctx2d.beginPath();
-  for (let i = 0; i < width; i++) {
-    let max = 0;
-    for (let j = 0; j < step; j++) {
-      const v = Math.abs(data[i * step + j] || 0);
-      if (v > max) max = v;
-    }
-    const y = height / 2 - max * (height / 2 - 2);
-    const y2 = height / 2 + max * (height / 2 - 2);
-    ctx2d.moveTo(i, y);
-    ctx2d.lineTo(i, y2);
-  }
-  ctx2d.stroke();
-}
-
-function updateTrimHandles() {
-  if (!waveformState) return;
-  const { durationMs, selStart, selEnd } = waveformState;
-  const startPct = durationMs ? (selStart / durationMs) * 100 : 0;
-  const endPct = durationMs ? (selEnd / durationMs) * 100 : 100;
-  document.getElementById('trimHandleStart').style.left = `${startPct}%`;
-  document.getElementById('trimHandleEnd').style.left = `${endPct}%`;
-  document.getElementById('trimShadeLeft').style.width = `${startPct}%`;
-  document.getElementById('trimShadeRight').style.width = `${100 - endPct}%`;
-  const fmt = (ms) => {
-    const totalSec = Math.round(ms / 1000);
-    return `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
-  };
-  document.getElementById('audioTimeLabel').textContent = `${fmt(selStart)} – ${fmt(selEnd)}`;
-}
-
-function wireTrimHandle(handleEl, which) {
-  handleEl.addEventListener('pointerdown', (e) => {
-    if (!waveformState) return;
-    waveformState.dragging = which;
-    handleEl.setPointerCapture(e.pointerId);
-  });
-  handleEl.addEventListener('pointermove', (e) => {
-    if (!waveformState || waveformState.dragging !== which) return;
-    const rect = document.getElementById('audioWaveform').getBoundingClientRect();
-    const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-    const ms = Math.round(pct * waveformState.durationMs);
-    if (which === 'start') waveformState.selStart = Math.min(ms, waveformState.selEnd);
-    else waveformState.selEnd = Math.max(ms, waveformState.selStart);
-    updateTrimHandles();
-  });
-  handleEl.addEventListener('pointerup', async () => {
-    if (!waveformState || waveformState.dragging !== which) return;
-    waveformState.dragging = null;
-    if (!currentNote) return;
-    const sel = [waveformState.selStart, waveformState.selEnd];
-    const { status, body } = await api(`/api/notes/${currentNote.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ audio_sel_ms: sel }),
-    });
-    if (status === 200) {
-      setCurrentNote(body);
-      updateNoteJsonView();
-    }
-  });
-}
-wireTrimHandle(document.getElementById('trimHandleStart'), 'start');
-wireTrimHandle(document.getElementById('trimHandleEnd'), 'end');
-
-document.getElementById('audioPlayBtn').addEventListener('click', () => {
-  const audioEl = document.getElementById('audioElement');
-  if (audioEl.paused) audioEl.play(); else audioEl.pause();
-});
-
-document.getElementById('previewTrimBtn').addEventListener('click', () => {
-  if (!waveformState) return;
-  const audioEl = document.getElementById('audioElement');
-  const startSec = waveformState.selStart / 1000;
-  const endSec = waveformState.selEnd / 1000;
-  audioEl.currentTime = startSec;
-  audioEl.play();
-  const onTimeUpdate = () => {
-    if (audioEl.currentTime >= endSec) {
-      audioEl.pause();
-      audioEl.removeEventListener('timeupdate', onTimeUpdate);
-    }
-  };
-  audioEl.addEventListener('timeupdate', onTimeUpdate);
-});
-
-// ------------------------------------------------------- similar notes --
-// similar-notes-merge: shared by the note editor ('e') and the triage
-// belt ('t'), matching every other paired element-id convention in this
-// file. State per prefix: which notes are checked for absorption, and
-// which field is staged to be taken from which note — both are only
-// applied together, on commit (design D4: take is a field-level staging
-// action, merge is what actually deletes anything).
-
-const similarNotesState = {
-  e: { matches: [], absorb: new Set(), take: {} },
-  t: { matches: [], absorb: new Set(), take: {} },
-};
-
-// stabbur-merge-fixes D2/D4: which operation each take performs, stated on
-// the control itself and in the merge summary. Only translations and context
-// are additive; everything else replaces. NOTE the deliberate asymmetry with
-// the enrichment panel, which must not be "made consistent": merge's Take IPA
-// REPLACES, while the suggest panel's Use on an IPA candidate APPENDS. Taking
-// a field from another note is a swap; using a suggestion is assembly.
-const SIMILAR_TAKE_OPS = {
-  translations: 'adds',
-  context_text: 'adds',
-  inflections: 'replaces',
-  transcription: 'replaces',
-  audio_blob: 'replaces',
-  text: 'replaces',
-  lemma: 'replaces',
-};
-
-// What the operation does, spelled out for the merge summary rather than the
-// one-word button label.
-const SIMILAR_TAKE_OP_DETAIL = {
-  translations: 'adds to yours, per language',
-  context_text: 'adds on a new line',
-  inflections: 'replaces yours, and brings its part of speech',
-  transcription: 'replaces yours',
-  audio_blob: 'replaces yours',
-  text: 'replaces yours',
-  lemma: 'replaces yours',
-};
-
-function similarTakeOpHtml(field) {
-  const op = SIMILAR_TAKE_OPS[field];
-  if (!op) return '';
-  const extra = field === 'inflections' ? ' + PoS' : '';
-  return ` <span class="take-op take-op-${op}">${op}${extra}</span>`;
-}
-
-const SIMILAR_FIELD_LABELS = {
-  text: 'text',
-  lemma: 'lemma',
-  audio_blob: 'audio',
-  transcription: 'IPA',
-  inflections: 'inflections',
-  context_text: 'context',
-  translations: 'translations',
-  pos: 'part of speech',
-};
-
-// stabbur-merge-fixes D1: a merge now carries the open form's values, so
-// the panel has to be able to read that form and to say which of its fields
-// differ from the stored row — "what merging is about to save".
-function similarSurvivorValues(prefix) {
-  return prefix === 'e' ? readEditForm() : readTriageForm();
-}
-
-function similarStoredNote(prefix) {
-  return prefix === 'e' ? currentNote : currentTriageNote;
-}
-
-// Compared field-by-field through one normaliser, so an empty inflection
-// slot the form always renders, a trailing space, or a blank translation
-// row never reads as an unsaved edit.
-function similarComparableValue(field, value) {
-  if (field === 'inflections') {
-    const entries = Object.entries(value || {})
-      .map(([k, v]) => [k, v === null || v === undefined ? '' : String(v).trim()])
-      .filter(([, v]) => v !== '')
-      .sort((a, b) => (a[0] < b[0] ? -1 : 1));
-    return JSON.stringify(entries);
-  }
-  if (field === 'translations') {
-    return JSON.stringify(
-      (value || [])
-        .filter((t) => t && (t.text || '').trim())
-        .map((t) => [t.lang || '', (t.text || '').trim()])
-    );
-  }
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string') return value.trim();
-  return JSON.stringify(value);
-}
-
-function similarDirtyFields(prefix) {
-  const stored = similarStoredNote(prefix);
-  if (!stored) return [];
-  const values = similarSurvivorValues(prefix);
-  return Object.keys(values)
-    .filter((field) => similarComparableValue(field, values[field]) !== similarComparableValue(field, stored[field]))
-    .map((field) => SIMILAR_FIELD_LABELS[field] || field.replace(/_/g, ' '));
-}
-
-function updateSimilarDirtyStrip(prefix) {
-  const wrap = document.getElementById(`${prefix}_similar_wrap`);
-  const strip = wrap && wrap.querySelector('.similar-dirty-strip');
-  if (!strip) return;
-  const fields = similarDirtyFields(prefix);
-  if (!fields.length) {
-    strip.style.display = 'none';
-    strip.innerHTML = '';
-    return;
-  }
-  strip.innerHTML =
-    `⚠ Unsaved edits to <b>${fields.map(escapeHtml).join('</b>, <b>')}</b>. ` +
-    'Merging will save them first, then apply the takes on top.';
-  strip.style.display = 'block';
-}
-
-// Wired once, from here rather than from either form's own handlers, so the
-// similar-notes panel owns its own freshness and neither the editor nor the
-// triage card has to know this strip exists.
-let similarDirtyWatchersWired = false;
-function wireSimilarDirtyWatchers() {
-  if (similarDirtyWatchersWired) return;
-  similarDirtyWatchersWired = true;
-  [['noteEditForm', 'e'], ['triageCardWrap', 't']].forEach(([containerId, prefix]) => {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    ['input', 'change'].forEach((evt) => {
-      container.addEventListener(evt, () => updateSimilarDirtyStrip(prefix));
-    });
-  });
-}
-
-async function loadSimilarNotes(prefix, noteId) {
-  const wrap = document.getElementById(`${prefix}_similar_wrap`);
-  if (!wrap) return;
-  similarNotesState[prefix] = { matches: [], absorb: new Set(), take: {} };
-  if (!noteId) {
-    wrap.innerHTML = '<p class="inline-note">Save the note first to see related notes.</p>';
-    return;
-  }
-  wrap.innerHTML = '<p class="inline-note">Looking…</p>';
-  const { status, body } = await api(`/api/notes/${noteId}/similar`);
-  if (status !== 200) {
-    wrap.innerHTML = '<p class="inline-note">Could not load related notes.</p>';
-    return;
-  }
-  similarNotesState[prefix].matches = body;
-  renderSimilarNotes(prefix, noteId);
-}
-
-// A match's actual field value next to its own "Take" button — lets the
-// operator see what they'd be taking before committing, instead of a bare
-// boolean-gated button (D4). One line per available field; a field with no
-// value contributes neither a preview line nor a take button.
-function similarNoteFieldPreviewHtml(m) {
-  const lines = [];
-  if (m.pos) {
-    lines.push(`<div class="similar-note-field"><b>Part of speech</b> ${escapeHtml(m.pos)}</div>`);
-  }
-  if (m.translations && m.translations.length) {
-    const joined = m.translations.map((t) => `${t.lang}: ${t.text}`).join(' · ');
-    lines.push(`<div class="similar-note-field"><b>Translations</b> ${escapeHtml(joined)}</div>`);
-  }
-  if (m.context_text) {
-    lines.push(`<div class="similar-note-field"><b>Context</b> ${escapeHtml(m.context_text)}</div>`);
-  }
-  if (m.inflections && Object.keys(m.inflections).length) {
-    const joined = Object.entries(m.inflections).map(([k, v]) => `${k}: ${normalizeInflectionValue(k, v)}`).join(' · ');
-    lines.push(`<div class="similar-note-field"><b>Inflections</b> ${escapeHtml(joined)}</div>`);
-  }
-  if (m.transcription) {
-    lines.push(`<div class="similar-note-field"><b>IPA</b> ${escapeHtml(m.transcription)}</div>`);
-  }
-  return lines.join('');
-}
-
-// task 5.1: the goto link is rendered on EVERY row, including a match whose
-// status is "ready" and whose other controls are therefore disabled — those
-// rows were dead ends before. It opens in a new tab (D5) so the operator's
-// queue position and unsaved edits survive going to look at it, and it sits
-// OUTSIDE the row's label element, or clicking it would toggle the absorb
-// checkbox the label wraps.
-function similarNoteRowHtml(m) {
-  const reasonsHtml = m.reasons
-    .map((r) => `<span class="pill${r.signal === 'spelling' ? ' pill-spelling' : ''}">${escapeHtml(r.label)}</span>`)
-    .join(' ');
-
-  // No standalone "Take PoS" button — a pos is only ever useful here as the
-  // shape a taken inflections paradigm renders into, and "Take inflections"
-  // brings the source's pos with it unconditionally, server-side
-  // (stabbur-merge-fixes D2). Never a separate operator decision.
-  const takeButtons = [];
-  if (m.has_audio) takeButtons.push(['audio_blob', 'Take audio']);
-  if (m.has_transcription) takeButtons.push(['transcription', 'Take IPA']);
-  if (m.has_inflections) takeButtons.push(['inflections', 'Take inflections']);
-  if (m.has_context) takeButtons.push(['context_text', 'Take context']);
-  if (m.has_translations) takeButtons.push(['translations', 'Take translations']);
-  // task 3.1: both already permitted server-side (MERGE_TAKE_FIELDS); the UI
-  // simply never offered them. `text` is always present on a note; `lemma`
-  // only when the match actually has one.
-  takeButtons.push(['text', 'Take text']);
-  if (m.has_lemma) takeButtons.push(['lemma', 'Take lemma']);
-
-  const canAbsorb = m.status === 'draft';
-  const takeButtonsHtml = takeButtons
-    .map(
-      ([field, label]) =>
-        `<button type="button" class="btn-ghost similar-take-btn" data-take-field="${field}" data-take-note="${m.id}" ${canAbsorb ? '' : 'disabled title="only a draft can be absorbed"'}>${label}${similarTakeOpHtml(field)}</button>`
-    )
-    .join(' ');
-
-  return `
-    <div class="similar-note-row" data-note-id="${m.id}">
-      <label class="similar-note-head">
-        <input type="checkbox" class="similar-select-cb" data-note-id="${m.id}" ${canAbsorb ? '' : 'disabled'}>
-        <span class="similar-note-text">${escapeHtml(m.text)}</span>
-        ${statusPill(m.status)}
-        <span class="pill">${originLabel(m)}</span>
-      </label>
-      <a class="similar-note-goto" href="#/notes/${m.id}" target="_blank" rel="noopener">Open in new tab ↗</a>
-      <div class="similar-note-reasons">${reasonsHtml}</div>
-      <div class="similar-note-fields">${similarNoteFieldPreviewHtml(m)}</div>
-      <div class="similar-note-actions" data-note-id="${m.id}">${takeButtonsHtml}</div>
-      ${canAbsorb ? '' : '<div class="inline-note">ready — cannot be absorbed by a merge, and its fields can’t be taken either, since taking one commits a merge. Open it in a new tab to edit it directly.</div>'}
-    </div>`;
-}
-
-function renderSimilarNotes(prefix, noteId) {
-  const wrap = document.getElementById(`${prefix}_similar_wrap`);
-  const { matches } = similarNotesState[prefix];
-
-  if (!matches.length) {
-    wrap.innerHTML = '<p class="inline-note">Nothing related found.</p>';
-    return;
-  }
-
-  const direct = matches.filter((m) => m.reasons.some((r) => r.signal !== 'semantic'));
-  const semanticOnly = matches.filter((m) => !direct.includes(m));
-
-  let html = direct.length
-    ? `<div class="similar-group">${direct.map(similarNoteRowHtml).join('')}</div>`
-    : '<p class="inline-note">No spelling or word-family matches.</p>';
-
-  if (semanticOnly.length) {
-    html += `
-      <details class="similar-semantic-group">
-        <summary>${semanticOnly.length} related by translation — probably not duplicates</summary>
-        <div class="similar-group">${semanticOnly.map(similarNoteRowHtml).join('')}</div>
-      </details>`;
-  }
-
-  html += `
-    <div class="similar-dirty-strip" style="display:none;"></div>
-    <div class="similar-note-merge-bar" style="display:none;">
-      <span class="similar-merge-summary"></span>
-      <button type="button" class="btn-danger similar-merge-btn">Save &amp; merge into this note</button>
-    </div>`;
-
-  wrap.innerHTML = html;
-
-  // Audio preview next to "Take audio" — built as a DOM node (buildAudioPreviewButton
-  // isn't string-templatable) and inserted after the row's markup lands.
-  matches.forEach((m) => {
-    if (!m.audio_blob) return;
-    const takeAudioBtn = wrap.querySelector(`.similar-note-actions[data-note-id="${m.id}"] [data-take-field="audio_blob"]`);
-    if (takeAudioBtn) takeAudioBtn.after(buildAudioPreviewButton(`${API_BASE}/blob/${m.audio_blob}`));
-  });
-
-  wrap.querySelectorAll('.similar-select-cb').forEach((cb) => {
-    cb.addEventListener('change', () => onSimilarCheckboxChange(prefix, noteId, cb));
-  });
-  wrap.querySelectorAll('.similar-take-btn').forEach((btn) => {
-    btn.addEventListener('click', () => onSimilarTakeClick(prefix, noteId, btn));
-  });
-  wrap.querySelector('.similar-merge-btn').addEventListener('click', () => commitSimilarMerge(prefix, noteId));
-
-  syncSimilarNoteControls(prefix);
-  wireSimilarDirtyWatchers();
-  updateSimilarDirtyStrip(prefix);
-}
-
-function onSimilarCheckboxChange(prefix, noteId, cb) {
-  const state = similarNotesState[prefix];
-  const matchId = cb.dataset.noteId;
-  if (cb.checked) state.absorb.add(matchId);
-  else {
-    state.absorb.delete(matchId);
-    // Unchecking a note withdraws every field staged to come from it too
-    // — a take source has to be part of the merge (routes/notes.py).
-    for (const [field, sourceId] of Object.entries(state.take)) {
-      if (sourceId === matchId) delete state.take[field];
-    }
-  }
-  syncSimilarNoteControls(prefix);
-  updateSimilarMergeBar(prefix);
-}
-
-function onSimilarTakeClick(prefix, noteId, btn) {
-  const state = similarNotesState[prefix];
-  const field = btn.dataset.takeField;
-  const matchId = btn.dataset.takeNote;
-  if (state.take[field] === matchId) {
-    delete state.take[field];
-  } else {
-    state.take[field] = matchId;
-    state.absorb.add(matchId);
-  }
-  // No pos pairing here any more (stabbur-merge-fixes D2): taking
-  // inflections now always carries the source's pos across, and the server
-  // does that as part of the take itself. The old client-side auto-pair —
-  // staged only when the survivor had no pos of its own, with
-  // `_autoPosFor` bookkeeping to undo it again — is gone with it.
-  syncSimilarNoteControls(prefix);
-  updateSimilarMergeBar(prefix);
-}
-
-function syncSimilarNoteControls(prefix) {
-  const wrap = document.getElementById(`${prefix}_similar_wrap`);
-  const state = similarNotesState[prefix];
-  wrap.querySelectorAll('.similar-select-cb').forEach((cb) => {
-    cb.checked = state.absorb.has(cb.dataset.noteId);
-  });
-  wrap.querySelectorAll('.similar-take-btn').forEach((btn) => {
-    btn.classList.toggle('active', state.take[btn.dataset.takeField] === btn.dataset.takeNote);
-  });
-}
-
-function updateSimilarMergeBar(prefix) {
-  const wrap = document.getElementById(`${prefix}_similar_wrap`);
-  const state = similarNotesState[prefix];
-  const bar = wrap.querySelector('.similar-note-merge-bar');
-  const summary = wrap.querySelector('.similar-merge-summary');
-  if (!state.absorb.size) {
-    bar.style.display = 'none';
-    return;
-  }
-  const names = Array.from(state.absorb).map((id) => {
-    const m = state.matches.find((x) => x.id === id);
-    return m ? m.text : id;
-  });
-  // task 4.2: each staged take names what it will DO, not just where it
-  // comes from — the additive/replacive split is per field and invisible
-  // otherwise, and this is the last screen before a destructive commit.
-  const takeBits = Object.entries(state.take).map(([field, sourceId]) => {
-    const m = state.matches.find((x) => x.id === sourceId);
-    const label = SIMILAR_FIELD_LABELS[field] || field;
-    const detail = SIMILAR_TAKE_OP_DETAIL[field];
-    const from = `from "${m ? m.text : sourceId}"`;
-    return detail ? `${label} ${from} (${detail})` : `${label} ${from}`;
-  });
-  summary.textContent = `Absorb: ${names.join(', ')}` + (takeBits.length ? ` — taking ${takeBits.join(', ')}` : '');
-  bar.style.display = 'flex';
-}
-
-async function commitSimilarMerge(prefix, noteId) {
-  const state = similarNotesState[prefix];
-  const absorbedIds = Array.from(state.absorb);
-  if (!absorbedIds.length) return;
-  const names = absorbedIds.map((id) => {
-    const m = state.matches.find((x) => x.id === id);
-    return m ? m.text : id;
-  });
-  if (!confirm(
-    `Absorb ${names.join(', ')} into this note? ` +
-    `${absorbedIds.length === 1 ? 'That note' : 'Those notes'} will be permanently deleted. ` +
-    'Your unsaved edits to this note will be saved first, then the staged takes applied on top.'
-  )) {
-    return;
-  }
-
-  const { status, body } = await api('/api/notes/merge', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      survivor_id: noteId,
-      absorbed_ids: absorbedIds,
-      take: state.take,
-      // D1: the open form's current values, so the merge saves what the
-      // operator typed instead of silently re-rendering the stored row
-      // over it — and then deleting the only other copy of it.
-      survivor_values: similarSurvivorValues(prefix),
-    }),
-  });
-  if (status !== 200) {
-    alert(`Merge failed: ${(body && body.error) || status}`);
-    return;
-  }
-
-  if (prefix === 'e') {
-    await renderNoteDetail(noteId);
-  } else {
-    triageQueue[triageIndex] = body;
-    await showTriageNote();
-  }
-}
-
-// --------------------------------------------------------- grammar list --
-
-const grammarListState = { sortField: 'usage', sortDir: 'desc' };
-
-wireSortableHeaders('#page-grammar thead', grammarListState, { title: 'asc', usage: 'desc' }, renderGrammarList);
-document.querySelector('#page-grammar thead .sort-th[data-sort="usage"]').classList.add('sort-active');
-document.querySelector('#page-grammar thead .sort-th[data-sort="usage"] .sort-caret').textContent = '▼';
-
-async function renderGrammarList() {
-  const sort = `${grammarListState.sortField}_${grammarListState.sortDir}`;
-  const q = document.getElementById('grammarSearch').value.trim();
-  const { status, body } = await api(`/api/grammar_rules${qs({ sort, q })}`);
-  const tbody = document.getElementById('grammarTableBody');
-  if (status !== 200) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="2">${escapeHtml(JSON.stringify(body))}</td></tr>`;
-    return;
-  }
-
-  const totalUsed = body.filter((r) => r.usage_count > 0).length;
-  document.getElementById('grammarSummary').textContent =
-    `${body.length} rules · ${totalUsed} used by at least one note`;
-
-  if (body.length === 0) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="2">No grammar rules yet.</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = body.map((r) => `
-    <tr data-id="${r.id}">
-      <td><strong>${escapeHtml(r.title)}</strong></td>
-      <td class="num">${r.usage_count} note${r.usage_count === 1 ? '' : 's'}</td>
-    </tr>
-  `).join('');
-  tbody.querySelectorAll('tr[data-id]').forEach((row) => {
-    row.addEventListener('click', () => { location.hash = `#/grammar/${row.dataset.id}`; });
-  });
-}
-
-let grammarSearchDebounce;
-document.getElementById('grammarSearch').addEventListener('input', () => {
-  clearTimeout(grammarSearchDebounce);
-  grammarSearchDebounce = setTimeout(renderGrammarList, 250);
-});
-
-// ------------------------------------------------------- grammar detail --
-
-let currentRule = null;
-
-async function renderGrammarDetail(id) {
-  const { status, body: rule } = await api(`/api/grammar_rules/${id}`);
-  if (status !== 200) {
-    document.getElementById('grammarDetailTitle').textContent = 'Not found';
-    return;
-  }
-  currentRule = rule;
-  document.getElementById('grammarDetailTitle').textContent = rule.title;
-  document.getElementById('gr_title').value = rule.title;
-  document.getElementById('gr_html').value = rule.html;
-  document.getElementById('gr_html_preview').innerHTML = rule.html;
-  document.getElementById('grammarSaveResult').textContent = '';
-  document.getElementById('grammarDeleteBlocked').textContent = '';
-  document.getElementById('grammarUsageHeading').textContent = `Used by ${rule.usage_count} note${rule.usage_count === 1 ? '' : 's'}`;
-
-  const deleteBtn = document.getElementById('grammarDeleteBtn');
-  deleteBtn.disabled = rule.usage_count > 0;
-  document.getElementById('grammarDeleteBlocked').textContent = rule.usage_count > 0
-    ? `Delete blocked: ${rule.usage_count} note(s) still reference this rule.`
-    : '';
-
-  const { status: notesStatus, body: usageBody } = await api(
-    `/api/notes/authoring${qs({ grammar_rule_id: id, limit: 200 })}`
-  );
-  const notes = (usageBody && usageBody.notes) || [];
-  const list = document.getElementById('grammarUsageList');
-  if (notesStatus === 200 && notes.length) {
-    list.innerHTML = notes.map((n) => `
-      <a class="usage-item" href="#/notes/${n.id}"><span>${escapeHtml(n.text)}</span>${statusPill(n.status)}</a>
-    `).join('');
-  } else {
-    list.innerHTML = '<div class="inline-note">No notes reference this rule yet.</div>';
-  }
-}
-
-document.getElementById('gr_html').addEventListener('input', (e) => {
-  document.getElementById('gr_html_preview').innerHTML = e.target.value;
-});
-
-document.getElementById('grammarSaveBtn').addEventListener('click', async () => {
-  if (!currentRule) return;
-  const payload = {
-    title: document.getElementById('gr_title').value,
-    html: document.getElementById('gr_html').value,
-  };
-  const { status, body } = await api(`/api/grammar_rules/${currentRule.id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  const result = document.getElementById('grammarSaveResult');
-  if (status === 200) {
-    currentRule = body;
-    document.getElementById('grammarDetailTitle').textContent = body.title;
-    result.textContent = 'Saved.';
-  } else {
-    result.textContent = `Error: ${JSON.stringify(body)}`;
-  }
-});
-
-document.getElementById('grammarDeleteBtn').addEventListener('click', async () => {
-  if (!currentRule) return;
-  if (!confirm(`Delete grammar rule "${currentRule.title}"?`)) return;
-  const { status, body } = await api(`/api/grammar_rules/${currentRule.id}`, { method: 'DELETE' });
-  if (status === 204) {
-    location.hash = '#/grammar';
-  } else if (status === 409) {
-    document.getElementById('grammarDeleteBlocked').textContent =
-      `Blocked: ${body.reference_count} note(s) still reference this rule.`;
-  } else {
-    document.getElementById('grammarDeleteBlocked').textContent = `Error: ${JSON.stringify(body)}`;
-  }
-});
-
-// ------------------------------------------------------------- new note --
-
-// Holds a TTS suggestion's stabbur sha256 until the note is created — a
-// brand-new note has no id yet to PATCH against (unlike the existing-note
-// editor's TTS "Use", which attaches immediately). Cleared whenever the
-// dropzone file input is used instead, and vice versa (last action wins —
-// new-note-audio-suggest design.md D2).
-let newNoteAudioFromSuggest = null;
-
-function setNewNoteAudioFromSuggest(sha256, providerName, meta) {
-  newNoteAudioFromSuggest = { sha256, providerName };
-  document.getElementById('c_audio_file').value = '';
-  const chosen = document.getElementById('c_audio_suggest_chosen');
-  chosen.style.cssText = 'display:flex; align-items:center; gap:8px;';
-  chosen.innerHTML = '';
-  chosen.appendChild(enrichEl(`<span>Will attach on save: ${escapeHtml(providerName)}${meta ? ` (${escapeHtml(meta)})` : ''}</span>`));
-  // `sha256` here is already a real stabbur blob (tts/use or the manual
-  // upload button both store it before returning), so the normal public
-  // /blob/ route plays it directly — no need for the smia-side preview
-  // route this change also adds for not-yet-stored candidates.
-  chosen.appendChild(buildAudioPreviewButton(`${API_BASE}/blob/${sha256}`));
-}
-
-function clearNewNoteAudioFromSuggest() {
-  newNoteAudioFromSuggest = null;
-  const chosen = document.getElementById('c_audio_suggest_chosen');
-  chosen.style.display = 'none';
-  chosen.innerHTML = '';
-}
-
-document.getElementById('c_audio_file').addEventListener('change', (e) => {
-  if (e.target.files[0]) clearNewNoteAudioFromSuggest();
-});
-
-// Mirrors the existing-note sidebar's "Manual upload" card (uploadAudioBtn):
-// uploads eagerly on click rather than waiting for the whole note to be
-// saved, so the operator gets the same immediate preview as every other
-// provider's "Use" button, instead of only finding out what they picked
-// after creating the note.
-document.getElementById('c_upload_audio_btn').addEventListener('click', async () => {
-  const fileInput = document.getElementById('c_audio_file');
-  const file = fileInput.files[0];
-  if (!file) return;
-  const btn = document.getElementById('c_upload_audio_btn');
-  const originalLabel = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '…';
-  const form = new FormData();
-  form.append('audio', file);
-  const uploadResp = await fetch(`${API_BASE}/blobs`, { method: 'POST', headers: authHeaders(), body: form });
-  const uploadBody = await uploadResp.json();
-  btn.disabled = false;
-  btn.textContent = originalLabel;
-  if (uploadResp.status !== 200) {
-    enrichToast('Upload failed');
-    return;
-  }
-  setNewNoteAudioFromSuggest(uploadBody.sha256, 'manual upload', file.name);
-});
-
-function updateNewNoteFieldVisibility() {
-  const type = document.getElementById('c_type').value;
-  applyTypeFieldVisibility('c', type);
-  document.getElementById('c_grammar_rule_field').style.display = type === 'grammar' ? 'block' : 'none';
-  if (type !== 'word') {
-    setPosValue('c_pos', 'c_pos_custom', '');
-    document.getElementById('c_inflections_fields').innerHTML = '';
-  }
-}
-
-function updateNewNoteInflectionFields() {
-  const pos = getPosValue('c_pos', 'c_pos_custom');
-  renderInflectionFields('c_inflections_fields', pos);
-}
-
-wirePosCustomToggle('c_pos', 'c_pos_custom', updateNewNoteInflectionFields);
-
-// Clears every c_-prefixed field, the translations list, the inflection
-// fields, and the suggest controls' queries/dirty flags — so a note never
-// outlives its own form (editor-session-hygiene). Run on a successful
-// create and on every entry to the new-note route.
-function resetCreateForm() {
-  document.getElementById('createForm').reset();
-  document.getElementById('c_source_lang').value = 'no';
-  document.getElementById('createResult').textContent = '';
-  clearNewNoteAudioFromSuggest();
-  renderTranslationRows('c_translations_list', [], null);
-  updateNewNoteFieldVisibility();
-  updateNewNoteInflectionFields();
-  resetSuggestQueries('c');
-}
-
-async function renderNewNote() {
-  resetCreateForm();
-  await populateGrammarRuleSelect(document.getElementById('c_grammar_rule_id'), null);
-}
-
-document.getElementById('c_type').addEventListener('change', updateNewNoteFieldVisibility);
-document.getElementById('c_add_translation').addEventListener('click', () => {
-  addTranslationRow('c_translations_list', '', '', null);
-});
-
-async function submitNewNote(status) {
-  const translations = readTranslationRows('c_translations_list');
-  const inflections = readInflectionFields('c_inflections_fields');
-
-  const payload = {
-    type: document.getElementById('c_type').value,
-    source_lang: document.getElementById('c_source_lang').value,
-    text: document.getElementById('c_text').value,
-    status,
-    pos: getPosValue('c_pos', 'c_pos_custom'),
-    lemma: document.getElementById('c_lemma').value || null,
-    transcription: document.getElementById('c_transcription').value || null,
-    translations,
-    inflections,
-    context_text: document.getElementById('c_context_text').value || null,
-    grammar_rule_id: document.getElementById('c_grammar_rule_id').value
-      ? Number(document.getElementById('c_grammar_rule_id').value)
-      : null,
-    // A TTS suggestion already has its stabbur sha256 before the note
-    // exists, so it goes straight into the create payload — no
-    // create-then-PATCH round trip needed for this path (design.md D1).
-    // A dropzone file, by contrast, needs the created note's id to call the
-    // multipart /blobs upload, so it stays a separate step below.
-    audio_blob: newNoteAudioFromSuggest ? newNoteAudioFromSuggest.sha256 : null,
-  };
-
-  const { status: httpStatus, body } = await api('/api/notes', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-
-  if (httpStatus !== 201) {
-    document.getElementById('createResult').textContent = `Error: ${JSON.stringify(body)}`;
-    return;
-  }
-
-  const fileInput = document.getElementById('c_audio_file');
-  if (fileInput.files[0]) {
-    const form = new FormData();
-    form.append('audio', fileInput.files[0]);
-    const uploadResp = await fetch(`${API_BASE}/blobs`, { method: 'POST', headers: authHeaders(), body: form });
-    const uploadBody = await uploadResp.json();
-    if (uploadResp.status === 200) {
-      await api(`/api/notes/${body.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio_blob: uploadBody.sha256 }),
-      });
-    }
-  }
-
-  resetCreateForm();
-  location.hash = `#/notes/${body.id}`;
-}
-
-document.getElementById('createForm').addEventListener('input', () => {
-  syncSuggestQueries('c');
-});
-
-document.getElementById('createForm').addEventListener('submit', (e) => {
-  e.preventDefault();
-  submitNewNote('draft');
-});
-document.getElementById('createReadyBtn').addEventListener('click', () => submitNewNote('ready'));
-
-// --------------------------------------------------------- new grammar --
-
-function renderNewGrammar() {
-  document.getElementById('ruleForm').reset();
-  document.getElementById('ruleResult').textContent = '';
-  document.getElementById('r_html_preview').innerHTML = '';
-}
-
-document.getElementById('r_html').addEventListener('input', (e) => {
-  document.getElementById('r_html_preview').innerHTML = e.target.value;
-});
-
-document.getElementById('ruleForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const payload = {
-    title: document.getElementById('r_title').value,
-    html: document.getElementById('r_html').value,
-  };
-  const { status, body } = await api('/api/grammar_rules', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (status === 201) {
-    location.hash = `#/grammar/${body.id}`;
-  } else {
-    document.getElementById('ruleResult').textContent = `Error: ${JSON.stringify(body)}`;
-  }
-});
-
-// ----------------------------------------------- smia enrichment panels --
-// Per-field "Suggest" accordions (smia-enrichment-panel change). Works
-// identically on the new-note form (c_*) and the note-detail form (e_*) —
-// every lookup reads only the form's current field values, never the note's
-// saved state, so it needs no note id. Manual-trigger only: nothing here
-// ever fires from an `input` listener, only from an explicit click.
-
-const ENRICH_LANG_NAMES = {
-  en: 'English', de: 'German', fr: 'French', es: 'Spanish',
-  nl: 'Dutch', sv: 'Swedish', pl: 'Polish', it: 'Italian',
-};
-function enrichLangLabel(code) { return ENRICH_LANG_NAMES[code] || code.toUpperCase(); }
-
-// operator-settings's own fallback defaults (settings_store.py's), used
-// only if a settings fetch fails outright — the editor must still be fully
-// usable before the settings page has ever been opened (design D2).
-const SUGGEST_DEFAULT_LANGS = ['en', 'de'];
-
-let _settingsCache = null;
-async function fetchSettings() {
-  if (_settingsCache) return _settingsCache;
-  const { status, body } = await api('/api/settings');
-  if (status === 200) _settingsCache = body;
-  return status === 200 ? body : {
-    translation_merge_mode: 'append',
-    override_prefill: true,
-    default_target_langs: SUGGEST_DEFAULT_LANGS,
-    providers: {},
-    examples_count: 3,
-    examples_max_providers: 1,
-  };
-}
-
-let _enrichProvidersCache = null;
-async function fetchEnrichProviders() {
-  if (_enrichProvidersCache) return _enrichProvidersCache;
-  const { status, body } = await api('/api/enrich/providers');
-  // Only a successful fetch is cached — a transient smia outage must not
-  // permanently disable suggestions for the rest of the page's lifetime;
-  // the next panel open retries instead of reusing a stale empty catalog.
-  if (status === 200) _enrichProvidersCache = body;
-  return status === 200 ? body : {};
-}
-
-// ── combined suggest controls: live query sync + Enter-to-fire + counts ──
-
-function querySuggestControls(prefix) {
-  return Array.from(document.querySelectorAll('.suggest-control')).filter((control) => {
-    const btn = control.querySelector('[data-suggest-toggle]');
-    const panel = btn && document.getElementById(btn.dataset.suggestToggle);
-    return panel && panel.dataset.prefix === prefix;
-  });
-}
-
-function suggestControlPanel(control) {
-  const btn = control.querySelector('[data-suggest-toggle]');
-  return btn && document.getElementById(btn.dataset.suggestToggle);
-}
-
-function panelsForPrefix(prefix) {
-  return Array.from(document.querySelectorAll('.suggest-panel')).filter((p) => p.dataset.prefix === prefix);
-}
-
-// Syncs every suggest-control's query field to its own kind's source field
-// (design D1: inflections reads lemma, everything else reads text — no
-// shared default), skipping any control the operator has directly edited
-// (`dirty`) so an unrelated field edit never clobbers a deliberate override.
-function syncSuggestQueries(prefix) {
-  querySuggestControls(prefix).forEach((control) => {
-    const input = control.querySelector('.suggest-query');
-    if (!input || input.dataset.dirty === '1') return;
-    const panel = suggestControlPanel(control);
-    input.value = defaultSuggestQuery(prefix, panel ? panel.dataset.kind : null);
-  });
-}
-
-// Called when a note is (re)loaded into a form — clears any prior dirty
-// state so the new note starts with every query and the lemma sync back in
-// sync, and collapses+empties every panel so no panel outlives the note it
-// was opened for (design D4).
-function resetSuggestQueries(prefix) {
-  querySuggestControls(prefix).forEach((control) => {
-    const input = control.querySelector('.suggest-query');
-    if (input) delete input.dataset.dirty;
-  });
-  const lemmaEl = document.getElementById(`${prefix}_lemma`);
-  if (lemmaEl) delete lemmaEl.dataset.dirty;
-  syncSuggestQueries(prefix);
-  panelsForPrefix(prefix).forEach((panel) => {
-    closeSuggestPanel(panel);
-    panel.innerHTML = '';
-  });
-}
-
-async function updateSuggestCounts() {
-  const catalog = await fetchEnrichProviders();
-  document.querySelectorAll('.suggest-control').forEach((control) => {
-    const btn = control.querySelector('[data-suggest-toggle]');
-    const panel = btn && document.getElementById(btn.dataset.suggestToggle);
-    const countEl = control.querySelector('.count');
-    if (!panel || !countEl) return;
-    const catalogKind = panel.dataset.kind === 'pos' ? 'inflections' : panel.dataset.kind;
-    const count = (catalog[catalogKind] || []).length;
-    countEl.textContent = String(count);
-    countEl.style.display = count > 0 ? '' : 'none';
-  });
-}
-
-document.querySelectorAll('.suggest-control').forEach((control) => {
-  const btn = control.querySelector('[data-suggest-toggle]');
-  const input = control.querySelector('.suggest-query');
-  if (!btn || !input) return;
-  input.addEventListener('input', () => { input.dataset.dirty = '1'; });
-  // Enter fires the panel whether it's closed (opens it) or already open
-  // (re-fires every provider with the edited value) — no fire-on-keystroke,
-  // matching every other suggest input's manual-trigger convention. A
-  // different query is a different cache key and will miss anyway, so this
-  // does not force a cache bypass (design D5) — only the explicit ⟳ does.
-  input.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const panel = document.getElementById(btn.dataset.suggestToggle);
-    if (panel) openSuggestPanel(panel);
-  });
-});
-updateSuggestCounts();
-
-// Raising/lowering the requested count is a genuinely new lookup, not a
-// forced re-fetch of the same one — `limit` is part of smia's cache
-// identity (design D4) — so this rebuilds the panel the same way any other
-// query change would, only if the panel is already open.
-document.querySelectorAll('.examples-count-input').forEach((input) => {
-  input.addEventListener('change', () => {
-    const prefix = input.id.split('_')[0];
-    const panel = document.getElementById(`${prefix}_examples_suggest`);
-    if (panel && panel.classList.contains('open')) openSuggestPanel(panel);
-  });
-});
-
-// Panel-level "re-run every provider" control — re-opens/re-fires the panel
-// in place (it already stays marked `.open` throughout) with a forced cache
-// bypass, making the existing Enter-to-fire behaviour discoverable
-// (design D5).
-document.querySelectorAll('[data-suggest-rerun]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const panel = document.getElementById(btn.dataset.suggestRerun);
-    if (!panel) return;
-    btn.classList.add('spinning');
-    setTimeout(() => btn.classList.remove('spinning'), 650);
-    openSuggestPanel(panel, { forceRefresh: true });
-  });
-});
-
-// ── reactive lemma: follows a guess derived from `text` until edited directly
-
-// Norwegian particle verbs ("legge til", "legge ut") and bare indefinite
-// nouns ("en bil", "ei bok", "et hus") carry a word the lemma itself never
-// wants: an indefinite article or infinitive marker in front, or a
-// separable-verb particle/preposition behind. A plain "first word" guess
-// gets particle verbs right (the particle is already at the end) but gets
-// articles and the infinitive marker wrong — this strips both ends before
-// falling back to the first remaining token.
-const LEMMA_GUESS_PREFIX_STOPWORDS = new Set(['en', 'ei', 'et', 'å']);
-const LEMMA_GUESS_SUFFIX_STOPWORDS = new Set([
-  'til', 'ut', 'inn', 'opp', 'ned', 'av', 'på', 'i', 'om', 'for', 'fra', 'med', 'etter', 'over', 'under', 'sammen',
-]);
-
-function deriveLemmaGuess(text) {
-  const tokens = (text || '').trim().split(/\s+/).filter(Boolean);
-  if (tokens.length <= 1) return tokens[0] || '';
-  let start = 0;
-  let end = tokens.length - 1;
-  while (start < end && LEMMA_GUESS_PREFIX_STOPWORDS.has(tokens[start].toLowerCase())) start += 1;
-  while (end > start && LEMMA_GUESS_SUFFIX_STOPWORDS.has(tokens[end].toLowerCase())) end -= 1;
-  return tokens.slice(start, end + 1).join(' ');
-}
-
-function syncLemmaFromText(prefix) {
-  const lemmaEl = document.getElementById(`${prefix}_lemma`);
-  if (!lemmaEl || lemmaEl.dataset.dirty === '1') return;
-  const textEl = document.getElementById(`${prefix}_text`);
-  lemmaEl.value = textEl ? deriveLemmaGuess(textEl.value) : '';
-}
-
-// Examples search for the whole phrase, particle/preposition included
-// ("legge til" as a unit reads better in a corpus than bare "legge") — only
-// a leading article or infinitive marker is noise worth stripping here, so
-// this reuses just the prefix half of the lemma guess, never the suffix
-// half.
-function deriveExamplesQuery(text) {
-  const tokens = (text || '').trim().split(/\s+/).filter(Boolean);
-  if (tokens.length <= 1) return tokens[0] || '';
-  let start = 0;
-  while (start < tokens.length - 1 && LEMMA_GUESS_PREFIX_STOPWORDS.has(tokens[start].toLowerCase())) start += 1;
-  return tokens.slice(start).join(' ');
-}
-
-function wireLemmaTextSync(prefix) {
-  const lemmaEl = document.getElementById(`${prefix}_lemma`);
-  const textEl = document.getElementById(`${prefix}_text`);
-  if (!lemmaEl || !textEl) return;
-  // A direct edit to lemma stops the sync for this note — same dirty-flag
-  // idiom the suggest-control queries already use.
-  lemmaEl.addEventListener('input', () => { lemmaEl.dataset.dirty = '1'; });
-  textEl.addEventListener('input', () => syncLemmaFromText(prefix));
-}
-wireLemmaTextSync('e');
-wireLemmaTextSync('c');
-
-function enrichEl(html) {
-  const t = document.createElement('template');
-  t.innerHTML = html.trim();
-  return t.content.firstChild;
-}
-
-// A small ▶/⏸ icon button standing in for a full native <audio controls>
-// bar, which doesn't fit next to a candidate's text/meta/Use button in a
-// narrow row or sidebar. Only one plays at a time — starting one pauses any
-// other preview already playing.
-function buildAudioPreviewButton(url) {
-  const wrap = enrichEl(`
-    <span class="audio-preview">
-      <button type="button" class="icon-btn preview-play-btn" title="Preview">▶</button>
-      <audio class="preview-audio" preload="none" src="${escapeHtml(url)}"></audio>
-    </span>
-  `);
-  const btn = wrap.querySelector('.preview-play-btn');
-  const audio = wrap.querySelector('.preview-audio');
-  btn.addEventListener('click', () => {
-    if (audio.paused) {
-      document.querySelectorAll('audio.preview-audio').forEach((a) => { if (a !== audio) a.pause(); });
-      audio.play();
     } else {
-      audio.pause();
+      inflections = (E && E.stored && E.stored.inflections) || {};
     }
-  });
-  audio.addEventListener('play', () => { btn.textContent = '⏸'; btn.classList.add('playing'); });
-  audio.addEventListener('pause', () => { btn.textContent = '▶'; btn.classList.remove('playing'); });
-  audio.addEventListener('ended', () => { btn.textContent = '▶'; btn.classList.remove('playing'); });
-  return wrap;
-}
-
-function enrichToast(msg) {
-  let stack = document.getElementById('enrichToastStack');
-  if (!stack) {
-    stack = document.createElement('div');
-    stack.id = 'enrichToastStack';
-    stack.style.cssText = 'position:fixed;bottom:18px;left:18px;z-index:80;display:flex;flex-direction:column;gap:8px;';
-    document.body.appendChild(stack);
+    const p = {
+      text: f.text.trim(), type: f.type, pos: f.pos.trim() || null, lemma: f.lemma.trim() || null, inflections,
+      audio_blob: f.audio_blob || null, audio_sel_ms: f.audio_blob ? (f.audio_sel_ms || null) : null,
+      transcription: f.transcription.trim() || null,
+      translations: f.translations.filter((t) => t.text.trim()).map((t) => ({ lang: (t.lang || '').trim(), text: t.text.trim() })),
+      examples: f.examples.map((e) => e.trim()).filter(Boolean),
+      grammar_rule_id: f.grammar_rule_id ?? null, source_lang: f.source_lang || 'no',
+    };
+    if (withStatus) p.status = f.status;
+    return p;
   }
-  const t = enrichEl(`<div style="background:var(--text);color:var(--bg);padding:8px 13px;border-radius:var(--radius);font-size:12.5px;box-shadow:0 6px 18px -6px rgba(0,0,0,.3);">${escapeHtml(msg)}</div>`);
-  stack.appendChild(t);
-  setTimeout(() => t.remove(), 2200);
-}
+  const snapshot = (f, ctx) => JSON.stringify(payload(f, ctx === 'note'));
 
-function enrichCopy(text) {
-  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(() => {});
-  enrichToast(`Copied "${text}"`);
-}
-
-// ---------------------------------------------------------------------------
-// stabbur-triage-queues D5: part of speech ORDERS candidates, it never
-// filters them.
-//
-// The operator's diagnosis, which is more precise than "it picks the wrong
-// PoS": the right candidate was already in the response and simply was not
-// first — and `walkProviders` takes `candidates[0]`. So nothing is withheld
-// here; the matching candidates just sort to the top, and the display groups
-// them under headings with the note's own group first.
-//
-// The tag has to be normalised on BOTH sides to compare at all: dict.cc tags
-// entries in English (`noun`, `verb`, `adj`) while stabbur stores Norwegian
-// (`substantiv`, `adjektiv`). This is the same mapping smia's own `_POS_MAP`
-// applies to inflection blocks, kept deliberately small — an unrecognised
-// tag is not forced into a bucket, it keeps its own identity and groups
-// with its like.
-const POS_TAG_ALIASES = {
-  noun: 'substantiv',
-  substantiv: 'substantiv',
-  verb: 'verb',
-  adj: 'adjektiv',
-  adjective: 'adjektiv',
-  adjektiv: 'adjektiv',
-  adv: 'adverb',
-  adverb: 'adverb',
-  prep: 'preposisjon',
-  preposisjon: 'preposisjon',
-  conj: 'konjunksjon',
-  konjunksjon: 'konjunksjon',
-};
-
-function normalizePosTag(raw) {
-  if (!raw) return null;
-  const key = String(raw).trim().toLowerCase().replace(/\.$/, '');
-  return POS_TAG_ALIASES[key] || key || null;
-}
-
-// Only a LEADING BRACKETED tag counts (D5). `dictcc_api` emits
-// "[verb] å komme i vei"; `dictcc_static` emits "noun Br." with no brackets
-// and is deliberately treated as untagged rather than parsed by a word list
-// that could drift. Returns null for untagged.
-function candidatePosTag(candidate) {
-  const context = candidate && candidate.context;
-  if (!context) return null;
-  const m = /^\s*\[([^\]]+)\]/.exec(context);
-  return m ? normalizePosTag(m[1]) : null;
-}
-
-// A STABLE partition: matching tag first, then every other tagged group in
-// first-appearance order, then untagged. Array.prototype.sort is stable in
-// every engine this targets, but partitioning says the intent plainly and
-// cannot be undone by a comparator mistake.
-function orderCandidatesByPos(candidates, notePos) {
-  const wanted = normalizePosTag(notePos);
-  if (!wanted) return candidates.slice();
-  const matching = [];
-  const rest = [];
-  candidates.forEach((c) => {
-    (candidatePosTag(c) === wanted ? matching : rest).push(c);
-  });
-  // No candidate matches -> the provider's order is left completely alone,
-  // and no preference is invented (D5's explicit fallback).
-  if (!matching.length) return candidates.slice();
-  return matching.concat(rest);
-}
-
-// Groups for display, in the order they should appear: the note's own tag
-// first and identified as such, then the other tagged groups in
-// first-appearance order, then untagged last.
-function groupCandidatesByPos(candidates, notePos) {
-  const wanted = normalizePosTag(notePos);
-  const byTag = new Map();
-  const untagged = [];
-  candidates.forEach((c) => {
-    const tag = candidatePosTag(c);
-    if (!tag) { untagged.push(c); return; }
-    if (!byTag.has(tag)) byTag.set(tag, []);
-    byTag.get(tag).push(c);
-  });
-  const groups = [];
-  if (wanted && byTag.has(wanted)) {
-    groups.push({ tag: wanted, isNotePos: true, candidates: byTag.get(wanted) });
-    byTag.delete(wanted);
+  function newEditor(ctx, note) {
+    E = {
+      ctx, id: note && note.id ? note.id : null, stored: note && note.id ? note : null,
+      f: formFrom(note || {}), base: '', sim: [], simLoaded: false,
+      cands: {}, prov: {}, audioFrom: note && note.audio_blob ? 'stored' : '',
+      lemmaDirty: false, customPos: false, prefilling: false, seq: (E ? E.seq : 0) + 1,
+    };
+    E.customPos = !!(E.f.pos && !POS.includes(E.f.pos));
+    E.base = snapshot(E.f, ctx);
+    if (E.f.audio_blob) loadWave(E.f.audio_blob);
+    S.tab = 'word';
+    return E;
   }
-  byTag.forEach((list, tag) => groups.push({ tag, isNotePos: false, candidates: list }));
-  if (untagged.length) groups.push({ tag: null, isNotePos: false, candidates: untagged });
-  return groups;
-}
+  // After a save or a merge: the stored row is the new baseline; everything
+  // the session learned (candidates, provenance) stays.
+  function rebase(note) {
+    E.stored = note;
+    E.id = note.id;
+    E.f = formFrom(note);
+    E.customPos = !!(E.f.pos && !POS.includes(E.f.pos));
+    E.base = snapshot(E.f, E.ctx);
+    if (E.f.audio_blob) loadWave(E.f.audio_blob);
+  }
+  const isDirty = () => !!E && snapshot(E.f, E.ctx) !== E.base;
 
-function notePosFor(prefix) {
-  const ids = posFieldIdsFor(prefix);
-  if (!ids) return null;
-  try {
-    return getPosValue(ids.select, ids.custom) || null;
-  } catch (e) {
+  async function loadSimilar() {
+    if (!E || !E.id) return;
+    const e0 = E;
+    const r = await api(`/api/notes/${E.id}/similar`);
+    if (E !== e0) return;
+    E.sim = r.status === 200 ? r.body : [];
+    E.simLoaded = true;
+    scheduleRender();
+  }
+
+  /* --------------------------------------------------------- markers -- */
+  const hasText = (s) => !!(s && String(s).trim());
+  function groups(f) {
+    const w = [hasText(f.text), hasText(f.type), hasText(f.pos), hasText(f.lemma)];
+    if (PARADIGM_POS.includes(f.pos)) w.push(shapeKeys(f.pos).every((k) => hasText(f.inflections[k])));
+    const s = [!!f.audio_blob, hasText(f.transcription)];
+    const m = [f.translations.some((t) => hasText(t.text)), f.examples.some(hasText)];
+    const g = f.type === 'grammar' ? [f.grammar_rule_id != null] : [];
+    const c = (a) => [a.filter(Boolean).length, a.length];
+    return { word: c(w), sound: c(s), meaning: c(m), grammar: g.length ? c(g) : [f.grammar_rule_id != null ? 1 : 0, 0] };
+  }
+  function mkr(gk, f) {
+    const [d, t] = groups(f)[gk];
+    if (gk === 'grammar' && t === 0) return f.grammar_rule_id != null ? '<span class="mk full" title="linked"></span>' : '<span class="mk opt" title="optional"></span>';
+    return d === t ? '<span class="mk full" title="complete"></span>' : `<span class="mk" title="missing something">${d}/${t}</span>`;
+  }
+  function refreshMarkers() {
+    if (!E) return;
+    app.querySelectorAll('[data-mk]').forEach((el) => { el.innerHTML = mkr(el.dataset.mk, E.f); });
+  }
+  function refreshSave() {
+    if (!E || E.ctx !== 'note') return;
+    const b = app.querySelector('#savebtn');
+    if (!b) return;
+    const d = isDirty();
+    b.classList.toggle('clean', !d);
+    b.innerHTML = d ? '<span class="dirty"></span>Save' : 'Saved';
+  }
+  function afterEdit() { refreshMarkers(); refreshSave(); }
+
+  /* ------------------------------------------------------ suggestions -- */
+  function kindProviders(kind) {
+    if (kind === 'stt') {
+      const list = (S.catalog && S.catalog.stt) || [];
+      return { enabled: list, off: 0, links: [] };
+    }
+    const info = (settings().providers || {})[API_KIND[kind]] || { order: [], disabled: [] };
+    const dis = new Set(info.disabled || []);
+    const order = info.order || [];
+    let enabled = order.filter((p) => !dis.has(p));
+    let links = [];
+    if (kind === 'audio') {
+      links = enabled.filter((p) => LINKP.includes(p));
+      enabled = enabled.filter((p) => !LINKP.includes(p));
+    }
+    return { enabled, off: order.filter((p) => dis.has(p)).length, links };
+  }
+  // editor-session-hygiene D1: each kind queries from one named field.
+  function defaultQuery(kind) {
+    const f = E.f;
+    if (kind === 'inflections') return f.lemma.trim();
+    if (kind === 'examples') return deriveExamplesQuery(f.text);
+    if (kind === 'pos') return f.lemma.trim() || f.text.trim();
+    if (kind === 'audio') return deriveExamplesQuery(f.lemma.trim() || f.text.trim());
+    if (kind === 'stt') return 'current audio';
+    return f.text.trim();
+  }
+
+  // Identical lookups are shared (part of speech and inflections ask the
+  // same question), and a sheet reopened for an unchanged query answers from
+  // here. `force` is the operator's explicit rerun, which also tells smia
+  // to bypass its cache (design D5 of lemma-first-suggestions).
+  const lookupCache = new Map();
+  function enrich(apiKind, provider, fields, force) {
+    const key = JSON.stringify([apiKind, provider, fields]);
+    if (!force && lookupCache.has(key)) return lookupCache.get(key);
+    const p = api(`/api/enrich/${apiKind}`, jsonReq('POST', { ...fields, provider, ...(force ? { forceRefresh: true } : {}) }));
+    lookupCache.set(key, p);
+    p.then((r) => { if (r.status !== 200) lookupCache.delete(key); });
+    return p;
+  }
+
+  // One provider's answer for one kind, normalised to a list of candidate
+  // objects with a display value `v`.
+  async function providerLookup(kind, p, q, force) {
+    const lang = smiaLang(E.f.source_lang);
+    if (kind === 'stt') {
+      if (!E.f.audio_blob) return { list: [], note: 'No audio to transcribe yet' };
+      const r = await api('/api/enrich/stt', jsonReq('POST', { provider: p, audio_blob: E.f.audio_blob, lang }));
+      if (r.status !== 200 || typeof (r.body && r.body.text) !== 'string') return { list: [], error: errMsg(r, 'Transcription failed') };
+      return { list: r.body.text.trim() ? [{ v: r.body.text.trim(), ctx: 'from current audio' }] : [] };
+    }
+    if (!q) return { list: [] };
+    if (kind === 'translations') {
+      const langs = (settings().default_target_langs || []).length ? settings().default_target_langs : ['en', 'de'];
+      const answers = await Promise.all(langs.map((to) => enrich('translations', p, { text: q, from: lang, to }, force)));
+      const list = [];
+      let failed = 0;
+      answers.forEach((r, i) => {
+        if (r.status !== 200 || !r.body || !Array.isArray(r.body.candidates)) { failed += 1; return; }
+        r.body.candidates.forEach((c) => list.push({ lang: langs[i], v: c.text || '', ctx: c.context || '', tag: contextPosTag(c.context) }));
+      });
+      if (failed === langs.length) return { list: [], error: errMsg(answers[0], 'Lookup failed') };
+      return { list };
+    }
+    const fields = kind === 'ipa' ? { text: q, lang }
+      : (kind === 'pos' || kind === 'inflections') ? { word: q, lang }
+        : kind === 'examples' ? { text: q, lang, limit: Math.min(10, Math.max(1, settings().examples_count || 3)) }
+          : { text: q, lang };
+    const r = await enrich(API_KIND[kind], p, fields, force);
+    if (r.status !== 200 || !r.body) return { list: [], error: errMsg(r, 'Lookup failed') };
+    const b = r.body;
+    if (kind === 'audio' && Array.isArray(b.candidates) && !b.candidates.length && b.url) return { list: [], url: b.url };
+    if (kind === 'ipa' && b.mode === 'per_word') {
+      const list = [];
+      if (b.joined) list.push({ asm: true, v: b.joined, ctx: 'assembled from single words' });
+      (b.tokens || []).forEach((t) => {
+        const cs = Array.isArray(t.candidates) ? t.candidates : [];
+        if (!cs.length) list.push({ gap: true, token: t.text });
+        cs.forEach((c) => list.push({ v: c.ipa || c.phonemic || c.phonetic || '', ctx: [t.text, c.variety].filter(Boolean).join(' · ') }));
+      });
+      return { list, tokens: b.tokens || [], joined: b.joined || null, perWord: true };
+    }
+    const cs = Array.isArray(b.candidates) ? b.candidates : [];
+    if (kind === 'ipa') return { list: cs.map((c) => ({ v: c.ipa || c.phonemic || c.phonetic || '', ctx: c.variety || '' })) };
+    if (kind === 'inflections') return { list: cs.map((c) => ({ v: c.paradigm || {}, pos: c.pos, lemma: c.lemma, ctx: [c.lemma, c.pos].filter(Boolean).join(' · ') })) };
+    if (kind === 'pos') {
+      const seen = new Set();
+      const list = [];
+      cs.forEach((c) => {
+        const mapped = canonicalPos(c.pos);
+        const key = mapped || `raw:${c.pos}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        list.push({ v: mapped, raw: c.pos, ctx: mapped ? [c.lemma, c.pos].filter(Boolean).join(' · ') : `${c.pos || '—'} · no canonical part of speech` });
+      });
+      return { list };
+    }
+    if (kind === 'examples') {
+      return {
+        list: cs.filter((c) => c.text).map((c) => ({ v: c.text, ctx: [p, c.sense, c.source].filter(Boolean).join(' · ') })),
+      };
+    }
+    if (kind === 'audio') return { list: cs.map((c) => ({ sha: c.sha256, v: c.context || '', tag: contextPosTag(c.context) })) };
+    return { list: [] };
+  }
+
+  // Runs a kind's providers (all, or one) into E.cands[kind]. Every box
+  // renders as its answer arrives.
+  async function fetchKind(kind, opts = {}) {
+    if (!E) return null;
+    const e0 = E;
+    if (kind === 'stt') await loadCatalog();
+    const st = E.cands[kind] || (E.cands[kind] = { q: defaultQuery(kind), pq: {}, pqOpen: {}, P: {}, edited: false });
+    if (opts.q !== undefined) st.q = opts.q;
+    const { enabled, links } = kindProviders(kind);
+    const targets = opts.only ? [opts.only] : enabled.concat(links);
+    if (!opts.only) st.fetched = true;
+    await Promise.all(targets.map(async (p) => {
+      const own = st.pq[p] !== undefined && st.pq[p].trim() ? st.pq[p].trim() : null;
+      const q = own || st.q.trim();
+      st.P[p] = { ...(st.P[p] || {}), loading: true, query: q };
+      scheduleRender();
+      let res;
+      try { res = await providerLookup(kind, p, q, !!opts.force); } catch (err) { res = { list: [], error: err.message }; }
+      if (E !== e0) return;
+      st.P[p] = { ...res, loading: false, query: q };
+      scheduleRender();
+    }));
+    return st;
+  }
+  // The answers a prefill or a reopened sheet can use as they stand: fetched
+  // for the field's current default query, and not mid-flight.
+  async function ensureKind(kind) {
+    const st = E.cands[kind];
+    const q = defaultQuery(kind);
+    const { enabled } = kindProviders(kind);
+    const ready = st && st.fetched && st.q === q && enabled.every((p) => st.P[p] && !st.P[p].loading && st.P[p].query === q);
+    if (ready) return st;
+    if (st) { st.pq = {}; st.pqOpen = {}; st.edited = false; }
+    return fetchKind(kind, { q });
+  }
+  function ccount(kind) {
+    const st = E && E.cands[kind];
+    if (!st) return 0;
+    return kindProviders(kind).enabled.reduce((a, p) => a + ((st.P[p] && st.P[p].list) || []).filter((c) => !c.gap).length, 0);
+  }
+
+  /* ------------------------------------------------------- render util -- */
+  const sgb = (kind) => {
+    const c = ccount(kind);
+    return `<button class="sg" data-act="sheet" data-kind="${kind}" aria-label="Suggest ${KINDS[kind]}" title="Suggest ${KINDS[kind].toLowerCase()}">${ic('spark')}${c ? `<b>${c}</b>` : ''}</button>`;
+  };
+  const provTag = (k) => (E.prov[k] ? `<span class="prov" title="prefilled by ${esc(E.prov[k])}">${esc(E.prov[k])}</span>` : '');
+  const lab = (txt, kind, forId, extra = '') => `<div class="fl"><label ${forId ? `for="${forId}"` : ''}>${txt}</label>${kind ? provTag(kind) : ''}${extra}<span class="grow"></span>${kind ? sgb(kind) : ''}</div>`;
+  const pickBtn = (k, label, cls, extra = '') => `<button class="${cls}" data-act="pick" data-pick="${esc(k)}" ${extra} aria-haspopup="listbox">${label}</button>`;
+
+  /* ------------------------------------------------------------ editor -- */
+  function secWord() {
+    const f = E.f;
+    const shape = SHAPES[f.pos];
+    const custom = E.customPos;
+    return `
+    <div class="f">${lab('Part of speech', 'pos')}
+      ${custom ? `<input class="in" id="f_posc" data-f="posc" value="${esc(f.pos)}" placeholder="custom part of speech" aria-label="Custom part of speech">`
+    : pickBtn('pos', `<span>${f.pos ? esc(f.pos) : '—'}</span>${ic('caret')}`, `selbtn${f.pos ? '' : ' none'}`)}</div>
+    <div class="f">${lab('Lemma', null, 'f_lemma')}<input class="in" id="f_lemma" data-f="lemma" value="${esc(f.lemma)}" placeholder="dictionary form"></div>
+    <div class="f">${lab('Inflections', shape ? 'inflections' : null)}
+      ${shape ? `<div class="para">${shape.map(([k, l], i) => `<div class="f"><span class="k">${esc(l)}</span><input class="in" id="f_inf${i}" aria-label="${esc(l)}" data-f="infl" data-k="${esc(k)}" value="${esc(f.inflections[k] || '')}"></div>`).join('')}</div>`
+    : `<div class="nopara">${f.pos ? `No paradigm for ${esc(f.pos)}` : 'Choose a part of speech to see its paradigm'}</div>`}</div>`;
+  }
+  function selection() {
+    const f = E.f;
+    const w = f.audio_blob ? waveCache[f.audio_blob] : null;
+    const dur = w && w !== 'loading' ? w.dur || 0 : 0;
+    const sel = f.audio_sel_ms;
+    const a = dur && sel ? Math.max(0, Math.min(1, sel[0] / (dur * 1000))) : 0;
+    const b = dur && sel ? Math.max(0, Math.min(1, sel[1] / (dur * 1000))) : 1;
+    return { dur, a, b, peaks: w && w !== 'loading' ? w.peaks : null, loading: !w || w === 'loading' };
+  }
+  function wave(s) {
+    const n = 64; const W = 640; const H = 56;
+    let bars = '';
+    for (let i = 0; i < n; i += 1) {
+      const p = s.peaks ? s.peaks[i] || 0 : 0.12;
+      const h = Math.max(3, (0.06 + 0.94 * p) * (H - 8));
+      const x = i * (W / n) + 2; const fr = (i + 0.5) / n; const inS = fr >= s.a && fr <= s.b;
+      bars += `<rect x="${x.toFixed(1)}" y="${((H - h) / 2).toFixed(1)}" width="5" height="${h.toFixed(1)}" rx="2" fill="${inS ? 'var(--accent)' : 'var(--wave)'}"/>`;
+    }
+    const ax = s.a * W; const bx = s.b * W;
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Waveform with selection">
+      <rect x="${ax}" y="0" width="${Math.max(0, bx - ax)}" height="${H}" fill="var(--accent-soft)"/>${bars}
+      <rect x="${ax - 1}" y="0" width="2" height="${H}" fill="var(--accent)"/><rect x="${bx - 1}" y="0" width="2" height="${H}" fill="var(--accent)"/>
+      <rect id="phd" x="-10" y="0" width="2" height="${H}" fill="var(--ink)"/></svg>`;
+  }
+  const msRange = (s) => `${Math.round(s.a * s.dur * 1000)}–${Math.round(s.b * s.dur * 1000)} ms`;
+  const audioActions = () => `<div class="aacts"><button class="lnk" data-act="clip" ${S.clipBusy ? 'disabled' : ''}>${ic('clip')} ${S.clipBusy ? 'Fetching…' : 'Use URL from clipboard'}</button><button class="lnk" data-act="upload">${ic('up')} Upload file</button></div>`;
+  function secSound() {
+    const f = E.f;
+    const s = f.audio_blob ? selection() : null;
+    return `
+    <div class="f">${lab('Audio', 'audio')}
+      ${s ? `<div class="player"><button class="play" data-act="play" aria-label="Play selection">${ic(S.playKey === 'sel' ? 'pause' : 'play')}</button><div class="wv" id="wv">${wave(s)}</div></div>
+      <div class="arange"><span id="arng">${s.loading ? 'loading…' : msRange(s)}</span>${s.loading ? '' : `<span>of ${s.dur.toFixed(2)} s</span>`}<span>· ${esc(E.audioFrom || 'stored')}</span></div>`
+    : `<div class="noaudio">${ic('snd')} No audio yet</div>`}
+      ${audioActions()}
+    </div>
+    <div class="f">${lab('Pronunciation · IPA', 'ipa', 'f_ipa')}<input class="in ipa" id="f_ipa" data-f="ipa" value="${esc(f.transcription)}" placeholder="/ … /" spellcheck="false"></div>`;
+  }
+  function secMeaning() {
+    const f = E.f;
+    return `
+    <div class="f">${lab('Translations', 'translations')}
+      <div class="rows">${f.translations.map((t, i) => `<div class="row">${pickBtn(`trl:${i}`, esc(t.lang || '—'), 'lang', `aria-label="Language ${esc(t.lang)}"`)}<input class="in" data-f="trt" data-i="${i}" value="${esc(t.text)}" aria-label="Translation"><button class="x" data-act="trdel" data-i="${i}" aria-label="Remove translation">${ic('x')}</button></div>`).join('') || '<div class="empty">No translations</div>'}</div>
+      <button class="add" data-act="tradd">+ Add translation</button></div>
+    <div class="f ex">${lab('Examples', 'examples')}
+      <div class="rows">${f.examples.map((e, i) => `<div class="row"><textarea class="in" rows="1" data-f="ex" data-i="${i}" aria-label="Example ${i + 1}">${esc(e)}</textarea><button class="x" data-act="exdel" data-i="${i}" aria-label="Remove example">${ic('x')}</button></div>`).join('') || '<div class="empty">No examples</div>'}</div>
+      <button class="add" data-act="exadd">+ Add example</button></div>`;
+  }
+  function ruleBtn() {
+    const r = ruleById(E.f.grammar_rule_id);
+    return pickBtn('rule', `<span>${r ? esc(r.title) : (E.f.grammar_rule_id != null ? `Rule #${E.f.grammar_rule_id}` : 'No rule linked')}</span>${ic('caret')}`, `selbtn${r || E.f.grammar_rule_id != null ? '' : ' none'}`);
+  }
+  function secGrammar() {
+    const r = ruleById(E.f.grammar_rule_id);
+    return `<div class="f"><div class="fl"><label>Grammar rule</label>${E.f.type === 'grammar' ? '' : '<span class="opt-tag">optional</span>'}</div>${ruleBtn()}
+      ${r ? `<div class="rule rhtml-inline">${sanitizeHtml(r.html)}</div><a class="add" href="#/grammar/${r.id}">Open rule</a>` : ''}</div>`;
+  }
+
+  function queueLabel(q) {
+    if (!q) return 'No queue';
+    if (q.adhoc) return q.name || 'These results';
+    if (q.builtin) return { capture: 'Drafts · captures', import: 'Drafts · imports', manual: 'Drafts · manual' }[q.name] || `Drafts · ${q.name}`;
+    return q.name;
+  }
+  function activeQueue() {
+    if (T.adhoc) return T.adhoc;
+    return T.queues.find((q) => q.id === T.selectedId) || null;
+  }
+  function headBelt() {
+    const tot = T.queue.length;
+    const pos = tot ? Math.min(T.index + 1, tot) : 0;
+    return `<div class="belt">${pickBtn('queue', `${esc(queueLabel(activeQueue()))} ${ic('caret')}`, 'qbtn')}
+      <span class="pos"><b>${pos}</b> / ${tot}</span></div><div class="track"><span style="width:${tot ? (pos / tot * 100).toFixed(1) : 0}%"></span></div>`;
+  }
+  const typePill = () => pickBtn('type', `${esc(E.f.type)} ${ic('caret')}`, 'tpill', 'title="Type"');
+  const prefillBtn = () => `<button class="pfb ${E.prefilling ? 'spin' : ''}" data-act="prefill" aria-label="Prefill" title="Prefill: fill every empty field from the first provider">${ic('spark')}${S.vp === 'phone' ? '' : 'Prefill'}${S.vp === 'desktop' && E.ctx === 'triage' ? ' <kbd>L</kbd>' : ''}</button>`;
+  function metaBits() {
+    const bits = [];
+    if (E.ctx === 'new') bits.push('New note');
+    else {
+      const st = E.ctx === 'note' ? E.f.status : (E.stored ? E.stored.status : 'draft');
+      bits.push(`<span class="st ${st}">${st}</span>`);
+    }
+    if (E.f.pos) bits.push(esc(E.f.pos));
+    if (E.id && S.copyOf[E.id]) bits.push(`copy of ${esc(S.copyOf[E.id])}`);
+    return bits.join('<span class="dot"></span>');
+  }
+  function editor() {
+    const desk = S.vp === 'desktop';
+    const sim = E.sim;
+    const hwIn = `<textarea class="hw" id="f_text" data-f="text" rows="1" placeholder="Norwegian text" aria-label="Text" spellcheck="false">${esc(E.f.text)}</textarea>${sgb('stt')}`;
+    const belt = E.ctx === 'triage' ? headBelt() : '';
+    if (!desk) {
+      const chip = sim.length ? `<button class="chip" data-act="similar">${ic('merge', 's')} ${sim.length} similar</button>` : '';
+      const tabs = [['word', 'Word'], ['sound', 'Sound'], ['meaning', 'Meaning'], ['grammar', 'Grammar']];
+      const body = { word: secWord, sound: secSound, meaning: secMeaning, grammar: secGrammar }[S.tab]();
+      return `<div class="wrap">${belt}
+        <div class="eh"><div class="meta">${typePill()}${metaBits()}${chip}</div>
+        <div class="hwrow">${hwIn}</div></div></div>
+        <div class="tabs wrap" role="tablist">${tabs.map(([k, l]) => `<button role="tab" class="${k === 'grammar' && E.f.type !== 'grammar' ? 'opt' : ''}" aria-selected="${S.tab === k}" data-act="tab" data-v="${k}">${l}<span data-mk="${k}">${mkr(k, E.f)}</span></button>`).join('')}</div>
+        <div class="wrap"><div class="pane" role="tabpanel">${body}</div></div>`;
+    }
+    const r = ruleById(E.f.grammar_rule_id);
+    const simline = sim.length
+      ? `Similar ${sim.map((s) => `<button class="nm" data-act="similar" data-v="${esc(s.id)}">${esc(s.text)}</button>`).join('<span class="dotsep"></span>')} <button class="lnk" data-act="similar" style="margin-left:6px">${ic('merge')} Review &amp; merge</button>`
+      : '<span style="color:var(--faint)">No similar notes</span>';
+    return `<div class="wrap">${belt}
+      <div class="dmeta"><div class="meta">${metaBits()}</div><div class="simline">${simline}</div></div>
+      <div class="hwrow">${hwIn}${typePill()}</div>
+      <div class="zones">
+        <section class="zone"><div class="zh">Word <span data-mk="word">${mkr('word', E.f)}</span></div>${secWord()}</section>
+        <section class="zone"><div class="zh">Sound <span data-mk="sound">${mkr('sound', E.f)}</span></div>${secSound()}</section>
+        <section class="zone"><div class="zh">Meaning <span data-mk="meaning">${mkr('meaning', E.f)}</span></div>${secMeaning()}</section>
+      </div>
+      <div class="gline"><span class="zh">Grammar <span data-mk="grammar">${mkr('grammar', E.f)}</span></span>${E.f.type === 'grammar' ? '' : '<span class="opt-tag">optional</span>'}${ruleBtn()}${r ? `<a class="add" style="padding:0" href="#/grammar/${r.id}">Open rule</a>` : ''}</div>
+      ${r ? `<div class="gbody"><div class="rule">${sanitizeHtml(r.html)}</div></div>` : ''}
+    </div>`;
+  }
+  function editorPage(ctx) {
+    if (ctx === 'triage' && !E) {
+      const belt = T.queues.length || T.adhoc ? headBelt() : '';
+      if (T.loading) return `<div class="wrap">${belt}<div class="loading">Loading the queue…</div></div>`;
+      const q = activeQueue();
+      const reviewed = T.history.length;
+      return `<div class="wrap">${belt}<div class="done-state"><h2>${T.queue.length ? 'End of this queue' : 'Nothing in this queue'}</h2>
+        <p>${q ? `“${esc(queueLabel(q))}” has ${T.queue.length ? 'no more notes after this one' : 'no notes matching it right now'}.` : 'There is no queue to work.'}${reviewed ? ` ${reviewed} reviewed this pass — Previous takes you back.` : ''}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${reviewed ? '<button class="btn-s" data-act="t-prev">Previous</button>' : ''}${pickBtn('queue', `Pick a queue ${ic('caret')}`, 'btn-s')}<a class="btn-p" href="#/new-note">${ic('plus')} New note</a></div></div></div>`;
+    }
+    if (!E) return `<div class="wrap"><div class="loading">${S.notFound ? 'This note does not exist (any more).' : 'Loading…'}</div></div>`;
+    return editor();
+  }
+
+  /* -------------------------------------------------------------- bars -- */
+  function bar(ctx) {
+    const d = S.vp === 'desktop';
+    if (ctx === 'triage') {
+      return `<div class="bar"><div class="bari">
+      <button class="ib del" data-act="t-del" aria-label="Delete">${ic('trash')}${d ? 'Delete <kbd>D</kbd>' : ''}</button>
+      ${d ? `<button class="ib" data-act="t-skip" aria-label="Skip">${ic('skip')}Skip <kbd>S</kbd></button>` : ''}
+      <button class="ib" data-act="t-prev" aria-label="Previous">${ic('prev')}${d ? 'Previous <kbd>T</kbd>' : ''}</button>
+      ${d ? '<span class="sp"></span>' : ''}
+      <button class="ib" data-act="menu" aria-label="More actions">${ic('more')}</button>
+      ${prefillBtn()}
+      <button class="pri" data-act="t-ready">Ready &amp; next <kbd>R</kbd></button></div></div>`;
+    }
+    if (ctx === 'note') {
+      const dirty = isDirty();
+      return `<div class="bar"><div class="bari">
+      <button class="ib" data-act="go" data-v="notes" aria-label="Back to notes">${ic('back')}${d ? 'Notes' : ''}</button>
+      <div class="stseg" role="group" aria-label="Status"><button data-act="status" data-v="draft" aria-pressed="${E.f.status === 'draft'}">Draft</button><button data-act="status" data-v="ready" aria-pressed="${E.f.status === 'ready'}">Ready</button></div>
+      ${d ? `<button class="ib" data-act="dup" aria-label="Duplicate note">${ic('dup')}Duplicate</button>` : ''}
+      ${d ? '<span class="sp"></span>' : ''}
+      <button class="ib" data-act="menu" aria-label="More actions">${ic('more')}</button>
+      ${prefillBtn()}
+      <button class="pri ${dirty ? '' : 'clean'}" data-act="save" id="savebtn">${dirty ? '<span class="dirty"></span>Save' : 'Saved'}</button></div></div>`;
+    }
+    return `<div class="bar"><div class="bari">${prefillBtn()}${d ? '<span class="sp"></span>' : ''}
+      <button class="sec" data-act="new-save" data-v="draft">Save draft</button>
+      <button class="pri" data-act="new-save" data-v="ready">Save as ready</button></div></div>`;
+  }
+  function pop() {
+    if (S.confirm === 'delete' && E) {
+      const hard = !E.stored || E.stored.status === 'draft';
+      return `<div class="pop" role="dialog"><div class="q">Delete “${esc(E.f.text || (E.stored && E.stored.text) || '')}”?<small>${hard ? 'The note and its audio are removed. This cannot be undone.' : 'It is ready, so it may already have been pulled: the id is kept as a tombstone, the note leaves every list.'}</small></div><div class="two"><button data-act="cancel">Cancel</button><button class="danger" data-act="del-yes">Delete</button></div></div>`;
+    }
+    if (S.confirm === 'rule' && G.rule) {
+      return `<div class="pop" role="dialog"><div class="q">Delete “${esc(G.rule.title)}”?<small>${G.rule.usage_count ? `${G.rule.usage_count} note${G.rule.usage_count === 1 ? '' : 's'} still use it — unlink them first.` : 'The rule is removed. This cannot be undone.'}</small></div><div class="two"><button data-act="cancel">Cancel</button><button class="danger" data-act="grdel-yes" ${G.rule.usage_count ? 'disabled' : ''}>Delete</button></div></div>`;
+    }
+    if (S.menu === 'triage') return `<div class="pop" role="menu">${S.vp === 'phone' ? '<button data-act="t-skip">Skip<span class="sp"></span><kbd>S</kbd></button>' : ''}<button data-act="tdup">Duplicate note</button><button data-act="t-back">Send to back<span class="sp"></span><kbd>E</kbd></button><button data-act="t-save">Save<span class="sp"></span><kbd>M</kbd></button></div>`;
+    if (S.menu === 'note') return '<div class="pop" role="menu"><button data-act="dup">Duplicate note</button><button class="danger" data-act="n-del">Delete note</button></div>';
+    return '';
+  }
+
+  /* ----------------------------------------------------- picker menus -- */
+  const FDEF = {
+    status: { l: 'Status', single: 1, o: [['any', 'Any'], ['draft', 'Draft'], ['ready', 'Ready']] },
+    type: { l: 'Type', o: TYPES.map((t) => [t, t]) },
+    pos: { l: 'Part of speech', o: POS.map((t) => [t, t]) },
+    origin: { l: 'Origin', o: [['manual', 'Manual'], ['capture', 'Capture'], ['import', 'Import']] },
+    audio: { l: 'Audio', single: 1, o: [['any', 'Any'], ['has', 'Has audio'], ['none', 'No audio']] },
+    missing: { l: 'Missing', o: [['ipa', 'No IPA'], ['translations', 'No translation'], ['examples', 'No examples'], ['lemma', 'No lemma']] },
+    within: { l: 'Updated', single: 1, o: [['any', 'Any time'], ['today', 'Today'], ['week', 'This week'], ['month', 'This month']] },
+  };
+  const SORTS = [['updated', 'Recently updated'], ['created', 'Recently created'], ['az', 'Text A–Z'], ['complete', 'Least complete first']];
+  const SORT_API = { updated: 'updated_desc', created: 'created_desc', az: 'text_asc', complete: 'complete_asc' };
+
+  function langOptions(current) {
+    const out = [];
+    [...(settings().default_target_langs || []), ...LANG_FALLBACK, current].forEach((l) => { if (l && !out.includes(l)) out.push(l); });
+    return out.map((l) => [l, l]);
+  }
+  function pickDef(k) {
+    if (k === 'pos') return { h: 'Part of speech', o: [['', '—'], ...POS.map((t) => [t, t]), ['__c', 'custom…']], get: () => E.f.pos, set: (v) => { if (v === '__c') { E.customPos = true; return; } setPos(v); } };
+    if (k === 'type') return { h: 'Type', o: TYPES.map((t) => [t, t]), get: () => E.f.type, set: (v) => { E.f.type = v; } };
+    if (k.startsWith('trl:')) {
+      const i = +k.slice(4);
+      return { h: 'Language', o: langOptions(E.f.translations[i] && E.f.translations[i].lang), get: () => E.f.translations[i].lang, set: (v) => { E.f.translations[i].lang = v; } };
+    }
+    if (k === 'rule') return { h: 'Grammar rule', o: [['', 'No rule linked'], ...(S.rules || []).map((r) => [String(r.id), r.title])], get: () => (E.f.grammar_rule_id == null ? '' : String(E.f.grammar_rule_id)), set: (v) => { E.f.grammar_rule_id = v ? Number(v) : null; } };
+    if (k === 'queue') {
+      const o = T.queues.map((q) => [q.id, `${queueLabel(q)}${T.counts[q.id] !== undefined ? ` · ${T.counts[q.id]}` : ''}`]);
+      if (T.adhoc) o.push(['__adhoc', `${queueLabel(T.adhoc)} · unsaved`]);
+      return {
+        h: 'Queue', o, acts: [['__edit', 'Edit queue…'], ['__savenew', 'Save as new queue…']],
+        get: () => (T.adhoc ? '__adhoc' : T.selectedId),
+        set: (v) => {
+          if (v === '__edit') { openQueueEditor(false); return; }
+          if (v === '__savenew') { openQueueEditor(true); return; }
+          if (v === '__adhoc') return;
+          T.adhoc = null; T.selectedId = v;
+          try { localStorage.setItem('stabbur_triage_queue_id', v); } catch { /* ignore */ }
+          loadQueue().then(() => toast(`Queue: ${queueLabel(activeQueue())}`));
+        },
+      };
+    }
+    if (k === 'sort') return { h: 'Sort by', o: SORTS, get: () => N.sort, set: (v) => { N.sort = v; N.offset = 0; fetchNotes(); } };
+    if (k.startsWith('f:')) {
+      const f = k.slice(2); const D = FDEF[f];
+      return { h: D.l, o: D.o, multi: !D.single, get: () => N.F[f], set: (v) => { fToggle(f, v); N.offset = 0; fetchNotes(); } };
+    }
     return null;
   }
-}
-
-// Renders candidates grouped by part of speech when there is more than one
-// group to show; a single group renders bare, because a lone heading over
-// every candidate is noise.
-function appendGroupedCandidates(resultBox, candidates, providerName, renderCandidate, notePos) {
-  const groups = groupCandidatesByPos(candidates, notePos);
-  if (groups.length <= 1) {
-    candidates.forEach((c) => resultBox.appendChild(renderCandidate(c, providerName)));
-    return;
+  function menuHtml() {
+    if (!S.pick) return '';
+    const D = pickDef(S.pick.k);
+    if (!D) return '';
+    const val = D.get();
+    const on = (v) => (D.multi ? val.includes(v) : val === v);
+    return `<div class="menu ${S.pick.up ? 'up' : ''}" role="listbox" style="left:${S.pick.x}px;top:${S.pick.y}px">${D.h ? `<div class="mh">${D.h}</div>` : ''}${D.o.map(([v, l]) => `<button class="mi" role="option" data-act="pickv" data-v="${esc(v)}" aria-checked="${on(v)}"><span class="ck">${on(v) ? ic('check', 's') : ''}</span>${esc(l)}</button>`).join('')}${D.acts ? `<div class="sep"></div>${D.acts.map(([v, l]) => `<button class="mi act" data-act="pickv" data-v="${esc(v)}"><span class="ck"></span>${esc(l)}</button>`).join('')}` : ''}</div>`;
   }
-  groups.forEach((g) => {
-    const head = enrichEl(`
-      <div class="pos-group-head">
-        <span>${escapeHtml(g.tag || 'untagged')}</span>
-        ${g.isNotePos ? '<span class="pill pill-accent">this note\u2019s PoS</span>' : ''}
-        ${g.tag ? '' : '<span class="pos-group-note">no bracketed tag from this provider</span>'}
-      </div>`);
-    resultBox.appendChild(head);
-    g.candidates.forEach((c) => resultBox.appendChild(renderCandidate(c, providerName)));
-  });
-}
-
-// Exclusive within a language group (translations — one chosen translation
-// per target language) or the whole panel (ipa/tts — single-value field) —
-// never global, so picking an EN translation doesn't un-mark a DE one.
-// stabbur-triage-queues D6: marks accumulate for a field that ACCUMULATES,
-// and stay exclusive for one that does not.
-//
-// They were exclusive everywhere, which made them lie the moment IPA became
-// additive: after assembling a transcription from two candidates, only the
-// second showed as used though both were in the field. Making them
-// accumulate everywhere traded that for the opposite lie — audition three
-// dict.cc recordings and all three read "✓ Used" while the note carries
-// only the last, which matters precisely because this change surfaces many
-// more human recordings per word.
-//
-// So the caller says which it is. `accumulate` is true only where using a
-// second candidate genuinely adds to the first: the IPA candidate rows, and
-// translations in append mode (one chosen translation per language group).
-function markSuggestUsed(btn, { accumulate = false } = {}) {
-  if (!accumulate) {
-    const scope = btn.closest('.lang-group') || btn.closest('.suggest-panel') || document;
-    scope.querySelectorAll('.use-btn.used').forEach((b) => {
-      if (b !== btn) { b.classList.remove('used'); b.textContent = b.dataset.useLabel || 'Use'; }
-    });
+  function openPick(btn) {
+    const r = btn.getBoundingClientRect(); const d = app.getBoundingClientRect();
+    const x = Math.max(8, Math.min(r.left - d.left, d.width - 232));
+    const below = d.bottom - r.bottom; const up = below < 260 && (r.top - d.top) > below;
+    S.pick = { k: btn.dataset.pick, x, y: up ? r.top - d.top - 4 : r.bottom - d.top + 4, up };
   }
-  if (!btn.dataset.useLabel) btn.dataset.useLabel = btn.textContent;
-  btn.classList.add('used');
-  btn.textContent = '✓ Used';
-}
 
-function suggestFieldValue(prefix, field) {
-  const el = document.getElementById(`${prefix}_${field}`);
-  return el ? el.value.trim() : '';
-}
-
-// editor-session-hygiene design D1: each kind draws from exactly one named
-// field, with no fallback between fields — inflections reads `lemma`,
-// everything else reads `text`. TYPE_VISIBLE_FIELDS already guarantees
-// `lemma` is only present for type=word, so this needs no separate type
-// check: a non-word note's inflections panel isn't reachable with a stale
-// lemma to begin with.
-function defaultSuggestQuery(prefix, kind) {
-  if (kind === 'inflections') return suggestFieldValue(prefix, 'lemma');
-  if (kind === 'examples') return deriveExamplesQuery(suggestFieldValue(prefix, 'text'));
-  // The part-of-speech suggest control is the one deliberate exception to
-  // "exactly one named field, no fallback" above — it reuses the
-  // inflections lookup (there is no separate /pos endpoint, design D5) but
-  // defaults like every suggestion panel since lemma-first-suggestions:
-  // `lemma` first, `text` when there's no lemma yet (task 2.2).
-  if (kind === 'pos') return suggestFieldValue(prefix, 'lemma') || suggestFieldValue(prefix, 'text');
-  // tts (audio) shares examples' article-stripping transform — "en bil"
-  // should query as well as "bil", not worse, for the same reason examples
-  // already strips it (D1).
-  if (kind === 'tts') return deriveExamplesQuery(suggestFieldValue(prefix, 'lemma') || suggestFieldValue(prefix, 'text'));
-  return suggestFieldValue(prefix, 'text');
-}
-
-// The combined suggest control (toggle + live query) sitting next to a
-// panel's toggle button, if that kind has one (ipa/tts/translations do;
-// inflections/stt don't). Reading the query from here — not recomputing a
-// fresh default — means an edit made before the panel was even opened is
-// respected when it fires (lemma-first-suggestions design D3).
-function suggestControlInput(panelId) {
-  const btn = document.querySelector(`[data-suggest-toggle="${panelId}"]`);
-  const control = btn ? btn.closest('.suggest-control') : null;
-  return control ? control.querySelector('.suggest-query') : null;
-}
-
-function suggestControlQueryValue(panelId, prefix) {
-  const input = suggestControlInput(panelId);
-  if (input) return input.value.trim();
-  const panel = document.getElementById(panelId);
-  return defaultSuggestQuery(prefix, panel ? panel.dataset.kind : null);
-}
-
-// stabbur's `source_lang` is deliberately language-agnostic (CLAUDE.md) and
-// defaults to the macro-language code "no" for Norwegian notes; smia's
-// providers expect the specific written-standard code "nb" (bokmål) — "no"
-// isn't reliably recognized by them (confirmed live: dict.cc's /tts accepts
-// "nb", not "no"). This maps at the request boundary only — the note's own
-// stored source_lang is untouched.
-function smiaLangCode(sourceLang) {
-  if (sourceLang === 'no') return 'nb';
-  return sourceLang || 'nb';
-}
-
-function enrichRequestFields(kind, prefix, queryValue, lang, limit) {
-  const sourceLang = smiaLangCode(suggestFieldValue(prefix, 'source_lang'));
-  if (kind === 'ipa') return { text: queryValue, lang: sourceLang };
-  if (kind === 'inflections' || kind === 'pos') return { word: queryValue, lang: sourceLang };
-  if (kind === 'tts') return { text: queryValue, lang: sourceLang };
-  if (kind === 'translations') return { text: queryValue, from: sourceLang, to: lang };
-  if (kind === 'examples') return { text: queryValue, lang: sourceLang, limit };
-  return {};
-}
-
-// smia's own default (design D4) — the count control starts here and is
-// clamped to smia's accepted 1–10 range before ever being sent.
-const EXAMPLES_DEFAULT_LIMIT = 3;
-function examplesLimitValue(prefix) {
-  const el = document.getElementById(`${prefix}_examples_count`);
-  const n = el ? parseInt(el.value, 10) : NaN;
-  if (!Number.isFinite(n)) return EXAMPLES_DEFAULT_LIMIT;
-  return Math.min(10, Math.max(1, n));
-}
-
-// `forceRefresh` is only ever sent when true — an operator-initiated
-// re-run (design D5) — never originated on an ordinary lookup, so the
-// proxy (routes/enrich.py) stays a pass-through rather than acquiring a
-// caching policy of its own.
-async function enrichLookup(kind, provider, fields, forceRefresh) {
-  return api(`/api/enrich/${kind}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...fields, provider, ...(forceRefresh ? { forceRefresh: true } : {}) }),
-  });
-}
-
-// One provider row with its own editable query + retry (ipa/translations/
-// tts — anything whose candidates are a flat list). `lang` is only used by
-// translations, to know which target language this row belongs to.
-// smia's forvo/filmot /tts adapters have no API — they always answer
-// `{candidates: [], url}`, a link to check by hand (manual-link-audio-
-// capture). This maps a provider name to the stabbur route that turns a
-// pasted-back result into a real blob.
-const MANUAL_LINK_CAPTURE_ROUTES = {
-  forvo: '/api/enrich/manual-link/forvo',
-  filmot: '/api/enrich/manual-link/filmot',
-};
-
-const MANUAL_LINK_PASTE_PLACEHOLDERS = {
-  forvo: 'Paste the direct audio file URL you found there',
-  filmot: 'Paste the YouTube URL + timecode you found there',
-};
-
-function renderManualLinkState(provider, url, prefix) {
-  const captureRoute = MANUAL_LINK_CAPTURE_ROUTES[provider];
-  const wrap = enrichEl(`
-    <div class="manual-link-state">
-      <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="btn-ghost">Open ${escapeHtml(provider)} ↗</a>
-      <div class="manual-link-paste">
-        <input type="text" class="manual-link-input" placeholder="${escapeHtml(MANUAL_LINK_PASTE_PLACEHOLDERS[provider] || 'Paste the link you found there')}">
-        <button class="use-btn" type="button">Fetch &amp; attach</button>
-      </div>
-      <div class="manual-link-status inline-note"></div>
-    </div>
-  `);
-  const input = wrap.querySelector('.manual-link-input');
-  const btn = wrap.querySelector('.use-btn');
-  const status = wrap.querySelector('.manual-link-status');
-
-  btn.addEventListener('click', async () => {
-    const pastedUrl = input.value.trim();
-    if (!pastedUrl || (prefix === 'e' && !currentNote)) return;
-    const originalLabel = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = '…';
-    status.textContent = '';
-
-    const fetched = await api(captureRoute, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: pastedUrl }),
-    });
-    if (fetched.status !== 200 || !fetched.body || !fetched.body.sha256) {
-      btn.disabled = false;
-      btn.textContent = originalLabel;
-      status.textContent = (fetched.body && fetched.body.error) || 'Capture failed.';
-      return;
+  /* ------------------------------------------------------------ sheets -- */
+  function sheetShell(label, title, inner, foot = '') {
+    const a = S.sheet.anim ? 'anim' : '';
+    return `<div class="sheetwrap ${a}"><div class="scrim" data-act="close"></div><div class="sheet" role="dialog" aria-label="${esc(label)}">
+      <div class="grab"></div><div class="sh"><h3>${title}</h3><span class="sp"></span><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div>${inner}${foot}</div></div>`;
+  }
+  function sheet() {
+    if (!S.sheet) return '';
+    const k = S.sheet.kind;
+    if (k === 'filters') return filterSheet();
+    if (k === 'queue') return queueSheet();
+    if (!E) return '';
+    if (k === 'similar') return simSheet();
+    return suggestSheet(k);
+  }
+  function used(k, c) {
+    const f = E.f;
+    if (k === 'translations') return f.translations.some((t) => t.text === c.v && t.lang === c.lang);
+    if (k === 'examples') return f.examples.includes(c.v);
+    if (k === 'pos') return !!c.v && f.pos === c.v;
+    if (k === 'ipa') return c.asm ? f.transcription.trim() === c.v : ` ${f.transcription.trim()} `.includes(` ${c.v} `);
+    if (k === 'inflections') {
+      const keys = shapeKeys(f.pos).filter((x) => x in c.v);
+      return keys.length > 0 && keys.every((x) => (f.inflections[x] || '') === normalizeInflectionValue(x, c.v[x]));
     }
-
-    const attached = await attachAudioToNote(prefix, fetched.body.sha256, provider, null);
-    btn.disabled = false;
-    btn.textContent = originalLabel;
-    if (attached) {
-      markSuggestUsed(btn);
-      enrichToast(`Audio captured from ${provider} — trim it below if needed`);
-    } else {
-      status.textContent = 'Could not attach the captured audio.';
-    }
-  });
-
-  return wrap;
-}
-
-// `defaultQuery` is the panel's shared query (the suggest-control's current
-// value) — every row fires against it on open. A per-row override stays
-// hidden until the ✎ button reveals it (progressive disclosure,
-// lemma-first-suggestions design D5): revealed, it starts empty rather than
-// copying `defaultQuery`, so it reads unambiguously as "something
-// different," not a copy. Retrying uses the override's value if revealed
-// and non-empty, otherwise falls back to `defaultQuery`.
-// `lookupKind` lets a panel request-shape as one kind (`kind`, used for
-// `enrichRequestFields`/the ipa-per-word branch below) while actually
-// fetching through a different, already-proxied endpoint — the pos
-// suggest control is the one case of this: it shapes its request like
-// `inflections` (there is no separate `/pos` route, design D5) but reads
-// as `kind: 'pos'` everywhere else (rendering, defaults) so it can't be
-// confused with the full paradigm panel. Defaults to `kind` so every
-// other caller is unaffected.
-function buildEnrichProviderRow(kind, provider, prefix, defaultQuery, renderCandidate, lang, initialForceRefresh, limit, lookupKind) {
-  const row = enrichEl(`
-    <div class="provider-row">
-      <div class="provider-head">
-        <span class="provider-name">${escapeHtml(provider)}</span>
-        <span class="provider-spacer"></span>
-        <button class="icon-btn provider-edit-btn" type="button" title="Override just this provider's query">✎</button>
-        <button class="icon-btn retry-btn" type="button" title="Retry">↻</button>
-      </div>
-      <div class="provider-query">
-        <input type="text" class="query-input" placeholder="override just for ${escapeHtml(provider)}">
-      </div>
-      <div class="provider-result"></div>
-    </div>
-  `);
-  const resultBox = row.querySelector('.provider-result');
-  const queryWrap = row.querySelector('.provider-query');
-  const input = row.querySelector('.query-input');
-  const editBtn = row.querySelector('.provider-edit-btn');
-  const retryBtn = row.querySelector('.retry-btn');
-
-  function currentQuery() {
-    const override = input.value.trim();
-    return (queryWrap.classList.contains('revealed') && override) ? override : defaultQuery;
-  }
-
-  async function fire(queryValue, forceRefresh) {
-    resultBox.innerHTML = '<div class="suggest-skel"></div>';
-    const fields = enrichRequestFields(kind, prefix, queryValue, lang, limit);
-    const { status, body } = await enrichLookup(lookupKind || kind, provider, fields, forceRefresh);
-    const isManualLink = status === 200 && body && Array.isArray(body.candidates)
-      && body.candidates.length === 0 && body.url && MANUAL_LINK_CAPTURE_ROUTES[provider];
-    if (isManualLink) {
-      resultBox.innerHTML = '';
-      resultBox.appendChild(renderManualLinkState(provider, body.url, prefix));
-      return;
-    }
-    if (kind === 'ipa' && status === 200 && body && body.mode === 'per_word') {
-      if (!Array.isArray(body.tokens) || body.tokens.length === 0) {
-        resultBox.innerHTML = `<div class="suggest-error">No entry found for "${escapeHtml(queryValue)}".</div>`;
-        return;
-      }
-      resultBox.innerHTML = '';
-      resultBox.appendChild(renderIpaPerWord(body, provider, renderCandidate, prefix));
-      return;
-    }
-    if (status !== 200 || !body || !Array.isArray(body.candidates) || body.candidates.length === 0) {
-      resultBox.innerHTML = `<div class="suggest-error">No entry found for "${escapeHtml(queryValue)}".</div>`;
-      return;
-    }
-    resultBox.innerHTML = '';
-    // D5: ordered, grouped, never filtered. Applies to translations and
-    // audio alike — audio candidates carry the same bracketed `context`
-    // since smia's dictcc-parsing-fixes added it.
-    if (kind === 'translations' || kind === 'tts') {
-      const notePos = notePosFor(prefix);
-      const ordered = orderCandidatesByPos(body.candidates, notePos);
-      appendGroupedCandidates(resultBox, ordered, provider, renderCandidate, notePos);
-    } else {
-      body.candidates.forEach((c) => resultBox.appendChild(renderCandidate(c, provider)));
-    }
-  }
-
-  editBtn.addEventListener('click', async () => {
-    const revealing = !queryWrap.classList.contains('revealed');
-    queryWrap.classList.toggle('revealed');
-    editBtn.classList.toggle('active', queryWrap.classList.contains('revealed'));
-    if (!revealing) return;
-    input.focus();
-    // design D5 (operator-settings): prefilled with the shared query by
-    // default, reversing lemma-first-suggestions' empty-by-default choice;
-    // configurable back to empty. Collapsing without retrying still falls
-    // back to `defaultQuery` regardless (currentQuery() above), so this
-    // prefill is never mistaken for a value that was actually retried.
-    if (!input.value) {
-      const settings = await fetchSettings();
-      if (settings.override_prefill !== false) input.value = defaultQuery;
-    }
-  });
-
-  retryBtn.addEventListener('click', () => {
-    retryBtn.classList.add('spinning');
-    setTimeout(() => retryBtn.classList.remove('spinning'), 650);
-    fire(currentQuery(), true);
-  });
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') retryBtn.click(); });
-
-  fire(defaultQuery, initialForceRefresh);
-  return row;
-}
-
-// stabbur-triage-queues D6: appends with a SPACE, not " / ". The operator is
-// assembling one transcription of a multiword expression out of its tokens —
-// " / " would mean "these are alternatives", a space means "these are
-// consecutive". An empty field is simply filled, and the same candidate used
-// twice does not duplicate.
-//
-// This is the deliberate counterpart to merge's "Take IPA", which REPLACES.
-// Using a suggestion is assembly; taking a field from another note is a swap.
-// See stabbur/CLAUDE.md — do not make them consistent.
-function appendTranscription(prefix, value) {
-  const field = document.getElementById(`${prefix}_transcription`);
-  const current = field.value.trim();
-  if (!current) {
-    field.value = value;
-    field.dispatchEvent(new Event('input', { bubbles: true }));
-    return field;
-  }
-  // Already present anywhere in the field, not merely as the trailing
-  // token: using candidate A, then B, then A again used to yield
-  // "A B A", because the guard only looked at the last token. A candidate
-  // can itself be several tokens (an assembled phrase), so this matches a
-  // contiguous run of tokens rather than a single one.
-  const parts = current.split(/\s+/);
-  const wanted = value.trim().split(/\s+/);
-  const alreadyPresent = parts.some((_, i) =>
-    wanted.every((w, j) => parts[i + j] === w));
-  if (alreadyPresent) return field;
-  field.value = `${current} ${value}`;
-  field.dispatchEvent(new Event('input', { bubbles: true }));
-  return field;
-}
-
-function renderIpaCandidate(prefix) {
-  return (c, providerName) => {
-    const value = c.ipa || c.phonemic || c.phonetic || '';
-    // D8: the variety is reachable on HOVER over the transcription and is
-    // never rendered as visible text. `nst`/`kaikki_ipa`/`leipzig` populate
-    // it, `ipadict` and the dict.cc providers do not — as a visible column
-    // it was permanently blank for the providers at the top of the
-    // operator's order, which reads as broken. `routes/ipa.py` joins several
-    // varieties under one transcription, so this may be a merged string.
-    const variety = c.variety || '';
-    const titleAttr = variety ? ` title="Variety: ${escapeHtml(variety)}"` : '';
-    const r = enrichEl(`
-      <div class="candidate-row">
-        <span class="candidate-text${variety ? ' has-variety' : ''}"${titleAttr}>${escapeHtml(value)}</span>
-        <span class="candidate-spacer"></span>
-        <button class="use-btn" type="button">Use</button>
-      </div>
-    `);
-    r.querySelector('.use-btn').addEventListener('click', (e) => {
-      appendTranscription(prefix, value);
-      // Accumulates: the field holds every candidate used so far.
-      markSuggestUsed(e.target, { accumulate: true });
-      enrichToast(`Transcription extended from ${providerName}`);
-    });
-    return r;
-  };
-}
-
-// Renders smia's `mode: "per_word"` /ipa answer: one group per token (in
-// input order, a gap token shown unresolved rather than dropped), plus the
-// `joined` assembled-fill row when smia supplies one (design D2/D3 — stabbur
-// never synthesises a join itself when `joined` is absent).
-function renderIpaPerWord(body, providerName, renderCandidate, prefix) {
-  const wrap = document.createElement('div');
-  wrap.className = 'ipa-per-word';
-  body.tokens.forEach((token) => {
-    const group = enrichEl(`
-      <div class="ipa-token-group">
-        <div class="ipa-token-label">${escapeHtml(token.text)}</div>
-        <div class="ipa-token-candidates"></div>
-      </div>
-    `);
-    const candidatesBox = group.querySelector('.ipa-token-candidates');
-    if (Array.isArray(token.candidates) && token.candidates.length > 0) {
-      token.candidates.forEach((c) => candidatesBox.appendChild(renderCandidate(c, providerName)));
-    } else {
-      candidatesBox.appendChild(enrichEl('<div class="ipa-token-missing">No entry</div>'));
-    }
-    wrap.appendChild(group);
-  });
-  if (body.joined) {
-    const joinedRow = enrichEl(`
-      <div class="ipa-joined-row">
-        <span class="ipa-joined-label">Assembled from single words:</span>
-        <span class="candidate-text">${escapeHtml(body.joined)}</span>
-        <span class="candidate-spacer"></span>
-        <button class="use-btn" type="button">Use</button>
-      </div>
-    `);
-    joinedRow.querySelector('.use-btn').addEventListener('click', (e) => {
-      const field = document.getElementById(`${prefix}_transcription`);
-      field.value = body.joined;
-      field.dispatchEvent(new Event('input', { bubbles: true }));
-      markSuggestUsed(e.target);
-      enrichToast(`Transcription assembled from ${providerName}`);
-    });
-    wrap.appendChild(joinedRow);
-  }
-  return wrap;
-}
-
-// design D6 (operator-settings): using a candidate for a language the note
-// already has a translation for either appends to that row, separated by
-// " / " (matching smia's own /ipa merged-varieties separator), or adds a
-// separate row — whichever the operator's configured merge mode says.
-// A language with no existing row always gets a new one regardless of mode
-// (nothing to append to) — applies at point of use only, never rewrites
-// anything already stored on save.
-function useTranslationCandidate(containerId, lang, text, mergeMode, onChange) {
-  const container = document.getElementById(containerId);
-  const existingRow = Array.from(container.querySelectorAll('.translation-row'))
-    .find((row) => row.querySelector('.t-lang').value.trim().toLowerCase() === lang.toLowerCase());
-  if (existingRow && mergeMode === 'append') {
-    const textInput = existingRow.querySelector('.t-text');
-    const current = textInput.value.trim();
-    textInput.value = current ? `${current} / ${text}` : text;
-    textInput.dispatchEvent(new Event('input', { bubbles: true }));
-    return;
-  }
-  addTranslationRow(containerId, lang, text, onChange);
-}
-
-function renderTranslationCandidate(prefix, lang) {
-  return (c, providerName) => {
-    const r = enrichEl(`
-      <div class="candidate-row">
-        <span class="candidate-text">${escapeHtml(c.text)}</span>
-        ${c.context ? `<span class="candidate-meta">${escapeHtml(c.context)}</span>` : ''}
-        <span class="candidate-spacer"></span>
-        <button class="use-btn" type="button">Use</button>
-      </div>
-    `);
-    r.querySelector('.use-btn').addEventListener('click', async (e) => {
-      const onChange = prefix === 'e' ? updateNoteJsonView : null;
-      const settings = await fetchSettings();
-      useTranslationCandidate(`${prefix}_translations_list`, lang, c.text, settings.translation_merge_mode, onChange);
-      if (onChange) onChange();
-      // Accumulates within its language group — append mode concatenates
-      // into the existing row, separate mode adds another row; either way
-      // both candidates are in the note.
-      markSuggestUsed(e.target, { accumulate: true });
-      enrichToast(`Added ${lang.toUpperCase()} translation from ${providerName}`);
-    });
-    return r;
-  };
-}
-
-// Shared by every path that ends with "a stabbur sha256 exists, attach it as
-// this note's audio" — the TTS "Use" button and the manual-link
-// forvo/filmot paste-back flow (manual-link-audio-capture) both land here.
-// On the new-note form (no id yet) this stashes the hash for submitNewNote;
-// on an existing note it PATCHes immediately. Returns true on success.
-async function attachAudioToNote(prefix, sha256, providerName, meta) {
-  if (prefix === 'c') {
-    setNewNoteAudioFromSuggest(sha256, providerName, meta);
-    return true;
-  }
-  if (prefix === 't') {
-    if (!currentTriageNote) return false;
-    triageStagedAudio = { sha256, providerName };
-    renderTriageAudioSection({ ...currentTriageNote, audio_blob: sha256, audio_sel_ms: null });
-    markTriageFieldProvenance('audio', providerName);
-    return true;
-  }
-  if (prefix !== 'e' || !currentNote) return false;
-  const patch = await api(`/api/notes/${currentNote.id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ audio_blob: sha256, audio_sel_ms: null }),
-  });
-  if (patch.status !== 200) return false;
-  setCurrentNote(patch.body);
-  updateNoteJsonView();
-  updateNoAudioWarning();
-  renderAudioSection(currentNote);
-  return true;
-}
-
-// ----------------------------------------- generic link-shaped capture ----
-// manual-link-audio-capture design D7: one paste box, independent of any
-// provider row — routes/enrich.py's /api/enrich/manual-link discriminates
-// on the link itself. Shared by the editor's audio sidebar (e) and the
-// triage belt's audio section (t).
-document.querySelectorAll('.link-capture-btn').forEach((btn) => {
-  btn.addEventListener('click', async () => {
-    const prefix = btn.dataset.linkPrefix;
-    const input = document.getElementById(`${prefix}_link_url`);
-    const status = document.getElementById(`${prefix}_link_status`);
-    const url = input.value.trim();
-    if (!url) return;
-    const originalLabel = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = '…';
-    if (status) status.textContent = '';
-
-    const { status: httpStatus, body } = await api('/api/enrich/manual-link', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    btn.disabled = false;
-    btn.textContent = originalLabel;
-    if (httpStatus !== 200 || !body || !body.sha256) {
-      if (status) status.textContent = (body && body.error) || 'Capture failed.';
-      return;
-    }
-    const attached = await attachAudioToNote(prefix, body.sha256, 'pasted link', null);
-    if (attached) {
-      input.value = '';
-      enrichToast('Audio captured from pasted link');
-    } else if (status) {
-      status.textContent = 'Could not attach the captured audio.';
-    }
-  });
-});
-
-function renderTtsCandidate(prefix) {
-  return (c, providerName) => {
-    const metaBits = [c.source, c.voice].filter(Boolean).join(' · ');
-    const idBit = c.sha256 ? `${c.sha256.slice(0, 12)}…` : '';
-    // Listening before committing: streams smia's cached bytes directly
-    // (preview route, auth-exempt like /blob/) — never touches stabbur's
-    // blob store, unlike clicking "Use".
-    const previewSrc = c.sha256 ? `${API_BASE}/api/enrich/tts/preview/${c.sha256}` : '';
-    const r = enrichEl(`
-      <div class="candidate-row">
-        <span class="candidate-text">${escapeHtml(idBit)}</span>
-        <span class="candidate-meta">${escapeHtml(metaBits)}</span>
-        <span class="candidate-spacer"></span>
-        <button class="use-btn" type="button">Use</button>
-      </div>
-    `);
-    if (previewSrc) r.querySelector('.candidate-spacer').after(buildAudioPreviewButton(previewSrc));
-    r.querySelector('.use-btn').addEventListener('click', async (e) => {
-      if (prefix !== 'e' && prefix !== 'c' && prefix !== 't') return;
-      if (prefix === 'e' && !currentNote) return;
-      const btn = e.target;
-      const originalLabel = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = '…';
-      const fetched = await api('/api/enrich/tts/use', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sha256: c.sha256 }),
-      });
-      if (fetched.status !== 200) {
-        btn.disabled = false;
-        btn.textContent = originalLabel;
-        enrichToast('Could not fetch that candidate’s audio');
-        return;
-      }
-
-      const attached = await attachAudioToNote(prefix, fetched.body.sha256, providerName, metaBits || idBit);
-      btn.disabled = false;
-      if (attached) {
-        markSuggestUsed(btn);
-        enrichToast(
-          prefix === 'c'
-            ? `Audio fetched from ${providerName} — will attach on save`
-            : `Audio fetched from ${providerName} and stored as a blob`
-        );
-      } else {
-        btn.textContent = originalLabel;
-      }
-    });
-    return r;
-  };
-}
-
-// A corpus provider (tatoeba/leipzig) names the dataset via `source`; a
-// dictionary provider (ordbokene/kaikki) names the definition via `sense`.
-// Both are optional and shown only when present — no placeholder for the
-// absent one, since an absent field is a complete answer, not missing data
-// (examples-context-suggestions design D3). smia strips translations from
-// every example, so none is requested or rendered here.
-function renderExamplesCandidate(prefix) {
-  return (c, providerName) => {
-    const metaBits = [];
-    if (c.sense) metaBits.push(`sense: ${c.sense}`);
-    if (c.source) metaBits.push(`source: ${c.source}`);
-    const r = enrichEl(`
-      <div class="candidate-sentence-row">
-        <div class="candidate-text candidate-sentence-text">${escapeHtml(c.text || '')}</div>
-        <div class="candidate-sentence-foot">
-          ${metaBits.length ? `<span class="candidate-meta">${escapeHtml(metaBits.join(' · '))}</span>` : '<span class="candidate-spacer"></span>'}
-          <button class="use-btn" type="button">Use</button>
-        </div>
-      </div>
-    `);
-    r.querySelector('.use-btn').addEventListener('click', (e) => {
-      const field = document.getElementById(`${prefix}_context_text`);
-      const existing = field.value.trim();
-      // Example sentences are additive, not a single answer (unlike
-      // transcription/tts/pos) — more than one candidate is often worth
-      // keeping together as separate lines, so Use appends rather than
-      // replacing whatever's already there.
-      field.value = existing ? `${existing}\n${c.text || ''}` : (c.text || '');
-      field.dispatchEvent(new Event('input', { bubbles: true }));
-      // Accumulates: each example is appended on its own line.
-      markSuggestUsed(e.target, { accumulate: true });
-      enrichToast(`Context ${existing ? 'appended' : 'set'} from ${providerName}`);
-    });
-    return r;
-  };
-}
-
-// The part-of-speech suggest control's own candidate row — same `inflec-
-// tions` lookup as the paradigm panel (buildEnrichProviderRow's `lookup-
-// Kind`), rendering just the reported pos. Unlike the paradigm panel's
-// apply (D2, non-destructive), this control's "Use" is an explicit request
-// about the part of speech itself and SHALL overwrite (task 2.3). A class
-// with no canonical equivalent (design D3) shows the provider's own answer
-// with no "Use" offered at all.
-function renderPosCandidate(prefix) {
-  return (c, providerName) => {
-    const ids = posFieldIdsFor(prefix);
-    const currentPos = getPosValue(ids.select, ids.custom);
-    const mapped = canonicalPos(c.pos);
-    const metaBits = [];
-    if (!mapped) metaBits.push('no canonical part of speech');
-    else if (currentPos && currentPos !== mapped) metaBits.push(`note has: ${currentPos}`);
-    const r = enrichEl(`
-      <div class="candidate-row">
-        <span class="candidate-text">${escapeHtml(c.lemma || '')} · ${escapeHtml(c.pos || '—')}</span>
-        ${metaBits.length ? `<span class="candidate-meta">${escapeHtml(metaBits.join(' · '))}</span>` : '<span class="candidate-spacer"></span>'}
-        ${mapped ? '<button class="use-btn" type="button">Use</button>' : ''}
-      </div>
-    `);
-    const useBtn = r.querySelector('.use-btn');
-    if (useBtn) {
-      useBtn.addEventListener('click', () => {
-        setPosValue(ids.select, ids.custom, mapped);
-        refreshInflectionFieldsForPrefix(prefix, mapped, carryForwardInflectionValues(prefix, mapped));
-        document.getElementById(ids.select).dispatchEvent(new Event('input', { bubbles: true }));
-        markSuggestUsed(useBtn);
-        enrichToast(`Part of speech set to ${mapped} from ${providerName}`);
-      });
-    }
-    return r;
-  };
-}
-
-// Inflections stays read-only/copy-only by design (D-smia-enrichment-panel
-// fix #1) — providers disagree with each other and stabbur's own
-// PoS-keyed fields often enough that auto-fill would silently hide real
-// ambiguity. Each paradigm key/value is its own click-to-copy cell.
-// Orders a paradigm's keys the same way the note form's own fields are
-// ordered (INFLECTION_SHAPES) instead of whatever order the provider's JSON
-// happened to use — a provider's own field order isn't guaranteed to match
-// (confirmed live: a verb paradigm coming back as infinitiv/perfektum/
-// presens/preteritum, not infinitiv/presens/preteritum/perfektum). Any key
-// outside the known shape (unexpected/extra provider key) is appended
-// after, never dropped.
-function orderedParadigmEntries(pos, paradigm) {
-  const shape = INFLECTION_SHAPES[pos] || [];
-  const known = shape.filter((k) => k in paradigm).map((k) => [k, paradigm[k]]);
-  const extra = Object.entries(paradigm).filter(([k]) => !shape.includes(k));
-  return known.concat(extra);
-}
-
-// Same progressive-disclosure shape as buildEnrichProviderRow (lemma-first-
-// suggestions): the shared query fires every provider on open, a per-
-// provider override stays hidden behind ✎ until needed. Candidates stay
-// read-only/copy-or-fill — never auto-filled (smia-enrichment-panel fix #1).
-function buildInflectionsProviderBlock(provider, prefix, defaultQuery, initialForceRefresh) {
-  const wrap = enrichEl(`
-    <div class="provider-row">
-      <div class="provider-head">
-        <span class="provider-name">${escapeHtml(provider)}</span>
-        <span class="provider-spacer"></span>
-        <button class="icon-btn provider-edit-btn" type="button" title="Override just this provider's query">✎</button>
-        <button class="icon-btn retry-btn" type="button" title="Retry">↻</button>
-      </div>
-      <div class="provider-query">
-        <input type="text" class="query-input" placeholder="override just for ${escapeHtml(provider)}">
-      </div>
-      <div class="provider-result"></div>
-    </div>
-  `);
-  const resultBox = wrap.querySelector('.provider-result');
-  const queryWrap = wrap.querySelector('.provider-query');
-  const input = wrap.querySelector('.query-input');
-  const editBtn = wrap.querySelector('.provider-edit-btn');
-  const retryBtn = wrap.querySelector('.retry-btn');
-
-  function currentQuery() {
-    const override = input.value.trim();
-    return (queryWrap.classList.contains('revealed') && override) ? override : defaultQuery;
-  }
-
-  async function fire(queryValue, forceRefresh) {
-    resultBox.innerHTML = '<div class="suggest-skel"></div>';
-    const { status, body } = await enrichLookup('inflections', provider, enrichRequestFields('inflections', prefix, queryValue), forceRefresh);
-    if (status !== 200 || !body || !Array.isArray(body.candidates) || body.candidates.length === 0) {
-      resultBox.innerHTML = `<div class="suggest-error">No entry found for "${escapeHtml(queryValue)}".</div>`;
-      return;
-    }
-    resultBox.innerHTML = '';
-    body.candidates.forEach((c) => {
-      const paradigm = c.paradigm || {};
-      // Note-form field for this key, if the active note's current PoS has
-      // one — a provider can report a key that doesn't apply (wrong PoS
-      // guess), in which case only copy is offered (design.md D3).
-      const fieldFor = (key) => document.querySelector(`#${prefix}_inflections_fields [data-inflection-field="${key}"]`);
-      const paradigmRow = (key, rawValue) => {
-        const value = normalizeInflectionValue(key, rawValue);
-        return `
-        <div class="paradigm-row">
-          <span class="paradigm-key">${escapeHtml(key.replace(/_/g, ' '))}</span>
-          <span class="paradigm-row-value">
-            <span class="copy-cell" data-copy="${escapeHtml(value)}">${escapeHtml(value)}<span class="copy-ic">⧉</span></span>
-            ${fieldFor(key) ? `<button class="fill-btn" type="button" data-fill-field="${escapeHtml(key)}" data-fill-value="${escapeHtml(value)}" title="Fill into the note's ${escapeHtml(key.replace(/_/g, ' '))} field">→ Fill</button>` : ''}
-          </span>
-        </div>
-      `;
-      };
-
-      // Substantiv candidates get the same singular/plural row grouping as
-      // the note form itself (inflection-rows-and-fill); any key outside
-      // the grouping (unexpected/extra provider key) still renders, just
-      // appended after instead of silently dropped.
-      const groups = INFLECTION_ROW_GROUPS[c.pos];
-      let rowsHtml;
-      if (groups) {
-        const grouped = new Set(groups.flat());
-        rowsHtml = groups
-          .map((group) => `<div class="inflection-row">${group.filter((k) => k in paradigm).map((k) => paradigmRow(k, paradigm[k])).join('')}</div>`)
-          .join('') + orderedParadigmEntries(c.pos, paradigm).filter(([k]) => !grouped.has(k)).map(([k, v]) => paradigmRow(k, v)).join('');
-      } else {
-        rowsHtml = orderedParadigmEntries(c.pos, paradigm).map(([k, v]) => paradigmRow(k, v)).join('');
-      }
-
-      const block = enrichEl(`
-        <div class="paradigm-candidate">
-          <div class="paradigm-candidate-head">
-            <span><strong>${escapeHtml(c.lemma || '')}</strong> · ${escapeHtml(c.pos || '')}</span>
-            <button class="apply-paradigm-btn use-btn" type="button" title="Set the part of speech (only if the note has none) and fill every matching form">Apply paradigm</button>
-          </div>
-          ${rowsHtml}
-        </div>
-      `);
-      block.querySelector('.apply-paradigm-btn').addEventListener('click', (e) => {
-        const ids = posFieldIdsFor(prefix);
-        const currentPos = getPosValue(ids.select, ids.custom);
-        const mappedPos = canonicalPos(c.pos);
-        // D2: a paradigm apply only ever fills a blank pos — never
-        // overwrites one the operator already chose (task 1.3).
-        let resultingPos = currentPos;
-        if (!currentPos && mappedPos) {
-          setPosValue(ids.select, ids.custom, mappedPos);
-          resultingPos = mappedPos;
-          refreshInflectionFieldsForPrefix(prefix, mappedPos, null);
-          document.getElementById(ids.select).dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        let filled = 0;
-        if (resultingPos) {
-          Object.entries(paradigm).forEach(([key, value]) => {
-            const field = document.querySelector(`#${prefix}_inflections_fields [data-inflection-field="${key}"]`);
-            if (!field) return;
-            field.value = normalizeInflectionValue(key, value);
-            field.dispatchEvent(new Event('input', { bubbles: true }));
-            filled += 1;
-          });
-          const articleField = document.querySelector(`#${prefix}_inflections_fields [data-inflection-field="article"]`);
-          if (articleField && !articleField.value.trim()) {
-            const derivedArticle = deriveArticleToken(paradigm);
-            if (derivedArticle) {
-              articleField.value = derivedArticle;
-              articleField.dispatchEvent(new Event('input', { bubbles: true }));
-              filled += 1;
-            }
-          }
-        }
-        if (!currentPos && mappedPos) enrichToast(`Part of speech set to ${resultingPos}, ${filled} form(s) filled from ${provider}`);
-        else if (filled) enrichToast(`${filled} form(s) filled from ${provider}`);
-        else enrichToast(`Nothing to apply from ${provider}`);
-        markSuggestUsed(e.target);
-      });
-      block.querySelectorAll('.copy-cell').forEach((cell) => cell.addEventListener('click', () => enrichCopy(cell.dataset.copy)));
-      block.querySelectorAll('.fill-btn').forEach((btn) => btn.addEventListener('click', () => {
-        const field = fieldFor(btn.dataset.fillField);
-        if (!field) return;
-        field.value = btn.dataset.fillValue;
-        field.dispatchEvent(new Event('input', { bubbles: true }));
-        let note = `${btn.dataset.fillField.replace(/_/g, ' ')} filled from ${provider}`;
-        if (btn.dataset.fillField === 'sg_indef' || btn.dataset.fillField === 'sg_def') {
-          const articleField = fieldFor('article');
-          if (articleField && !articleField.value.trim()) {
-            const derivedArticle = deriveArticleToken(paradigm);
-            if (derivedArticle) {
-              articleField.value = derivedArticle;
-              articleField.dispatchEvent(new Event('input', { bubbles: true }));
-              note += ', article filled too';
-            }
-          }
-        }
-        enrichToast(note);
-      }));
-      resultBox.appendChild(block);
-    });
-  }
-
-  editBtn.addEventListener('click', async () => {
-    const revealing = !queryWrap.classList.contains('revealed');
-    queryWrap.classList.toggle('revealed');
-    editBtn.classList.toggle('active', queryWrap.classList.contains('revealed'));
-    if (!revealing) return;
-    input.focus();
-    if (!input.value) {
-      const settings = await fetchSettings();
-      if (settings.override_prefill !== false) input.value = defaultQuery;
-    }
-  });
-
-  retryBtn.addEventListener('click', () => {
-    retryBtn.classList.add('spinning');
-    setTimeout(() => retryBtn.classList.remove('spinning'), 650);
-    fire(currentQuery(), true);
-  });
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') retryBtn.click(); });
-
-  fire(defaultQuery, initialForceRefresh);
-  return wrap;
-}
-
-function buildTranslationsSuggestPanel(prefix, providers, defaultQuery, initialForceRefresh, defaultLangs) {
-  const wrap = enrichEl(`
-    <div>
-      <div class="suggest-head"><span>${providers.length} provider(s) configured</span><span>editable per-provider</span></div>
-      <div class="lang-add-row">
-        <input type="text" class="new-lang-input" placeholder="add a language, e.g. fr" maxlength="8">
-        <button class="btn-ghost" type="button">+ Add language</button>
-      </div>
-      <div class="lang-groups"></div>
-    </div>
-  `);
-  const groupsEl = wrap.querySelector('.lang-groups');
-
-  function addLangGroup(lang, forceRefresh) {
-    lang = lang.trim().toLowerCase();
-    if (!lang || groupsEl.querySelector(`[data-lang="${lang}"]`)) return;
-    const group = enrichEl(`
-      <div class="lang-group" data-lang="${lang}">
-        <div class="lang-group-head"><span class="lang-pill">${escapeHtml(lang)}</span>${escapeHtml(enrichLangLabel(lang))}</div>
-      </div>
-    `);
-    providers.forEach((p) => {
-      group.appendChild(buildEnrichProviderRow('translations', p, prefix, defaultQuery, renderTranslationCandidate(prefix, lang), lang, forceRefresh));
-    });
-    groupsEl.appendChild(group);
-  }
-
-  // design D5.4 (operator-settings): the panel's language groups come from
-  // the operator's configured default target languages, not a hardcoded
-  // list — `defaultLangs` falls back to SUGGEST_DEFAULT_LANGS only if the
-  // caller couldn't resolve settings at all.
-  (defaultLangs && defaultLangs.length ? defaultLangs : SUGGEST_DEFAULT_LANGS).forEach((lang) => addLangGroup(lang, initialForceRefresh));
-
-  const addBtn = wrap.querySelector('button');
-  const input = wrap.querySelector('.new-lang-input');
-  addBtn.addEventListener('click', () => { addLangGroup(input.value); input.value = ''; input.focus(); });
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') addBtn.click(); });
-
-  return wrap;
-}
-
-// /stt returns exactly one `{provider, text}` per request — no candidates
-// array to pick among — so this renders a single block per provider rather
-// than reusing buildEnrichProviderRow's candidates-array assumption
-// (stt-text-suggest design.md D4... see D4 in that change's design.md).
-function renderSttResult(prefix) {
-  return (body, providerName) => {
-    const r = enrichEl(`
-      <div class="candidate-row">
-        <span class="candidate-text">${escapeHtml(body.text || '(empty transcription)')}</span>
-        <span class="candidate-spacer"></span>
-        <button class="use-btn" type="button">Use</button>
-      </div>
-    `);
-    r.querySelector('.use-btn').addEventListener('click', (e) => {
-      const field = document.getElementById(`${prefix}_text`);
-      // `text` is the note's primary content, unlike every other "Use"
-      // target — confirm before clobbering anything already there
-      // (stt-text-suggest design.md D5).
-      if (field.value.trim() && !confirm('Replace the current text with this transcription?')) return;
-      field.value = body.text || '';
-      field.dispatchEvent(new Event('input', { bubbles: true }));
-      markSuggestUsed(e.target);
-      enrichToast(`Text set from ${providerName}`);
-    });
-    return r;
-  };
-}
-
-function buildSttProviderBlock(provider, prefix) {
-  const wrap = enrichEl(`
-    <div class="provider-row">
-      <div class="provider-head"><span class="provider-name">${escapeHtml(provider)}</span></div>
-      <div class="provider-result"></div>
-    </div>
-  `);
-  const resultBox = wrap.querySelector('.provider-result');
-
-  resultBox.innerHTML = '<div class="suggest-skel"></div>';
-  (async () => {
-    const { status, body } = await api('/api/enrich/stt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider,
-        audio_blob: currentNote ? currentNote.audio_blob : null,
-        lang: smiaLangCode(suggestFieldValue(prefix, 'source_lang')),
-      }),
-    });
-    if (status !== 200 || !body || typeof body.text !== 'string') {
-      resultBox.innerHTML = `<div class="suggest-error">Transcription failed.</div>`;
-      return;
-    }
-    resultBox.innerHTML = '';
-    resultBox.appendChild(renderSttResult(prefix)(body, provider));
-  })();
-
-  return wrap;
-}
-
-// `forceRefresh` is only passed true from the panel-level ⟳ re-run control
-// (design D5) — an ordinary open (toggle click or Enter in the shared
-// query) leaves it false/undefined, so a first lookup is still free to
-// answer from smia's cache. Rebuilding the panel from scratch here (rather
-// than re-firing in place) keeps this the single path every provider's
-// initial fire goes through, forced or not.
-async function openSuggestPanel(panelEl, { forceRefresh = false } = {}) {
-  const kind = panelEl.dataset.kind;
-  const prefix = panelEl.dataset.prefix;
-  const btn = document.querySelector(`[data-suggest-toggle="${panelEl.id}"]`);
-  panelEl.classList.add('open');
-  if (btn) btn.setAttribute('aria-expanded', 'true');
-  panelEl.innerHTML = '<div class="suggest-head"><span>Loading providers…</span></div>';
-
-  const catalog = await fetchEnrichProviders();
-  // The pos suggest control has no catalog entry of its own — it piggybacks
-  // on whichever providers answer `inflections` (design D5, no new
-  // endpoint), so its provider list is read from there.
-  const providers = catalog[kind === 'pos' ? 'inflections' : kind] || [];
-  panelEl.innerHTML = '';
-
-  if (providers.length === 0) {
-    panelEl.appendChild(enrichEl(`<div class="suggest-error">No providers currently configured for ${escapeHtml(kind === 'pos' ? 'inflections' : kind)}.</div>`));
-    return;
-  }
-
-  if (kind === 'pos') {
-    panelEl.appendChild(enrichEl(`<div class="suggest-head"><span>${providers.length} provider(s) configured</span><span>from the inflections lookup</span></div>`));
-    const defaultQuery = suggestControlQueryValue(panelEl.id, prefix);
-    providers.forEach((p) => panelEl.appendChild(buildEnrichProviderRow('pos', p, prefix, defaultQuery, renderPosCandidate(prefix), undefined, forceRefresh, undefined, 'inflections')));
-    return;
-  }
-  if (kind === 'translations') {
-    const defaultQuery = suggestControlQueryValue(panelEl.id, prefix);
-    const settings = await fetchSettings();
-    panelEl.appendChild(buildTranslationsSuggestPanel(prefix, providers, defaultQuery, forceRefresh, settings.default_target_langs));
-    return;
-  }
-  if (kind === 'inflections') {
-    panelEl.appendChild(enrichEl(`<div class="suggest-head"><span>${providers.length} provider(s) configured</span><span>copy or fill per field</span></div>`));
-    const defaultQuery = suggestControlQueryValue(panelEl.id, prefix);
-    providers.forEach((p) => panelEl.appendChild(buildInflectionsProviderBlock(p, prefix, defaultQuery, forceRefresh)));
-    return;
-  }
-  if (kind === 'stt') {
-    panelEl.appendChild(enrichEl(`<div class="suggest-head"><span>${providers.length} provider(s) configured</span><span>transcribed from this note's audio</span></div>`));
-    providers.forEach((p) => panelEl.appendChild(buildSttProviderBlock(p, prefix)));
-    return;
-  }
-
-  panelEl.appendChild(enrichEl(`<div class="suggest-head"><span>${providers.length} provider(s) configured</span><span>editable per-provider</span></div>`));
-  // stabbur-triage-queues D9: a recording already stored for one note can be
-  // attached to another. Searching the operator's own NOTES, not the blob
-  // store — a blob has no text of its own and is findable only through the
-  // notes referencing it, so a blob browser would be a notes search wearing
-  // a different hat plus the failure mode of surfacing orphans.
-  if (kind === 'tts') {
-    panelEl.appendChild(buildAudioReuseSearch(prefix));
-  }
-  const defaultQuery = suggestControlQueryValue(panelEl.id, prefix);
-  const renderCandidate = kind === 'ipa' ? renderIpaCandidate(prefix)
-    : kind === 'examples' ? renderExamplesCandidate(prefix)
-    : renderTtsCandidate(prefix);
-  const limit = kind === 'examples' ? examplesLimitValue(prefix) : undefined;
-  providers.forEach((p) => panelEl.appendChild(buildEnrichProviderRow(kind, p, prefix, defaultQuery, renderCandidate, undefined, forceRefresh, limit)));
-}
-
-// The audio-reuse search. Reuses the paged authoring route with `q` plus
-// `audio_blob_presence=has` rather than adding an endpoint — the route
-// already filters on exactly these two things, and the design left the
-// choice to the builder provided results can be identified and played.
-function buildAudioReuseSearch(prefix) {
-  const wrap = enrichEl(`
-    <div class="audio-reuse">
-      <div class="audio-reuse-head">
-        <input type="search" class="audio-reuse-input" placeholder="Reuse audio from another note — text, lemma or translation…" aria-label="Search your notes' audio">
-        <button type="button" class="btn-ghost audio-reuse-btn">Search</button>
-      </div>
-      <div class="audio-reuse-results"></div>
-    </div>
-  `);
-  const input = wrap.querySelector('.audio-reuse-input');
-  const results = wrap.querySelector('.audio-reuse-results');
-
-  async function run() {
-    const q = input.value.trim();
-    if (!q) { results.innerHTML = ''; return; }
-    results.innerHTML = '<div class="suggest-skel"></div>';
-    const { status, body } = await api(
-      `/api/notes/authoring${qs({ q, audio_blob_presence: 'has', limit: 20, sort: 'updated_desc' })}`
-    );
-    const rows = (status === 200 && body && body.notes) || [];
-    if (!rows.length) {
-      results.innerHTML = `<div class="suggest-error">No note with a recording matches "${escapeHtml(q)}".</div>`;
-      return;
-    }
-    results.innerHTML = '';
-    rows.forEach((n) => {
-      const translation = (n.translations && n.translations[0] && n.translations[0].text) || '';
-      const row = enrichEl(`
-        <div class="candidate-row">
-          <span class="candidate-text">${escapeHtml(n.text)}</span>
-          <span class="candidate-meta">${escapeHtml([n.status, n.origin, translation].filter(Boolean).join(' · '))}</span>
-          <span class="candidate-spacer"></span>
-          <button class="use-btn" type="button">Attach</button>
-        </div>
-      `);
-      // Playable before it is chosen — the operator is picking a recording,
-      // and the text alone does not tell them which one it is.
-      row.querySelector('.candidate-text').after(buildAudioPreviewButton(`${API_BASE}/blob/${n.audio_blob}`));
-      row.querySelector('.use-btn').addEventListener('click', async (e) => {
-        // The SAME content hash is stored on this note. Blobs are
-        // content-addressed and immutable (blob-storage), so two notes
-        // referencing one recording is an already-supported state: no copy,
-        // no new blob, and the source note is not touched.
-        const ok = await attachAudioToNote(prefix, n.audio_blob, `note "${n.text}"`);
-        if (!ok) { alert('Could not attach that recording.'); return; }
-        markSuggestUsed(e.target);
-        enrichToast(`Attached the recording from "${n.text}"`);
-      });
-      results.appendChild(row);
-    });
-  }
-
-  wrap.querySelector('.audio-reuse-btn').addEventListener('click', run);
-  input.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    run();
-  });
-  return wrap;
-}
-
-function closeSuggestPanel(panelEl) {
-  panelEl.classList.remove('open');
-  const btn = document.querySelector(`[data-suggest-toggle="${panelEl.id}"]`);
-  if (btn) btn.setAttribute('aria-expanded', 'false');
-}
-
-document.querySelectorAll('[data-suggest-toggle]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const panel = document.getElementById(btn.dataset.suggestToggle);
-    if (!panel) return;
-    if (panel.classList.contains('open')) closeSuggestPanel(panel);
-    else openSuggestPanel(panel);
-  });
-});
-
-// ------------------------------------------------------------- settings --
-
-// Human labels/hints for the kinds stabbur proxies (routes/enrich.py's
-// ENRICHABLE_KINDS) — "tts" reads as "Audio" everywhere else in this UI,
-// so the settings page matches rather than exposing the wire name.
-const SETTINGS_KIND_ORDER = ['ipa', 'translations', 'inflections', 'tts', 'examples'];
-const SETTINGS_KIND_LABELS = { ipa: 'Transcription', translations: 'Translations', inflections: 'Inflections', tts: 'Audio', examples: 'Examples' };
-const SETTINGS_KIND_HINTS = {
-  ipa: 'Queried with text.',
-  translations: 'Queried with text.',
-  inflections: 'Queried with lemma — the only kind that is.',
-  tts: 'Queried with text. Manual-link providers cannot answer automatically, so a prefill run skips past them.',
-  examples: 'Queried with text. No translation is requested or shown.',
-};
-
-function renumberPlist(plist) {
-  Array.from(plist.querySelectorAll('.pitem')).forEach((item, idx) => {
-    item.querySelector('.ord').textContent = String(idx + 1);
-  });
-}
-
-async function saveSettingsProviderOrder(kind, plist) {
-  const items = Array.from(plist.querySelectorAll('.pitem'));
-  const order = items.map((item) => item.dataset.provider);
-  const disabled = items
-    .filter((item) => item.querySelector('.switch').getAttribute('aria-pressed') !== 'true')
-    .map((item) => item.dataset.provider);
-  const { status, body } = await api('/api/settings', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ providers: { [kind]: { order, disabled } } }),
-  });
-  if (status === 200) {
-    _settingsCache = body;
-    renderSettingsProviders(body.providers || {});
-  }
-}
-
-// Reorderable per-kind provider list (4.3): drag to reorder, a switch per
-// provider to enable/disable, the effective primary and manual-link
-// providers (4.4 — forvo/filmot, same MANUAL_LINK_CAPTURE_ROUTES the
-// editor's audio panel already keys off) called out on their row.
-function renderSettingsProviders(providers) {
-  const container = document.getElementById('settingsProvidersBody');
-  container.innerHTML = '';
-  SETTINGS_KIND_ORDER.forEach((kind) => {
-    const info = providers[kind] || { order: [], disabled: [], primary: null };
-    container.appendChild(enrichEl(`
-      <div class="sitem">
-        <div class="txt"><b>${escapeHtml(SETTINGS_KIND_LABELS[kind] || kind)}</b><p>${escapeHtml(SETTINGS_KIND_HINTS[kind] || '')}</p></div>
-      </div>
-    `));
-    const sub = enrichEl(`<div class="sitem sub"><div class="plist" data-kind="${escapeHtml(kind)}"></div></div>`);
-    container.appendChild(sub);
-    const plist = sub.querySelector('.plist');
-
-    if (info.order.length === 0) {
-      plist.appendChild(enrichEl('<div class="inline-note">No providers currently configured for this kind.</div>'));
-      return;
-    }
-
-    info.order.forEach((provider, idx) => {
-      const disabled = info.disabled.includes(provider);
-      const item = enrichEl(`
-        <div class="pitem ${disabled ? 'off' : ''}" draggable="true" data-provider="${escapeHtml(provider)}">
-          <span class="grip">⠿</span>
-          <span class="ord">${idx + 1}</span>
-          <span class="nm">${escapeHtml(provider)}</span>
-          <span class="tail">
-            ${provider === info.primary ? '<span class="pill pill-accent">primary</span>' : ''}
-            ${MANUAL_LINK_CAPTURE_ROUTES[provider] ? '<span class="pill">manual link</span>' : ''}
-            <button type="button" class="switch" aria-pressed="${disabled ? 'false' : 'true'}" aria-label="Enable ${escapeHtml(provider)}"></button>
-          </span>
-        </div>
-      `);
-      plist.appendChild(item);
-    });
-
-    plist.querySelectorAll('.switch').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const wasEnabled = btn.getAttribute('aria-pressed') === 'true';
-        btn.setAttribute('aria-pressed', wasEnabled ? 'false' : 'true');
-        btn.closest('.pitem').classList.toggle('off', wasEnabled);
-        saveSettingsProviderOrder(kind, plist);
-      });
-    });
-
-    let dragEl = null;
-    plist.querySelectorAll('.pitem').forEach((item) => {
-      item.addEventListener('dragstart', () => { dragEl = item; item.classList.add('dragging'); });
-      item.addEventListener('dragend', () => {
-        item.classList.remove('dragging');
-        dragEl = null;
-        saveSettingsProviderOrder(kind, plist);
-      });
-      item.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        if (!dragEl || dragEl === item) return;
-        const rect = item.getBoundingClientRect();
-        const before = (e.clientY - rect.top) < rect.height / 2;
-        plist.insertBefore(dragEl, before ? item : item.nextSibling);
-        renumberPlist(plist);
-      });
-    });
-  });
-}
-
-async function patchSettingsScalar(updates) {
-  const resultEl = document.getElementById('settingsSaveResult');
-  const { status, body } = await api('/api/settings', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updates),
-  });
-  if (status === 200) {
-    _settingsCache = body;
-    resultEl.textContent = 'Saved.';
-    setTimeout(() => { if (resultEl.textContent === 'Saved.') resultEl.textContent = ''; }, 1500);
-  } else {
-    resultEl.textContent = (body && body.error) || 'Could not save.';
-  }
-}
-
-// Wired once at script load (not inside renderSettings, which re-runs
-// every time the page is visited) — same idiom as wireChipGroup above —
-// so repeat visits never stack duplicate click listeners on these static
-// controls. renderSettings only ever updates their visual state.
-(function wireSettingsScalarControls() {
-  const prefillSeg = document.getElementById('settingsPrefillTimingSeg');
-  prefillSeg.querySelectorAll('button').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      prefillSeg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', 'false'));
-      btn.setAttribute('aria-pressed', 'true');
-      patchSettingsScalar({ prefill_timing: btn.dataset.value });
-    });
-  });
-
-  const seg = document.getElementById('settingsMergeModeSeg');
-  seg.querySelectorAll('button').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', 'false'));
-      btn.setAttribute('aria-pressed', 'true');
-      patchSettingsScalar({ translation_merge_mode: btn.dataset.value });
-    });
-  });
-
-  const navigateSaveSeg = document.getElementById('settingsTriageNavigateSaveSeg');
-  navigateSaveSeg.querySelectorAll('button').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      navigateSaveSeg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', 'false'));
-      btn.setAttribute('aria-pressed', 'true');
-      patchSettingsScalar({ triage_navigate_save: btn.dataset.value });
-    });
-  });
-
-  document.getElementById('settingsDefaultLangsInput').addEventListener('change', (e) => {
-    const langs = e.target.value.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-    patchSettingsScalar({ default_target_langs: langs });
-  });
-
-  document.getElementById('settingsExamplesCountInput').addEventListener('change', (e) => {
-    const value = Number(e.target.value);
-    if (!Number.isInteger(value)) return;
-    patchSettingsScalar({ examples_count: value });
-  });
-
-  document.getElementById('settingsExamplesMaxProvidersInput').addEventListener('change', (e) => {
-    const value = Number(e.target.value);
-    if (!Number.isInteger(value)) return;
-    patchSettingsScalar({ examples_max_providers: value });
-  });
-
-  const prefillSwitch = document.getElementById('settingsOverridePrefillSwitch');
-  prefillSwitch.addEventListener('click', () => {
-    const next = prefillSwitch.getAttribute('aria-pressed') !== 'true';
-    prefillSwitch.setAttribute('aria-pressed', next ? 'true' : 'false');
-    patchSettingsScalar({ override_prefill: next });
-  });
-})();
-
-// Guards against a stale load clobbering a fresher one — e.g. the page's
-// very first render firing before the bearer token is in place (401),
-// then resolving after a later, successful re-render of the same page.
-let _settingsRenderToken = 0;
-
-async function renderSettings() {
-  const renderToken = ++_settingsRenderToken;
-  const resultEl = document.getElementById('settingsSaveResult');
-  resultEl.textContent = '';
-  const { status, body } = await api('/api/settings');
-  if (renderToken !== _settingsRenderToken) return;
-  if (status !== 200) {
-    resultEl.textContent = 'Could not load settings.';
-    return;
-  }
-  _settingsCache = body;
-
-  renderSettingsProviders(body.providers || {});
-
-  const seg = document.getElementById('settingsMergeModeSeg');
-  seg.querySelectorAll('button').forEach((btn) => {
-    btn.setAttribute('aria-pressed', btn.dataset.value === body.translation_merge_mode ? 'true' : 'false');
-  });
-  document.getElementById('settingsDefaultLangsInput').value = (body.default_target_langs || []).join(', ');
-  document.getElementById('settingsOverridePrefillSwitch').setAttribute('aria-pressed', body.override_prefill ? 'true' : 'false');
-
-  document.querySelectorAll('#settingsPrefillTimingSeg button').forEach((btn) => {
-    btn.setAttribute('aria-pressed', btn.dataset.value === body.prefill_timing ? 'true' : 'false');
-  });
-  document.querySelectorAll('#settingsTriageNavigateSaveSeg button').forEach((btn) => {
-    btn.setAttribute('aria-pressed', btn.dataset.value === body.triage_navigate_save ? 'true' : 'false');
-  });
-  document.getElementById('settingsExamplesCountInput').value = body.examples_count ?? 3;
-  document.getElementById('settingsExamplesMaxProvidersInput').value = body.examples_max_providers ?? 1;
-}
-
-// ------------------------------------------------------------ note-triage --
-// origin-scoped-triage-belt: a queue of drafted notes reviewed one at a
-// time, scoped to exactly one origin (design D1/D2). Reuses the editor's
-// field components under the `t_` prefix (translations/inflections/
-// suggest-panel machinery are already generic over `prefix`) so the two
-// surfaces can't drift (tasks 3.6).
-
-const TRIAGE_ORIGIN_STORAGE_KEY = 'stabbur_triage_origin';
-let currentTriageNote = null;
-
-// Same reasoning as setCurrentNote — see there.
-function setCurrentTriageNote(note) {
-  currentTriageNote = note;
-  updateSimilarDirtyStrip('t');
-}
-let triageQueue = [];
-let triageIndex = 0;
-let triageDeferredCount = 0;
-// True only when a queue exceeded TRIAGE_QUEUE_MAX. Surfaced in the belt
-// rather than swallowed — a silently short queue reads as a finished one.
-let triageQueueTruncated = false;
-// Audio (unlike every other field) normally attaches with an immediate
-// PATCH (attachAudioToNote's 'e' path) — staged here instead, so "skip"
-// genuinely saves nothing (design D8) and a verdict is what actually
-// commits it, same as every other field's edits.
-let triageStagedAudio = null;
-
-// stabbur-triage-queues D1/D3: the belt's queue. `queues` is what the API
-// returned (built-ins first, then the operator's own); `selectedId` is which
-// one is live; `adhoc` holds an unsaved filter set handed over from the
-// notes browser's "Triage these results", which is nameable and savable
-// from here but is not a queue until it is saved.
-const triageQueueState = { queues: [], selectedId: null, adhoc: null, counts: {} };
-
-const TRIAGE_QUEUE_STORAGE_KEY = 'stabbur_triage_queue_id';
-
-const QUEUE_FILTER_FIELDS = [
-  'audio_blob', 'transcription', 'inflections', 'context_text', 'translations', 'lemma',
-];
-const QUEUE_FIELD_LABELS = {
-  audio_blob: 'audio',
-  transcription: 'IPA',
-  inflections: 'inflections',
-  context_text: 'context',
-  translations: 'translations',
-  lemma: 'lemma',
-};
-const QUEUE_SORT_LABELS = {
-  updated_asc: 'oldest updated first',
-  updated_desc: 'newest updated first',
-  created_asc: 'oldest created first',
-  created_desc: 'newest created first',
-  text_asc: 'A–Z by text',
-  text_desc: 'Z–A by text',
-};
-const QUEUE_UPDATED_SINCE_LABELS = {
-  '': 'any time',
-  '24h': 'last 24 hours',
-  '7d': 'last 7 days',
-  '30d': 'last 30 days',
-};
-
-function activeTriageQueue() {
-  if (triageQueueState.adhoc) return triageQueueState.adhoc;
-  return triageQueueState.queues.find((q) => q.id === triageQueueState.selectedId) || null;
-}
-
-// The ONE place a queue becomes request parameters, so the selector, the
-// editor and the notes browser's hand-off cannot drift apart.
-// The authoring route is paged, but the belt is a queue the operator works
-// to the end — so it fetches EVERY page, not just the first.
-//
-// This used to pass a bare `limit: 200` (the route's maximum) with a comment
-// claiming a larger queue was "past the point where a notch track is
-// rendered". That was simply false — the track renders up to 500 — and the
-// result was a silent truncation: a 287-note sweep showed `287` on its chip
-// and 200 in the belt, then declared itself finished with 87 left that no
-// amount of scrolling could reach.
-const TRIAGE_QUEUE_PAGE = 200;
-// A backstop against pathological queues, not a product limit. Reaching it
-// is reported to the operator rather than hidden.
-const TRIAGE_QUEUE_MAX = 5000;
-
-function triageQueueParams(queue) {
-  const filters = (queue && queue.filters) || {};
-  const params = { limit: TRIAGE_QUEUE_PAGE, sort: (queue && queue.sort) || 'updated_asc' };
-  Object.entries(filters).forEach(([key, value]) => {
-    if (value === '' || value === null || value === undefined || value === 'any') return;
-    params[key] = value;
-  });
-  return params;
-}
-
-// Every queue's remaining count, not just the selected one's. The counts
-// used to be filled in only as a queue was selected, so a fresh load showed
-// four of five chips with no number — and "how much is left in each queue"
-// is the whole point of the selector.
-//
-// Each count is one `limit=1` request whose `total` is the answer, fired in
-// parallel: the server computes the total over the filters anyway, so this
-// asks for the count without transferring a single row. A queue whose count
-// cannot be fetched simply shows none rather than a wrong number.
-async function refreshTriageQueueCounts() {
-  const queues = triageQueueState.queues;
-  await Promise.all(queues.map(async (q) => {
-    const params = { ...triageQueueParams(q), limit: 1 };
-    const { status, body } = await api(`/api/notes/authoring${qs(params)}`);
-    if (status === 200 && body && typeof body.total === 'number') {
-      triageQueueState.counts[q.id] = body.total;
-    }
-  }));
-  renderTriageQueuePicker();
-}
-
-async function loadTriageQueues() {
-  const { status, body } = await api('/api/settings/triage_queues');
-  triageQueueState.queues = status === 200 ? body : [];
-  if (!triageQueueState.selectedId) {
-    const saved = localStorage.getItem(TRIAGE_QUEUE_STORAGE_KEY)
-      // Migrates the old origin preference (D1): the origin the operator
-      // last worked is now a built-in queue id.
-      || (localStorage.getItem(TRIAGE_ORIGIN_STORAGE_KEY)
-        ? `builtin:${localStorage.getItem(TRIAGE_ORIGIN_STORAGE_KEY)}`
-        : null);
-    const exists = triageQueueState.queues.some((q) => q.id === saved);
-    triageQueueState.selectedId = exists ? saved : (triageQueueState.queues[0] || {}).id || null;
-  }
-}
-
-function renderTriageQueuePicker() {
-  const pick = document.getElementById('triageQueuePick');
-  if (!pick) return;
-  const adhoc = triageQueueState.adhoc;
-  const chips = triageQueueState.queues.map((q) => {
-    const count = triageQueueState.counts[q.id];
-    const active = !adhoc && q.id === triageQueueState.selectedId;
-    return `<button type="button" class="qchip${q.builtin ? ' builtin' : ''}" data-queue-id="${escapeHtml(q.id)}" aria-pressed="${active}">${escapeHtml(q.name)}${
-      count === undefined ? '' : ` <span class="qn">${count}</span>`
-    }</button>`;
-  });
-  if (adhoc) {
-    chips.push(`<button type="button" class="qchip" data-queue-id="__adhoc__" aria-pressed="true">${escapeHtml(adhoc.name)} <span class="qn">unsaved</span></button>`);
-  }
-  pick.innerHTML = chips.join('');
-  pick.querySelectorAll('.qchip').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      const id = chip.dataset.queueId;
-      if (id === '__adhoc__') return;
-      triageQueueState.adhoc = null;
-      triageQueueState.selectedId = id;
-      localStorage.setItem(TRIAGE_QUEUE_STORAGE_KEY, id);
-      document.getElementById('triageQueueEditor').style.display = 'none';
-      loadTriageQueue();
-    });
-  });
-}
-
-function triageQueueEditorHtml(queue) {
-  const f = queue.filters || {};
-  const opt = (value, label, current) =>
-    `<option value="${escapeHtml(value)}"${String(current || '') === value ? ' selected' : ''}>${escapeHtml(label)}</option>`;
-  const presence = QUEUE_FILTER_FIELDS.map((field) => {
-    const key = `${field}_presence`;
-    const current = f[key] || 'any';
-    return `<span class="tri" data-presence-field="${key}">
-      <span>${escapeHtml(QUEUE_FIELD_LABELS[field])}</span>
-      ${['any', 'missing', 'has'].map((state) =>
-        `<button type="button" data-state="${state}"${state === current ? ' aria-pressed="true"' : ''}>${state}</button>`).join('')}
-    </span>`;
-  }).join('');
-
-  return `
-    <div class="toolbar" style="justify-content:space-between;">
-      <div class="toolbar" style="margin:0;">
-        <span class="eyebrow">Editing</span>
-        <input id="queueName" value="${escapeHtml(queue.name || '')}" style="width:220px;" aria-label="Queue name">
-      </div>
-      <div class="toolbar" style="margin:0;">
-        ${queue.builtin ? '<span class="inline-note">a built-in queue cannot be edited — save it as a new queue to change it</span>' : ''}
-        ${queue.builtin || queue.adhoc ? '' : '<button type="button" class="btn-ghost" id="queueDeleteBtn">Delete queue</button>'}
-        <button type="button" class="btn-primary" id="queueSaveBtn">${queue.builtin || queue.adhoc ? 'Save as new queue' : 'Save queue'}</button>
-      </div>
-    </div>
-    <div class="filter-grid" style="margin-bottom:14px;">
-      <div class="field"><label for="qf_status">Status</label>
-        <select id="qf_status" data-filter-key="status">${opt('', 'any', f.status)}${opt('draft', 'draft', f.status)}${opt('ready', 'ready', f.status)}</select></div>
-      <div class="field"><label for="qf_type">Type</label>
-        <select id="qf_type" data-filter-key="type">${opt('', 'any', f.type)}${['word', 'expression', 'listening', 'pronunciation', 'grammar'].map((t) => opt(t, t, f.type)).join('')}</select></div>
-      <div class="field"><label for="qf_origin">Origin</label>
-        <select id="qf_origin" data-filter-key="origin">${opt('', 'any', f.origin)}${['manual', 'capture', 'import'].map((o) => opt(o, o, f.origin)).join('')}</select></div>
-      <div class="field"><label for="qf_pos">Part of speech</label>
-        <select id="qf_pos" data-filter-key="pos">${opt('', 'any', f.pos)}${['substantiv', 'adjektiv', 'verb', 'adverb', 'preposisjon', 'konjunksjon'].map((p) => opt(p, p, f.pos)).join('')}</select></div>
-      <div class="field"><label for="qf_source_lang">Source language</label>
-        <select id="qf_source_lang" data-filter-key="source_lang">${opt('', 'any', f.source_lang)}${['no', 'de', 'en'].map((l) => opt(l, l, f.source_lang)).join('')}</select></div>
-      <div class="field"><label for="qf_updated_since">Updated since</label>
-        <select id="qf_updated_since" data-filter-key="updated_since">${Object.entries(QUEUE_UPDATED_SINCE_LABELS).map(([v, l]) => opt(v, l, f.updated_since)).join('')}</select></div>
-      <div class="field" style="grid-column: 1 / -1;"><label for="qf_q">Text search — matches text, lemma or translation</label>
-        <input id="qf_q" data-filter-key="q" value="${escapeHtml(f.q || '')}"></div>
-    </div>
-    <div class="eyebrow" style="margin-bottom:7px;">Field presence</div>
-    <div class="field-presence">${presence}</div>
-    <div class="toolbar" style="margin-top:14px; margin-bottom:0;">
-      <label for="qf_sort" style="font-size:12px; color:var(--text-dim);">Order the belt by</label>
-      <select id="qf_sort" style="width:auto;">${Object.entries(QUEUE_SORT_LABELS).map(([v, l]) => opt(v, l, queue.sort || 'updated_asc')).join('')}</select>
-      <span class="inline-note">— stored with the queue, not globally</span>
-    </div>`;
-}
-
-function readQueueEditor() {
-  const editor = document.getElementById('triageQueueEditor');
-  const filters = {};
-  editor.querySelectorAll('[data-filter-key]').forEach((el) => {
-    const value = el.value.trim();
-    if (value) filters[el.dataset.filterKey] = value;
-  });
-  editor.querySelectorAll('[data-presence-field]').forEach((group) => {
-    const pressed = group.querySelector('button[aria-pressed="true"]');
-    const state = pressed ? pressed.dataset.state : 'any';
-    if (state !== 'any') filters[group.dataset.presenceField] = state;
-  });
-  return {
-    name: editor.querySelector('#queueName').value.trim(),
-    filters,
-    sort: editor.querySelector('#qf_sort').value,
-  };
-}
-
-function openTriageQueueEditor() {
-  const queue = activeTriageQueue();
-  if (!queue) return;
-  const editor = document.getElementById('triageQueueEditor');
-  editor.style.display = '';
-  editor.innerHTML = triageQueueEditorHtml(queue);
-
-  editor.querySelectorAll('[data-presence-field] button').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      btn.parentElement.querySelectorAll('button').forEach((b) => b.removeAttribute('aria-pressed'));
-      btn.setAttribute('aria-pressed', 'true');
-    });
-  });
-
-  editor.querySelector('#queueSaveBtn').addEventListener('click', async () => {
-    const payload = readQueueEditor();
-    if (!payload.name) { alert('A queue needs a name.'); return; }
-    // A built-in or an ad-hoc set is saved as a NEW queue — built-ins are
-    // synthesised and the server refuses to edit them.
-    const isNew = queue.builtin || queue.adhoc;
-    const { status, body } = isNew
-      ? await api('/api/settings/triage_queues', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-      })
-      : await api(`/api/settings/triage_queues/${queue.id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-      });
-    if (status !== 200 && status !== 201) {
-      alert(`Could not save the queue: ${(body && body.error) || status}`);
-      return;
-    }
-    triageQueueState.queues = body;
-    triageQueueState.adhoc = null;
-    if (isNew) {
-      const saved = body.filter((q) => !q.builtin).slice(-1)[0];
-      if (saved) triageQueueState.selectedId = saved.id;
-    }
-    localStorage.setItem(TRIAGE_QUEUE_STORAGE_KEY, triageQueueState.selectedId);
-    editor.style.display = 'none';
-    await loadTriageQueue();
-  });
-
-  const deleteBtn = editor.querySelector('#queueDeleteBtn');
-  if (deleteBtn) {
-    deleteBtn.addEventListener('click', async () => {
-      if (!confirm(`Delete the queue "${queue.name}"? The notes in it are not affected.`)) return;
-      const { status, body } = await api(`/api/settings/triage_queues/${queue.id}`, { method: 'DELETE' });
-      if (status !== 200) { alert(`Could not delete: ${(body && body.error) || status}`); return; }
-      triageQueueState.queues = body;
-      triageQueueState.selectedId = (body[0] || {}).id || null;
-      localStorage.setItem(TRIAGE_QUEUE_STORAGE_KEY, triageQueueState.selectedId);
-      editor.style.display = 'none';
-      await loadTriageQueue();
-    });
-  }
-}
-
-document.getElementById('triageQueueEditBtn').addEventListener('click', () => {
-  const editor = document.getElementById('triageQueueEditor');
-  if (editor.style.display === 'none') openTriageQueueEditor();
-  else editor.style.display = 'none';
-});
-
-document.getElementById('triageQueueSaveNewBtn').addEventListener('click', () => {
-  const queue = activeTriageQueue();
-  triageQueueState.adhoc = {
-    adhoc: true,
-    name: queue && queue.adhoc ? queue.name : '',
-    filters: (queue && queue.filters) || {},
-    sort: (queue && queue.sort) || 'updated_asc',
-  };
-  renderTriageQueuePicker();
-  openTriageQueueEditor();
-});
-
-async function refreshTriageRailBadge() {
-  const { status, body } = await api('/api/notes/authoring/counts?status=draft');
-  const badge = document.getElementById('triageRailBadge');
-  if (status !== 200) { badge.style.display = 'none'; return; }
-  const total = Object.values(body).reduce((a, b) => a + b, 0);
-  badge.textContent = String(total);
-  badge.style.display = total > 0 ? '' : 'none';
-}
-refreshTriageRailBadge();
-
-async function renderTriage() {
-  await loadTriageQueues();
-  renderTriageQueuePicker();
-  await loadTriageQueue();
-  // After the belt, so the queue being opened is not kept waiting on the
-  // other queues' counts.
-  refreshTriageQueueCounts();
-}
-
-async function loadTriageQueue() {
-  triageDeferredCount = 0;
-  const queue = activeTriageQueue();
-  if (!queue) {
-    triageQueue = [];
-    triageIndex = 0;
-    updateTriageBelt();
-    await showTriageNote();
-    return;
-  }
-  const base = triageQueueParams(queue);
-  let status = 200;
-  let body = null;
-  const collected = [];
-  let total = 0;
-  let truncated = false;
-  for (let offset = 0; offset < TRIAGE_QUEUE_MAX; offset += TRIAGE_QUEUE_PAGE) {
-    const page = await api(`/api/notes/authoring${qs({ ...base, offset })}`);
-    status = page.status;
-    body = page.body;
-    if (status !== 200 || !body) break;
-    collected.push(...(body.notes || []));
-    total = body.total || 0;
-    if (collected.length >= total || !(body.notes || []).length) break;
-    if (offset + TRIAGE_QUEUE_PAGE >= TRIAGE_QUEUE_MAX) truncated = true;
-  }
-  triageQueueTruncated = truncated;
-  triageQueue = status === 200 ? collected : [];
-  triageIndex = 0;
-  triageBeltTrackTotal = -1; // force the notch track to rebuild for the new queue
-  triageHistoryStack = []; // indices from the previous queue no longer mean anything
-  // Per-queue remaining count (task 3.4). Only the live queue's is known
-  // without fetching every queue, which is the point — the chips show what
-  // they can and omit the rest rather than guessing.
-  if (status === 200) {
-    // The chip's number and the belt's length are now the same thing by
-    // construction, unless the backstop tripped — in which case say so.
-    triageQueueState.counts[queue.id] = total || triageQueue.length;
-  }
-  renderTriageQueuePicker();
-  refreshTriageRailBadge();
-  updateTriageBelt();
-  await showTriageNote();
-}
-
-// A notch per note in a queue beyond this size would be an unreasonable
-// number of DOM nodes for very little visual gain — the numeric counts
-// above remain the load-bearing indicator either way (design Risks).
-const TRIAGE_BELT_TRACK_MAX_NOTCHES = 500;
-let triageBeltTrackTotal = -1;
-
-function renderTriageBeltTrack() {
-  const track = document.getElementById('triageBeltTrack');
-  const total = triageQueue.length;
-  if (total > TRIAGE_BELT_TRACK_MAX_NOTCHES) {
-    track.style.display = 'none';
-    return;
-  }
-  track.style.display = '';
-  if (total !== triageBeltTrackTotal) {
-    track.innerHTML = Array.from({ length: total }, () => '<i class="notch"></i>').join('');
-    triageBeltTrackTotal = total;
-  }
-  Array.from(track.children).forEach((notch, i) => {
-    notch.className = i < triageIndex ? 'notch done' : i === triageIndex ? 'notch here' : 'notch';
-  });
-  track.setAttribute('aria-label', `Queue position: note ${Math.min(triageIndex + 1, total)} of ${total}`);
-}
-
-function updateTriageBelt() {
-  const total = triageQueue.length;
-  const remaining = Math.max(0, total - triageIndex);
-  document.getElementById('triageCount').innerHTML = `${remaining} <small>/ ${total}</small>`;
-  renderTriageBeltTrack();
-  const deferredPill = document.getElementById('triageDeferredPill');
-  if (triageDeferredCount > 0) {
-    deferredPill.style.display = '';
-    deferredPill.textContent = `${triageDeferredCount} sent back`;
-  } else {
-    deferredPill.style.display = 'none';
-  }
-}
-
-function triageProvenanceSrcId(fieldKey) {
-  return {
-    lemma: 't_lemma_src', pos: 't_pos_src', transcription: 't_transcription_src', translations: 't_translations_src',
-    inflections: 't_inflections_src', context_text: 't_context_text_src', audio: 't_audio_src',
-  }[fieldKey];
-}
-
-function markTriageFieldProvenance(fieldKey, provider, note) {
-  const el = document.getElementById(triageProvenanceSrcId(fieldKey));
-  if (!el) return;
-  // task 5.4: an assembled value is NOT a real lookup, and must not read as
-  // one (D3 of smia-ipa-multiword-response, which this change keeps).
-  el.textContent = note ? `${provider} (${note})` : provider;
-  el.style.display = '';
-}
-
-// How "filled" is decided per field key — mirrors the provenance-badge set
-// above (triageProvenanceSrcId) exactly, since those are already the fields
-// the belt tracks individually. Not a readiness gate (status is still only
-// ever set by Accept) — purely a "what's left to look at" indicator, so a
-// field reads as empty here exactly when there's nothing in it to show the
-// operator, whether or not that's acceptable for this note.
-function triageFieldFilled(fieldKey) {
-  if (fieldKey === 'lemma') return !!document.getElementById('t_lemma').value.trim();
-  if (fieldKey === 'pos') return !!getPosValue('t_pos_select', 't_pos_custom');
-  if (fieldKey === 'transcription') return !!document.getElementById('t_transcription').value.trim();
-  if (fieldKey === 'translations') return readTranslationRows('t_translations_list').length > 0;
-  if (fieldKey === 'inflections') {
-    const values = readInflectionFields('t_inflections_fields');
-    return Object.values(values).some((v) => (v || '').trim());
-  }
-  if (fieldKey === 'context_text') return !!document.getElementById('t_context_text').value.trim();
-  if (fieldKey === 'audio') return !!(currentTriageNote && currentTriageNote.audio_blob) || !!triageStagedAudio;
-  return false;
-}
-
-// A field only counts if it's currently applicable — gated by the same
-// visibility the type/pos-driven show/hide logic already governs
-// (updateTriageFieldVisibility/updateTriageInflectionFields), read live off
-// the DOM rather than re-derived, so this can never drift out of sync with
-// what the operator can actually see and fill in.
-function triageFieldApplicable(fieldKey) {
-  if (fieldKey === 'lemma') return document.getElementById('t_lemma_field').style.display !== 'none';
-  if (fieldKey === 'pos') return document.getElementById('t_pos_field').style.display !== 'none';
-  if (fieldKey === 'transcription') return document.getElementById('t_transcription_field').style.display !== 'none';
-  if (fieldKey === 'inflections') return document.querySelectorAll('#t_inflections_fields [data-inflection-field]').length > 0;
-  // translations/context_text/audio have no type-gated visibility — every
-  // triage card shows all three regardless of type.
-  return true;
-}
-
-const TRIAGE_COMPLETION_FIELDS = ['lemma', 'pos', 'transcription', 'translations', 'inflections', 'context_text', 'audio'];
-
-function updateTriageCompletionStatus() {
-  const badge = document.getElementById('triageCompletionBadge');
-  if (!currentTriageNote) { if (badge) badge.textContent = ''; return; }
-
-  let total = 0;
-  let filled = 0;
-  TRIAGE_COMPLETION_FIELDS.forEach((fieldKey) => {
-    const applicable = triageFieldApplicable(fieldKey);
-    const markerEl = document.getElementById(`t_${fieldKey}_missing`);
-    if (!applicable) {
-      if (markerEl) markerEl.style.display = 'none';
-      return;
-    }
-    total += 1;
-    const isFilled = triageFieldFilled(fieldKey);
-    if (isFilled) filled += 1;
-    if (markerEl) markerEl.style.display = isFilled ? 'none' : '';
-  });
-
-  if (badge) badge.textContent = `${filled}/${total} fields filled`;
-}
-
-function clearTriageProvenanceBadges() {
-  ['lemma', 'pos', 'transcription', 'translations', 'inflections', 'context_text', 'audio'].forEach((key) => {
-    const el = document.getElementById(triageProvenanceSrcId(key));
-    if (el) { el.style.display = 'none'; el.textContent = ''; }
-  });
-}
-
-// Prefill fills gaps, never opinions (design D5) — but once the operator
-// has typed into a field themselves, its provenance badge no longer
-// describes what's actually there, so an edit clears it rather than
-// leaving a stale attribution ("not attributed to any provider").
-document.getElementById('triageForm').addEventListener('input', (e) => {
-  syncSuggestQueries('t');
-  const fieldKey = {
-    t_lemma: 'lemma', t_pos_select: 'pos', t_pos_custom: 'pos', t_transcription: 'transcription', t_context_text: 'context_text',
-  }[e.target.id];
-  if (fieldKey) {
-    const el = document.getElementById(triageProvenanceSrcId(fieldKey));
-    if (el) { el.style.display = 'none'; el.textContent = ''; }
-  }
-  if (e.target.closest('#t_translations_list')) {
-    const el = document.getElementById('t_translations_src');
-    if (el) { el.style.display = 'none'; el.textContent = ''; }
-  }
-  if (e.target.closest('#t_inflections_fields')) {
-    const el = document.getElementById('t_inflections_src');
-    if (el) { el.style.display = 'none'; el.textContent = ''; }
-  }
-  updateTriageCompletionStatus();
-});
-
-function renderTriageAudioSection(note) {
-  const none = document.getElementById('t_audio_none');
-  const player = document.getElementById('t_audio_player');
-  if (!note.audio_blob) {
-    none.style.display = 'block';
-    player.style.display = 'none';
-    updateTriageCompletionStatus();
-    return;
-  }
-  none.style.display = 'none';
-  player.style.display = 'block';
-  document.getElementById('t_audioElement').src = `${API_BASE}/blob/${note.audio_blob}`;
-  const sel = note.audio_sel_ms;
-  document.getElementById('t_audio_sel_note').textContent =
-    sel && sel.length === 2 ? `trim ${(sel[0] / 1000).toFixed(2)} – ${(sel[1] / 1000).toFixed(2)} s (adjust in the editor)` : '';
-  updateTriageCompletionStatus();
-}
-
-async function showTriageNote() {
-  const empty = document.getElementById('triageEmpty');
-  const cardWrap = document.getElementById('triageCardWrap');
-  const verdictBar = document.getElementById('triageVerdictBar');
-
-  if (triageIndex >= triageQueue.length) {
-    setCurrentTriageNote(null);
-    empty.style.display = 'block';
-    cardWrap.style.display = 'none';
-    verdictBar.style.display = 'none';
-    updateTriageCompletionStatus();
-    return;
-  }
-  empty.style.display = 'none';
-  cardWrap.style.display = 'block';
-  verdictBar.style.display = 'block';
-
-  const note = triageQueue[triageIndex];
-  setCurrentTriageNote(note);
-  triageStagedAudio = null;
-
-  document.getElementById('triageHeadword').textContent = note.text;
-  document.getElementById('triageMeta').innerHTML =
-    `${escapeHtml(note.type)} · ${escapeHtml(note.pos || '—')} · ${originLabel(note)} · seq ${note.seq}`;
-
-  document.getElementById('t_text').value = note.text || '';
-  document.getElementById('t_lemma').value = note.lemma || '';
-  // Reset per-note, not per-session: the "operator typed here, stop
-  // syncing" flag (wireLemmaTextSync) otherwise leaks across notes —
-  // dirtying lemma on one card silently disabled lemma-from-text sync (and
-  // the article/particle-stripping guess below) for every card after it.
-  delete document.getElementById('t_lemma').dataset.dirty;
-  document.getElementById('t_type').value = note.type;
-  setPosValue('t_pos_select', 't_pos_custom', note.pos);
-  document.getElementById('t_source_lang').value = note.source_lang || '';
-  document.getElementById('t_transcription').value = note.transcription || '';
-  renderTranslationRows('t_translations_list', note.translations, null);
-  document.getElementById('t_context_text').value = note.context_text || '';
-  await populateGrammarRuleSelect(document.getElementById('t_grammar_rule_id'), note.grammar_rule_id);
-
-  updateTriageInflectionFields(note.pos, note.inflections);
-  updateTriageFieldVisibility();
-  resetSuggestQueries('t'); // closes and empties every suggest panel (tasks 3.5/5.7/7.10)
-  clearTriageProvenanceBadges();
-  renderTriageAudioSection(note);
-  loadSimilarNotes('t', note.id);
-
-  // Lemma prefills unconditionally, before any provider is asked — inflections
-  // (and the inflections prefill walk below) query on lemma, so this has to
-  // land first regardless of the on_open/on_demand setting, not wait behind
-  // a provider round-trip the way every other field's prefill does.
-  const lemmaEl = document.getElementById('t_lemma');
-  const rawText = document.getElementById('t_text').value;
-  // Re-derive not just when lemma is empty, but also when it's still the
-  // raw, un-stripped text verbatim (a note saved before this stripping
-  // existed, or one whose lemma was never actually derived) — otherwise a
-  // stale "å legge til" sits in lemma forever, and every lookup that reads
-  // lemma directly (inflections' own query, D1) inherits its un-stripped
-  // article/particle right along with it.
-  if (!lemmaEl.value.trim() || lemmaEl.value.trim() === rawText.trim()) {
-    const guess = deriveLemmaGuess(rawText);
-    if (guess && guess !== lemmaEl.value.trim()) {
-      lemmaEl.value = guess;
-      flashPrefilled(lemmaEl);
-      markTriageFieldProvenance('lemma', 'derived from text');
-    }
-  }
-
-  updateTriageCompletionStatus();
-  const settings = await fetchSettings();
-  if ((settings.prefill_timing || 'on_open') === 'on_open') runTriagePrefill();
-}
-
-function updateTriageInflectionFields(pos, values) {
-  const shapedPos = INFLECTION_SHAPES[pos] ? pos : null;
-  if (shapedPos) renderInflectionFields('t_inflections_fields', shapedPos, values);
-  else document.getElementById('t_inflections_fields').innerHTML = '';
-}
-
-function updateTriageFieldVisibility() {
-  const type = document.getElementById('t_type').value;
-  document.getElementById('t_grammar_rule_field').style.display = type === 'grammar' ? 'block' : 'none';
-  applyTypeFieldVisibility('t', type);
-  updateTriageCompletionStatus();
-}
-
-document.getElementById('t_type').addEventListener('change', updateTriageFieldVisibility);
-wirePosCustomToggle('t_pos_select', 't_pos_custom', () => {
-  const pos = getPosValue('t_pos_select', 't_pos_custom');
-  updateTriageInflectionFields(pos, currentTriageNote && currentTriageNote.pos === pos ? currentTriageNote.inflections : null);
-  updateTriageCompletionStatus();
-  // A changed PoS reshapes the inflection fields to a fresh, empty set —
-  // "redo the inflections" means re-running the walk right away rather than
-  // leaving the operator to notice and press prefill again.
-  prefillTriageInflections().then(updateTriageCompletionStatus);
-});
-document.getElementById('t_add_translation').addEventListener('click', () => {
-  addTranslationRow('t_translations_list', '', '', null);
-});
-wireLemmaTextSync('t');
-
-function readTriageForm() {
-  const pos = getPosValue('t_pos_select', 't_pos_custom');
-  const shapedPos = INFLECTION_SHAPES[pos] ? pos : null;
-  const inflections = shapedPos ? readInflectionFields('t_inflections_fields') : (currentTriageNote?.inflections ?? {});
-  return {
-    text: document.getElementById('t_text').value,
-    lemma: document.getElementById('t_lemma').value || null,
-    type: document.getElementById('t_type').value,
-    pos,
-    source_lang: document.getElementById('t_source_lang').value,
-    transcription: document.getElementById('t_transcription').value || null,
-    translations: readTranslationRows('t_translations_list'),
-    inflections,
-    context_text: document.getElementById('t_context_text').value || null,
-    grammar_rule_id: document.getElementById('t_grammar_rule_id').value
-      ? Number(document.getElementById('t_grammar_rule_id').value)
-      : null,
-    ...(triageStagedAudio ? { audio_blob: triageStagedAudio.sha256, audio_sel_ms: null } : {}),
-  };
-}
-
-// ── verdicts (design D8: accept is the only path to `ready`) ─────────────
-
-async function saveTriageEdits() {
-  if (!currentTriageNote) return null;
-  const { status, body } = await api(`/api/notes/${currentTriageNote.id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(readTriageForm()),
-  });
-  return status === 200 ? body : null;
-}
-
-function advanceTriageIndex() {
-  triageIndex += 1;
-  updateTriageBelt();
-  showTriageNote();
-}
-
-// A small undo stack for "go to previous" (task: operator safety net for an
-// accidental accept/skip/send-to-back). Delete is deliberately excluded —
-// it already has its own `confirm()` guard, and undoing a hard delete isn't
-// possible anyway. Reset whenever the queue itself is reloaded (origin
-// switch), since indices from a previous queue no longer mean anything.
-let triageHistoryStack = [];
-
-document.getElementById('triageAcceptBtn').addEventListener('click', async () => {
-  if (!currentTriageNote) return;
-  const payload = readTriageForm();
-  payload.status = 'ready';
-  const { status } = await api(`/api/notes/${currentTriageNote.id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (status === 200) {
-    triageHistoryStack.push({ type: 'accept', index: triageIndex, noteId: currentTriageNote.id });
-    advanceTriageIndex();
-    refreshTriageRailBadge();
-  }
-});
-
-document.getElementById('triageSaveBtn').addEventListener('click', async () => {
-  if (!currentTriageNote) return;
-  const saved = await saveTriageEdits();
-  if (saved) enrichToast('Saved');
-});
-
-// note-triage design D3: whether Send to back / Skip / Go to previous save
-// the card being left before moving on is one operator preference governing
-// all three uniformly (operator-settings `triage_navigate_save`) — not a
-// hardcoded per-action asymmetry.
-async function shouldAutosaveOnTriageNavigate() {
-  const settings = await fetchSettings();
-  return (settings.triage_navigate_save || 'autosave') !== 'manual';
-}
-
-document.getElementById('triageSendBackBtn').addEventListener('click', async () => {
-  if (!currentTriageNote) return;
-  const autosave = await shouldAutosaveOnTriageNavigate();
-  const saved = autosave ? await saveTriageEdits() : currentTriageNote;
-  if (!saved) return;
-  triageDeferredCount += 1;
-  triageHistoryStack.push({ type: 'sendback', index: triageIndex, noteId: currentTriageNote.id });
-  // design D3: deferral is just a save, so the note sorts last under
-  // `updated_asc` — moved to the end of the in-memory queue too, so it
-  // reads as deferred within this pass, not only after a reload.
-  triageQueue.splice(triageIndex, 1);
-  triageQueue.push(saved);
-  updateTriageBelt();
-  await showTriageNote();
-});
-
-document.getElementById('triageSkipBtn').addEventListener('click', async () => {
-  if (!currentTriageNote) return;
-  if (await shouldAutosaveOnTriageNavigate()) {
-    const saved = await saveTriageEdits();
-    // Without this, the in-memory queue entry at this index stays the
-    // stale pre-edit object — the backend has the edit, but Go to previous
-    // (or just scrolling back through the queue later) reads straight off
-    // `triageQueue`, so the edit would look like it never happened, and a
-    // later re-save from that stale state would overwrite the real one.
-    if (saved) triageQueue[triageIndex] = saved;
-  }
-  triageHistoryStack.push({ type: 'skip', index: triageIndex });
-  advanceTriageIndex();
-});
-
-document.getElementById('triageDeleteBtn').addEventListener('click', async () => {
-  if (!currentTriageNote) return;
-  if (!confirm(`Delete "${currentTriageNote.text}"? Every note in this queue is a draft, so this is a hard delete.`)) return;
-  const { status } = await api(`/api/notes/${currentTriageNote.id}`, { method: 'DELETE' });
-  if (status === 204 || status === 200) { advanceTriageIndex(); refreshTriageRailBadge(); }
-});
-
-// Reverses the most recent accept/skip/send-to-back. Accept and skip never
-// touch `triageQueue` (they only move the pointer forward), so undoing them
-// is just moving the pointer back — except accept also PATCHed `status` to
-// `ready`, which has to be reverted on the backend too. Send-to-back moved
-// the note to the end of the array without moving the pointer, so undoing
-// it moves the note back rather than touching the pointer.
-async function goToPreviousTriageNote() {
-  const entry = triageHistoryStack.pop();
-  if (!entry) { enrichToast('Nothing to go back to'); return; }
-
-  // Additive to the undo-stack bookkeeping below, not a replacement for it:
-  // this only decides whether the card being left is persisted first, which
-  // is orthogonal to which history entry is being unwound.
-  if (currentTriageNote && (await shouldAutosaveOnTriageNavigate())) {
-    const saved = await saveTriageEdits();
-    // Same staleness fix as Skip's autosave: the note being left stays in
-    // `triageQueue` (we're only moving the pointer elsewhere, or — for a
-    // 'sendback' entry — relocating it below), so its in-memory copy has to
-    // reflect what was just saved, not the pre-edit object it still held.
-    if (saved) {
-      const idx = triageQueue.findIndex((n) => n.id === currentTriageNote.id);
-      if (idx !== -1) triageQueue[idx] = saved;
-    }
-  }
-
-  if (entry.type === 'sendback') {
-    const idx = triageQueue.findIndex((n) => n.id === entry.noteId);
-    if (idx !== -1) {
-      const [note] = triageQueue.splice(idx, 1);
-      triageQueue.splice(entry.index, 0, note);
-    }
-    triageDeferredCount = Math.max(0, triageDeferredCount - 1);
-  } else if (entry.type === 'accept') {
-    const { status, body } = await api(`/api/notes/${entry.noteId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'draft' }),
-    });
-    if (status === 200) {
-      triageQueue[entry.index] = body;
-      refreshTriageRailBadge();
-    }
-    triageIndex = entry.index;
-  } else {
-    triageIndex = entry.index;
-  }
-  updateTriageBelt();
-  await showTriageNote();
-}
-
-document.getElementById('triagePreviousBtn').addEventListener('click', goToPreviousTriageNote);
-document.getElementById('triagePrefillBtn').addEventListener('click', () => runTriagePrefill());
-document.getElementById('triagePrefillBtnBottom').addEventListener('click', () => runTriagePrefill());
-
-document.getElementById('t_upload_audio_btn').addEventListener('click', async () => {
-  if (!currentTriageNote) return;
-  const fileInput = document.getElementById('t_audio_file');
-  const file = fileInput.files[0];
-  if (!file) return;
-  const btn = document.getElementById('t_upload_audio_btn');
-  const originalLabel = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '…';
-  const form = new FormData();
-  form.append('audio', file);
-  const uploadResp = await fetch(`${API_BASE}/blobs`, { method: 'POST', headers: authHeaders(), body: form });
-  const uploadBody = await uploadResp.json();
-  btn.disabled = false;
-  btn.textContent = originalLabel;
-  if (uploadResp.status !== 200) { enrichToast('Upload failed'); return; }
-  fileInput.value = '';
-  await attachAudioToNote('t', uploadBody.sha256, 'manual upload', file.name);
-});
-
-// t/r/l/e/x/v — chosen so delete (x) sits far from accept (r) on the key
-// layout (design Risks/task 4.6): a mis-keyed delete on a draft is
-// unrecoverable. Suppressed while focus is in any form control, so typing
-// in a field never fires a verdict by accident. The bound button is the one
-// in the bottom verdict bar — it's always visible, unlike the top-of-card
-// prefill button — so the key-press flash below lands somewhere the
-// operator is actually looking.
-const TRIAGE_KEY_BINDINGS = {
-  e: 'triageSendBackBtn',
-  r: 'triageAcceptBtn',
-  l: 'triagePrefillBtnBottom',
-  s: 'triageSkipBtn',
-  d: 'triageDeleteBtn',
-  t: 'triagePreviousBtn',
-  m: 'triageSaveBtn',
-};
-document.addEventListener('keydown', (e) => {
-  if (parseHash().route !== 'triage' || !currentTriageNote) return;
-  const tag = document.activeElement && document.activeElement.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-  const targetId = TRIAGE_KEY_BINDINGS[e.key.toLowerCase()];
-  if (!targetId) return;
-  e.preventDefault();
-  const btn = document.getElementById(targetId);
-  // Visible confirmation that the key registered, independent of whatever
-  // the action itself does (some of which — skip, prefill — have no other
-  // visible effect on a note that was already fully filled).
-  btn.classList.remove('key-pressed');
-  void btn.offsetWidth;
-  btn.classList.add('key-pressed');
-  btn.addEventListener('animationend', () => btn.classList.remove('key-pressed'), { once: true });
-  btn.click();
-});
-
-// ── prefill: N ordinary pass-through lookups, walking the operator's
-// configured provider order client-side (design D4 — routes/enrich.py
-// gains no chain logic of its own) ────────────────────────────────────────
-
-// The gap marker for a token smia resolved no candidate for. Visible by
-// construction: an assembled transcription with a hole in it must LOOK like
-// one, or the operator accepts a value that silently dropped a word.
-const TRANSCRIPTION_GAP = '…';
-
-function assembleTranscriptionFromTokens(tokens) {
-  if (!Array.isArray(tokens) || !tokens.length) return null;
-  const parts = tokens.map((t) => {
-    const first = Array.isArray(t.candidates) && t.candidates.length ? t.candidates[0] : null;
-    if (!first) return TRANSCRIPTION_GAP;
-    return first.ipa || first.phonemic || first.phonetic || TRANSCRIPTION_GAP;
-  });
-  // Every token unresolved means there is nothing to assemble from, which is
-  // a miss, not a string of gap markers.
-  if (parts.every((p) => p === TRANSCRIPTION_GAP)) return null;
-  return parts.join(' ');
-}
-
-async function walkProviders(kind, prefix, queryValue, lang, limit) {
-  const settings = await fetchSettings();
-  const info = (settings.providers && settings.providers[kind]) || {};
-  const disabled = new Set(info.disabled || []);
-  const providers = (info.order || []).filter((p) => !disabled.has(p));
-  for (const provider of providers) {
-    const fields = enrichRequestFields(kind, prefix, queryValue, lang, limit);
-    const { status, body } = await enrichLookup(kind, provider, fields, false);
-    if (status !== 200 || !body) continue;
-    if (kind === 'ipa' && body.mode === 'per_word') {
-      if (body.joined) return { provider, value: body.joined };
-      // D7, superseding D2 of the archived `smia-ipa-multiword-response`:
-      // smia omits `joined` whenever ANY token has zero or more than one
-      // candidate, which for Norwegian multiword phrases is the common case
-      // (one token with two dialect varieties is enough). The old `continue`
-      // here meant prefill left the transcription empty far more often than
-      // the operator expected, so the restraint cost more than it protected.
-      //
-      // Bounded, deliberately: each token's FIRST candidate only, in smia's
-      // own token order (stabbur never re-tokenises — smia's tokenizer stays
-      // authoritative), a visible gap marker where a token has nothing, and
-      // flagged as assembled so D3 of that change still holds. Do not
-      // restore the `continue` as a bug fix.
-      const assembled = assembleTranscriptionFromTokens(body.tokens);
-      if (assembled) return { provider, value: assembled, assembled: true };
-      continue;
-    }
-    if (Array.isArray(body.candidates) && body.candidates.length > 0) {
-      // D5: prefill takes candidates[0], so the ordering has to happen
-      // BEFORE that pick or the whole point is lost. `prefillTriagePos`
-      // already runs before translations/inflections/audio, so the note's
-      // part of speech is in place by the time this reads it — preserve
-      // that ordering if the prefill walk is ever rearranged.
-      const ordered = (kind === 'translations' || kind === 'tts')
-        ? orderCandidatesByPos(body.candidates, notePosFor(prefix))
-        : body.candidates;
-      return { provider, candidate: ordered[0], candidates: ordered };
-    }
-  }
-  return null;
-}
-
-// Briefly highlights a form control (or any block element) the moment
-// prefill writes into it — the per-field provenance badge says *where* a
-// value came from, this says *that something just changed here*, which the
-// badge alone doesn't convey at a glance across a dense form.
-function flashPrefilled(el, boxStyle) {
-  if (!el) return;
-  const cls = boxStyle ? 'prefill-flash-box' : 'prefill-flash';
-  el.classList.remove(cls);
-  void el.offsetWidth; // restart the animation even if it's still running
-  el.classList.add(cls);
-  el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
-}
-
-// Non-destructive, same as the editor's pos suggest control reading the
-// walk's own "first candidate" rather than letting the operator choose
-// (there is no operator present during an automatic prefill) — but unlike
-// the editor's explicit "Use", prefill only ever fills a gap (design D5),
-// so this never overwrites a pos the note, or an earlier prefill pass,
-// already set. Runs before prefillTriageInflections so a pos this walk
-// just set is already in place by the time that one looks for a shape to
-// fill — pos set, no run → no inflection fields exist yet to fill.
-async function prefillTriagePos() {
-  const currentPos = getPosValue('t_pos_select', 't_pos_custom');
-  if (currentPos) return false;
-  const query = defaultSuggestQuery('t', 'pos');
-  if (!query) return false;
-  const result = await walkProviders('inflections', 't', query);
-  const candidates = (result && result.candidates) || [];
-  const mapped = candidates.map((c) => canonicalPos(c.pos)).find(Boolean);
-  if (!mapped) return false;
-  setPosValue('t_pos_select', 't_pos_custom', mapped);
-  refreshInflectionFieldsForPrefix('t', mapped, carryForwardInflectionValues('t', mapped));
-  flashPrefilled(document.getElementById('t_pos_select'));
-  markTriageFieldProvenance('pos', result.provider);
-  return true;
-}
-
-async function prefillTriageTranscription(sourceLang) {
-  const transcriptionEl = document.getElementById('t_transcription');
-  if (transcriptionEl.value.trim()) return false;
-  const query = defaultSuggestQuery('t', 'ipa');
-  if (!query) return false;
-  const result = await walkProviders('ipa', 't', query, sourceLang);
-  const value = result && (result.value || (result.candidate && (result.candidate.ipa || result.candidate.phonemic || result.candidate.phonetic)));
-  if (!value) return false;
-  transcriptionEl.value = value;
-  flashPrefilled(transcriptionEl);
-  markTriageFieldProvenance('transcription', result.provider, result.assembled ? 'assembled from single words' : null);
-  return true;
-}
-
-async function prefillTriageTranslations() {
-  const settings = await fetchSettings();
-  const existingLangs = new Set(readTranslationRows('t_translations_list').map((t) => t.lang.toLowerCase()));
-  const targetLangs = (settings.default_target_langs && settings.default_target_langs.length) ? settings.default_target_langs : SUGGEST_DEFAULT_LANGS;
-  const translationsQuery = defaultSuggestQuery('t', 'translations');
-  if (!translationsQuery) return false;
-  let any = false;
-  for (const lang of targetLangs) {
-    if (existingLangs.has(lang.toLowerCase())) continue;
-    const result = await walkProviders('translations', 't', translationsQuery, lang);
-    if (result && result.candidate && result.candidate.text) {
-      const row = addTranslationRow('t_translations_list', lang, result.candidate.text, null);
-      flashPrefilled(row && row.querySelector('.t-text'));
-      markTriageFieldProvenance('translations', result.provider);
-      any = true;
-    }
-  }
-  return any;
-}
-
-// Shared by the full prefill walk and by a PoS change — a new PoS reshapes
-// the inflection fields to an empty set (updateTriageInflectionFields), so
-// re-running this immediately is what "automatically redo the inflections"
-// means in practice: the walk only ever fills gaps, and a reshape just
-// created a fresh set of them.
-async function prefillTriageInflections() {
-  const pos = getPosValue('t_pos_select', 't_pos_custom');
-  if (!INFLECTION_SHAPES[pos]) return false;
-  const lemma = document.getElementById('t_lemma').value.trim();
-  if (!lemma) return false;
-  const result = await walkProviders('inflections', 't', lemma);
-  if (!result || !result.candidate || !result.candidate.paradigm) return false;
-  const current = readInflectionFields('t_inflections_fields');
-  let any = false;
-  INFLECTION_SHAPES[pos].forEach((field) => {
-    if (!current[field] && result.candidate.paradigm[field]) {
-      const input = document.querySelector(`#t_inflections_fields [data-inflection-field="${field}"]`);
-      if (input) { input.value = normalizeInflectionValue(field, result.candidate.paradigm[field]); flashPrefilled(input); any = true; }
-    }
-  });
-  if (!current.article) {
-    const articleInput = document.querySelector('#t_inflections_fields [data-inflection-field="article"]');
-    const derivedArticle = deriveArticleToken(result.candidate.paradigm);
-    if (articleInput && derivedArticle) { articleInput.value = derivedArticle; flashPrefilled(articleInput); any = true; }
-  }
-  if (any) markTriageFieldProvenance('inflections', result.provider);
-  return any;
-}
-
-// Unlike walkProviders' "first provider that answers wins" (right for a
-// single-value field — pos/inflections/tts/audio each have exactly one
-// correct answer, design D4), example sentences for context_text are
-// additive: a provider with no entry is skipped, not treated as the end of
-// the walk, and more than one provider's sentences can be pooled together
-// to reach the operator's configured count (operator-settings
-// `examples_count`/`examples_max_providers` — examples-prefill follow-up).
-async function walkExamplesProviders(prefix, queryValue, targetCount, maxProviders) {
-  const settings = await fetchSettings();
-  const info = (settings.providers && settings.providers.examples) || {};
-  const disabled = new Set(info.disabled || []);
-  const providers = (info.order || []).filter((p) => !disabled.has(p)).slice(0, maxProviders);
-  const texts = [];
-  const usedProviders = [];
-  for (const provider of providers) {
-    if (texts.length >= targetCount) break;
-    const fields = enrichRequestFields('examples', prefix, queryValue, undefined, targetCount - texts.length);
-    const { status, body } = await enrichLookup('examples', provider, fields, false);
-    if (status !== 200 || !body || !Array.isArray(body.candidates) || body.candidates.length === 0) continue;
-    const newTexts = body.candidates.map((c) => c.text).filter(Boolean);
-    if (!newTexts.length) continue;
-    texts.push(...newTexts);
-    usedProviders.push(provider);
-  }
-  if (!texts.length) return null;
-  return { texts: texts.slice(0, targetCount), providers: usedProviders };
-}
-
-async function prefillTriageExamples() {
-  const ctxEl = document.getElementById('t_context_text');
-  if (ctxEl.value.trim()) return false;
-  const exQuery = defaultSuggestQuery('t', 'examples');
-  if (!exQuery) return false;
-  const settings = await fetchSettings();
-  const targetCount = settings.examples_count || 3;
-  const maxProviders = settings.examples_max_providers || 1;
-  const result = await walkExamplesProviders('t', exQuery, targetCount, maxProviders);
-  if (!result || !result.texts.length) return false;
-  ctxEl.value = result.texts.join('\n');
-  flashPrefilled(ctxEl);
-  markTriageFieldProvenance('context_text', result.providers.join(', '));
-  return true;
-}
-
-// Audio: only a real candidate (sha256 present) auto-attaches — a
-// manual-link provider's empty-candidates-plus-url answer is exactly the
-// "has no entry" case the walk is defined to fall through on, never
-// something to surface here (settings page's own note on this).
-async function prefillTriageAudio(sourceLang) {
-  if (!currentTriageNote || currentTriageNote.audio_blob) return false;
-  const audioQuery = defaultSuggestQuery('t', 'tts');
-  if (!audioQuery) return false;
-  const result = await walkProviders('tts', 't', audioQuery, sourceLang);
-  if (!result || !result.candidate || !result.candidate.sha256) return false;
-  const fetched = await api('/api/enrich/tts/use', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sha256: result.candidate.sha256 }),
-  });
-  if (fetched.status !== 200) return false;
-  const attached = await attachAudioToNote('t', fetched.body.sha256, result.provider, null);
-  if (!attached) return false;
-  markTriageFieldProvenance('audio', result.provider);
-  flashPrefilled(document.getElementById('t_audio_player'), true);
-  return true;
-}
-
-// Each step is its own provider round-trip (or several) — a single
-// transient failure (one provider timing out, a flaky network blip)
-// shouldn't take the rest of the walk down with it. Without this, prefill
-// looked like it "stopped working from time to time": one step throwing
-// aborted every step after it in the same await chain, with nothing
-// visible to say why.
-async function runTriagePrefillStep(stepFn, ...args) {
-  try {
-    return await stepFn(...args);
-  } catch (err) {
-    console.error('Triage prefill step failed:', stepFn.name, err);
+    if (k === 'stt') return f.text.trim() === c.v;
+    if (k === 'audio') return !!E.usedSha && E.usedSha === c.sha && f.audio_blob === E.usedBlob;
     return false;
   }
-}
+  function candRow(k, p, c, i) {
+    if (c.gap) return `<div class="none">No entry for “${esc(c.token)}”</div>`;
+    const u = used(k, c);
+    const pm = (E.f.pos && c.tag && c.tag === normalizePosTag(E.f.pos) && (k === 'translations' || k === 'audio')) ? `<span class="pm" title="matches ${esc(E.f.pos)}">${esc(POSAB[E.f.pos] || E.f.pos)}</span>` : '';
+    const busy = S.sheet.busy === `${p}:${i}`;
+    const confirmStt = k === 'stt' && S.sheet.confirmStt === `${p}:${i}`;
+    let label = u ? 'Used' : (k === 'ipa' && c.asm ? 'Replace' : 'Use');
+    if (busy) label = '…';
+    if (confirmStt) label = 'Replace?';
+    const disabled = (k === 'pos' && !c.v) || busy;
+    const btn = (k === 'pos' && !c.v) ? '' : `<button class="use ${u ? 'done' : ''}" data-act="use" data-p="${esc(p)}" data-i="${i}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+    if (k === 'inflections') {
+      const order = shapeKeys(c.pos);
+      const entries = Object.entries(c.v).sort((a, b) => {
+        const ia = order.indexOf(a[0]); const ib = order.indexOf(b[0]);
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+      });
+      return `<div class="cd inf"><div class="v"><table class="mt">${entries.map(([a, b]) => `<tr><th>${esc(shapeLabel(a))}</th><td>${esc(b)}</td></tr>`).join('')}</table>${c.ctx ? `<small>${esc(c.ctx)}</small>` : ''}</div>${btn}</div>`;
+    }
+    if (k === 'audio') {
+      const key = `cand:${c.sha}`;
+      const dur = c.sha ? durationOf(previewUrl(c.sha)) : null;
+      return `<div class="cd"><button class="pl" data-act="cplay" data-key="${esc(key)}" data-url="${esc(previewUrl(c.sha))}" aria-label="Play">${ic(S.playKey === key ? 'pause' : 'play')}</button><div class="v"><b>${esc(c.v || p)}</b>${pm}<small>${dur ? `${dur.toFixed(2)} s` : (dur === 0 ? '—' : '… s')}</small></div>${btn}</div>`;
+    }
+    const v = k === 'ipa' ? `<b class="ipa">${esc(c.v)}</b>` : `<b>${esc(c.v || c.raw || '')}</b>`;
+    const lead = k === 'translations' ? `<span class="lg">${esc(c.lang)}</span>` : '';
+    return `<div class="cd ${c.asm ? 'asm' : ''}">${lead}<div class="v">${v}${pm}${c.ctx ? `<small>${esc(c.ctx)}</small>` : ''}</div>${btn}</div>`;
+  }
+  function orderedList(k, list) {
+    if (k === 'translations' || k === 'audio') return orderByPos(list, E.f.pos);
+    if (k === 'pos' && E.f.pos) {
+      const m = list.filter((c) => c.v === E.f.pos);
+      return m.length ? m.concat(list.filter((c) => c.v !== E.f.pos)) : list.slice();
+    }
+    return list;
+  }
+  function suggestSheet(k) {
+    const st = E.cands[k] || { q: defaultQuery(k), pq: {}, pqOpen: {}, P: {} };
+    const q = st.q;
+    const { enabled, off, links } = kindProviders(k);
+    let body = '';
+    if (!enabled.length) body += `<div class="none" style="margin-top:14px">No providers answer ${esc(KINDS[k].toLowerCase())} right now${k === 'stt' ? '' : ' — check Settings → Provider order, or whether smia is reachable'}.</div>`;
+    enabled.forEach((p, pi) => {
+      const R = st.P[p] || { loading: true, list: [] };
+      const over = st.pq[p] !== undefined && st.pq[p].trim() && st.pq[p].trim() !== q.trim();
+      const pqv = over ? st.pq[p].trim() : q;
+      const list = R.list || [];
+      const n = list.filter((c) => !c.gap).length;
+      body += `<div class="prv"><div class="prvh"><span class="n">${pi + 1}</span>${esc(p)}
+        ${k === 'stt' ? '' : `<button class="pqb ${over ? 'over' : ''}" data-act="pqedit" data-p="${esc(p)}" title="Query for ${esc(p)} only">${over ? `“${esc(pqv)}”` : `${ic('pen', 's')} query`}</button>`}
+        <span class="sp"></span><span class="c">${R.loading ? '…' : `${n || 'no'} result${n === 1 ? '' : 's'}`}</span></div>`;
+      if (st.pqOpen[p]) body += `<div class="pqrow"><input class="in" data-f="pq" data-p="${esc(p)}" value="${esc(st.pq[p] !== undefined ? st.pq[p] : '')}" aria-label="Query for ${esc(p)}" spellcheck="false" placeholder="${esc(q)}"><button class="ib" data-act="pqreset" data-p="${esc(p)}" title="Back to the shared query">Reset</button><button class="ib ${R.loading && S.sheet.pspin === p ? 'spin' : ''}" data-act="prerun" data-p="${esc(p)}" aria-label="Run ${esc(p)} again">${ic('rerun')}</button></div>`;
+      if (R.loading) body += '<div class="skel"></div>';
+      else if (R.error) body += `<div class="err">${esc(R.error)}</div>`;
+      else if (R.note) body += `<div class="none">${esc(R.note)}</div>`;
+      else if (!n && !(R.list || []).length) body += `<div class="none">Nothing for “${esc(R.query !== undefined ? R.query : pqv)}”</div>`;
+      if (!R.loading) orderedList(k, list).forEach((c) => { body += candRow(k, p, c, list.indexOf(c)); });
+      body += '</div>';
+    });
+    if (k === 'audio') {
+      body += reuseBox();
+      if (links.length) {
+        body += `<div class="ext"><span class="t">Open elsewhere</span>${links.map((p) => {
+          const R = st.P[p];
+          const url = (R && R.url) || (p === 'forvo' ? `https://forvo.com/search/${encodeURIComponent(q)}/no/` : `https://filmot.com/search/${encodeURIComponent(q)}/1?lang=no`);
+          return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(p)}<span class="sp"></span>${ic('ext')}</a>`;
+        }).join('')}</div>`;
+      }
+      body += audioActions();
+    }
+    body += `<div class="shf">${k === 'stt' ? 'Providers come from smia' : 'Order follows Settings · <button data-act="go" data-v="settings">Provider order</button>'}${off ? ` · ${off} switched off` : ''}</div>`;
+    const spinning = S.sheet.spin && enabled.some((p) => st.P[p] && st.P[p].loading);
+    return sheetShell(`${KINDS[k]} suggestions`, KINDS[k], `<div class="shq"><input class="in" id="shq" data-f="q" value="${esc(q)}" aria-label="Shared query" spellcheck="false" ${k === 'stt' ? 'readonly' : ''}><button class="ib ${spinning ? 'spin' : ''}" data-act="rerun" aria-label="Run all providers again">${ic('rerun')}</button></div><div class="shb">${body}</div>`);
+  }
+  // stabbur-triage-queues D9: a recording already stored on another note can
+  // be attached to this one — found through the notes that reference it.
+  function reuseBox() {
+    const R = S.sheet.reuse || { q: '', rows: null };
+    let rows = '';
+    if (R.loading) rows = '<div class="skel"></div>';
+    else if (R.rows && !R.rows.length) rows = `<div class="none">No note with a recording matches “${esc(R.q)}”</div>`;
+    else if (R.rows) {
+      rows = R.rows.map((n) => {
+        const key = `reuse:${n.id}`;
+        const tr = n.translations && n.translations[0] ? n.translations[0].text : '';
+        return `<div class="cd"><button class="pl" data-act="cplay" data-key="${esc(key)}" data-url="${esc(blobUrl(n.audio_blob))}" aria-label="Play">${ic(S.playKey === key ? 'pause' : 'play')}</button><div class="v"><b>${esc(n.text)}</b><small>${esc([n.status, n.origin, tr].filter(Boolean).join(' · '))}</small></div><button class="use" data-act="rattach" data-v="${esc(n.id)}">${E.f.audio_blob === n.audio_blob ? 'Used' : 'Attach'}</button></div>`;
+      }).join('');
+    }
+    return `<div class="reuse"><span class="t">Reuse from another note</span><div class="srch"><label class="box">${ic('search')}<input class="in" data-f="reuseq" placeholder="Text, lemma or translation" value="${esc(R.q)}" aria-label="Search your notes' audio"></label><button class="btn-s" data-act="rsearch">Search</button></div>${rows}</div>`;
+  }
 
-async function runTriagePrefill() {
-  if (!currentTriageNote) return;
-  const sourceLang = smiaLangCode(document.getElementById('t_source_lang').value);
-  let filledCount = 0;
+  /* --------------------------------------------------- similar / merge -- */
+  const TAKES = [['text', 'Text'], ['lemma', 'Lemma'], ['pos', 'Part of speech'], ['infl', 'Inflections'], ['audio', 'Audio'], ['ipa', 'IPA'], ['tr', 'Translations'], ['ex', 'Examples']];
+  const TAKE_FIELDS = { text: ['text'], lemma: ['lemma'], pos: ['pos'], infl: ['inflections'], audio: ['audio_blob', 'audio_sel_ms'], ipa: ['transcription'], tr: ['translations'], ex: ['examples'] };
+  function valsOfMatch(m) {
+    return { text: m.text || '', lemma: m.lemma || '', pos: m.pos || '', infl: m.inflections || {}, audio: m.audio_blob || null, ipa: m.transcription || '', tr: m.translations || [], ex: m.examples || [] };
+  }
+  function valsOfForm() {
+    const p = payload(E.f, false);
+    return { text: p.text, lemma: p.lemma || '', pos: p.pos || '', infl: p.inflections || {}, audio: p.audio_blob, ipa: p.transcription || '', tr: p.translations, ex: p.examples };
+  }
+  function tval(o, k) {
+    if (k === 'tr') return o.tr.map((t) => `${t.lang} ${t.text}`).join(', ');
+    if (k === 'ex') return o.ex.join(' · ');
+    if (k === 'infl') return Object.values(o.infl).filter(Boolean).join(' · ');
+    if (k === 'audio') {
+      if (!o.audio) return '';
+      const d = durationOf(blobUrl(o.audio));
+      return `recording${d ? ` · ${d.toFixed(2)} s` : ''}`;
+    }
+    if (k === 'ipa') return o.ipa ? `/${o.ipa}/` : '';
+    return o[k] || '';
+  }
+  function mergeSides(m) {
+    const into = S.sheet.dir !== 'out';
+    const from = into ? valsOfMatch(m) : valsOfForm();
+    const keep = into ? valsOfForm() : valsOfMatch(m);
+    return { into, from, keep };
+  }
+  const openIsReady = () => (E.stored && E.stored.status === 'ready') || (E.ctx === 'note' && E.f.status === 'ready');
+  function preTake(m) {
+    const { from, keep } = mergeSides(m);
+    const t = {};
+    TAKES.forEach(([k]) => {
+      const mine = tval(keep, k); const theirs = tval(from, k);
+      t[k] = !!theirs && (!mine || k === 'tr' || k === 'ex') && mine !== theirs;
+    });
+    S.sheet.take = t;
+  }
+  function defaultDir(m) {
+    if (m.status !== 'draft' && !openIsReady()) return 'out';
+    return 'in';
+  }
+  function simSheet() {
+    const sh = S.sheet;
+    const body = E.sim.map((o) => {
+      const open = sh.open === o.id; const tk = sh.take || {};
+      let html = `<div class="sim"><div class="simt"><b>${esc(o.text)}</b><small><span class="st ${o.status}">${o.status}</span> · ${esc(o.type)}${o.pos ? ` · ${esc(o.pos)}` : ''}</small></div>
+        <div class="sima">${E.ctx === 'triage' ? `<a class="lnk" href="#/notes/${esc(o.id)}" target="_blank" rel="noopener">${ic('ext')} Open</a>` : `<button class="lnk" data-act="simopen" data-v="${esc(o.id)}">${ic('ext')} Open</button>`}<button class="lnk" data-act="mergeopen" data-v="${esc(o.id)}" aria-expanded="${open}">${ic('merge')} ${open ? 'Hide merge' : 'Merge…'}</button></div>`;
+      if (open) {
+        const inBlocked = o.status !== 'draft';
+        const outBlocked = openIsReady();
+        const { into, from, keep } = mergeSides(o);
+        const blocked = into ? inBlocked : outBlocked;
+        const cnt = TAKES.filter(([k]) => tk[k] && tval(from, k)).length;
+        const fromAudio = from.audio;
+        html += `<div class="dir" role="group" aria-label="Merge direction"><button data-act="mdir" data-v="in" aria-pressed="${into}" ${inBlocked ? `disabled title="Only a draft can be merged away — “${esc(o.text)}” is ready"` : ''}>Into this note</button><button data-act="mdir" data-v="out" aria-pressed="${!into}" ${outBlocked ? 'disabled title="Only a draft can be merged away — this note is ready"' : ''}>This note into “${esc(o.text)}”</button></div>
+          ${outBlocked ? '<div class="dirwhy">Only a draft can be merged away — this note is ready, so it can only absorb.</div>' : ''}
+          ${inBlocked ? `<div class="dirwhy">Only a draft can be merged away — “${esc(o.text)}” is ready, so it can only absorb this note.</div>` : ''}
+          <div class="dirnote">${into ? `<b>${esc(keep.text)}</b> survives. Take from <b>${esc(o.text)}</b>, which is then deleted.` : `<b>${esc(o.text)}</b> survives. Take from <b>${esc(from.text)}</b> (this note), which is then deleted.`}</div>
+          <div class="takes">${TAKES.map(([k, l]) => {
+    const v = tval(from, k); const on = !!tk[k] && !!v;
+    const key = `take:${o.id}`;
+    return `<div class="take ${v ? '' : 'dis'}"><span class="k">${l}</span>${k === 'audio' && v ? `<button class="pl" data-act="cplay" data-key="${key}" data-url="${esc(blobUrl(fromAudio))}" aria-label="Play ${esc(from.text)} audio">${ic(S.playKey === key ? 'pause' : 'play')}</button>` : ''}<span class="v ${k === 'ipa' ? 'ipa' : ''}" ${v ? `data-act="take" data-v="${k}"` : ''}>${v ? esc(v) : '<span style="color:var(--faint)">empty</span>'}</span><button class="tg" ${v ? `data-act="take" data-v="${k}"` : 'disabled'} aria-pressed="${on}" aria-label="Take ${l}"></button></div>`;
+  }).join('')}
+          <button class="pri mergebtn" data-act="merge" data-v="${esc(o.id)}" ${blocked || sh.busy ? 'disabled' : ''}>${sh.busy ? 'Merging…' : `Merge ${cnt} field${cnt === 1 ? '' : 's'} · keep “${esc(keep.text)}”`}</button></div>`;
+      }
+      return `${html}</div>`;
+    }).join('');
+    return sheetShell('Similar notes', 'Similar notes', `<div class="shb">${body || '<div class="none">No similar notes</div>'}<div class="shf">Taking IPA replaces the survivor's transcription. Translations and examples are added.</div></div>`);
+  }
 
-  // pos first: inflections' own prefill needs a shape to fill into, and
-  // that shape doesn't exist until pos is set (same ordering as the
-  // editor's whole-paradigm apply).
-  if (await runTriagePrefillStep(prefillTriagePos)) filledCount += 1;
-  if (await runTriagePrefillStep(prefillTriageTranscription, sourceLang)) filledCount += 1;
-  if (await runTriagePrefillStep(prefillTriageTranslations)) filledCount += 1;
-  if (await runTriagePrefillStep(prefillTriageInflections)) filledCount += 1;
-  if (await runTriagePrefillStep(prefillTriageExamples)) filledCount += 1;
-  if (await runTriagePrefillStep(prefillTriageAudio, sourceLang)) filledCount += 1;
+  /* ----------------------------------------------- notes list + filters -- */
+  function fToggle(f, v) {
+    const D = FDEF[f];
+    if (D.single) N.F[f] = (N.F[f] === v && v !== 'any') ? 'any' : v;
+    else { const a = N.F[f]; const i = a.indexOf(v); if (i < 0) a.push(v); else a.splice(i, 1); }
+  }
+  function activeChips() {
+    const out = [];
+    Object.keys(FDEF).forEach((f) => {
+      const D = FDEF[f];
+      if (D.single) { if (N.F[f] !== 'any') out.push([f, N.F[f], D.o.find((o) => o[0] === N.F[f])[1].toLowerCase()]); } else N.F[f].forEach((v) => out.push([f, v, D.o.find((o) => o[0] === v)[1].toLowerCase()]));
+    });
+    return out;
+  }
+  function notesFilterParams() {
+    const F = N.F; const p = {};
+    if (F.status !== 'any') p.status = F.status;
+    if (F.type.length) p.type = F.type.join(',');
+    if (F.pos.length) p.pos = F.pos.join(',');
+    if (F.origin.length) p.origin = F.origin.join(',');
+    if (F.audio !== 'any') p.audio = F.audio;
+    if (F.missing.length) p.missing = F.missing.join(',');
+    if (F.within !== 'any') p.updated_within = F.within;
+    if (N.q.trim()) p.q = N.q.trim();
+    return p;
+  }
+  let notesTimer;
+  function fetchNotesSoon() { clearTimeout(notesTimer); notesTimer = setTimeout(fetchNotes, 250); }
+  async function fetchNotes() {
+    const seq = ++N.seq;
+    N.loading = true;
+    scheduleRender();
+    const r = await api(`/api/notes/authoring${qs({ ...notesFilterParams(), sort: SORT_API[N.sort], limit: N.limit, offset: N.offset })}`);
+    if (seq !== N.seq) return;
+    N.loading = false;
+    if (r.status === 200) { N.rows = r.body.notes || []; N.total = r.body.total || 0; N.error = null; } else { N.rows = []; N.total = 0; N.error = errMsg(r, 'Could not load notes'); }
+    scheduleRender();
+  }
+  function rel(iso) {
+    if (!iso) return '';
+    const m = (Date.now() - new Date(iso).getTime()) / 60000;
+    if (m < 1) return 'now';
+    if (m < 60) return `${Math.round(m)} min`;
+    const h = m / 60;
+    if (h < 24) return `${Math.round(h)} h`;
+    const d = h / 24;
+    if (d < 7) return `${Math.round(d)} d`;
+    if (d < 30) return `${Math.round(d / 7)} w`;
+    if (d < 365) return `${Math.round(d / 30)} mo`;
+    return `${Math.round(d / 365)} y`;
+  }
+  function filterSheet() {
+    const sec = (f) => {
+      const D = FDEF[f];
+      return `<div class="fsec"><span class="lb">${D.l}</span><div class="chips">${D.o.map(([v, l]) => { const on = D.single ? N.F[f] === v : N.F[f].includes(v); return `<button class="fc" data-act="fset" data-k="${f}" data-v="${v}" aria-pressed="${on}">${l}</button>`; }).join('')}</div></div>`;
+    };
+    const inner = `<div class="shb">${Object.keys(FDEF).map(sec).join('')}
+      <div class="fsec"><span class="lb">Sort by</span><div class="chips">${SORTS.map(([v, l]) => `<button class="fc" data-act="sortset" data-v="${v}" aria-pressed="${N.sort === v}">${l}</button>`).join('')}</div></div></div>`;
+    const n = N.total;
+    return sheetShell('Filters', 'Filters', inner, `<div class="shfoot"><button class="sec" data-act="freset">Reset</button><button class="pri" data-act="close">${N.loading ? 'Counting…' : `Show ${n} note${n === 1 ? '' : 's'}`}</button></div>`);
+  }
+  function notesPage() {
+    const d = S.vp === 'desktop'; const L = N.rows; const A = activeChips();
+    const sortL = SORTS.find((s) => s[0] === N.sort)[1];
+    const chips = A.length ? `<div class="achips">${A.map(([f, v, l]) => `<button class="ac" data-act="frm" data-k="${f}" data-v="${v}" aria-label="Remove filter ${esc(l)}">${esc(l)} ${ic('x')}</button>`).join('')}<button class="clr" data-act="freset">Clear all</button></div>` : '';
+    const sub = (n) => [n.type, n.pos, n.translations && n.translations[0] && n.translations[0].text, rel(n.updated_at)].filter(Boolean).map(esc).join(' · ');
+    const pct = (n) => (n.completeness && n.completeness.applicable ? Math.round(n.completeness.filled / n.completeness.applicable * 100) : 0);
+    let rows;
+    if (N.error) rows = `<div class="nores">${esc(N.error)}</div>`;
+    else if (!L.length) rows = `<div class="nores">${N.loading ? 'Loading…' : (N.total ? 'No notes on this page — the filters changed under it.' : 'No notes match these filters.')}</div>`;
+    else if (d) {
+      rows = `<div class="tblw"><table class="tbl"><thead><tr><th>Text</th><th>Type</th><th>Part of speech</th><th>Translation</th><th>Origin</th><th>Status</th><th>Audio</th><th>Complete</th><th>Updated</th></tr></thead><tbody>
+      ${L.map((n) => `<tr data-act="open" data-v="${esc(n.id)}" tabindex="0"><td>${esc(n.text)}</td><td>${esc(n.type)}</td><td>${n.pos ? esc(n.pos) : '<span style="color:var(--faint)">—</span>'}</td><td>${esc(n.translations && n.translations[0] ? n.translations[0].text : '')}</td><td>${esc(n.origin)}</td><td><span class="st ${n.status}">${n.status}</span></td><td style="color:var(--faint)">${n.audio_blob ? ic('snd', 's') : '—'}</td><td><span class="cbar" title="${n.completeness ? `${n.completeness.filled}/${n.completeness.applicable}` : ''}"><i style="width:${pct(n)}%"></i></span></td><td class="num">${esc(rel(n.updated_at))}</td></tr>`).join('')}</tbody></table></div>`;
+    } else {
+      rows = `<div class="nlist">${L.map((n) => `<button class="nrow" data-act="open" data-v="${esc(n.id)}"><div class="ntop"><span class="nhw">${esc(n.text)}</span><span class="ngl"><span class="${n.audio_blob ? '' : 'off'}" title="${n.audio_blob ? 'has audio' : 'no audio'}">${ic('snd')}</span><span class="sdot ${n.status}" title="${n.status}"></span></span></div><div class="nsub">${sub(n)}</div></button>`).join('')}</div>`;
+    }
+    const fb = d ? `<div class="fbar">${Object.keys(FDEF).map((f) => { const D = FDEF[f]; const c = D.single ? (N.F[f] !== 'any' ? 1 : 0) : N.F[f].length; return pickBtn(`f:${f}`, `${D.l}${c ? ` <b>${D.single ? D.o.find((o) => o[0] === N.F[f])[1] : c}</b>` : ''} ${ic('caret')}`, `fbx${c ? ' on' : ''}`); }).join('')}<span class="sp"></span>${pickBtn('sort', `${ic('sort')} ${sortL} ${ic('caret')}`, 'fbx')}</div>` : '';
+    const from = N.total ? N.offset + 1 : 0; const to = Math.min(N.offset + N.limit, N.total);
+    const page = Math.floor(N.offset / N.limit) + 1; const pages = Math.max(1, Math.ceil(N.total / N.limit));
+    return `<div class="wrap"><div class="ph"><h1>Notes</h1><span class="n">${N.total}${N.all !== null ? ` of ${N.all}` : ''}</span><span class="sp"></span>
+      ${d ? '<button class="btn-s" data-act="triage-these">Triage these</button>' : ''}<a class="btn-p" href="#/new-note">${ic('plus')} New note</a></div>
+      <div class="srch"><label class="box">${ic('search')}<input class="in" id="srch" data-f="search" placeholder="Search text or translation" value="${esc(N.q)}"></label>
+        ${d ? '' : `<button class="fbtn" data-act="fsheet">${ic('filter')} Filters ${A.length ? `<b>${A.length}</b>` : ''}</button>`}</div>
+      ${fb}${chips}
+      ${d ? '' : `<div class="lmeta"><span>${N.total} note${N.total === 1 ? '' : 's'}</span><span class="sp"></span>${pickBtn('sort', `${ic('sort')} ${sortL} ${ic('caret')}`, 'sortb')}</div>`}
+      ${rows}
+      ${!d && (A.length || N.q.trim()) ? `<div style="padding-top:12px"><button class="btn-s" data-act="triage-these">Triage these ${N.total}</button></div>` : ''}
+      <div class="pager"><button data-act="page" data-v="-1" aria-label="Previous page" ${page <= 1 ? 'disabled' : ''}>‹</button><span class="pg">${page}</span><button data-act="page" data-v="1" aria-label="Next page" ${page >= pages ? 'disabled' : ''}>›</button><span>${from}–${to} of ${N.total}</span></div></div>`;
+  }
 
-  syncSuggestQueries('t');
-  if (filledCount > 0) enrichToast(`Prefilled ${filledCount} field${filledCount === 1 ? '' : 's'}`);
-  updateTriageCompletionStatus();
-}
+  /* ---------------------------------------------------------- settings -- */
+  function settingsPage() {
+    const s = settings();
+    if (!S.settings) return '<div class="wrap"><div class="ph"><h1>Settings</h1></div><div class="loading">Loading…</div></div>';
+    const seg = (key, opts) => `<div class="seg">${opts.map(([v, l]) => `<button data-act="set" data-k="${key}" data-v="${v}" aria-pressed="${s[key] === v}">${l}</button>`).join('')}</div>`;
+    const step = (key) => `<div class="stepper"><button data-act="step" data-k="${key}" data-v="-1" aria-label="Fewer">−</button><span>${s[key]}</span><button data-act="step" data-k="${key}" data-v="1" aria-label="More">+</button></div>`;
+    const custom = s.value_color_custom || '#c2185b';
+    const providers = s.providers || {};
+    return `<div class="wrap"><div class="ph"><h1>Settings</h1></div><div class="sets">
+      <section class="sg2"><h2>Appearance</h2>
+        <div class="si"><div class="t">Theme<small>Auto follows the device</small></div>${seg('theme', [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']])}</div>
+        <div class="si"><div class="t">Value colour<small>the colour of everything you type</small></div><div class="swr">${[['blue', '#0b5cff'], ['teal', '#00897b'], ['violet', '#7c3aed'], ['orange', '#d9480f']].map(([k, c]) => `<button class="sw" data-act="set" data-k="value_color" data-v="${k}" aria-pressed="${s.value_color === k}" aria-label="${k}" title="${k}" style="--c:${c}"></button>`).join('')}<label class="sw swc" title="Custom" aria-pressed="${s.value_color === 'custom'}" style="--c:${esc(custom)}"><input type="color" id="s_valc" data-f="valc" value="${esc(custom)}" aria-label="Custom value colour"></label></div></div>
+        <div class="si"><div class="t" style="flex:1 1 100%"><small>Preview</small><span style="color:var(--val);font-size:16px">komme i vei · get going</span></div></div></section>
+      <section class="sg2"><h2>Triage prefilling</h2>
+        <div class="si"><div class="t">Run providers<small>for every empty field</small></div>${seg('prefill_timing', [['on_open', 'On open'], ['on_demand', 'On Prefill']])}</div>
+        <div class="si"><div class="t">Leaving a note<small>Send to back, Skip, Previous</small></div>${seg('triage_navigate_save', [['autosave', 'Autosave'], ['manual', 'Manual']])}</div></section>
+      <section class="sg2"><h2>Provider order</h2><p class="hint">Drag to reorder. The first enabled provider prefills; suggestion sheets list them in this order.</p>
+        ${SETTINGS_KINDS.map(([k, label]) => {
+    const info = providers[k] || { order: [], disabled: [] };
+    const hint = k === 'tts' ? '<small>forvo and filmot open externally</small>' : k === 'inflections' ? '<small>also answers part of speech</small>' : '';
+    return `<div class="pk"><div class="kh">${label}${hint}</div>
+          ${info.order.length ? `<ul class="plist" data-kind="${k}">${info.order.map((p, i) => { const off = (info.disabled || []).includes(p); return `<li data-p="${esc(p)}" class="${off ? 'off' : ''}"><span class="h" tabindex="0" role="button" aria-label="Move ${esc(p)}">${ic('drag')}</span><span class="o">${i + 1}</span><span class="nm">${esc(p)}</span>${LINKP.includes(p) ? '<span class="lk">link</span>' : ''}<button class="tg" data-act="poff" data-k="${k}" data-v="${esc(p)}" aria-pressed="${!off}" aria-label="Enable ${esc(p)}"></button></li>`; }).join('')}</ul>` : '<div class="nopara">No providers — smia did not list any for this kind.</div>'}</div>`;
+  }).join('')}</section>
+      <section class="sg2"><h2>Lookups</h2>
+        <div class="si"><div class="t">Query starts prefilled<small>per-provider queries start from the shared one</small></div><button class="tg" data-act="qpre" aria-pressed="${s.override_prefill !== false}" aria-label="Query starts prefilled"></button></div>
+        <div class="si"><div class="t">Translation languages</div><input class="txt-in" id="s_langs" data-f="langs" value="${esc((s.default_target_langs || []).join(', '))}" aria-label="Translation languages"></div></section>
+      <section class="sg2"><h2>Examples prefill</h2>
+        <div class="si"><div class="t">Sentences to prefill</div>${step('examples_count')}</div>
+        <div class="si"><div class="t">Providers to try</div>${step('examples_max_providers')}</div></section>
+    </div></div>`;
+  }
+
+  /* ----------------------------------------------------------- grammar -- */
+  function grammarPage() {
+    if (S.id) {
+      if (G.loading || (!G.rule && !G.isNew)) return `<div class="wrap"><a class="back" href="#/grammar">${ic('back')} Grammar</a><div class="loading">${G.loading ? 'Loading…' : 'This rule does not exist.'}</div></div>`;
+      const usedBy = G.used;
+      return `<div class="wrap"><a class="back" href="#/grammar">${ic('back')} Grammar</a><div class="gdet" style="padding-top:10px">
+        <textarea class="ttl" id="g_t" data-f="gtitle" rows="1" aria-label="Title" placeholder="Rule title">${esc(G.title)}</textarea>
+        <div class="f"><div class="fl"><label for="g_b">Explanation</label><span class="grow"></span><button class="pqb" data-act="gedit">${G.edit ? 'Show rendered' : `${ic('pen', 's')} Edit HTML`}</button></div>${G.edit ? `<textarea class="in htmlsrc" id="g_b" rows="8" data-f="ghtml" placeholder="<p>…</p>">${esc(G.html)}</textarea>` : `<div class="rhtml">${sanitizeHtml(G.html) || '<span class="nopara">No explanation yet</span>'}</div>`}</div>
+        ${G.isNew ? '' : `<div class="f"><div class="fl"><span class="lb">Used by ${usedBy.length} note${usedBy.length === 1 ? '' : 's'}</span></div><div class="linked">${usedBy.map((n) => `<a class="chip" href="#/notes/${esc(n.id)}">${esc(n.text)}</a>`).join('') || '<span class="nopara">No notes yet</span>'}</div></div>`}
+        <div style="display:flex;gap:10px;padding-top:8px">${G.isNew ? '' : '<button class="btn-s" data-act="grdel" style="color:var(--danger)">Delete</button>'}<span style="flex:1"></span><button class="btn-p" data-act="grsave">${G.isNew ? 'Create rule' : 'Save rule'}</button></div></div></div>`;
+    }
+    const list = G.list;
+    return `<div class="wrap"><div class="ph"><h1>Grammar</h1><span class="n">${list ? `${list.length} rule${list.length === 1 ? '' : 's'}` : ''}</span><span class="sp"></span><a class="btn-p" href="#/grammar/new">${ic('plus')} New rule</a></div>
+      <div class="glist">${list ? (list.map((r) => `<a class="grow2" href="#/grammar/${r.id}" style="color:inherit;text-decoration:none"><b>${esc(r.title)}</b><small>${r.usage_count} note${r.usage_count === 1 ? '' : 's'}</small></a>`).join('') || '<div class="nores">No grammar rules yet.</div>') : '<div class="loading">Loading…</div>'}</div></div>`;
+  }
+
+  /* -------------------------------------------------------- queue sheet -- */
+  const QUEUE_SORT_LABELS = [['updated_asc', 'Oldest updated'], ['updated_desc', 'Newest updated'], ['created_asc', 'Oldest created'], ['created_desc', 'Newest created'], ['text_asc', 'A–Z'], ['text_desc', 'Z–A'], ['complete_asc', 'Least complete'], ['complete_desc', 'Most complete']];
+  const PRESENCE_FIELDS = [['audio_blob', 'Audio'], ['transcription', 'IPA'], ['inflections', 'Inflections'], ['examples', 'Examples'], ['translations', 'Translations'], ['lemma', 'Lemma']];
+  function openQueueEditor(asNew) {
+    const q = activeQueue();
+    const isNew = asNew || !q || q.builtin || q.adhoc;
+    S.sheet = {
+      kind: 'queue', anim: true,
+      qe: { id: q && !isNew ? q.id : null, isNew, builtin: !!(q && q.builtin), name: q && !q.builtin ? (q.name || '') : '', filters: { ...((q && q.filters) || {}) }, sort: (q && q.sort) || 'updated_asc' },
+    };
+  }
+  function queueSheet() {
+    const qe = S.sheet.qe; const f = qe.filters;
+    const multi = (key) => String(f[key] || '').split(',').map((x) => x.trim()).filter(Boolean);
+    const chips = (key, opts, single) => `<div class="chips">${opts.map(([v, l]) => {
+      const on = single ? String(f[key] || '') === v : multi(key).includes(v);
+      return `<button class="fc" data-act="qset" data-k="${key}" data-v="${esc(v)}" data-single="${single ? 1 : ''}" aria-pressed="${on}">${esc(l)}</button>`;
+    }).join('')}</div>`;
+    const sec = (label, html) => `<div class="fsec"><span class="lb">${label}</span>${html}</div>`;
+    const inner = `<div class="shb">
+      ${sec('Name', `<input class="in qname" data-f="qname" value="${esc(qe.name)}" placeholder="Name this queue" aria-label="Queue name">`)}
+      ${qe.builtin && !qe.isNew ? '' : ''}
+      ${sec('Status', chips('status', [['', 'Any'], ['draft', 'Draft'], ['ready', 'Ready']], true))}
+      ${sec('Type', chips('type', TYPES.map((t) => [t, t])))}
+      ${sec('Origin', chips('origin', [['manual', 'Manual'], ['capture', 'Capture'], ['import', 'Import']]))}
+      ${sec('Part of speech', chips('pos', POS.map((t) => [t, t])))}
+      ${sec('Source language', chips('source_lang', [['', 'Any'], ['no', 'no'], ['de', 'de'], ['en', 'en']], true))}
+      ${sec('Updated since', chips('updated_since', [['', 'Any time'], ['24h', '24 hours'], ['7d', '7 days'], ['30d', '30 days']], true))}
+      ${PRESENCE_FIELDS.map(([key, label]) => sec(label, chips(`${key}_presence`, [['', 'Any'], ['missing', 'Missing'], ['has', 'Has']], true))).join('')}
+      ${sec('Text search', `<input class="in" data-f="qq" value="${esc(f.q || '')}" placeholder="Text, lemma or translation" aria-label="Text search">`)}
+      ${sec('Order the belt by', `<div class="chips">${QUEUE_SORT_LABELS.map(([v, l]) => `<button class="fc" data-act="qsort" data-v="${v}" aria-pressed="${qe.sort === v}">${l}</button>`).join('')}</div>`)}
+      <div class="shf">${qe.isNew ? (activeQueue() && activeQueue().builtin ? 'A built-in queue cannot be edited — this saves a new queue.' : 'Saved as a new queue.') : 'The order is stored with the queue, not globally.'}</div></div>`;
+    const foot = `<div class="shfoot">${qe.isNew ? '<button class="sec" data-act="close">Cancel</button>' : '<button class="sec" data-act="qdel" style="color:var(--danger)">Delete queue</button>'}<button class="pri" data-act="qsave">${qe.isNew ? 'Save as new queue' : 'Save queue'}</button></div>`;
+    return sheetShell('Queue', qe.isNew ? 'New queue' : 'Edit queue', inner, foot);
+  }
+
+  /* ------------------------------------------------------- main render -- */
+  const editorCtx = () => (['triage', 'note', 'new'].includes(S.page) ? S.page : null);
+  function captureFocus() {
+    const el = document.activeElement;
+    if (!el || !app.contains(el) || !['INPUT', 'TEXTAREA'].includes(el.tagName)) return null;
+    let sel = null;
+    if (el.id) sel = `#${CSS.escape(el.id)}`;
+    else if (el.dataset.f) {
+      sel = `[data-f="${el.dataset.f}"]`;
+      ['i', 'k', 'p'].forEach((a) => { if (el.dataset[a] !== undefined) sel += `[data-${a}="${CSS.escape(el.dataset[a])}"]`; });
+    }
+    if (!sel) return null;
+    let start = null; let end = null;
+    try { start = el.selectionStart; end = el.selectionEnd; } catch { /* color inputs */ }
+    return { sel, start, end };
+  }
+  function restoreFocus(fc) {
+    if (!fc) return;
+    const el = app.querySelector(fc.sel);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    try { if (fc.start !== null) el.setSelectionRange(fc.start, fc.end); } catch { /* ignore */ }
+  }
+  let renderQueued = false;
+  function scheduleRender() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => { renderQueued = false; render(); });
+  }
+  function render(opts = {}) {
+    document.documentElement.classList.toggle('vp-phone', S.vp === 'phone');
+    document.documentElement.classList.toggle('vp-desktop', S.vp === 'desktop');
+    const sc = app.querySelector('.scroll'); const st = (!opts.top && sc) ? sc.scrollTop : 0;
+    const shb = app.querySelector('.shb'); const shst = shb ? shb.scrollTop : 0;
+    const fc = opts.top ? null : captureFocus();
+    const ctx = editorCtx();
+    const navAt = { triage: 'triage', note: 'notes', new: 'notes', notes: 'notes', settings: 'settings', grammar: 'grammar' }[S.page];
+    const top = `<div class="wrap"><div class="top"><a class="wm" href="#/notes">stabbur<i>.</i></a><nav class="nav">${NAV.map(([k, l]) => `<a href="#/${k}" ${navAt === k ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav></div></div>`;
+    const main = ctx ? editorPage(ctx) : S.page === 'notes' ? notesPage() : S.page === 'settings' ? settingsPage() : grammarPage();
+    app.innerHTML = `<div class="scroll" id="scroll">${top}${main}</div>${ctx && E ? bar(ctx) : ''}${pop()}${sheet()}${menuHtml()}`;
+    app.appendChild(toastEl);
+    app.querySelector('.scroll').scrollTop = st;
+    const nb = app.querySelector('.shb');
+    if (nb && S.sheet && !S.sheet.anim) nb.scrollTop = shst;
+    if (S.sheet) S.sheet.anim = false; // the open animation runs once, on the first render only
+    autosize(); bindDrag(); bindWave(); restoreFocus(fc);
+    document.title = ctx && E ? `${E.f.text || 'New note'} — stabbur` : `${({ notes: 'Notes', settings: 'Settings', grammar: 'Grammar', triage: 'Triage', note: 'Note', new: 'New note' })[S.page] || 'stabbur'} — stabbur`;
+  }
+  function autosize() {
+    app.querySelectorAll('textarea.in,textarea.ttl').forEach((t) => { t.style.height = 'auto'; t.style.height = `${t.scrollHeight}px`; });
+    if (!CSS.supports('field-sizing', 'content')) app.querySelectorAll('textarea.hw').forEach((t) => { t.style.height = 'auto'; t.style.height = `${t.scrollHeight}px`; });
+  }
+
+  /* ----------------------------------------------------- editor actions -- */
+  // A part-of-speech change keeps what was typed into fields both shapes
+  // share; with nothing typed, a return to the stored part of speech brings
+  // the stored paradigm back.
+  function setPos(v, fromPrefill) {
+    const old = E.f.pos;
+    E.f.pos = v;
+    E.customPos = false;
+    const typed = shapeKeys(v).some((k) => hasText(E.f.inflections[k]));
+    if (!typed && E.stored && E.stored.pos === v) E.f.inflections = { ...E.f.inflections, ...normInfl(E.stored.inflections) };
+    if (!fromPrefill) delete E.prov.pos;
+    // note-triage: a changed part of speech reshapes the paradigm to a fresh
+    // set of gaps, so the triage belt re-runs the inflections walk at once.
+    if (E.ctx === 'triage' && v && v !== old && SHAPES[v]) prefillInflectionsOnly();
+  }
+  function appendTranscription(value) {
+    const current = E.f.transcription.trim();
+    if (!current) { E.f.transcription = value; return; }
+    // Already present anywhere as a contiguous run of tokens: not again.
+    const parts = current.split(/\s+/); const wanted = value.trim().split(/\s+/);
+    if (parts.some((_, i) => wanted.every((w, j) => parts[i + j] === w))) return;
+    E.f.transcription = `${current} ${value}`;
+  }
+  // The inflections "Use" is the paradigm apply: it sets the part of speech
+  // only when the note has none, then fills every field the resulting shape
+  // has (and the noun's article from its indefinite form).
+  function applyParadigm(c) {
+    const mapped = canonicalPos(c.pos);
+    if (!E.f.pos && mapped) setPos(mapped, true);
+    const keys = shapeKeys(E.f.pos);
+    let filled = 0;
+    keys.forEach((k) => { if (c.v[k] !== undefined) { E.f.inflections[k] = normalizeInflectionValue(k, String(c.v[k])); filled += 1; } });
+    if (keys.includes('article') && !hasText(E.f.inflections.article)) {
+      const art = deriveArticleToken(c.v);
+      if (art) { E.f.inflections.article = art; filled += 1; }
+    }
+    return filled;
+  }
+  function setAudio(sha, from, provName) {
+    E.f.audio_blob = sha;
+    E.f.audio_sel_ms = null;
+    E.audioFrom = from;
+    if (provName) E.prov.audio = provName;
+    loadWave(sha);
+  }
+  async function useCand(p, i) {
+    const k = S.sheet.kind; const st = E.cands[k];
+    const c = st && st.P[p] && st.P[p].list[i];
+    if (!c) return;
+    let msg = `Used from ${p}`;
+    if (k === 'pos') { setPos(c.v); }
+    else if (k === 'ipa') { if (c.asm) E.f.transcription = c.v; else { appendTranscription(c.v); msg = `Appended from ${p}`; } }
+    else if (k === 'translations') { E.f.translations.push({ lang: c.lang, text: c.v }); msg = `Added ${c.lang.toUpperCase()} translation from ${p}`; }
+    else if (k === 'examples') { E.f.examples.push(c.v); }
+    else if (k === 'inflections') { const n = applyParadigm(c); msg = n ? `${n} form${n === 1 ? '' : 's'} filled from ${p}` : `Nothing to apply from ${p}`; }
+    else if (k === 'stt') {
+      // `text` is the note's primary content: replacing a different text
+      // asks once, in place (stt-text-suggest D5), never through a dialog.
+      const key = `${p}:${i}`;
+      if (E.f.text.trim() && E.f.text.trim() !== c.v && S.sheet.confirmStt !== key) { S.sheet.confirmStt = key; render(); return; }
+      E.f.text = c.v;
+      if (!E.lemmaDirty) E.f.lemma = deriveLemmaGuess(c.v);
+    } else if (k === 'audio') {
+      S.sheet.busy = `${p}:${i}`; render();
+      const r = await api('/api/enrich/tts/use', jsonReq('POST', { sha256: c.sha }));
+      if (!S.sheet) return;
+      S.sheet.busy = null;
+      if (r.status !== 200 || !r.body || !r.body.sha256) { render(); toast(errMsg(r, 'Could not fetch that candidate’s audio')); return; }
+      setAudio(r.body.sha256, p, p);
+      E.usedSha = c.sha; E.usedBlob = r.body.sha256;
+    }
+    E.prov[k === 'stt' ? 'stt' : k] = p;
+    if (['pos', 'inflections', 'audio', 'stt'].includes(k)) S.sheet = null;
+    render();
+    toast(msg);
+  }
+
+  /* ----------------------------------------------------------- prefill -- */
+  // Fills gaps, never opinions (note-triage D5), walking the operator's
+  // provider order (D4): pos first (inflections need a shape, translations
+  // and audio are ordered by it), then IPA, translations, inflections,
+  // examples, audio — each step on its own, so one failing provider cannot
+  // take the rest down.
+  function firstWith(kind, pred = (P) => (P.list || []).filter((c) => !c.gap).length > 0) {
+    const st = E.cands[kind];
+    for (const p of kindProviders(kind).enabled) {
+      const P = st && st.P[p];
+      if (P && !P.error && pred(P)) return { p, P };
+    }
+    return null;
+  }
+  function assembleFromTokens(tokens) {
+    if (!Array.isArray(tokens) || !tokens.length) return null;
+    const parts = tokens.map((t) => {
+      const first = Array.isArray(t.candidates) && t.candidates.length ? t.candidates[0] : null;
+      return first ? (first.ipa || first.phonemic || first.phonetic || TRANSCRIPTION_GAP) : TRANSCRIPTION_GAP;
+    });
+    return parts.every((x) => x === TRANSCRIPTION_GAP) ? null : parts.join(' ');
+  }
+  const PREFILL_STEPS = {
+    async pos() {
+      if (E.f.pos || !defaultQuery('pos')) return false;
+      await ensureKind('pos');
+      const hit = firstWith('pos');
+      const mapped = hit && hit.P.list.map((c) => c.v).find(Boolean);
+      if (!mapped) return false;
+      setPos(mapped, true);
+      E.prov.pos = hit.p;
+      return true;
+    },
+    async ipa() {
+      if (E.f.transcription.trim() || !defaultQuery('ipa')) return false;
+      await ensureKind('ipa');
+      const st = E.cands.ipa;
+      for (const p of kindProviders('ipa').enabled) {
+        const P = st.P[p];
+        if (!P || P.error) continue;
+        let value = null; let assembled = false;
+        if (P.perWord) { value = P.joined || assembleFromTokens(P.tokens); assembled = !P.joined && !!value; } else if (P.list.length) value = P.list[0].v;
+        if (value) {
+          E.f.transcription = value;
+          E.prov.ipa = assembled ? `${p} (assembled)` : p;
+          return true;
+        }
+      }
+      return false;
+    },
+    async translations() {
+      if (!defaultQuery('translations')) return false;
+      const langs = (settings().default_target_langs || []).length ? settings().default_target_langs : ['en', 'de'];
+      const have = new Set(E.f.translations.filter((t) => hasText(t.text)).map((t) => (t.lang || '').toLowerCase()));
+      const missing = langs.filter((l) => !have.has(l.toLowerCase()));
+      if (!missing.length) return false;
+      await ensureKind('translations');
+      let any = false;
+      missing.forEach((lang) => {
+        const hit = firstWith('translations', (P) => (P.list || []).some((c) => c.lang === lang));
+        if (!hit) return;
+        const c = orderByPos(hit.P.list.filter((x) => x.lang === lang), E.f.pos)[0];
+        if (!c || !c.v) return;
+        E.f.translations = E.f.translations.filter((t) => hasText(t.text));
+        E.f.translations.push({ lang, text: c.v });
+        E.prov.translations = hit.p;
+        any = true;
+      });
+      return any;
+    },
+    async inflections() {
+      if (!SHAPES[E.f.pos] || !E.f.lemma.trim()) return false;
+      await ensureKind('inflections');
+      const hit = firstWith('inflections');
+      const c = hit && hit.P.list[0];
+      if (!c || !c.v) return false;
+      let any = false;
+      shapeKeys(E.f.pos).forEach((k) => {
+        if (!hasText(E.f.inflections[k]) && c.v[k]) { E.f.inflections[k] = normalizeInflectionValue(k, String(c.v[k])); any = true; }
+      });
+      if (shapeKeys(E.f.pos).includes('article') && !hasText(E.f.inflections.article)) {
+        const art = deriveArticleToken(c.v);
+        if (art) { E.f.inflections.article = art; any = true; }
+      }
+      if (any) E.prov.inflections = hit.p;
+      return any;
+    },
+    // Examples are additive: providers with no entry are skipped, and up to
+    // `examples_max_providers` of them are pooled to reach `examples_count`.
+    async examples() {
+      if (E.f.examples.some(hasText) || !defaultQuery('examples')) return false;
+      await ensureKind('examples');
+      const count = settings().examples_count || 3;
+      const maxP = settings().examples_max_providers || 1;
+      const texts = []; const usedP = [];
+      kindProviders('examples').enabled.slice(0, maxP).forEach((p) => {
+        if (texts.length >= count) return;
+        const P = E.cands.examples.P[p];
+        const add = ((P && !P.error && P.list) || []).map((c) => c.v).filter((t) => t && !texts.includes(t));
+        if (!add.length) return;
+        texts.push(...add);
+        usedP.push(p);
+      });
+      if (!texts.length) return false;
+      E.f.examples = texts.slice(0, count);
+      E.prov.examples = usedP.join(', ');
+      return true;
+    },
+    // Only a real recording (a sha256) auto-attaches; manual-link providers
+    // answer nothing and are walked past.
+    async audio() {
+      if (E.f.audio_blob || !defaultQuery('audio')) return false;
+      await ensureKind('audio');
+      const hit = firstWith('audio');
+      const c = hit && orderByPos(hit.P.list, E.f.pos)[0];
+      if (!c || !c.sha) return false;
+      const e0 = E;
+      const r = await api('/api/enrich/tts/use', jsonReq('POST', { sha256: c.sha }));
+      if (E !== e0 || r.status !== 200 || !r.body || !r.body.sha256 || E.f.audio_blob) return false;
+      setAudio(r.body.sha256, hit.p, hit.p);
+      E.usedSha = c.sha; E.usedBlob = r.body.sha256;
+      return true;
+    },
+  };
+  async function prefill() {
+    if (!E || E.prefilling) return;
+    const e0 = E;
+    E.prefilling = true; S.menu = null;
+    render();
+    // Fetch every kind in parallel up front (badges fill in as answers
+    // land); the fills then run in their fixed order.
+    ['pos', 'ipa', 'translations', 'inflections', 'examples', 'audio'].forEach((k) => { if (defaultQuery(k)) ensureKind(k); });
+    let filled = 0;
+    for (const name of ['pos', 'ipa', 'translations', 'inflections', 'examples', 'audio']) {
+      if (E !== e0) return;
+      try { if (await PREFILL_STEPS[name]()) filled += 1; } catch (err) { console.error('prefill step failed:', name, err); }
+    }
+    if (E !== e0) return;
+    E.prefilling = false;
+    render();
+    toast(filled ? `Prefilled ${filled} empty field${filled > 1 ? 's' : ''}` : 'Nothing empty to prefill');
+  }
+  async function prefillInflectionsOnly() {
+    const e0 = E;
+    try { if (await PREFILL_STEPS.inflections() && E === e0) render(); } catch (err) { console.error(err); }
+  }
+
+  /* -------------------------------------------------------------- triage -- */
+  const TRIAGE_QUEUE_PAGE = 200;
+  const TRIAGE_QUEUE_MAX = 5000;
+  function queueParams(queue) {
+    const params = { limit: TRIAGE_QUEUE_PAGE, sort: (queue && queue.sort) || 'updated_asc' };
+    Object.entries((queue && queue.filters) || {}).forEach(([k, v]) => {
+      if (v === '' || v === null || v === undefined || v === 'any') return;
+      params[k] = Array.isArray(v) ? v.join(',') : v;
+    });
+    return params;
+  }
+  async function loadQueues() {
+    const r = await api('/api/settings/triage_queues');
+    T.queues = r.status === 200 ? r.body : [];
+    if (!T.selectedId || !T.queues.some((q) => q.id === T.selectedId)) {
+      let saved = null;
+      try {
+        saved = localStorage.getItem('stabbur_triage_queue_id')
+          || (localStorage.getItem('stabbur_triage_origin') ? `builtin:${localStorage.getItem('stabbur_triage_origin')}` : null);
+      } catch { /* ignore */ }
+      T.selectedId = T.queues.some((q) => q.id === saved) ? saved : (T.queues[0] || {}).id || null;
+    }
+  }
+  async function refreshQueueCounts() {
+    await Promise.all(T.queues.map(async (q) => {
+      const r = await api(`/api/notes/authoring${qs({ ...queueParams(q), limit: 1 })}`);
+      if (r.status === 200 && typeof r.body.total === 'number') T.counts[q.id] = r.body.total;
+    }));
+    scheduleRender();
+  }
+  // The belt is a queue the operator works to the end, so every page is
+  // fetched; the backstop is reported, never silent.
+  async function loadQueue() {
+    T.loading = true; E = null; S.sheet = null;
+    render();
+    const queue = activeQueue();
+    const collected = []; let total = 0; let ok = true; let truncated = false;
+    if (queue) {
+      const base = queueParams(queue);
+      for (let offset = 0; offset < TRIAGE_QUEUE_MAX; offset += TRIAGE_QUEUE_PAGE) {
+        const r = await api(`/api/notes/authoring${qs({ ...base, offset })}`);
+        if (r.status !== 200) { ok = false; toast(errMsg(r, 'Could not load the queue')); break; }
+        collected.push(...(r.body.notes || []));
+        total = r.body.total || 0;
+        if (collected.length >= total || !(r.body.notes || []).length) break;
+        if (offset + TRIAGE_QUEUE_PAGE >= TRIAGE_QUEUE_MAX) truncated = true;
+      }
+    }
+    T.queue = ok ? collected : [];
+    T.index = 0; T.history = []; T.truncated = truncated; T.loading = false;
+    if (queue && ok && !queue.adhoc) T.counts[queue.id] = total || T.queue.length;
+    if (truncated) toast(`This queue has more than ${TRIAGE_QUEUE_MAX} notes — only the first ${TRIAGE_QUEUE_MAX} are on the belt`);
+    await showTriageNote();
+  }
+  async function showTriageNote() {
+    stopAudio();
+    if (T.index >= T.queue.length) { E = null; render(); return; }
+    const note = T.queue[T.index];
+    newEditor('triage', note);
+    // Lemma lands first, before any provider is asked — the inflections
+    // walk queries on it. Re-derived also when it is still the raw text.
+    const raw = E.f.text;
+    if (!E.f.lemma.trim() || E.f.lemma.trim() === raw.trim()) {
+      const guess = deriveLemmaGuess(raw);
+      if (guess && guess !== E.f.lemma.trim()) { E.f.lemma = guess; E.prov.lemma = 'derived from text'; }
+    }
+    render();
+    loadSimilar();
+    if ((settings().prefill_timing || 'on_open') === 'on_open') prefill();
+  }
+  const autosaveOnNavigate = () => (settings().triage_navigate_save || 'autosave') !== 'manual';
+  async function saveTriage() {
+    if (!E || !E.id) return null;
+    const r = await api(`/api/notes/${E.id}`, jsonReq('PATCH', payload(E.f, false)));
+    if (r.status !== 200) { toast(errMsg(r, 'Could not save')); return null; }
+    T.queue[T.index] = r.body;
+    return r.body;
+  }
+  async function triageAction(fn) {
+    if (T.busy || !E) return;
+    T.busy = true;
+    try { await fn(); } catch (err) { console.error(err); toast(err.message); } finally { T.busy = false; }
+  }
+  const tActions = {
+    async ready() {
+      const p = payload(E.f, false); p.status = 'ready';
+      const r = await api(`/api/notes/${E.id}`, jsonReq('PATCH', p));
+      if (r.status !== 200) { toast(errMsg(r, 'Could not save')); return; }
+      const text = E.f.text;
+      T.queue[T.index] = r.body;
+      T.history.push({ type: 'accept', index: T.index, noteId: E.id });
+      T.index += 1;
+      await showTriageNote();
+      toast(`“${text}” is ready`);
+    },
+    async skip() {
+      if (autosaveOnNavigate() && !(await saveTriage())) return;
+      T.history.push({ type: 'skip', index: T.index });
+      T.index += 1;
+      await showTriageNote();
+      toast('Skipped');
+    },
+    async back() {
+      const saved = autosaveOnNavigate() ? await saveTriage() : E.stored;
+      if (!saved) return;
+      T.history.push({ type: 'sendback', index: T.index, noteId: E.id });
+      T.queue.splice(T.index, 1);
+      T.queue.push(saved);
+      await showTriageNote();
+      toast('Sent to the back of the queue');
+    },
+    async save() {
+      const saved = await saveTriage();
+      if (saved) { rebase(saved); render(); toast('Saved'); }
+    },
+    async del() {
+      const id = E.id; const text = E.f.text;
+      const r = await api(`/api/notes/${id}`, { method: 'DELETE' });
+      if (r.status !== 204 && r.status !== 200) { toast(errMsg(r, 'Delete failed')); return; }
+      dropFromQueue([id]);
+      await showTriageNote();
+      toast(`Deleted “${text}”`);
+    },
+    async dup() {
+      const saved = isDirty() ? await saveTriage() : E.stored;
+      if (!saved) return;
+      const r = await api(`/api/notes/${saved.id}/duplicate`, { method: 'POST' });
+      if (r.status !== 201) { toast(errMsg(r, 'Could not duplicate')); return; }
+      S.copyOf[r.body.id] = saved.text;
+      T.queue.splice(T.index + 1, 0, r.body);
+      rebase(saved);
+      render();
+      toast('Duplicated — the copy is next in the queue');
+    },
+  };
+  // Reverses the most recent accept / skip / send-to-back (delete is not
+  // undoable). The card being left is autosaved first when the setting says so.
+  async function goPrevious() {
+    const entry = T.history.pop();
+    if (!entry) { toast('Nothing to go back to'); return; }
+    if (E && autosaveOnNavigate()) await saveTriage();
+    if (entry.type === 'sendback') {
+      const idx = T.queue.findIndex((n) => n.id === entry.noteId);
+      if (idx !== -1) { const [n] = T.queue.splice(idx, 1); T.queue.splice(entry.index, 0, n); }
+    } else if (entry.type === 'accept') {
+      const r = await api(`/api/notes/${entry.noteId}`, jsonReq('PATCH', { status: 'draft' }));
+      if (r.status === 200) { const idx = T.queue.findIndex((n) => n.id === entry.noteId); if (idx !== -1) T.queue[idx] = r.body; }
+      T.index = entry.index;
+    } else {
+      T.index = entry.index;
+    }
+    T.index = Math.min(T.index, Math.max(0, T.queue.length - 1));
+    await showTriageNote();
+    toast('Back to previous');
+  }
+  // The merge 404 fix (D10): a note that no longer exists leaves the
+  // in-memory queue, and so does any history entry that points at it.
+  function dropFromQueue(ids) {
+    ids.forEach((id) => {
+      const idx = T.queue.findIndex((n) => n.id === id);
+      if (idx === -1) return;
+      T.queue.splice(idx, 1);
+      if (idx < T.index) T.index -= 1;
+      T.history = T.history.filter((h) => h.noteId !== id).map((h) => (h.index > idx ? { ...h, index: h.index - 1 } : h));
+    });
+  }
+  async function saveQueueFromSheet() {
+    const qe = S.sheet.qe;
+    if (!qe.name.trim()) { toast('A queue needs a name'); return; }
+    const filters = {};
+    Object.entries(qe.filters).forEach(([k, v]) => { if (v !== '' && v !== null && v !== undefined) filters[k] = v; });
+    const body = { name: qe.name.trim(), filters, sort: qe.sort };
+    const r = qe.isNew ? await api('/api/settings/triage_queues', jsonReq('POST', body)) : await api(`/api/settings/triage_queues/${qe.id}`, jsonReq('PATCH', body));
+    if (r.status !== 200 && r.status !== 201) { toast(errMsg(r, 'Could not save the queue')); return; }
+    T.queues = r.body; T.adhoc = null;
+    if (qe.isNew) { const saved = r.body.filter((q) => !q.builtin).slice(-1)[0]; if (saved) T.selectedId = saved.id; }
+    try { localStorage.setItem('stabbur_triage_queue_id', T.selectedId); } catch { /* ignore */ }
+    S.sheet = null;
+    await loadQueue();
+    refreshQueueCounts();
+    toast('Queue saved');
+  }
+
+  /* ------------------------------------------------------ note actions -- */
+  async function saveNote() {
+    if (!isDirty()) { toast('Saved'); return; }
+    const r = await api(`/api/notes/${E.id}`, jsonReq('PATCH', payload(E.f, true)));
+    if (r.status !== 200) { toast(errMsg(r, 'Could not save')); return; }
+    rebase(r.body);
+    render();
+    toast('Saved');
+  }
+  async function duplicateNote() {
+    if (isDirty()) {
+      const r = await api(`/api/notes/${E.id}`, jsonReq('PATCH', payload(E.f, true)));
+      if (r.status !== 200) { toast(errMsg(r, 'Could not save before duplicating')); return; }
+      rebase(r.body);
+    }
+    const r = await api(`/api/notes/${E.id}/duplicate`, { method: 'POST' });
+    if (r.status !== 201) { toast(errMsg(r, 'Could not duplicate')); return; }
+    S.copyOf[r.body.id] = E.f.text;
+    S.pendingToast = 'Duplicated — opened copy';
+    location.hash = `#/notes/${r.body.id}`;
+  }
+  async function deleteNote() {
+    const text = E.f.text;
+    const r = await api(`/api/notes/${E.id}`, { method: 'DELETE' });
+    if (r.status !== 204 && r.status !== 200) { toast(errMsg(r, 'Delete failed')); return; }
+    S.pendingToast = `Deleted “${text}”`;
+    location.hash = '#/notes';
+  }
+  async function createNote(status) {
+    const p = payload(E.f, false);
+    p.status = status;
+    const r = await api('/api/notes', jsonReq('POST', p));
+    if (r.status !== 201) { toast(errMsg(r, 'Could not create the note')); return; }
+    S.pendingToast = status === 'ready' ? 'Saved as ready' : 'Saved as draft';
+    location.hash = `#/notes/${r.body.id}`;
+  }
+  async function doMerge(otherId) {
+    const o = E.sim.find((m) => m.id === otherId);
+    if (!o || S.sheet.busy) return;
+    const into = S.sheet.dir !== 'out';
+    const tk = S.sheet.take || {};
+    const sourceId = into ? o.id : E.id;
+    const fromVals = into ? valsOfMatch(o) : valsOfForm();
+    const take = {};
+    TAKES.forEach(([k]) => { if (tk[k] && tval(fromVals, k)) TAKE_FIELDS[k].forEach((field) => { take[field] = sourceId; }); });
+    const n = TAKES.filter(([k]) => tk[k] && tval(fromVals, k)).length;
+    const body = into
+      ? { survivor_id: E.id, absorbed_ids: [o.id], take, survivor_values: payload(E.f, E.ctx === 'note') }
+      : { survivor_id: o.id, absorbed_ids: [E.id], take, absorbed_values: { [E.id]: payload(E.f, E.ctx === 'note') } };
+    S.sheet.busy = true; render();
+    const r = await api('/api/notes/merge', jsonReq('POST', body));
+    if (!S.sheet) return;
+    S.sheet.busy = false;
+    if (r.status !== 200) { render(); toast(errMsg(r, 'Merge failed')); return; }
+    const absorbed = r.body.absorbed_ids || body.absorbed_ids;
+    S.sheet = null;
+    if (into) {
+      if (E.ctx === 'triage') { T.queue[T.index] = r.body; dropFromQueue(absorbed); }
+      rebase(r.body);
+      E.sim = E.sim.filter((m) => !absorbed.includes(m.id));
+      render();
+      loadSimilar();
+      toast(`Merged ${n} field${n === 1 ? '' : 's'} · “${o.text}” removed`);
+      return;
+    }
+    if (E.ctx === 'triage') {
+      dropFromQueue(absorbed);
+      await showTriageNote();
+      toast(`Merged into “${o.text}” · this note removed`);
+      return;
+    }
+    S.pendingToast = `Merged into “${o.text}” · opened it`;
+    location.hash = `#/notes/${o.id}`;
+  }
+
+  /* ------------------------------------------------------ page entries -- */
+  async function enterTriage() {
+    T.loading = true; E = null;
+    render();
+    await Promise.all([loadQueues(), S.settings ? null : loadSettings(), loadRules()]);
+    if (S.page !== 'triage') return;
+    await loadQueue();
+    refreshQueueCounts();
+  }
+  async function enterNote(id) {
+    E = null; S.notFound = false;
+    render();
+    const [r] = await Promise.all([api(`/api/notes/${id}`), loadRules(), S.settings ? null : loadSettings()]);
+    if (S.page !== 'note' || S.id !== id) return;
+    if (r.status !== 200 || r.body.deleted_at) { S.notFound = true; render(); return; }
+    newEditor('note', r.body);
+    render({ top: true });
+    loadSimilar();
+  }
+  async function enterNew() {
+    await Promise.all([loadRules(), S.settings ? null : loadSettings()]);
+    if (S.page !== 'new') return;
+    newEditor('new', { type: 'word', source_lang: 'no', status: 'draft' });
+    E.simLoaded = true;
+    render({ top: true });
+  }
+  async function enterNotes() {
+    N.offset = Math.min(N.offset, N.offset);
+    render();
+    fetchNotes();
+    const r = await api('/api/notes/authoring?limit=1');
+    if (r.status === 200) { N.all = r.body.total; scheduleRender(); }
+  }
+  async function enterSettings() {
+    render();
+    await loadSettings();
+    render();
+  }
+  async function enterGrammar(id) {
+    G.edit = false; G.isNew = false; G.rule = null;
+    if (!id) {
+      G.list = null; render();
+      const r = await api('/api/grammar_rules?sort=title_asc');
+      G.list = r.status === 200 ? r.body : [];
+      render();
+      return;
+    }
+    if (id === 'new') {
+      G.isNew = true; G.edit = true; G.title = ''; G.html = ''; G.used = [];
+      render({ top: true });
+      return;
+    }
+    G.loading = true; render();
+    const [r, u] = await Promise.all([api(`/api/grammar_rules/${id}`), api(`/api/notes/authoring${qs({ grammar_rule_id: id, limit: 200 })}`)]);
+    G.loading = false;
+    if (S.page !== 'grammar' || S.id !== id) return;
+    if (r.status === 200) { G.rule = r.body; G.title = r.body.title; G.html = r.body.html; }
+    G.used = u.status === 200 ? u.body.notes || [] : [];
+    render({ top: true });
+  }
+  async function saveRule() {
+    if (!G.title.trim() || !G.html.trim()) { toast('A rule needs a title and an explanation'); return; }
+    if (G.isNew) {
+      const r = await api('/api/grammar_rules', jsonReq('POST', { title: G.title.trim(), html: G.html }));
+      if (r.status !== 201) { toast(errMsg(r, 'Could not create the rule')); return; }
+      S.rules = null;
+      S.pendingToast = 'Rule created';
+      location.hash = `#/grammar/${r.body.id}`;
+      return;
+    }
+    const r = await api(`/api/grammar_rules/${G.rule.id}`, jsonReq('PATCH', { title: G.title.trim(), html: G.html }));
+    if (r.status !== 200) { toast(errMsg(r, 'Could not save the rule')); return; }
+    G.rule = r.body; G.title = r.body.title; G.html = r.body.html;
+    S.rules = null;
+    render();
+    toast('Rule saved');
+  }
+  async function deleteRule() {
+    const r = await api(`/api/grammar_rules/${G.rule.id}`, { method: 'DELETE' });
+    if (r.status !== 204) { toast(r.status === 409 ? `${r.body.reference_count} note(s) still use this rule` : errMsg(r, 'Delete failed')); return; }
+    S.rules = null;
+    S.pendingToast = 'Rule deleted';
+    location.hash = '#/grammar';
+  }
+
+  function parseHash() {
+    const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+    if (!parts.length) return { page: 'notes' };
+    if (parts[0] === 'notes' && parts[1]) return { page: 'note', id: decodeURIComponent(parts[1]) };
+    if (parts[0] === 'new-note') return { page: 'new' };
+    if (parts[0] === 'new-grammar') return { page: 'grammar', id: 'new' };
+    if (parts[0] === 'grammar') return { page: 'grammar', id: parts[1] || null };
+    if (['triage', 'notes', 'settings'].includes(parts[0])) return { page: parts[0] };
+    return { page: 'notes' };
+  }
+  async function router() {
+    const r = parseHash();
+    stopAudio();
+    S.page = r.page; S.id = r.id || null;
+    S.sheet = null; S.menu = null; S.confirm = null; S.pick = null; S.tab = 'word';
+    if (!editorCtx()) E = null;
+    if (S.pendingToast) { toast(S.pendingToast); S.pendingToast = null; }
+    render({ top: true });
+    try {
+      if (r.page === 'triage') await enterTriage();
+      else if (r.page === 'note') await enterNote(r.id);
+      else if (r.page === 'new') await enterNew();
+      else if (r.page === 'notes') await enterNotes();
+      else if (r.page === 'settings') await enterSettings();
+      else await enterGrammar(r.id);
+    } catch (err) {
+      console.error(err);
+      toast(`Something went wrong: ${err.message}`);
+    }
+  }
+  const go = (v) => { location.hash = `#/${v === 'new' ? 'new-note' : v}`; };
+
+  /* --------------------------------------------------- pointer binding -- */
+  function bindWave() {
+    const w = app.querySelector('#wv');
+    if (!w || !E || !E.f.audio_blob) return;
+    let h = null;
+    const frac = (e) => { const r = w.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
+    const move = (e) => {
+      if (!h) return;
+      const s = selection();
+      if (!s.dur) return;
+      let { a, b } = s;
+      const fr = frac(e);
+      if (h === 'a') a = Math.min(fr, b - 0.05); else b = Math.max(fr, a + 0.05);
+      a = Math.max(0, a); b = Math.min(1, b);
+      E.f.audio_sel_ms = [Math.round(a * s.dur * 1000), Math.round(b * s.dur * 1000)];
+      const ns = selection();
+      w.innerHTML = wave(ns);
+      const rg = app.querySelector('#arng'); if (rg) rg.textContent = msRange(ns);
+      afterEdit();
+    };
+    w.addEventListener('pointerdown', (e) => {
+      const s = selection();
+      if (!s.dur) return;
+      const fr = frac(e);
+      h = Math.abs(fr - s.a) < Math.abs(fr - s.b) ? 'a' : 'b';
+      w.setPointerCapture(e.pointerId);
+      move(e);
+    });
+    w.addEventListener('pointermove', move);
+    w.addEventListener('pointerup', () => { h = null; });
+  }
+  function playSelection() {
+    if (!E || !E.f.audio_blob) return;
+    if (S.playKey === 'sel') { stopAudio(); render(); return; }
+    stopAudio();
+    const s = selection();
+    PLAYER.src = blobUrl(E.f.audio_blob);
+    const start = s.dur ? s.a * s.dur : 0; const end = s.dur ? s.b * s.dur : Infinity;
+    S.playKey = 'sel';
+    const startPlay = () => {
+      PLAYER.currentTime = start;
+      PLAYER.play().catch(() => { S.playKey = null; render(); toast('Could not play the audio'); });
+      const step = () => {
+        const p = app.querySelector('#phd');
+        if (S.playKey !== 'sel') return;
+        const t = PLAYER.currentTime;
+        if (p && s.dur) p.setAttribute('x', (t / s.dur) * 640 - 1);
+        if (t >= end || PLAYER.ended) { stopAudio(); render(); return; }
+        playRaf = requestAnimationFrame(step);
+      };
+      playRaf = requestAnimationFrame(step);
+    };
+    if (PLAYER.readyState >= 1) startPlay(); else PLAYER.addEventListener('loadedmetadata', startPlay, { once: true });
+    render();
+  }
+  // Provider order: drag by mouse or touch on the handle, or move with the
+  // arrow keys when the handle has focus. Every change is saved.
+  function saveProviderList(ul) {
+    const kind = ul.dataset.kind;
+    const items = [...ul.children];
+    const order = items.map((li) => li.dataset.p);
+    const disabled = items.filter((li) => li.classList.contains('off')).map((li) => li.dataset.p);
+    patchSettings({ providers: { [kind]: { order, disabled } } }, 'Order saved');
+  }
+  function bindDrag() {
+    app.querySelectorAll('.plist').forEach((ul) => {
+      const renumber = () => [...ul.children].forEach((li, i) => { li.querySelector('.o').textContent = i + 1; });
+      ul.querySelectorAll('.h').forEach((h) => {
+        const li = h.parentElement;
+        h.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          h.setPointerCapture(e.pointerId);
+          li.classList.add('drag');
+          const before = [...ul.children].map((x) => x.dataset.p).join();
+          const mv = (ev) => {
+            const sibs = [...ul.children].filter((x) => x !== li);
+            const after = sibs.find((s) => { const r = s.getBoundingClientRect(); return ev.clientY < r.top + r.height / 2; });
+            ul.insertBefore(li, after || null);
+            renumber();
+          };
+          const up = () => {
+            li.classList.remove('drag');
+            h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
+            if ([...ul.children].map((x) => x.dataset.p).join() !== before) saveProviderList(ul);
+          };
+          h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+        });
+        h.addEventListener('keydown', (e) => {
+          if (e.key === 'ArrowUp' && li.previousElementSibling) { ul.insertBefore(li, li.previousElementSibling); }
+          else if (e.key === 'ArrowDown' && li.nextElementSibling) { ul.insertBefore(li.nextElementSibling, li); }
+          else return;
+          e.preventDefault();
+          renumber();
+          h.focus();
+          S.refocusHandle = `${ul.dataset.kind}:${li.dataset.p}`;
+          saveProviderList(ul);
+        });
+      });
+    });
+    if (S.refocusHandle) {
+      const [kind, p] = S.refocusHandle.split(':');
+      const h = app.querySelector(`.plist[data-kind="${CSS.escape(kind)}"] li[data-p="${CSS.escape(p)}"] .h`);
+      if (h && document.activeElement !== h) h.focus({ preventScroll: true });
+    }
+  }
+
+  /* ------------------------------------------------------------ events -- */
+  async function openSuggest(kind) {
+    S.sheet = { kind, anim: true }; S.pick = null; S.menu = null;
+    const st = E.cands[kind];
+    const q = defaultQuery(kind);
+    if (!st || !st.fetched || (st.q !== q && !st.edited)) {
+      if (st) { st.pq = {}; st.pqOpen = {}; }
+      fetchKind(kind, { q });
+    }
+    render();
+  }
+  async function runReuse() {
+    const R = S.sheet.reuse || (S.sheet.reuse = { q: '' });
+    if (!R.q.trim()) { R.rows = null; render(); return; }
+    R.loading = true; render();
+    const r = await api(`/api/notes/authoring${qs({ q: R.q.trim(), audio_blob_presence: 'has', limit: 20, sort: 'updated_desc' })}`);
+    if (!S.sheet || S.sheet.reuse !== R) return;
+    R.loading = false;
+    R.rows = r.status === 200 ? (r.body.notes || []).filter((n) => !E || n.id !== E.id) : [];
+    render();
+  }
+  async function clipCapture() {
+    if (!E || S.clipBusy) return;
+    let text;
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.readText) throw new Error('unsupported');
+      text = await navigator.clipboard.readText();
+    } catch {
+      toast('Can’t read the clipboard — allow clipboard access, or use Upload file');
+      return;
+    }
+    const url = (text || '').trim();
+    if (!/^https?:\/\/\S+$/i.test(url)) { toast('Clipboard holds no URL'); return; }
+    S.clipBusy = true; render();
+    const e0 = E;
+    const r = await api('/api/enrich/manual-link', jsonReq('POST', { url }));
+    S.clipBusy = false;
+    if (E !== e0) return;
+    if (r.status !== 200 || !r.body || !r.body.sha256) { render(); toast(errMsg(r, 'Capture failed')); return; }
+    let short = url;
+    try { const u = new URL(url); short = `${u.host}/…/${u.pathname.split('/').filter(Boolean).pop() || ''}`; } catch { /* keep */ }
+    setAudio(r.body.sha256, `url · ${short}`, 'clipboard');
+    S.sheet = null;
+    render();
+    toast('Captured from clipboard');
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!app.contains(e.target)) return;
+    const b = e.target.closest('[data-act]');
+    if (!b) {
+      if (e.target.closest('a[href]')) { S.menu = S.confirm = S.pick = null; return; }
+      if (S.menu || S.confirm || S.pick) { S.menu = S.confirm = S.pick = null; render(); }
+      return;
+    }
+    if (b.disabled) return;
+    const a = b.dataset.act; const v = b.dataset.v;
+    if ((S.menu || S.confirm) && !b.closest('.pop') && !['menu', 't-del', 'n-del', 'grdel'].includes(a)) { S.menu = S.confirm = null; }
+    if (S.pick && a !== 'pickv' && a !== 'pick') S.pick = null;
+    const st = E && S.sheet && E.cands[S.sheet.kind];
+    switch (a) {
+      case 'go': go(v); break;
+      case 'tab': S.tab = v; render(); break;
+      case 'pick': if (S.pick && S.pick.k === b.dataset.pick) S.pick = null; else openPick(b); render(); break;
+      case 'pickv': {
+        const D = pickDef(S.pick.k);
+        if (D) D.set(v);
+        if (!D || !D.multi) S.pick = null;
+        render();
+        if (E && D && S.pick === null && E.customPos) app.querySelector('#f_posc')?.focus();
+        break;
+      }
+      case 'sheet': openSuggest(b.dataset.kind); break;
+      case 'close': S.sheet = null; render(); break;
+      case 'rerun': if (st) { S.sheet.spin = true; st.edited = st.q !== defaultQuery(S.sheet.kind); fetchKind(S.sheet.kind, { force: true }).then(() => { if (S.sheet) { S.sheet.spin = false; const ov = Object.keys(st.pq).filter((p) => st.pq[p] && st.pq[p].trim() && st.pq[p].trim() !== st.q).length; toast(`Ran ${kindProviders(S.sheet.kind).enabled.length} providers${ov ? ` · ${ov} with its own query` : ''}`); } }); render(); } break;
+      case 'pqedit': {
+        if (!st) break;
+        const p = b.dataset.p;
+        st.pqOpen[p] = !st.pqOpen[p];
+        if (st.pqOpen[p] && st.pq[p] === undefined && settings().override_prefill !== false) st.pq[p] = st.q;
+        render();
+        if (st.pqOpen[p]) app.querySelector(`[data-f="pq"][data-p="${CSS.escape(p)}"]`)?.focus();
+        break;
+      }
+      case 'pqreset': { if (!st) break; const p = b.dataset.p; delete st.pq[p]; st.pqOpen[p] = false; fetchKind(S.sheet.kind, { only: p }); render(); toast(`${p} uses the shared query again`); break; }
+      case 'prerun': { if (!st) break; const p = b.dataset.p; S.sheet.pspin = p; fetchKind(S.sheet.kind, { only: p, force: true }).then(() => { if (S.sheet) { S.sheet.pspin = null; toast(`Ran ${p} with “${(st.P[p] && st.P[p].query) || st.q}”`); } }); render(); break; }
+      case 'use': useCand(b.dataset.p, +b.dataset.i); break;
+      case 'cplay': previewToggle(b.dataset.key, b.dataset.url); break;
+      case 'play': playSelection(); break;
+      case 'tradd': E.f.translations.push({ lang: (settings().default_target_langs || [])[0] || 'en', text: '' }); render(); { const A = app.querySelectorAll('[data-f="trt"]'); A[A.length - 1]?.focus(); } afterEdit(); break;
+      case 'trdel': E.f.translations.splice(+b.dataset.i, 1); render(); break;
+      case 'exadd': E.f.examples.push(''); render(); { const A = app.querySelectorAll('[data-f="ex"]'); A[A.length - 1]?.focus(); } break;
+      case 'exdel': E.f.examples.splice(+b.dataset.i, 1); render(); break;
+      case 'clip': clipCapture(); break;
+      case 'upload': document.getElementById('fileIn').click(); break;
+      case 'rsearch': runReuse(); break;
+      case 'rattach': {
+        const n = S.sheet && S.sheet.reuse && (S.sheet.reuse.rows || []).find((x) => x.id === v);
+        if (!n) break;
+        setAudio(n.audio_blob, `note · ${n.text}`, `note “${n.text}”`);
+        S.sheet = null; render(); toast(`Attached the recording from “${n.text}”`);
+        break;
+      }
+      case 'similar': {
+        S.sheet = { kind: 'similar', anim: true, open: v || null, take: {}, dir: 'in' };
+        const m = v && E.sim.find((x) => x.id === v);
+        if (m) { S.sheet.dir = defaultDir(m); preTake(m); }
+        render();
+        break;
+      }
+      case 'mergeopen': {
+        if (S.sheet.open === v) S.sheet.open = null;
+        else { S.sheet.open = v; const m = E.sim.find((x) => x.id === v); S.sheet.dir = defaultDir(m); preTake(m); }
+        render();
+        break;
+      }
+      case 'mdir': S.sheet.dir = v; preTake(E.sim.find((x) => x.id === S.sheet.open)); render(); break;
+      case 'take': S.sheet.take[v] = !S.sheet.take[v]; render(); break;
+      case 'merge': doMerge(v); break;
+      case 'simopen': go(`notes/${v}`); break;
+      case 'menu': S.menu = S.menu ? null : (S.page === 'triage' ? 'triage' : 'note'); S.confirm = null; render(); break;
+      case 't-del': case 'n-del': S.menu = null; S.confirm = 'delete'; render(); break;
+      case 'grdel': S.confirm = 'rule'; render(); break;
+      case 'cancel': S.confirm = null; render(); break;
+      case 'del-yes': S.confirm = null; render(); if (S.page === 'triage') triageAction(tActions.del); else deleteNote(); break;
+      case 'grdel-yes': S.confirm = null; deleteRule(); break;
+      case 't-ready': triageAction(tActions.ready); break;
+      case 't-skip': S.menu = null; triageAction(tActions.skip); break;
+      case 't-prev': S.menu = null; if (!T.busy) { T.busy = true; goPrevious().finally(() => { T.busy = false; }); } break;
+      case 't-back': S.menu = null; triageAction(tActions.back); break;
+      case 't-save': S.menu = null; render(); triageAction(tActions.save); break;
+      case 'tdup': S.menu = null; render(); triageAction(tActions.dup); break;
+      case 'prefill': prefill(); break;
+      case 'status': E.f.status = v; render(); break;
+      case 'save': saveNote(); break;
+      case 'dup': S.menu = null; render(); duplicateNote(); break;
+      case 'new-save': createNote(v); break;
+      case 'open': go(`notes/${v}`); break;
+      case 'fsheet': S.sheet = { kind: 'filters', anim: true }; render(); break;
+      case 'fset': fToggle(b.dataset.k, v); N.offset = 0; fetchNotes(); render(); break;
+      case 'sortset': N.sort = v; N.offset = 0; fetchNotes(); render(); break;
+      case 'frm': { const f = b.dataset.k; if (FDEF[f].single) N.F[f] = 'any'; else N.F[f] = N.F[f].filter((x) => x !== v); N.offset = 0; fetchNotes(); render(); break; }
+      case 'freset': N.F = blankFilters(); N.sort = 'updated'; N.offset = 0; fetchNotes(); render(); break;
+      case 'page': N.offset = Math.max(0, N.offset + Number(v) * N.limit); fetchNotes(); app.querySelector('.scroll').scrollTop = 0; break;
+      case 'triage-these': {
+        const filters = notesFilterParams();
+        T.adhoc = { adhoc: true, name: 'These results', filters, sort: SORT_API[N.sort] };
+        go('triage');
+        S.pendingToast = 'Triaging the current filter';
+        break;
+      }
+      case 'set': patchSettings({ [b.dataset.k]: v }); break;
+      case 'step': { const k = b.dataset.k; const cur = settings()[k] || 1; const next = Math.max(1, Math.min(10, cur + Number(v))); if (next !== cur) patchSettings({ [k]: next }); break; }
+      case 'qpre': patchSettings({ override_prefill: !(settings().override_prefill !== false) }); break;
+      case 'poff': {
+        const li = b.closest('li'); li.classList.toggle('off');
+        saveProviderList(li.parentElement);
+        break;
+      }
+      case 'gedit': G.edit = !G.edit; render(); break;
+      case 'grsave': saveRule(); break;
+      case 'qset': {
+        const qe = S.sheet.qe; const k = b.dataset.k;
+        if (b.dataset.single) qe.filters[k] = v;
+        else {
+          const cur = String(qe.filters[k] || '').split(',').map((x) => x.trim()).filter(Boolean);
+          const i = cur.indexOf(v); if (i < 0) cur.push(v); else cur.splice(i, 1);
+          qe.filters[k] = cur.join(',');
+        }
+        render();
+        break;
+      }
+      case 'qsort': S.sheet.qe.sort = v; render(); break;
+      case 'qsave': saveQueueFromSheet(); break;
+      case 'qdel': {
+        const qe = S.sheet.qe;
+        if (S.sheet.confirmDel !== qe.id) { S.sheet.confirmDel = qe.id; toast('Press Delete queue again to delete it — the notes are not affected'); break; }
+        api(`/api/settings/triage_queues/${qe.id}`, { method: 'DELETE' }).then(async (r) => {
+          if (r.status !== 200) { toast(errMsg(r, 'Could not delete')); return; }
+          T.queues = r.body; T.selectedId = (r.body[0] || {}).id || null;
+          try { localStorage.setItem('stabbur_triage_queue_id', T.selectedId); } catch { /* ignore */ }
+          S.sheet = null; await loadQueue(); toast('Queue deleted');
+        });
+        break;
+      }
+      default: break;
+    }
+  });
+
+  document.addEventListener('input', (e) => {
+    const el = e.target; const f = el.dataset && el.dataset.f;
+    if (!f) return;
+    if (f === 'search') { N.q = el.value; N.offset = 0; fetchNotesSoon(); return; }
+    if (f === 'q') { const st = E && S.sheet && E.cands[S.sheet.kind]; if (st) { st.q = el.value; st.edited = true; } return; }
+    if (f === 'pq') { const st = E && S.sheet && E.cands[S.sheet.kind]; if (st) st.pq[el.dataset.p] = el.value; return; }
+    if (f === 'reuseq') { if (S.sheet) (S.sheet.reuse || (S.sheet.reuse = {})).q = el.value; return; }
+    if (f === 'valc') {
+      applyLook({ ...settings(), value_color: 'custom', value_color_custom: el.value });
+      el.parentElement.style.setProperty('--c', el.value);
+      app.querySelectorAll('.sw').forEach((x) => x.setAttribute('aria-pressed', x.classList.contains('swc')));
+      return;
+    }
+    if (f === 'ghtml') { G.html = el.value; return; }
+    if (f === 'gtitle') { G.title = el.value.replace(/\n/g, ' '); el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; return; }
+    if (f === 'qname') { if (S.sheet && S.sheet.qe) S.sheet.qe.name = el.value; return; }
+    if (f === 'qq') { if (S.sheet && S.sheet.qe) S.sheet.qe.filters.q = el.value; return; }
+    if (f === 'langs') return;
+    if (!E) return;
+    const F = E.f;
+    if (f === 'text') {
+      F.text = el.value.replace(/\n/g, ' ');
+      if (el.value !== F.text) el.value = F.text;
+      if (!E.lemmaDirty) { F.lemma = deriveLemmaGuess(F.text); const l = app.querySelector('#f_lemma'); if (l) l.value = F.lemma; }
+      if (!CSS.supports('field-sizing', 'content')) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; }
+    } else if (f === 'lemma') { F.lemma = el.value; E.lemmaDirty = true; delete E.prov.lemma; }
+    else if (f === 'ipa') { F.transcription = el.value; delete E.prov.ipa; }
+    else if (f === 'posc') { F.pos = el.value.trim(); delete E.prov.pos; }
+    else if (f === 'infl') { F.inflections[el.dataset.k] = el.value; delete E.prov.inflections; }
+    else if (f === 'trt') { F.translations[+el.dataset.i].text = el.value; delete E.prov.translations; }
+    else if (f === 'ex') { F.examples[+el.dataset.i] = el.value; el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; delete E.prov.examples; }
+    afterEdit();
+  });
+
+  document.addEventListener('change', async (e) => {
+    const el = e.target;
+    if (el.id === 'fileIn') {
+      const file = el.files[0];
+      if (!file || !E) return;
+      const form = new FormData();
+      form.append('audio', file);
+      const e0 = E;
+      toast(`Uploading ${file.name}…`);
+      let r;
+      try {
+        const resp = await fetch(`${API_BASE}/blobs`, { method: 'POST', body: form });
+        r = { status: resp.status, body: await resp.json().catch(() => ({})) };
+      } catch (err) { r = { status: 0, body: { error: err.message } }; }
+      el.value = '';
+      if (E !== e0) return;
+      if (r.status !== 200 || !r.body.sha256) { toast(errMsg(r, 'Upload failed')); return; }
+      setAudio(r.body.sha256, `upload · ${file.name}`, 'upload');
+      S.sheet = null;
+      render();
+      toast(`Uploaded ${file.name}`);
+      return;
+    }
+    const f = el.dataset && el.dataset.f;
+    if (f === 'valc') patchSettings({ value_color: 'custom', value_color_custom: el.value });
+    if (f === 'langs') {
+      const langs = el.value.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+      patchSettings({ default_target_langs: langs });
+    }
+    if (f === 'posc' && E) render();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    const t = e.target;
+    if (e.key === 'Enter' && t.classList && (t.classList.contains('hw') || t.classList.contains('ttl'))) { e.preventDefault(); return; }
+    if (e.key === 'Enter' && t.dataset) {
+      if (t.dataset.f === 'q') { e.preventDefault(); app.querySelector('[data-act="rerun"]')?.click(); return; }
+      if (t.dataset.f === 'pq') { e.preventDefault(); app.querySelector(`[data-act="prerun"][data-p="${CSS.escape(t.dataset.p)}"]`)?.click(); return; }
+      if (t.dataset.f === 'reuseq') { e.preventDefault(); runReuse(); return; }
+    }
+    if (e.key === 'Enter' && t.tagName === 'TR' && t.dataset.act === 'open') { go(`notes/${t.dataset.v}`); return; }
+    if (e.key === 'Escape' && (S.sheet || S.menu || S.confirm || S.pick)) { S.sheet = S.menu = S.confirm = S.pick = null; render(); return; }
+    // Triage keys (desktop hints, but they work wherever a keyboard is):
+    // never while typing, never under a sheet or a confirmation.
+    if (S.page !== 'triage' || !E || S.sheet || S.confirm || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement && document.activeElement.tagName)) return;
+    const map = { d: 't-del', s: 't-skip', t: 't-prev', r: 't-ready', e: 't-back', m: 't-save', l: 'prefill' };
+    const act = map[e.key.toLowerCase()];
+    if (!act) return;
+    e.preventDefault();
+    const fake = document.createElement('button');
+    fake.dataset.act = act; fake.hidden = true;
+    app.appendChild(fake); fake.click(); fake.remove();
+  });
+
+  // A scroll closes an open picker, as in the reference.
+  app.addEventListener('scroll', () => { if (S.pick) { S.pick = null; app.querySelector('.menu')?.remove(); } }, true);
+  mq.addEventListener('change', () => { S.vp = mq.matches ? 'desktop' : 'phone'; S.pick = null; render(); });
+  window.addEventListener('hashchange', router);
+  window.addEventListener('beforeunload', (e) => { if (E && E.ctx !== 'triage' && isDirty()) { e.preventDefault(); e.returnValue = ''; } });
+
+  /* -------------------------------------------------------------- boot -- */
+  loadSettings().then(router);
+})();
