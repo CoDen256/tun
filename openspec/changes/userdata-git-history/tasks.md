@@ -39,14 +39,14 @@ deletes anything. A dropped history row is gone; a large dump is merely large.
 - [x] 3.4 Update `mjolnir/DEPLOY.md` and the backup docs with the new step.
 
 ## 4. The dump exclusion (only after 2 and 3)
-- [ ] 4.1 Add `--exclude-table-data` for `userdata` and `userdata_history` to
+- [x] 4.1 Add `--exclude-table-data` for `userdata` and `userdata_history` to
       mjolnir's exclusions.
-- [ ] 4.2 Confirm the dump keeps both tables' **schema** and none of their data,
+- [x] 4.2 Confirm the dump keeps both tables' **schema** and none of their data,
       and that a restore yields a complete working database.
-- [ ] 4.3 Teach `bin/_check_backup_sources.py` the new category — excluded, with
+- [x] 4.3 Teach `bin/_check_backup_sources.py` the new category — excluded, with
       the backup repo's own export as its source — as an **assertion**, without
       weakening its ability to report a genuinely sourceless exclusion.
-- [ ] 4.4 Amend `openspec/specs/git-backup/spec.md`'s protected-table list
+- [x] 4.4 Amend `openspec/specs/git-backup/spec.md`'s protected-table list
       (already begun by `backup-console`; keep the two consistent).
 
 ## 5. The sweep (last, and irreversible)

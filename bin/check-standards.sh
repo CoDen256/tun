@@ -217,14 +217,17 @@ if [ "$HELPER_RC" -ne 0 ]; then
   unverified "backup sources: the helper did not run (exit $HELPER_RC) — smia's exclusion list is NOT verified: ${HELPER_ERR:-no output}"
 else
   sources=$(printf '%s\n' "$HELPER_OUT" | sed -n 's/^SOURCES=//p')
+  exclusions=$(printf '%s\n' "$HELPER_OUT" | sed -n 's/^EXCLUSIONS=//p')
   printf '%s\n' "$HELPER_OUT" | grep '^N:' | sed 's/^N:/     note: /'
   if printf '%s\n' "$HELPER_OUT" | grep -q '^P:'; then
-    bad "backup: smia excludes a table from the backup whose source file is not in the tree:"
+    bad "backup: a table is excluded from the backup with no source behind it:"
     printf '%s\n' "$HELPER_OUT" | grep '^P:' | sed 's/^P:/     /'
   elif [ -z "$sources" ] || [ "$sources" -eq 0 ]; then
     unverified "backup sources: zero provider paths were examined — nothing is verified"
+  elif [ -z "$exclusions" ] || [ "$exclusions" -eq 0 ]; then
+    unverified "backup sources: zero --exclude-table-data flags were found in backup/entrypoint.sh — the exclusion list is NOT verified"
   else
-    ok "backup: every provider path smia names is present, or acknowledged absent with the tables it leaves unbacked ($sources paths)"
+    ok "backup: every excluded table has a declared source ($exclusions exclusions, including the account tables covered by the repo's own userdata/ export), and every provider path smia names is present or acknowledged absent ($sources paths)"
   fi
 fi
 

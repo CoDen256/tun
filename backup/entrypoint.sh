@@ -387,9 +387,33 @@ run_backup() {
   # paradigme}, pygmalion_audio, wikipron_entry. That is every table smia
   # has, which is exactly why dumping it at all was pointless.
 
+  # userdata-git-history: `userdata` and `userdata_history` join mjolnir's
+  # exclusion list, and they are a DIFFERENT CATEGORY from job_logs /
+  # build_jobs. Those two are regenerable machine output with nothing to
+  # restore. These two hold the operator's actual learning progress, and they
+  # are excluded because the SAME DATA IS ARCHIVED BETTER somewhere else in
+  # this very repository — `userdata/<uid>.json`, written by export_userdata
+  # above, in the same run, before the same commit.
+  #
+  # `--exclude-table-data`, never `--exclude-table`: a restore still yields a
+  # COMPLETE, working database whose two account tables simply start empty and
+  # are refilled from the export (DEPLOY.md §7, and the /backup/ page's
+  # restore step 2). Dropping the schema would make the restored database
+  # broken rather than empty.
+  #
+  # `userdata_history` is not restored at all, and that is deliberate: it is a
+  # rolling 48h window feeding the console's per-PATCH tier, not an archive.
+  # It was 42.4 MB of a 44 MB dump (82 rows, ~517 KB each, measured
+  # 2026-11-20) because it appends a complete copy of the account document on
+  # every single PATCH.
+  #
+  # ORDERING, NOT A PREFERENCE: this line may only exist because the export is
+  # already written, already committed, and already demonstrated to restore.
+  # A dump that still carries the data is merely large; account data excluded
+  # with no archive behind it is gone.
   exclusions_for() {
     case "$1" in
-      mjolnir) echo "--exclude-table-data=job_logs --exclude-table-data=build_jobs" ;;
+      mjolnir) echo "--exclude-table-data=job_logs --exclude-table-data=build_jobs --exclude-table-data=userdata --exclude-table-data=userdata_history" ;;
       # smia) retired - smia is no longer dumped at all (see DATABASES).
       *)       echo "" ;;
     esac

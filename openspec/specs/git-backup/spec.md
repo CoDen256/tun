@@ -47,11 +47,22 @@ The system SHALL exclude `job_logs` and `build_jobs` from `mjolnir`'s
 Postgres dump, and SHALL NOT exclude any table referenced by them or by
 any permanent ledger table (`card_slots`, `pending_occurrences`,
 `card_content`, `minted_notes`, `occurrence_shipments`, `publications`,
-`logic_bundles`, `userdata`, `userdata_history`).
+`logic_bundles`).
+
+AMENDED by `userdata-git-history` (D167): `userdata` and `userdata_history`
+were in that protected list and no longer are. They are excluded from the
+dump — **data only, schema kept** — because the same account state is
+archived better elsewhere in the same repository, as one mutable
+`userdata/<uid>.json` per account written by the same run that commits it.
+This is not a weakening of the rule above but an application of it: a table
+may be excluded only when something else holds its data, and here something
+else does. `userdata_history` is not archived at all; it is a rolling
+48-hour window, not a backup.
 
 #### Scenario: Dumping mjolnir's database
 - **WHEN** the backup mechanism dumps `mjolnir`'s database
-- **THEN** the resulting dump contains no `job_logs` or `build_jobs` data,
+- **THEN** the resulting dump contains no `job_logs`, `build_jobs`,
+  `userdata` or `userdata_history` data, contains the schema of all four,
   and contains every row of every other table
 
 #### Scenario: Restoring the dump

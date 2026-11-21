@@ -1,5 +1,22 @@
 #!/usr/bin/env python3
-"""Does smia's backup exclusion list still rest on files that exist?
+"""Does every backup exclusion still rest on a source that exists?
+
+TWO CHECKS, ONE FILE. Both answer the same question — "is this excluded table
+backed by anything at all?" — against two different kinds of source.
+
+  A. Every `--exclude-table-data` in `backup/entrypoint.sh` must name a table
+     with a DECLARED source (below). This is the general guard: a fourth
+     sourceless exclusion cannot appear silently the way the first three did.
+  B. Every provider archive smia's bootstrap names must be in the tree, or
+     acknowledged absent with the tables it leaves unbacked.
+
+Check A was added by `userdata-git-history`, which created a genuinely new
+category: `userdata` and `userdata_history` are excluded from the dump and
+their source is neither a repository file nor a cache but THE BACKUP REPO'S
+OWN EXPORT, `userdata/<uid>.json`. That is asserted here rather than left to
+be rediscovered — and the assertion has teeth in both directions: excluding
+those tables while `backup/entrypoint.sh` contains no exporter is itself
+reported, because account data excluded with no archive behind it is gone.
 
 THE CLAIM THIS CHECKS, from `backup/entrypoint.sh` before 2026-11-14:
 
@@ -38,6 +55,31 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 BOOTSTRAP = ROOT / "smia" / "scripts" / "bootstrap.py"
 PROVIDERS = ROOT / "smia"
+ENTRYPOINT = ROOT / "backup" / "entrypoint.sh"
+
+# EVERY TABLE THE BACKUP DELIBERATELY EXCLUDES, AND WHAT BACKS IT INSTEAD.
+# A `--exclude-table-data` for a table that is not in here is a violation —
+# that is the whole point, and it is what keeps this check from being
+# weakened by the very change that added it. Adding a table here is a
+# decision someone has to write down, not an omission anyone can make.
+DECLARED_EXCLUSIONS = {
+    "job_logs": "regenerable machine output — pure run-history bookkeeping (D-B4b)",
+    "build_jobs": "regenerable machine output — pure run-history bookkeeping (D-B4b)",
+    # The new category (D167). Not a cache, not regenerable, and not a file in
+    # THIS repository: the source is the backup repository's own export,
+    # written by export_userdata() in the same run, before the same commit.
+    "userdata": "the backup repo's own export, userdata/<uid>.json",
+    "userdata_history": (
+        "deliberately not archived at all — a rolling 48h window feeding the "
+        "console's per-PATCH tier, superseded by userdata/<uid>.json"
+    ),
+}
+
+# The exclusion of `userdata` is only safe BECAUSE the exporter exists. If one
+# of these ever appears without the other, the dump carries no account data
+# and nothing else does either.
+EXPORT_BACKED = {"userdata"}
+EXPORT_MARKER = "export_userdata"
 
 # Provider archives that are KNOWN to be absent from this repository, with
 # the tables they leave unbacked. Acknowledged in backup/entrypoint.sh's
@@ -109,7 +151,40 @@ for rel in paths:
             "with nothing to rebuild it from"
         )
 
+# ---- check A: every --exclude-table-data has a declared source ------------
+excluded = []
+if not ENTRYPOINT.is_file():
+    problems.append(
+        f"cannot read {ENTRYPOINT.relative_to(ROOT)} — the backup's table "
+        "exclusions could not be checked at all"
+    )
+else:
+    entry = ENTRYPOINT.read_text(encoding="utf-8")
+    # Every exclusion the script really passes to pg_dump. A regex over the
+    # source for the same reason check B uses one: running the script is not
+    # an option, and the flag is the thing that takes effect.
+    excluded = sorted(set(re.findall(r"--exclude-table-data=([A-Za-z0-9_]+)", entry)))
+    for table in excluded:
+        if table not in DECLARED_EXCLUSIONS:
+            problems.append(
+                f"backup/entrypoint.sh excludes `{table}` from a dump but no source is "
+                "declared for it in bin/_check_backup_sources.py's DECLARED_EXCLUSIONS "
+                "— an excluded table whose source does not exist is backed by nothing"
+            )
+    for table in sorted(EXPORT_BACKED):
+        if table in excluded and EXPORT_MARKER not in entry:
+            problems.append(
+                f"backup/entrypoint.sh excludes `{table}` but has no {EXPORT_MARKER}() — "
+                "the account data is in neither the dump nor an export"
+            )
+        if table not in excluded and EXPORT_MARKER in entry:
+            notes.append(
+                f"backup/entrypoint.sh exports account documents but still dumps `{table}` — "
+                "harmless (the dump is merely large), and expected only mid-rollout"
+            )
+
 print(f"SOURCES={len(paths)}")
+print(f"EXCLUSIONS={len(excluded)}")
 for n in notes:
     print("N:" + n)
 for p in problems:
