@@ -411,10 +411,14 @@
   // What a save sends. Translations and examples are separate values end to
   // end; blank rows are simply not values. Inflections carry only the
   // current part of speech's fields — or, for a part of speech without a
-  // paradigm, whatever was stored, untouched.
+  // paradigm, whatever was stored, untouched. So does a paradigm part of
+  // speech typed into the custom field whose slots were never on screen
+  // (`shapeSeen`): building the paradigm from those empty slots would wipe
+  // the stored inflections on Save.
   function payload(f, withStatus) {
     let inflections;
-    if (SHAPES[f.pos]) {
+    const unseen = E && E.shapeSeen !== f.pos;
+    if (SHAPES[f.pos] && !unseen) {
       inflections = {};
       shapeKeys(f.pos).forEach((k) => {
         const v = normalizeInflectionValue(k, (f.inflections[k] || '').trim());
@@ -444,6 +448,7 @@
       lemmaDirty: false, customPos: false, prefilling: false, seq: (E ? E.seq : 0) + 1,
     };
     E.customPos = !!(E.f.pos && !POS.includes(E.f.pos));
+    E.shapeSeen = E.f.pos; // the form's inflections are the stored ones
     E.base = snapshot(E.f, ctx);
     if (E.f.audio_blob) loadWave(E.f.audio_blob);
     S.tab = 'word';
@@ -456,6 +461,7 @@
     E.id = note.id;
     E.f = formFrom(note);
     E.customPos = !!(E.f.pos && !POS.includes(E.f.pos));
+    E.shapeSeen = E.f.pos;
     E.base = snapshot(E.f, E.ctx);
     if (E.f.audio_blob) loadWave(E.f.audio_blob);
   }
@@ -664,6 +670,7 @@
     const f = E.f;
     const shape = SHAPES[f.pos];
     const custom = E.customPos;
+    if (shape) E.shapeSeen = f.pos; // its slots are rendered below
     return `
     <div class="f">${lab('Part of speech', 'pos')}
       ${custom ? `<input class="in" id="f_posc" data-f="posc" value="${esc(f.pos)}" placeholder="custom part of speech" aria-label="Custom part of speech">`
@@ -1336,6 +1343,7 @@
     const old = E.f.pos;
     E.f.pos = v;
     E.customPos = false;
+    E.shapeSeen = v; // menu, sheet and prefill reshape the form's paradigm themselves
     const typed = shapeKeys(v).some((k) => hasText(E.f.inflections[k]));
     if (!typed && E.stored && E.stored.pos === v) E.f.inflections = { ...E.f.inflections, ...normInfl(E.stored.inflections) };
     if (!fromPrefill) delete E.prov.pos;
@@ -1358,6 +1366,7 @@
     const mapped = canonicalPos(c.pos);
     if (!E.f.pos && mapped) setPos(mapped, true);
     const keys = shapeKeys(E.f.pos);
+    if (keys.length) E.shapeSeen = E.f.pos; // the paradigm is now the form's own
     let filled = 0;
     keys.forEach((k) => { if (c.v[k] !== undefined) { E.f.inflections[k] = normalizeInflectionValue(k, String(c.v[k])); filled += 1; } });
     if (keys.includes('article') && !hasText(E.f.inflections.article)) {
@@ -1489,7 +1498,7 @@
         const art = deriveArticleToken(c.v);
         if (art) { E.f.inflections.article = art; any = true; }
       }
-      if (any) E.prov.inflections = hit.p;
+      if (any) { E.prov.inflections = hit.p; E.shapeSeen = E.f.pos; }
       return any;
     },
     // Examples are additive: providers with no entry are skipped, and up to
@@ -2289,6 +2298,15 @@
       return;
     }
     const f = el.dataset && el.dataset.f;
+    // A paradigm part of speech typed into the custom field: show its slots
+    // (and leave custom mode for one of the six). Deferred past a click in
+    // progress, so the Save it was blurred for still lands (C24).
+    if (f === 'posc' && E && SHAPES[E.f.pos]) {
+      if (POS.includes(E.f.pos)) E.customPos = false;
+      const typed = shapeKeys(E.f.pos).some((k) => hasText(E.f.inflections[k]));
+      if (!typed && E.stored && E.stored.pos === E.f.pos) E.f.inflections = { ...E.f.inflections, ...normInfl(E.stored.inflections) };
+      renderAfterClick();
+    }
     if (f === 'valc') patchSettings({ value_color: 'custom', value_color_custom: el.value });
     if (f === 'langs') {
       const langs = el.value.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -2318,6 +2336,20 @@
     fake.dataset.act = act; fake.hidden = true;
     app.appendChild(fake); fake.click(); fake.remove();
   });
+
+  // A re-render while a pointer is down would replace the element under it
+  // and swallow the click, so it waits until that click has been handled.
+  let pointerDown = false;
+  let renderPending = false;
+  function renderAfterClick() {
+    if (!pointerDown) { render(); return; }
+    renderPending = true;
+  }
+  document.addEventListener('pointerdown', () => { pointerDown = true; }, true);
+  document.addEventListener('pointerup', () => {
+    pointerDown = false;
+    if (renderPending) { renderPending = false; setTimeout(render, 0); }
+  }, true);
 
   // A scroll closes an open picker, as in the reference.
   app.addEventListener('scroll', () => { if (S.pick) { S.pick = null; app.querySelector('.menu')?.remove(); } }, true);
