@@ -334,6 +334,163 @@ export async function exportArchive() {
   };
 }
 
+// ---- one account's archived history (userdata-git-history task 6.2) ------
+//
+// THE ARCHIVED TIER OF THE SYNC PAGE READS THIS, from hub, over the internal
+// plane. It is deliberately a LISTING plus two on-demand reads, never one
+// payload: a document is ~110 KB and a page that inlined every version of it
+// would be exactly the thing D-UP4 forbids.
+//
+// A uid is a path segment from another service, so it is matched against the
+// same shape mjolnir-sync's own UID_RE allows and REJECTED otherwise — never
+// sanitised. `git show <sha>:userdata/<uid>.json` is not shell-interpolated
+// (execFile, no shell), but a uid that escaped the directory would still read
+// a file it has no business reading.
+const UID_RE = /^[A-Za-z0-9._:@-]{1,128}$/;
+const ARCHIVE_LIMIT = 200;
+
+export function archivePathFor(uid) {
+  return UID_RE.test(uid) ? `userdata/${uid}.json` : null;
+}
+
+// Reads one commit's patch into the SAME vocabulary the console's per-PATCH
+// tier already speaks — a changed scalar's before/after, and how many card
+// occurrences appeared or disappeared. Derived from the diff, never from the
+// documents: the point of the serialization is that the diff is small and
+// legible, so the diff is what gets read.
+//
+// It reports what the DIFF shows, which for a coarse tier is exactly the
+// honest limit: several syncs inside one backup period collapse into one set
+// of before/after values, and a value changed and changed back between two
+// runs leaves nothing here at all. The page states both, scoped to this tier.
+function summarizePatch(lines) {
+  const fields = {};
+  let added = 0;
+  let deleted = 0;
+  let cardsAdded = 0;
+  let cardsRemoved = 0;
+  let created = false;
+
+  // `"name": value` at any depth. Only TOP-LEVEL scalars end up being shown,
+  // which the four-space indent distinguishes; nested lines still count
+  // toward added/deleted and the card tallies.
+  const FIELD = /^([+-])(\s*)"([^"]+)":\s*(.*?),?\s*$/;
+
+  for (const line of lines) {
+    if (line.startsWith("new file mode")) created = true;
+    if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@") || line.startsWith("diff --git")
+        || line.startsWith("index ") || line.startsWith("new file") || line.startsWith("deleted file")) {
+      continue;
+    }
+    if (line.startsWith("+")) added += 1;
+    else if (line.startsWith("-")) deleted += 1;
+    else continue;
+
+    const m = FIELD.exec(line);
+    if (!m) continue;
+    const [, sign, indent, name, rawValue] = m;
+    if (name === "ID") {
+      // One `"ID":` line per card occurrence, so these are occurrence counts.
+      if (sign === "+") cardsAdded += 1;
+      else cardsRemoved += 1;
+      continue;
+    }
+    // Four spaces is top level in jsonb_pretty's output; deeper lines belong
+    // to a card or a reminder entry and are not account-level facts.
+    if (indent.length !== 4) continue;
+    const value = rawValue === "[" || rawValue === "{" ? "(structure)" : rawValue;
+    const slot = fields[name] || (fields[name] = { from: null, to: null });
+    if (sign === "+") slot.to = value;
+    else slot.from = value;
+  }
+
+  return { added, deleted, cardsAdded, cardsRemoved, fields, created };
+}
+
+// The commits that touched one account's export, newest first. `--follow` is
+// deliberately NOT used: the file is never renamed, and --follow's rename
+// detection would make a deleted-then-recreated account look continuous.
+export async function accountHistory(uid, { limit = 50 } = {}) {
+  const file = archivePathFor(uid);
+  if (!file) return { ok: false, reason: "not a uid", uid, commits: [] };
+  if (!cloneExists()) {
+    return { ok: false, reason: `no clone at ${CLONE_DIR} — the backup service has never cloned the remote`, uid, commits: [] };
+  }
+  const SEP = "\x1f";
+  const REC = "\x1e";
+  const capped = Math.min(Math.max(1, limit), ARCHIVE_LIMIT);
+  // ONE call for the whole tier, patches included — `--unified=0` so each
+  // commit carries only the lines that actually changed.
+  //
+  // THIS IS AFFORDABLE ONLY BECAUSE OF THE SERIALIZATION. A version of this
+  // archive that stored one opaque blob per commit would make `-p` mean "ship
+  // every byte of every version", and the alternative (`git show` once per
+  // commit) is one process spawn per row. Because `jsonb_pretty` expands the
+  // document one scalar per line, a day's change is a handful of lines, so
+  // the whole tier's deltas come back in a single, small call.
+  const log = await git([
+    "log", `-n${capped}`, "--unified=0", "--no-color", "-p",
+    `--format=${REC}%H${SEP}%h${SEP}%ct${SEP}%s`, "--", file,
+  ]);
+  if (!log.ok) {
+    return { ok: false, reason: log.stderr || "git log failed", uid, commits: [] };
+  }
+  const commits = log.stdout
+    .split(REC)
+    .slice(1)
+    .map((chunk) => {
+      const [header, ...bodyLines] = chunk.split("\n");
+      const [sha, short, ct, ...rest] = header.split(SEP);
+      return { sha, short, epoch: Number(ct), subject: rest.join(SEP), ...summarizePatch(bodyLines) };
+    });
+  // `present` is about the FILE, not about the commits: an account exported
+  // for the first time between two runs has a file and no history yet, and
+  // "nothing archived yet" has to be distinguishable from "cannot read".
+  let present = false;
+  try {
+    present = fs.statSync(path.join(CLONE_DIR, file)).isFile();
+  } catch {
+    present = false;
+  }
+  return { ok: true, uid, file, present, commits, truncated: commits.length >= capped };
+}
+
+// One version's document, and optionally its diff against the preceding
+// commit — fetched only when the operator opens that entry.
+export async function accountVersion(uid, sha, { diff = false } = {}) {
+  const file = archivePathFor(uid);
+  if (!file) return { ok: false, reason: "not a uid" };
+  // A sha also arrives from a URL. Hex only, nothing else — `git show` would
+  // otherwise happily accept a revision expression such as `HEAD~3` or a
+  // branch name, which is not what this endpoint is for.
+  if (!/^[0-9a-f]{4,40}$/.test(String(sha || ""))) return { ok: false, reason: "not a commit id" };
+  if (!cloneExists()) return { ok: false, reason: "no clone" };
+
+  const show = await git(["show", `${sha}:${file}`]);
+  if (!show.ok) return { ok: false, reason: show.stderr || `no version of ${file} at ${sha}` };
+
+  const out = { ok: true, uid, sha, text: show.stdout };
+  if (diff) {
+    const parents = await git(["rev-list", "--parents", "-n1", sha]);
+    const parent = parents.ok ? (parents.stdout.trim().split(" ")[1] || null) : null;
+    out.parent = parent;
+    if (parent) {
+      // `--unified=3` and `--no-color`: this is read as text by another
+      // service, not rendered by a terminal.
+      const d = await git(["diff", "--no-color", "--unified=3", parent, sha, "--", file]);
+      out.diff = d.ok ? d.stdout : null;
+      out.diffError = d.ok ? null : (d.stderr || "git diff failed");
+    } else {
+      // The first commit that introduced the file has no predecessor. Stated,
+      // not rendered as an empty diff that would read as "nothing changed".
+      out.diff = null;
+      out.diffError = null;
+      out.firstVersion = true;
+    }
+  }
+  return out;
+}
+
 // ---- sources -------------------------------------------------------------
 //
 // READ-ONLY, AND THERE IS NO CONTROL TO EXCLUDE ANY OF THEM. The operator was

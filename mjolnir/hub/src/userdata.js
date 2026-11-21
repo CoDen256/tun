@@ -377,20 +377,50 @@ function summarizeDelta(doc, prevDoc) {
   return { title: "Synced", detail: [] };
 }
 
+// THE RETENTION WINDOW (userdata-git-history, design §8). 48 hours, chosen so
+// that "what did the phone do yesterday evening" is always answerable at full
+// fidelity, with the table bounded at roughly a day's syncs plus margin
+// (~16 PATCHes/day observed, so ~30 rows). It is NOT an operator-tuned
+// setting — if it ever needs tuning that is a backlog item, not a hidden knob
+// — and it is declared ONCE, here, because the sweep that deletes outside it
+// and the console tier that renders inside it must mean the same thing by it.
+export const HISTORY_RETENTION_HOURS = 48;
+
 // `limit + 1` rows are fetched so the oldest row returned still has a real
 // predecessor to diff against; that extra row is used only for the diff,
 // never returned itself.
-export async function historyDeltas(uid, { limit = 20 } = {}) {
+//
+// `sinceHours` bounds the RECENT TIER to the retention window. The extra
+// predecessor row is deliberately allowed to fall OUTSIDE the window: the
+// oldest in-window entry still needs something to be a delta against, and
+// using it only as a diff baseline neither renders it nor implies it is
+// still retained.
+export async function historyDeltas(uid, { limit = 20, sinceHours = null } = {}) {
   const { rows } = await query(
     "SELECT id, doc, at FROM userdata_history WHERE device_id = $1 ORDER BY at DESC LIMIT $2",
     [uid, limit + 1]
   );
+  const cutoff = sinceHours === null ? null : Date.now() - sinceHours * 3600 * 1000;
   // D-UP4: the diff still needs each row's full doc, but the full doc
   // itself is never part of the returned object — the raw document is
   // fetched separately, on demand, via `historyDoc`.
-  return rows.slice(0, limit).map((row, i) => ({
-    id: row.id,
-    at: row.at,
-    ...summarizeDelta(row.doc, rows[i + 1]?.doc),
-  }));
+  const out = [];
+  for (let i = 0; i < Math.min(limit, rows.length); i += 1) {
+    const row = rows[i];
+    if (cutoff !== null && new Date(row.at).getTime() < cutoff) break;
+    out.push({ id: row.id, at: row.at, ...summarizeDelta(row.doc, rows[i + 1]?.doc) });
+  }
+  return out;
+}
+
+// The newest history row for an account regardless of the window — so a page
+// with an EMPTY window can say "last PATCH on record: <when>, swept" instead
+// of looking broken (criterion 42). Returns null when the account has never
+// written one.
+export async function latestHistoryAt(uid) {
+  const { rows } = await query(
+    "SELECT at FROM userdata_history WHERE device_id = $1 ORDER BY at DESC LIMIT 1",
+    [uid]
+  );
+  return rows.length ? rows[0].at : null;
 }

@@ -33,6 +33,8 @@ import {
   SETTINGS_FILE,
   SETTING_BOUNDS,
   STATE_DIR,
+  accountHistory,
+  accountVersion,
   readScheduler,
   readState,
 } from "./state.js";
@@ -242,6 +244,37 @@ export function createServer() {
           commitLimit: limitFrom(url, "commits", 6),
         });
         return sendJson(res, 200, state);
+      }
+
+      // ---- the archived tier, read by hub over the internal plane --------
+      // (userdata-git-history task 6.2)
+      //
+      // INTERNAL, NOT THROUGH THE GATEWAY. hub calls these service-to-service
+      // with INTERNAL_TOKEN; the shared check above is the only gate, and the
+      // gateway has no route to them at all.
+      //
+      // THREE ENDPOINTS, NOT ONE, and that is the D-UP4 rule applied across a
+      // service boundary: the listing carries no document, and a version's
+      // document and its diff are fetched only when the operator opens that
+      // entry. One account's document is ~110 KB; a listing that inlined
+      // every version of it would be the exact failure this change exists to
+      // fix, moved from the backup repo into a web page.
+      //
+      // Everything here DEGRADES rather than throws. hub renders only this
+      // half of the panel from it, and a backup outage must never take the
+      // per-PATCH tier down with it.
+      if (req.method === "GET" && url.pathname === "/api/exports/history") {
+        const uid = url.searchParams.get("uid") || "";
+        const result = await accountHistory(uid, { limit: limitFrom(url, "limit", 50) });
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/exports/version") {
+        const uid = url.searchParams.get("uid") || "";
+        const sha = url.searchParams.get("sha") || "";
+        const wantDiff = url.searchParams.get("diff") === "1";
+        const result = await accountVersion(uid, sha, { diff: wantDiff });
+        return sendJson(res, result.ok ? 200 : 404, result);
       }
 
       if (req.method === "POST" && url.pathname === "/api/run") {

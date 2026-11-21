@@ -47,6 +47,13 @@ export function loadConfig({ requireInternal = true, requirePublicBase = require
   // them, so a misconfigured/absent value degrades just the three Builder
   // pages, not hub's whole boot.
   const stabburBaseUrl = process.env.STABBUR_BASE_URL;
+  // userdata-git-history: where the account export's git history is read
+  // from, over the internal plane. OPTIONAL, like stabburBaseUrl above and
+  // for the same reason: unset degrades exactly one half of one panel — the
+  // Sync page's archived tier reports it is not configured — and nothing
+  // else. A hub that refused to boot because the backup console is
+  // unreachable would be the opposite of what D157 asks for.
+  const backupConsoleUrl = process.env.BACKUP_CONSOLE_URL;
   const sourceLang = process.env.SOURCE_LANG || "no";
   // THE CARVE-OUT HAS TO BE COMPLETE, OR IT IS NOT A CARVE-OUT (2026-11-14).
   //
@@ -120,6 +127,7 @@ export function loadConfig({ requireInternal = true, requirePublicBase = require
     workbenchPatchesDir,
     baseFolderDir,
     stabburBaseUrl,
+    backupConsoleUrl,
     sourceLang,
   };
 }

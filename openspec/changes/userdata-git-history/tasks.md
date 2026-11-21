@@ -57,22 +57,22 @@ deletes anything. A dropped history row is gone; a large dump is merely large.
 - [ ] 5.4 Decide and record the trigger point inside hub (tier 2).
 
 ## 6. The Sync page's two-tier timeline
-- [ ] 6.1 **Keep** `historyDeltas`, `summarizeDelta` and `historyDoc`. This
+- [x] 6.1 **Keep** `historyDeltas`, `summarizeDelta` and `historyDoc`. This
       change retains them; an earlier design direction deleted them and was
       reversed.
-- [ ] 6.2 Add an internal endpoint on `backup-console` listing commits touching
+- [x] 6.2 Add an internal endpoint on `backup-console` listing commits touching
       one account's export, with each version's document and diff available on
       demand. Internal plane — `INTERNAL_TOKEN`, never through the gateway.
-- [ ] 6.3 Render one chronological timeline with a **labelled horizon**, per-row
+- [x] 6.3 Render one chronological timeline with a **labelled horizon**, per-row
       fidelity marking, and the archived tier's caveats scoped to that tier.
-- [ ] 6.4 Make the relationship between a recent entry and its archived
+- [x] 6.4 Make the relationship between a recent entry and its archived
       counterpart discoverable, without rendering one change as two events.
-- [ ] 6.5 Fetch documents and diffs **on demand** only — no full document in the
+- [x] 6.5 Fetch documents and diffs **on demand** only — no full document in the
       initial payload.
-- [ ] 6.6 Implement the four states independently: both tiers, archive
+- [x] 6.6 Implement the four states independently: both tiers, archive
       unreachable (recent tier still fully rendered), nothing archived, no
       recent syncs.
-- [ ] 6.7 Leave the rest of the page alone — uid picker, progress snapshot,
+- [x] 6.7 Leave the rest of the page alone — uid picker, progress snapshot,
       per-card table and current-document viewer.
 
 ## 7. Verification

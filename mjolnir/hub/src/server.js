@@ -45,12 +45,16 @@ import {
   listAccounts,
   perCardProgress,
   historyDeltas,
+  latestHistoryAt,
+  HISTORY_RETENTION_HOURS,
   userdataDoc,
   historyDoc,
   distinctDeckTitles,
   STATE_LABELS,
   PAGE_SIZES,
 } from "./userdata.js";
+import { archiveHistory, archiveVersion } from "./archive.js";
+import { renderSyncHistoryPanel, SYNC_TIMELINE_STYLE } from "./syncTimeline.js";
 import { cardIndex } from "./cardText.js";
 import { createRequestHandler as createWorkbenchHandler } from "../../src/commands/ui.js";
 // D109: builder's own pages are rendered here directly, in-process — same
@@ -549,7 +553,7 @@ details.json-toggle pre { margin: 8px 0 0; padding: 12px 14px; background: var(-
 .pager-readout { font-size: 12px; color: var(--text-faint); margin-right: auto; }
 .pager a.btn-ghost[aria-disabled="true"] { opacity: .4; pointer-events: none; }
 .pager a.pager-current { background: var(--bg-elevated); color: var(--text); font-weight: 600; }
-`;
+${SYNC_TIMELINE_STYLE}`;
 
 function timeAgo(date) {
   if (!date) return "never";
@@ -602,32 +606,13 @@ function perCardRowHtml(row) {
   </tr>`;
 }
 
-// D-UP4: the raw document is fetched on first expand, via `data-doc-url`
-// (wired up by the `<script>` at the bottom of `renderDevicePage`) —
-// never inlined here, which is the whole point of this change.
-function historyRowHtml(entry, selectedUid) {
-  const dot = entry.title === "Account deleted" ? "warn" : entry.title === "Synced" ? "" : "ok";
-  const details = entry.detail
-    .map((d) =>
-      d.up === null
-        ? `<span>${escapeHtml(d.label)} <span class="tl-delta flat">${escapeHtml(d.text)}</span></span>`
-        : `<span>${escapeHtml(d.label)} <span class="tl-delta ${d.up ? "up" : "flat"}">${escapeHtml(d.text)}</span></span>`
-    )
-    .join("\n");
-  const docUrl = `/mjolnir/device/doc?uid=${encodeURIComponent(selectedUid)}&historyId=${encodeURIComponent(entry.id)}`;
-  return `<div class="tl-row">
-    <div class="tl-time">${timeAgo(entry.at)}</div>
-    <div class="tl-rail"><div class="tl-dot ${dot}"></div></div>
-    <div>
-      <div class="tl-title">${escapeHtml(entry.title)}</div>
-      ${details ? `<div class="tl-detail">${details}</div>` : ""}
-      <details class="json-toggle" style="margin-top:4px;" data-doc-url="${escapeHtml(docUrl)}">
-        <summary>raw doc</summary>
-        <pre>loading…</pre>
-      </details>
-    </div>
-  </div>`;
-}
+// `historyRowHtml` USED TO LIVE HERE. Its job — one per-PATCH timeline row,
+// with the raw document fetched on first expand via `data-doc-url` (D-UP4) —
+// moved into `syncTimeline.js`, which renders it as one of TWO tiers rather
+// than as the whole panel. Nothing about it was deleted in spirit: the
+// vocabulary, the on-demand document fetch and the dot styling are all
+// carried forward there, alongside the archived tier that now shares the
+// timeline with it.
 
 // `filters` carries every GET param the toolbar/pager round-trips, always
 // with `uid` merged in — one helper so the toolbar, pager and "Clear"
@@ -670,7 +655,7 @@ function pagerHtml(selectedUid, filters, total) {
   </div>`;
 }
 
-function renderDevicePage({ accounts, selectedUid, doc, perCard, total, history, filters, deckTitles, cardIndexInfo }) {
+function renderDevicePage({ accounts, selectedUid, doc, perCard, total, history, latestHistory, archive, filters, deckTitles, cardIndexInfo }) {
   if (accounts.length === 0) {
     return renderShell({
       title: "mjolnir / hub — device sync",
@@ -697,7 +682,15 @@ function renderDevicePage({ accounts, selectedUid, doc, perCard, total, history,
     : `<div class="inline-note">No userdata document for this account yet.</div>`;
 
   const perCardRows = perCard.map(perCardRowHtml).join("\n");
-  const historyRows = history.map((entry) => historyRowHtml(entry, selectedUid)).join("\n");
+  // The two-tier timeline. `historyRowHtml` is kept below as the per-PATCH
+  // row's ancestor and its vocabulary lives on in syncTimeline.js.
+  const historyPanel = renderSyncHistoryPanel({
+    uid: selectedUid,
+    recent: history,
+    latestAt: latestHistory,
+    archive,
+    retentionHours: HISTORY_RETENTION_HOURS,
+  });
 
   const deckOptions = deckTitles
     .map((d) => `<option value="${escapeHtml(d)}" ${d === filters.deck ? "selected" : ""}>${escapeHtml(d)}</option>`)
@@ -790,25 +783,51 @@ function renderDevicePage({ accounts, selectedUid, doc, perCard, total, history,
   </div>
 </div>
 
-<div class="panel">
+<div class="panel" id="sync-history">
   <div class="panel-head">
-    <div><h3>Sync history</h3><div class="page-sub">Every write, append-only — a last-write-wins row alone would not be a backup.</div></div>
+    <div style="min-width:0"><h3>Sync history</h3><div class="page-sub">One chronological timeline at two fidelities — per-PATCH for ${HISTORY_RETENTION_HOURS} h, one entry per backup run before that.</div></div>
   </div>
   <div class="panel-pad">
-    <div class="timeline">${historyRows || `<div class="inline-note">no sync history recorded yet</div>`}</div>
+    ${historyPanel}
   </div>
 </div>
 <script>
-document.querySelectorAll('details.json-toggle[data-doc-url]').forEach((details) => {
+// D-UP4 / 6.5: nothing above is a full document until it is asked for. Two
+// kinds of expander share one handler — a JSON document (a history row's, or
+// an archived version's) and a unified diff — because the only difference is
+// how the response is rendered, and a second copy of the fetch logic is a
+// second place for the error handling to go wrong.
+document.querySelectorAll('details.json-toggle[data-doc-url], details.json-toggle[data-diff-url]').forEach((details) => {
   details.addEventListener('toggle', async () => {
     if (!details.open || details.dataset.loaded) return;
     details.dataset.loaded = '1';
     const pre = details.querySelector('pre');
+    const diffUrl = details.dataset.diffUrl;
     try {
-      const res = await fetch(details.dataset.docUrl);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const body = await res.json();
-      pre.textContent = JSON.stringify(body.doc, null, 2);
+      const res = await fetch(diffUrl || details.dataset.docUrl);
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
+      if (diffUrl) {
+        if (body.firstVersion) {
+          pre.textContent = 'This is the first committed version of this file — there is no preceding commit to diff against.';
+        } else if (body.error) {
+          pre.textContent = 'the diff could not be produced: ' + body.error;
+        } else {
+          // Colour the three line kinds, nothing more: the diff itself is
+          // text the backup repository produced and is inserted as text.
+          pre.textContent = '';
+          for (const line of String(body.diff || '').split('\n')) {
+            const span = document.createElement('span');
+            span.className = line.startsWith('+') ? 'd-add' : line.startsWith('-') ? 'd-del' : 'd-hdr';
+            span.textContent = line + '\n';
+            pre.appendChild(span);
+          }
+          details.closest('.tl-actions')?.parentElement?.classList?.add('has-diff');
+          pre.parentElement.classList.add('diffbox');
+        }
+      } else {
+        pre.textContent = JSON.stringify(body.doc, null, 2);
+      }
     } catch (err) {
       pre.textContent = 'failed to load: ' + err.message;
       details.dataset.loaded = '';
@@ -1609,15 +1628,22 @@ export function createServer(pool, config, boot) {
         };
 
         const index = cardIndex(config.dataDir);
-        const [doc, progress, history, deckTitles] =
+        // THE TWO TIERS ARE FETCHED SIDE BY SIDE AND NEITHER CAN FAIL THE
+        // OTHER. `archiveHistory` never throws — it returns `{ok:false,
+        // reason}` on a timeout, a refusal or an unconfigured URL — so a
+        // stopped `backup-console` degrades exactly one region of one panel
+        // and this Promise.all still resolves (criteria 39-40).
+        const [doc, progress, history, latestHistory, deckTitles, archive] =
           accounts.length && selectedUid
             ? await Promise.all([
                 userdataDoc(selectedUid),
                 perCardProgress(selectedUid, { ...filters, cardIndex: index }),
-                historyDeltas(selectedUid, { limit: 20 }),
+                historyDeltas(selectedUid, { limit: 50, sinceHours: HISTORY_RETENTION_HOURS }),
+                latestHistoryAt(selectedUid),
                 distinctDeckTitles(selectedUid),
+                archiveHistory(config, selectedUid, { limit: 60 }),
               ])
-            : [null, { rows: [], total: 0 }, [], []];
+            : [null, { rows: [], total: 0 }, [], null, [], { ok: false, reason: "no account selected" }];
 
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         return res.end(
@@ -1628,6 +1654,8 @@ export function createServer(pool, config, boot) {
             perCard: progress.rows,
             total: progress.total,
             history: history || [],
+            latestHistory,
+            archive,
             filters,
             deckTitles,
             cardIndexInfo: { reason: index.reason, buildId: index.buildId },
@@ -1650,6 +1678,44 @@ export function createServer(pool, config, boot) {
           return sendJson(res, 200, { doc });
         }
         return sendJson(res, 200, { doc: await userdataDoc(uid) });
+      }
+
+      // userdata-git-history 6.5: ONE archived version's document, and its
+      // diff against the preceding commit, fetched only when the operator
+      // opens that entry. Same uid-restricted posture as every other
+      // account-scoped route here — the uid must be one `listAccounts`
+      // returned, never an arbitrary query param.
+      //
+      // DEGRADES, NEVER 500s. backup-console being down is the normal
+      // condition this whole panel is designed around, so it comes back as a
+      // readable reason with a 503, which the page prints in the expander
+      // rather than replacing the page with an error.
+      if (req.method === "GET" && url.pathname === "/mjolnir/device/archive") {
+        const accounts = await listAccounts();
+        const uid = url.searchParams.get("uid") || "";
+        if (!accounts.includes(uid)) return sendJson(res, 404, { error: "no such account" });
+        const sha = url.searchParams.get("sha") || "";
+        const wantDiff = url.searchParams.get("diff") === "1";
+        const result = await archiveVersion(config, uid, sha, { diff: wantDiff });
+        if (!result.ok) return sendJson(res, 503, { error: result.reason || "the archive could not be read" });
+        if (wantDiff) {
+          return sendJson(res, 200, {
+            diff: result.diff,
+            parent: result.parent || null,
+            firstVersion: !!result.firstVersion,
+            error: result.diffError || null,
+          });
+        }
+        // Parsed here so the page's existing `raw doc` expander renders an
+        // archived version exactly as it renders a history row's document —
+        // one shape, one client-side branch.
+        let parsed = null;
+        try {
+          parsed = JSON.parse(result.text);
+        } catch (err) {
+          return sendJson(res, 502, { error: `the archived version is not valid JSON: ${err.message}` });
+        }
+        return sendJson(res, 200, { doc: parsed });
       }
 
       // device-insights-page: a separate, additional tab, not a
