@@ -8,6 +8,7 @@ check (libs/pyservice/auth.py) — the gateway marker or INTERNAL_TOKEN.
 
 from __future__ import annotations
 
+import json
 import os
 
 from flask import Flask
@@ -20,6 +21,8 @@ from routes.captures import register_capture_routes
 from routes.enrich import register_enrich_routes
 from routes.notes import register_notes_routes
 from routes.settings import register_settings_routes
+import settings_store
+from db.session import session_scope
 
 # static_folder="ui" / static_url_path="/static" is what moves the UI to the
 # prefix root (unified-auth 5.1, superseding D46's /ui convention): the page
@@ -69,7 +72,29 @@ def ui_index():
     # route stays prefix-agnostic) and passes it on as X-Forwarded-Prefix.
     # ui/ui.js reads it back via `window.STABBUR_PREFIX` for its own absolute
     # asset/API requests. One implementation now, in libs/pyservice/prefix.py.
-    return render_page(app.root_path, "ui/index.html", STABBUR_PREFIX=forwarded_prefix())
+    return render_page(
+        app.root_path, "ui/index.html", STABBUR_PREFIX=forwarded_prefix(), STABBUR_LOOK=_appearance_json()
+    )
+
+
+def _appearance_json() -> str:
+    """stabbur-editor-redesign D12: the theme and value colour, substituted
+    into index.html so the very first frame is drawn in them — on any device,
+    including one that has never visited before (a browser-side cache alone
+    would flash the defaults there).
+
+    Serve-before-migrate (D157): the page must still load when the database
+    is down or not yet migrated, so any failure here yields `null`, and the
+    page falls back to the copy the browser cached on its last visit. The
+    values are DB-constrained enums and `#rrggbb`, and the result is placed
+    inside a single-quoted JS string, so `<` and `'` are escaped anyway."""
+    try:
+        with session_scope() as db:
+            scalars = settings_store.read_scalars(db)
+    except Exception:  # noqa: BLE001 — any failure degrades to the cached look
+        return "null"
+    look = {key: scalars[key] for key in ("theme", "value_color", "value_color_custom")}
+    return json.dumps(look).replace("<", "\\u003c").replace("'", "\\u0027")
 
 
 if __name__ == "__main__":
