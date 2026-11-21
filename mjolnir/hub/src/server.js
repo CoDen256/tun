@@ -78,6 +78,23 @@ import {
 import { checkOccurrenceIntegrity } from "../../builder/src/integrity.js";
 import { buildInsights } from "./insights.js";
 import { renderInsightsPage } from "./insightsPage.js";
+import {
+  maybeIngest,
+  pullStats,
+  listPullEvents,
+  countPullEvents,
+  activityByDay,
+  pulledBuildIds,
+  pullSummaryByBuild,
+} from "./otaPulls.js";
+import {
+  readPullFilters,
+  renderPullsBody,
+  pullState,
+  pullCells,
+  neverPulledBanner,
+  PULLS_PAGE_STYLE,
+} from "./otaPullsPage.js";
 import { getAllSettings, setSetting, isValidSettingKey } from "./operatorSettings.js";
 
 const WORKBENCH_MOUNT = "/mjolnir/workbench";
@@ -109,6 +126,13 @@ const DB_BACKED = [
   "/mjolnir/device/doc",
   "/mjolnir/device/insights",
   "/mjolnir/device/insights.json",
+  // ota-pull-tracking: the Pulls page reads `ota_pulls`, so it degrades with
+  // the rest rather than throwing a driver error. The INGEST is a different
+  // matter and is never on this list: it runs behind the page, and with the
+  // database down it simply does not advance — the gateway keeps writing the
+  // log and nothing is lost, because the dedup key is content-derived and the
+  // file is re-read.
+  "/mjolnir/device/pulls",
 ];
 
 function isDatabaseBacked(pathname) {
@@ -186,13 +210,24 @@ async function readJson(req) {
 
 // ---- Publish history ----
 
-function renderHistoryPage(publications, current, config) {
+function renderHistoryPage(publications, current, config, { pullSummary = new Map(), ingest = null } = {}) {
+  // ota-pull-tracking 5.1-5.4: two columns ADDED, nothing removed or
+  // reordered. `pullSummary` is a Map keyed on build_id; a build with no
+  // entry is treated exactly like one with zero pulls, which is what makes
+  // the columns render correctly before a single event has been ingested.
+  const now = new Date();
+  let banner = "";
+  let neverCount = 0;
   const rows = publications
     .map((p) => {
       const isCurrent = current && current.buildId === p.build_id;
+      const state = pullState(p, pullSummary.get(p.build_id), { isCurrent });
+      const cells = pullCells(p, state, { now });
+      if (state.kind !== "pulled") neverCount += 1;
+      if (state.kind === "current-never") banner = neverPulledBanner(p, state, { now });
       const bundlePath = path.join(config.dataDir, "ota", "bundle", `${p.build_id}.js`);
       const inspectHref = `${WORKBENCH_MOUNT}/?open=${encodeURIComponent(bundlePath)}`;
-      return `<tr>
+      return `<tr${cells.rowClass}>
         <td>${isCurrent ? '<span class="pill pill-ok">● current</span> ' : ""}<span class="mono">${escapeHtml(p.build_id)}</span></td>
         <td class="wrap">${escapeHtml(p.label || "")}</td>
         <td class="mono">${escapeHtml(p.base_version)}</td>
@@ -201,6 +236,8 @@ function renderHistoryPage(publications, current, config) {
         <td class="num">${p.card_count}</td>
         <td class="mono">${escapeHtml(p.bundle_sha.slice(0, 4))}…${escapeHtml(p.bundle_sha.slice(-4))}</td>
         <td class="mono">${escapeHtml(new Date(p.created_at).toISOString())}</td>
+        <td class="pullcount num">${cells.pulls}</td>
+        <td>${cells.last}</td>
         <td>
           <a class="btn-ghost" href="/mjolnir/ota/download/${encodeURIComponent(p.build_id)}">download</a>
           <a class="btn-ghost" href="${inspectHref}" onclick="return openInWorkbench(this.href)">inspect →</a>
@@ -215,17 +252,24 @@ function renderHistoryPage(publications, current, config) {
   return renderShell({
     title: "mjolnir / hub — publish history",
     activeHref: "/mjolnir",
-    body: `
-<div class="page-head"><div><h2>Publish history</h2></div></div>
+    body: `<style>${PULLS_PAGE_STYLE}</style>
+<div class="page-head"><div><h2>Publish history</h2>
+  <div class="page-sub">${publications.length} build(s)${
+      neverCount ? ` · ${neverCount} never pulled` : ""
+    }</div></div></div>
+${banner}
 <div class="panel">
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Build</th><th>Label</th><th>Base</th><th>Logic</th><th>Data</th><th>Cards</th><th>sha256</th><th>Published</th><th></th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="9">no publications yet</td></tr>`}</tbody>
+      <thead><tr><th>Build</th><th>Label</th><th>Base</th><th>Logic</th><th>Data</th><th>Cards</th><th>sha256</th><th>Published</th><th class="col-pulls" style="text-align:right">Pulls</th><th class="col-pulls">Last pulled</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="11">no publications yet</td></tr>`}</tbody>
     </table>
   </div>
 </div>
+<div class="inline-note">"Pulls" counts <code>200</code> responses on <code>/ota/bundle/&lt;buildId&gt;.js</code> in the gateway's own access log; a <code>206</code> resume folds into the same pull and a <code>404</code> counts as none. Click a count to open that build's pull log. A pull is bytes served — never proof that the phone ended up using that build, since the native boot watchdog can quarantine a bundle that was fetched perfectly (D08).</div>
+<div class="inline-note">A build that is <strong>current</strong> and has never been pulled is highlighted: that is the "published and the phone never took it" case. A build superseded before anything checked in shows its zero quietly — nothing was ever in a position to take it, so the zero means nothing.</div>
 <div class="inline-note">"download" streams that build's exact published bytes, named from its label. "inspect" opens it in the bundle workbench — repeated inspects reuse the same workbench window/tab rather than piling up new ones. "set current" repoints <code>current.json</code> at that build (no shell command). "delete" is blocked while a build shipped any occurrence (D93) or is the live current build.</div>
+<div class="inline-note">Logic bundles (<code>/mjolnir/ota</code>) deliberately gets no pull columns: a pull is recorded against a published <code>buildId</code>, and a logic bundle is an input to a build the device never fetches, so a blank cell there would read as "never pulled" for something that is not pullable.</div>
 <script>
 // D-C6: a named window is reused/focused/navigated by every subsequent
 // "open in workbench" link, instead of each click opening yet another tab.
@@ -1289,9 +1333,24 @@ export function createServer(pool, config, boot) {
         req.method === "GET" &&
         (url.pathname === "/mjolnir" || url.pathname === "/mjolnir/" || url.pathname === "/mjolnir/ui")
       ) {
+        // ota-pull-tracking 5.1: the pull columns need the same ingest the
+        // Pulls page triggers, so a build downloaded a minute ago is already
+        // counted here. Same contract: this never rejects and never blocks
+        // the page — a pull summary that could not be read renders as the
+        // columns' empty state, not as an error.
+        const ingest = await maybeIngest();
         const [publications, current] = [await listPublications(), readCurrent(config.dataDir)];
+        let pullSummary = new Map();
+        try {
+          // `current.json` is the authority on which build is live, not the
+          // publication order — a rollback (D26) repoints it at an older
+          // build — so the summary is told which one that is.
+          pullSummary = await pullSummaryByBuild({ currentBuildId: current ? current.buildId : null });
+        } catch (err) {
+          console.error(`[ota-pulls] pull summary unavailable: ${err.message}`);
+        }
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        return res.end(renderHistoryPage(publications, current, config));
+        return res.end(renderHistoryPage(publications, current, config, { pullSummary, ingest }));
       }
 
       if (req.method === "GET" && url.pathname === "/mjolnir/catalogue") {
@@ -1596,6 +1655,42 @@ export function createServer(pool, config, boot) {
       // device-insights-page: a separate, additional tab, not a
       // replacement for Sync (D126/proposal's own Non-Goals). Same
       // uid-restricted posture as every other account-scoped route here.
+      // ota-pull-tracking 4.1. Ingest runs HERE, before the read, so opening
+      // the page is what makes it current — plus a background loop in
+      // bin/server.js for the long stretches when nobody has it open. It is
+      // awaited but cannot fail the render: `maybeIngest` resolves to a
+      // report with an `error` field and never rejects, and the page says so
+      // in a note instead of 500ing because a log directory is missing.
+      if (req.method === "GET" && url.pathname === "/mjolnir/device/pulls") {
+        const ingest = await maybeIngest();
+        const filters = readPullFilters(url);
+        const [stats, events, activity, builds, counts, publications] = await Promise.all([
+          pullStats({ window: filters.window }),
+          listPullEvents(filters),
+          activityByDay({ days: 30 }),
+          pulledBuildIds(),
+          countPullEvents(filters),
+          listPublications(),
+        ]);
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        return res.end(
+          renderShell({
+            title: "mjølnir · hub — OTA pulls",
+            activeHref: "/mjolnir/device/pulls",
+            body: renderPullsBody({
+              stats,
+              events,
+              activity,
+              builds,
+              filters,
+              counts,
+              publishedCount: publications.length,
+              ingest,
+            }),
+          })
+        );
+      }
+
       if (req.method === "GET" && url.pathname === "/mjolnir/device/insights") {
         const accounts = await listAccounts();
         const requestedUid = url.searchParams.get("uid") || "";

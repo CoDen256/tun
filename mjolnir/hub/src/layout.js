@@ -42,6 +42,12 @@ const NAV = [
     group: "Device",
     items: [
       { href: "/mjolnir/device", label: "Sync" },
+      // ota-pull-tracking 4.1: what the device actually FETCHED, observed at
+      // the gateway. It sits in this group next to Sync and Insights because
+      // it answers the same question about the same handset from the other
+      // direction — those two read what the device reported, this one reads
+      // what the gateway served, which is the only half that survived D126.
+      { href: "/mjolnir/device/pulls", label: "Pulls" },
       { href: "/mjolnir/device/insights", label: "Insights" },
     ],
   },

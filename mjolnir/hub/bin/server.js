@@ -12,6 +12,7 @@ import { createServer } from "../src/server.js";
 import { migrate } from "../src/migrate.js";
 import { seedDecks } from "../src/decks.js";
 import { createBootstrap } from "../../../libs/jsservice/bootstrap.js";
+import { startIngestLoop } from "../src/otaPulls.js";
 
 const config = loadConfig();
 const pool = getPool();
@@ -44,3 +45,20 @@ boot.start();
 createServer(pool, config, boot).listen(port, () => {
   console.log(`mjolnir-workbench listening on :${port} (operator plane)`);
 });
+
+// ota-pull-tracking 3.6: the background half of the ingest trigger. The two
+// pages that show pull data ingest on load, which covers every moment the
+// operator is actually looking; this covers the rest, so that a bundle
+// fetched on Tuesday is already recorded when the page is opened on Friday
+// and the activity strip has no hole that is really a hole in the ingest.
+//
+// AFTER `listen`, AND DELIBERATELY NOT AWAITED. It is observation of the
+// device plane, which is never allowed to delay or fail anything: the first
+// tick runs with no database (the migration may not have been applied yet),
+// with no log directory, and with the volume missing, and in each case
+// resolves to a report with an `error` field that this ignores.
+//
+// 60s, with the per-call cooldown bypassed here — the cooldown exists to stop
+// two simultaneous page loads walking the file twice, not to throttle a timer
+// that already is the throttle.
+startIngestLoop({ intervalMs: 60000 });

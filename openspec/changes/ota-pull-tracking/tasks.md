@@ -24,43 +24,43 @@
       unwritable or absent, bundle requests are still served normally.
 
 ## 3. Ingest and the table
-- [ ] 3.1 Migration for `ota_pulls`, owned by hub (it owns the mjolnir schema).
-- [ ] 3.2 Record both kinds, distinguished: bundle downloads and current-pointer
+- [x] 3.1 Migration for `ota_pulls`, owned by hub (it owns the mjolnir schema).
+- [x] 3.2 Record both kinds, distinguished: bundle downloads and current-pointer
       polls. Store the status and the source address for both.
-- [ ] 3.3 Key on `build_id` alone for bundles — a permanent key frozen by the
+- [x] 3.3 Key on `build_id` alone for bundles — a permanent key frozen by the
       OTA contract. Render the human label as a secondary line from
       `publications`; never key on it.
-- [ ] 3.4 Make ingest **idempotent** via a dedup key over the event's
+- [x] 3.4 Make ingest **idempotent** via a dedup key over the event's
       identifying fields, so re-reading the whole file inserts nothing twice and
       the record survives rotation.
-- [ ] 3.5 Make it resumable across restarts without duplicating or losing
+- [x] 3.5 Make it resumable across restarts without duplicating or losing
       events.
-- [ ] 3.6 Choose the ingest trigger and cooldown (tier 2).
-- [ ] 3.7 Do **not** exclude `ota_pulls` from the backup dump — see
+- [x] 3.6 Choose the ingest trigger and cooldown (tier 2).
+- [x] 3.7 Do **not** exclude `ota_pulls` from the backup dump — see
       `design.md` §9.
 
 ## 4. The Pulls page
-- [ ] 4.1 Add `Pulls` to the rail's Device group and the route.
-- [ ] 4.2 Stat row: total downloads, distinct builds, most recent download,
+- [x] 4.1 Add `Pulls` to the rail's Device group and the route.
+- [x] 4.2 Stat row: total downloads, distinct builds, most recent download,
       most recent liveness.
-- [ ] 4.3 Inline-SVG activity strip over time, making a silent period apparent.
-- [ ] 4.4 Table with timestamp, kind, build, status, bytes, source; sortable and
+- [x] 4.3 Inline-SVG activity strip over time, making a silent period apparent.
+- [x] 4.4 Table with timestamp, kind, build, status, bytes, source; sortable and
       paginated.
-- [ ] 4.5 Filters: kind, build, time window.
-- [ ] 4.6 Bundle rows dominant, poll rows quiet; consecutive **successful** polls
+- [x] 4.5 Filters: kind, build, time window.
+- [x] 4.6 Bundle rows dominant, poll rows quiet; consecutive **successful** polls
       collapse into one expandable row.
-- [ ] 4.7 **Never** collapse a non-200 — a 401 scan or a 404 for a deleted build
+- [x] 4.7 **Never** collapse a non-200 — a 401 scan or a 404 for a deleted build
       must stay individually visible.
-- [ ] 4.8 State the limits in the UI: a download is not an activation, a poll
+- [x] 4.8 State the limits in the UI: a download is not an activation, a poll
       carries no build id, and a source address is not a device identity.
 
 ## 5. Publish history columns
-- [ ] 5.1 Add `Pulls` and `Last pulled`, keeping every existing column.
-- [ ] 5.2 Flag **current and never downloaded** prominently.
-- [ ] 5.3 Render **superseded before any download** quietly — these two mean
+- [x] 5.1 Add `Pulls` and `Last pulled`, keeping every existing column.
+- [x] 5.2 Flag **current and never downloaded** prominently.
+- [x] 5.3 Render **superseded before any download** quietly — these two mean
       opposite things and must not be collapsed into one state.
-- [ ] 5.4 Link a pull count through to the Pulls page filtered to that build.
-- [ ] 5.5 Add **no** columns to `/mjolnir/ota` — see `design.md` §7.
+- [x] 5.4 Link a pull count through to the Pulls page filtered to that build.
+- [x] 5.5 Add **no** columns to `/mjolnir/ota` — see `design.md` §7.
 
 ## 6. Verification
 - [ ] 6.1 Walk `acceptance.md` top to bottom against the running stack,
@@ -68,11 +68,11 @@
       inserting rows.
 - [ ] 6.2 Run the byte-for-byte device-facing comparisons (criteria 1–5) and
       **diff** them rather than eyeballing.
-- [ ] 6.3 Confirm the diff touches no file under `mjolnir/sync/`,
+- [x] 6.3 Confirm the diff touches no file under `mjolnir/sync/`,
       `mjolnir/patches/`, `mjolnir/base/`, `mjolnir/builder/`, and does not
       modify `docs/11-ota-contract.md`.
-- [ ] 6.4 `bin/check-standards.sh` passes.
-- [ ] 6.5 Add an ADR row to `docs/07-decisions.md` recording that the device
+- [x] 6.4 `bin/check-standards.sh` passes.
+- [x] 6.5 Add an ADR row to `docs/07-decisions.md` recording that the device
       plane may be **observed** but not altered, and that pull tracking is done
       at the gateway because the device-reporting approach was already built and
       removed (D126).
