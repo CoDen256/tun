@@ -326,6 +326,23 @@ from the repository root — holds the TLS certificates. Losing it is survivable
    (pure run-history bookkeeping, no FK tie to anything that matters — see
    D-B4b); `device_state` no longer exists at all (dropped entirely, D126).
 
+   **CORRECTED by `userdata-git-history` (D167): `userdata` and
+   `userdata_history` are excluded from this dump too — data only, schema
+   kept.** They are not "backed up by `mjolnir.sql`" any more, and a restore
+   of that dump yields both tables EMPTY. The archive of record for account
+   state is now `userdata/<uid>.json` in the backup repository: one mutable
+   file per account, rewritten in place every run, so git's own history is
+   the document's history. Restoring `mjolnir.sql` without also running the
+   `userdata/` import (`../DEPLOY.md` §7, "Restoring account progress") loses
+   every account's progress silently — the device's next `GET` auto-creates
+   factory defaults (D-S2) over an account nobody restored.
+
+   Why: measured 2026-11-20, `userdata_history`'s COPY block was 42.4 MB of a
+   44 MB `mjolnir.sql`, because it appends a complete copy of the account
+   document on every PATCH and the device PATCHes on every sync. The table
+   survives — it is swept to a rolling 48-hour window and still feeds the
+   Sync page's per-PATCH tier — but it is no longer a backup of anything.
+
 **This is no longer manual.** The root `backup` compose service (the
 `compose-backup-service` change, superseding `git-backup`'s original host
 script + `cron` entry) automates all three — plus the equivalent for

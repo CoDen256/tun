@@ -30,13 +30,13 @@ deletes anything. A dropped history row is gone; a large dump is merely large.
       shows: file, size, last change, commits touching it.
 
 ## 3. Restore, documented and proven
-- [ ] 3.1 Write the import procedure that reconstructs a `userdata` row from an
+- [x] 3.1 Write the import procedure that reconstructs a `userdata` row from an
       archived file.
-- [ ] 3.2 Prove it: restore into an empty table and confirm the document
+- [x] 3.2 Prove it: restore into an empty table and confirm the document
       matches, then confirm a device `GET` returns it rather than factory
       defaults.
-- [ ] 3.3 Render the procedure on the `/backup/` page as copyable commands.
-- [ ] 3.4 Update `mjolnir/DEPLOY.md` and the backup docs with the new step.
+- [x] 3.3 Render the procedure on the `/backup/` page as copyable commands.
+- [x] 3.4 Update `mjolnir/DEPLOY.md` and the backup docs with the new step.
 
 ## 4. The dump exclusion (only after 2 and 3)
 - [ ] 4.1 Add `--exclude-table-data` for `userdata` and `userdata_history` to

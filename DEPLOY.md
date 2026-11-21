@@ -549,13 +549,15 @@ network with a real password; no Docker socket is mounted.
 | `phonexa.sql` | phonexa's database, **no table excluded** — every phonexa table is user data, including Shadowing media, segments, progress, users and settings |
 | `blobs/` | stabbur's flat, content-addressed blob store |
 | `phonexa-audio/` | phonexa's audio tree, mirrored at the same relative paths |
+| `userdata/<uid>.json` | **one mutable file per account — the archive of record for device progress.** Overwritten in place each run, so git's own history is the document's history |
 
 **smia is not backed up by this service.** Its own backup (excluding the
 rebuildable lookup-cache tables) comes with `postgres-consolidation`. Until
 then, dump it by hand — see §8.3, which you need anyway.
 
-The three dumps are one all-or-nothing transaction: if any fails, none of the
-committed `.sql` files is touched and no commit is made. Trigger a run:
+The dumps, the two mirrors **and the account export** are one all-or-nothing
+transaction: if any fails, none of the committed files is touched and no
+commit is made. Trigger a run:
 
 ```sh
 docker compose run --rm -e RUN_ONCE=1 backup
@@ -583,6 +585,54 @@ docker compose run --rm -e RUN_ONCE=1 backup
 Also back up, outside the VPS: the root `.env` (losing `OTA_TOKEN` means
 every installed device stops fetching) and `mjolnir/data/` (content-addressed,
 so `rsync -a` is naturally incremental).
+
+### The account export, and why `mjolnir.sql` no longer carries it
+
+`userdata` and `userdata_history` are on `mjolnir`'s `--exclude-table-data`
+list. **Their schema is in the dump; their data is not.** Restoring
+`mjolnir.sql` therefore yields a complete, working database in which those two
+tables exist and are *empty*, and the account's progress is restored from
+`userdata/` in a separate step (below). Skipping that step is a silent data
+loss: the device's next `GET` auto-creates factory defaults (D-S2) over an
+account nobody restored.
+
+The reason is measured, not stylistic. On 2026-11-20 `mjolnir.sql` was 44 MB,
+of which `userdata_history`'s COPY block was **42.4 MB across 82 rows**
+(~517 KB each) — every other dump in the ecosystem combined was ~2 MB, and the
+repo's `.git` had reached 106 MB over 88 commits. That table appends a
+complete copy of the account document on every PATCH, and the whole thing was
+re-dumped and re-committed daily. `userdata_history` is now swept to a rolling
+**48-hour** window: it answers "what did the phone just do", and the export
+answers everything older.
+
+Each export is serialized by Postgres's own `jsonb_pretty`, whose key order is
+**stable** (by length, then bytewise) — not alphabetical. Do not "fix" that:
+alphabetical ordering would rewrite every line of every file in one enormous
+diff for no gain, and stability is the only property git needs.
+
+### Restoring account progress — REQUIRED after restoring `mjolnir.sql`
+
+```sh
+# from a clone of the backup repo, at its root
+for f in userdata/*.json; do
+  uid=$(basename "$f" .json)
+  docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U mjolnir -d mjolnir \
+      -v uid="$uid" -v doc="$(cat "$f")" <<'SQL'
+INSERT INTO userdata (device_id, doc, updated_at) VALUES (:'uid', :'doc'::jsonb, now())
+  ON CONFLICT (device_id) DO UPDATE SET doc = EXCLUDED.doc, updated_at = now();
+SQL
+done
+# confirm — this must print the restored document, NOT factory defaults
+curl -s -H "Authorization: Bearer $SYNC_TOKEN" \
+    "$TUN_PUBLIC_BASE/mjolnir/userdata/<uid>" | head -c 200
+```
+
+The SQL goes in on **stdin**, never via `psql -c`: a `-c` string is passed to
+the server verbatim, so `:'uid'` would not be expanded (this is exactly how
+the exporter itself failed on its first live run). `userdata_history` is
+deliberately *not* restored — it is a rolling window, not an archive.
+
+The same procedure is rendered as copyable commands on the `/backup/` page.
 
 ### Restoring phonexa
 

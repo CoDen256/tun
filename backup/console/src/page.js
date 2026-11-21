@@ -611,15 +611,30 @@ git checkout ${escapeHtml(head)}`)}
 docker compose exec -T postgres \\
     psql -v ON_ERROR_STOP=1 -U phonexa phonexa &lt; phonexa.sql`,
     "<code>ON_ERROR_STOP=1</code> is not optional — without it psql reports success having skipped every failed statement.")}
-  ${step(2, "stabbur blobs — <code>blobs/</code>",
+  ${step(2, "account documents — <code>userdata/</code>",
+    "<b>Required, not optional.</b> <code>userdata</code> and <code>userdata_history</code> are excluded from <code>mjolnir.sql</code> (data only — their schema is in the dump), so the restore above yields two EMPTY tables. These files are the only copy of the operator's learning progress. Run this after step 1 and before letting a device sync, or the device's next <code>GET</code> auto-creates factory defaults over an account that was never restored.",
+    `<span class="c"># one file per account; the loop is the whole procedure</span>
+for f in userdata/*.json; do
+  uid=$(basename "$f" .json)
+  docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U mjolnir -d mjolnir \\
+      -v uid="$uid" -v doc="$(cat "$f")" &lt;&lt;'SQL'
+INSERT INTO userdata (device_id, doc, updated_at) VALUES (:'uid', :'doc'::jsonb, now())
+  ON CONFLICT (device_id) DO UPDATE SET doc = EXCLUDED.doc, updated_at = now();
+SQL
+done
+<span class="c"># confirm: should print the archived document, not factory defaults</span>
+curl -s -H "Authorization: Bearer $SYNC_TOKEN" \\
+    "$TUN_PUBLIC_BASE/mjolnir/userdata/&lt;uid&gt;" | head -c 200`,
+    "The SQL goes in on <b>stdin</b>, never via <code>psql -c</code>: <code>-c</code> is passed to the server verbatim and <code>:'uid'</code> would not be expanded. <code>userdata_history</code> is deliberately NOT restored — it is a rolling 48h window, not an archive.")}
+  ${step(3, "stabbur blobs — <code>blobs/</code>",
     "Flat and content-addressed, so a copy by name is idempotent.",
     `docker compose cp blobs/. stabbur-backend:/blobs/`)}
-  ${step(3, "phonexa audio — <code>phonexa-audio/</code>",
+  ${step(4, "phonexa audio — <code>phonexa-audio/</code>",
     "Plain file copy at the same relative paths. The mirror is copy-if-absent, so an edited sample holds its <b>pre-edit</b> audio and a deleted sample is still here (D147).",
     `docker compose cp phonexa-audio/. phonexa-backend:/data/audio/
 <span class="c"># to refresh ONE file in the backup on purpose:</span>
 docker compose exec backup rm ${escapeHtml(s.environmentOnly.clone.split(" @ ")[0])}/phonexa-audio/lang/nb/ingested/hus.wav`)}
-  ${step(4, "smia — not here",
+  ${step(5, "smia — not here",
     "Deliberately not backed up. Recovery is a re-import; keep <code>smia/providers/</code> safe instead.",
     `docker compose exec smia-backend python -m scripts.bootstrap`)}
 </div>`;
