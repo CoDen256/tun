@@ -16,14 +16,17 @@ them in that order.
 
 | package | status |
 |---|---|
-| Stabbur editor redesign | building — stabbur: `stabbur-editor-redesign`; mjolnir: `projector-examples-column` |
+| Stabbur editor redesign | BLOCKED(C28: should ✨ count badges show on note open, which needs a lookup per field on every open, against note-editor's explicit-action-only rule? Operator ruling needed. Everything else archived: stabbur `2026-11-21-stabbur-editor-redesign`, mjolnir `2026-11-21-projector-examples-column`) |
 
 ## Packages
 
 ### Stabbur editor redesign
 projects: stabbur, mjolnir (builder projector only)
-status: designed 2026-11-20 — changes `stabbur-editor-redesign` (stabbur) and
-`projector-examples-column` (mjolnir). Deploy together, stabbur first.
+status: archived 2026-11-21 with one BLOCKED criterion (C28, operator ruling) —
+stabbur `archive/2026-11-21-stabbur-editor-redesign`, mjolnir
+`archive/2026-11-21-projector-examples-column`. Deploy together, stabbur first
+(OPERATOR-CHECKLIST.md). Not verifiable in the build sandbox, so first checked
+live: C35 (clipboard URL with real DNS) and mjolnir C05 (forecast on the hub stack).
 
 Operator request (2026-11-20, verbatim):
 
