@@ -258,6 +258,82 @@ export async function commitHistory(limit = 6) {
   return { total: count.ok ? Number.parseInt(count.stdout.trim(), 10) : commits.length, commits };
 }
 
+// ---- the account export (userdata-git-history task 2.6) -------------------
+//
+// One file per account, and for each: its size, when it last CHANGED, and how
+// many commits have touched it. The last two are the point — the whole design
+// is "git's own history is the history of the document", so a panel that
+// showed only a size would be reporting the least interesting fact about it.
+//
+// ONE bounded `git log` pass for every file, not one call per file: a repo
+// with many accounts would otherwise cost a process spawn each. `-n` bounds
+// it; a file whose last change is older than that window reports `commits`
+// as "at least N", never a wrong exact number.
+//
+// NOT CACHED, deliberately (tier-2 decision). The clone is local, the call is
+// bounded, and this page's entire value is that it shows the CURRENT state of
+// the backup — a cache here would reintroduce exactly the staleness the
+// console exists to expose. Revisit only if a real repo makes it slow.
+const EXPORT_LOG_LIMIT = 500;
+
+export async function exportArchive() {
+  const dir = path.join(CLONE_DIR, "userdata");
+  let names = [];
+  try {
+    names = fs.readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
+  } catch {
+    return { present: false, files: [], total: 0, truncated: false };
+  }
+
+  const SEP = "\x1f";
+  const REC = "\x1e";
+  const log = await git(["log", `-n${EXPORT_LOG_LIMIT}`, "--name-only", `--format=${REC}%h${SEP}%ct`, "--", "userdata"]);
+  const facts = new Map();
+  let scanned = 0;
+  if (log.ok) {
+    for (const chunk of log.stdout.split(REC).slice(1)) {
+      const [header, ...lines] = chunk.split("\n");
+      const [short, ct] = header.split(SEP);
+      scanned += 1;
+      for (const line of lines) {
+        const file = line.trim();
+        if (!file.startsWith("userdata/")) continue;
+        const name = file.slice("userdata/".length);
+        const prior = facts.get(name);
+        if (prior) prior.commits += 1;
+        else facts.set(name, { commits: 1, lastShort: short, lastEpoch: Number(ct) });
+      }
+    }
+  }
+
+  const files = names.map((name) => {
+    let bytes = null;
+    try {
+      bytes = fs.statSync(path.join(dir, name)).size;
+    } catch {
+      /* vanished between readdir and stat */
+    }
+    const f = facts.get(name) || null;
+    return {
+      name,
+      uid: name.replace(/\.json$/, ""),
+      bytes,
+      commits: f ? f.commits : 0,
+      lastShort: f ? f.lastShort : null,
+      lastEpoch: f ? f.lastEpoch : null,
+    };
+  });
+
+  return {
+    present: true,
+    files,
+    total: files.length,
+    // True when the log window was filled, i.e. commit counts are lower
+    // bounds rather than totals. Stated rather than hidden.
+    truncated: scanned >= EXPORT_LOG_LIMIT,
+  };
+}
+
 // ---- sources -------------------------------------------------------------
 //
 // READ-ONLY, AND THERE IS NO CONTROL TO EXCLUDE ANY OF THEM. The operator was
@@ -284,6 +360,17 @@ const SOURCE_DEFS = [
     kind: "mirror",
     mirror: "phonexa-audio",
     note: "nested <code>lang/&lt;lang&gt;/ingested/&lt;name&gt;.wav</code> · copy-if-absent, never overwritten",
+  },
+  // userdata-git-history: NOT a dump and not a mirror — one mutable file per
+  // account, overwritten in place each run, so that git's own history is the
+  // history of the document. It is the ARCHIVE OF RECORD for account state:
+  // `userdata` and `userdata_history` are excluded from `mjolnir.sql`, and
+  // restoring that dump yields two empty tables refilled from here.
+  {
+    key: "userdata/",
+    label: "account documents",
+    kind: "export",
+    note: "one mutable <code>&lt;uid&gt;.json</code> per account, <code>jsonb_pretty</code>-serialized · <b>the archive of record</b> — this data is excluded from <code>mjolnir.sql</code>",
   },
 ];
 
@@ -463,6 +550,9 @@ export async function readState({ runLimit = 6, commitLimit = 6 } = {}) {
     : null;
   const sources = buildSources({ runs, lastLog });
   const commits = await commitHistory(commitLimit);
+  // userdata-git-history task 2.6. Its own read, degrading on its own: an
+  // absent `userdata/` directory is "nothing exported yet", never an error.
+  const exports_ = await exportArchive();
 
   const interval = settings.values.interval_seconds;
   const retry = settings.values.retry_seconds;
@@ -533,5 +623,6 @@ export async function readState({ runLimit = 6, commitLimit = 6 } = {}) {
     sources,
     commits: commits.commits,
     commitsTotal: commits.total,
+    exports: exports_,
   };
 }

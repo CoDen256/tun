@@ -6,27 +6,27 @@ and be proven to restore before the dump exclusion lands and before the sweep
 deletes anything. A dropped history row is gone; a large dump is merely large.
 
 ## 1. Seed realistic data first
-- [ ] 1.1 Create an account with multiple syncs across several days by issuing
+- [x] 1.1 Create an account with multiple syncs across several days by issuing
       PATCHes against the sync endpoint — never by hand-writing rows — so the
       export is tested against documents the real write path produced.
-- [ ] 1.2 Make the card array large enough that a single-field change is
+- [x] 1.2 Make the card array large enough that a single-field change is
       distinguishable in a diff.
-- [ ] 1.3 Capture `GET` and `PATCH` responses for this account NOW, before any
+- [x] 1.3 Capture `GET` and `PATCH` responses for this account NOW, before any
       change, as the byte-for-byte baseline criteria 25–27 compare against.
 
 ## 2. The export (lands first)
-- [ ] 2.1 Add an export step to `backup/entrypoint.sh`, before the commit, in
+- [x] 2.1 Add an export step to `backup/entrypoint.sh`, before the commit, in
       the same run that commits it.
-- [ ] 2.2 One file per uid in the `userdata` table at `userdata/<uid>.json`.
-- [ ] 2.3 Serialize with Postgres's own `jsonb_pretty` — do **not** add `jq` to
+- [x] 2.2 One file per uid in the `userdata` table at `userdata/<uid>.json`.
+- [x] 2.3 Serialize with Postgres's own `jsonb_pretty` — do **not** add `jq` to
       the image (see `design.md` §3; verified absent). Stable order is the
       requirement; do not "improve" it to alphabetical.
-- [ ] 2.4 Follow the existing all-or-nothing discipline exactly: dump to a
+- [x] 2.4 Follow the existing all-or-nothing discipline exactly: dump to a
       temporary name and rename, so a failed export leaves every committed file
       untouched and makes no commit.
-- [ ] 2.5 Prune the file of a uid that has left the table, matching the existing
+- [x] 2.5 Prune the file of a uid that has left the table, matching the existing
       pruning of a dump whose database left the backup set.
-- [ ] 2.6 Surface the export on the `/backup/` page as `backup-console`'s mockup
+- [x] 2.6 Surface the export on the `/backup/` page as `backup-console`'s mockup
       shows: file, size, last change, commits touching it.
 
 ## 3. Restore, documented and proven

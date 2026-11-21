@@ -104,6 +104,137 @@ init_local_remote_if_needed() {
   log "entrypoint: local dev remote ready (bare, one commit on main)"
 }
 
+# ---- THE ACCOUNT EXPORT (userdata-git-history task 2) ----------------------
+# ONE MUTABLE FILE PER ACCOUNT, `userdata/<uid>.json`, overwritten in place on
+# every run so that GIT'S OWN HISTORY is the history of the document.
+#
+# WHY THIS EXISTS AT ALL, measured 2026-11-20 against the committed backup:
+# `mjolnir.sql` was 44 MB, of which `userdata_history`'s COPY block was
+# **42.4 MB across 82 rows** (~517 KB each) — every other dump in the
+# ecosystem combined was ~2 MB, and the repo's `.git` had reached 106 MB over
+# 88 commits. `userdata_history` appends a COMPLETE copy of the account
+# document on every PATCH, the device PATCHes on every sync, and the whole
+# table was re-dumped and re-committed daily. Essentially the entire backup
+# repository was redundant copies of one account's progress. A mutable file
+# plus a version-control system is what that append-only table was badly
+# reimplementing.
+#
+# WHY THIS SERVICE AND NOT mjolnir-sync OR hub (design §2). A filesystem write
+# in the device-plane request path is forbidden — `docs/11-ota-contract.md` is
+# frozen. hub would need a scheduler, a volume shared between two projects,
+# and a second writer to coordinate with this run; and an export and a commit
+# made by two different processes can disagree about what was archived. This
+# service already connects to Postgres with a derived password, already has
+# `psql`, and already owns the clone and the commit — so the file and the
+# commit cannot drift apart. One writer, no new process, nothing in the device
+# path.
+#
+# SERIALIZED BY POSTGRES ITSELF, `jsonb_pretty` (design §3). `jq` is NOT in
+# this image (verified) and adding a dependency to the one container holding
+# the SSH deploy key is a cost worth avoiding. jsonb_pretty emits keys in
+# jsonb's STORED order — by length, then bytewise — recursively, and expands
+# arrays one element per line. That is **stable**, which is the only property
+# git needs; it is NOT alphabetical, and "fixing" it to alphabetical later
+# would rewrite every line of every file and produce one enormous diff for no
+# gain. The consequence that makes the whole design work: `totalCards` is an
+# array of card objects, so one card's `Stage` changing is ONE line in the
+# diff rather than an opaque half-megabyte blob.
+#
+# Every step is checked explicitly, and all of it is all-or-nothing, for the
+# same errexit-suppression reason the dump section below documents at length:
+# `run_backup` is called from `if`/`||`, which disables errexit for the entire
+# function body recursively.
+export_userdata() {
+  local dir="$BACKUP_REPO/userdata" uids uid count=0
+  mkdir -p "$dir" || { log "entrypoint: FATAL mkdir userdata failed" >&2; return 1; }
+
+  # The uid list first, as its own checked step. A failure here (an
+  # unreachable database, a revoked SELECT) must abort the run — an empty
+  # account list would otherwise be indistinguishable from "every account
+  # left the table" and would PRUNE every committed export. That is the
+  # failure-reports-success shape this whole file is written against.
+  if ! uids=$(PGPASSWORD="${POSTGRES_PASSWORD}_mjolnir" psql -h postgres -U mjolnir -d mjolnir \
+        -v ON_ERROR_STOP=1 -At -c "SELECT device_id FROM userdata ORDER BY device_id"); then
+    log "entrypoint: FATAL could not list accounts for the userdata export — aborting this run" >&2
+    return 1
+  fi
+
+  while IFS= read -r uid; do
+    [ -n "$uid" ] || continue
+    # THE FILENAME IS DERIVED FROM DATA, so it is validated rather than
+    # trusted: the same shape mjolnir-sync's own UID_RE allows. A uid holding
+    # a slash or `..` would write outside `userdata/`, and the right answer is
+    # to FAIL the run — a surprise uid is a surprise about the device plane,
+    # not something to silently skip or sanitise.
+    case "$uid" in
+      *[!A-Za-z0-9._:@-]*|''|.|..)
+        log "entrypoint: FATAL account id '$uid' is not a plain uid — refusing to derive a filename from it" >&2
+        return 1 ;;
+    esac
+    # `-v uid=...` + `:'uid'` so the value is quoted by psql, never
+    # interpolated into SQL by this shell.
+    #
+    # THE QUERY GOES IN ON STDIN, NOT VIA `-c`, and that is not a style
+    # choice. psql expands `:'uid'` only in input it reads as a script; a
+    # `-c` string is passed to the server verbatim, so the first live run of
+    # this step failed with `syntax error at or near ":"`. Found by running
+    # it, not by reading it.
+    #
+    # Written to `.json.tmp` and renamed only once EVERY account succeeded:
+    # `cmd > file` truncates `file` before `cmd` runs, so a failed query
+    # would otherwise leave an empty, committable file where a real export
+    # used to be — found live on the first VPS run of the dumps, and the same
+    # trap applies verbatim here.
+    if ! printf '%s\n' "SELECT jsonb_pretty(doc) FROM userdata WHERE device_id = :'uid';" \
+        | PGPASSWORD="${POSTGRES_PASSWORD}_mjolnir" psql -h postgres -U mjolnir -d mjolnir \
+          -v ON_ERROR_STOP=1 -v uid="$uid" -At \
+          > "$dir/$uid.json.tmp"; then
+      log "entrypoint: FATAL export of account $uid failed — aborting this run, every committed export left untouched" >&2
+      return 1
+    fi
+    # A query that succeeded but produced nothing is still a failed export:
+    # `jsonb_pretty(NULL)` is NULL and prints as an empty line, so an empty
+    # file means the row vanished between the two queries or `doc` is NULL.
+    # Committing that over a real document is a silent data loss.
+    if [ ! -s "$dir/$uid.json.tmp" ]; then
+      log "entrypoint: FATAL export of account $uid is empty — aborting" >&2
+      return 1
+    fi
+    count=$((count + 1))
+  done <<EOF
+$uids
+EOF
+
+  for uid in $uids; do
+    [ -n "$uid" ] || continue
+    mv "$dir/$uid.json.tmp" "$dir/$uid.json" \
+      || { log "entrypoint: FATAL rename of userdata/$uid.json failed" >&2; return 1; }
+  done
+
+  # Prune the export of an account that has LEFT the table, exactly as the
+  # loop below prunes the dump of a database that left the backup set — and
+  # for the same reason: a file that sits in the repo forever, dated and
+  # plausible, reads as a current archive of an account nothing exports any
+  # more. Safe only because the uid list above is a CHECKED step: this line is
+  # never reached with an empty list caused by a failure.
+  local pruned=0 name path
+  for path in "$dir"/*.json; do
+    [ -e "$path" ] || continue
+    name=$(basename "$path" .json)
+    case "
+$uids
+" in
+      *"
+$name
+"*) ;;
+      *) log "entrypoint: account $name is no longer in the userdata table - pruning userdata/$name.json"
+         rm -f "$path"
+         pruned=$((pruned + 1)) ;;
+    esac
+  done
+  log "  userdata/: $count account(s) exported$( [ "$pruned" -gt 0 ] && printf ', %s pruned' "$pruned" )"
+}
+
 run_backup() {
   if [ ! -d "$BACKUP_REPO/.git" ]; then
     init_local_remote_if_needed || { log "entrypoint: FATAL could not prepare the local dev remote" >&2; return 1; }
@@ -266,6 +397,10 @@ run_backup() {
 
   clean_tmp() {
     for db in $DATABASES; do rm -f "$BACKUP_REPO/$db.sql.tmp"; done
+    # userdata-git-history: the account export writes `.json.tmp` beside the
+    # committed files for exactly the same reason the dumps do, so a failed
+    # run must leave none of them behind either.
+    rm -f "$BACKUP_REPO/userdata"/*.json.tmp 2>/dev/null || true
   }
 
   for db in $DATABASES; do
@@ -390,6 +525,16 @@ run_backup() {
   done < <(find /phonexa-audio -type f -print0)
   after=$(find "$BACKUP_REPO/phonexa-audio" -type f | wc -l)
   log "  phonexa-audio/: $before -> $after ($copied new)"
+
+  # THE ACCOUNT EXPORT, IN THE SAME RUN THAT COMMITS IT (userdata-git-history
+  # task 2.1). Before the commit, after the dumps — so the export and the
+  # commit cannot disagree about what was archived. A failure here aborts the
+  # run with nothing staged, like every other step.
+  log "entrypoint: exporting account documents..."
+  if ! export_userdata; then
+    clean_tmp
+    return 1
+  fi
 
   cd "$BACKUP_REPO" || { log "entrypoint: FATAL cd $BACKUP_REPO failed" >&2; return 1; }
   # Prune a dump whose database has LEFT the backup set. Without this, the

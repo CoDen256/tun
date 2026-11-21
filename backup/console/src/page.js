@@ -33,6 +33,7 @@ export const RAIL = [
     group: "Data",
     items: [
       { href: "#sources", label: "Sources" },
+      { href: "#exports", label: "Account documents" },
       { href: "#commits", label: "Commit history" },
     ],
   },
@@ -104,12 +105,14 @@ const OUTCOME_PILL = {
 
 // ---- the live phase rail --------------------------------------------------
 // Derived from the run's own captured log, not from a progress channel the
-// backup service does not have. Four phases, matching the four things
-// run_backup logs; the mockup's fifth and sixth cells are the userdata export,
-// which is the next change's.
+// backup service does not have. Five phases, matching the five things
+// run_backup logs. The export phase was the mockup's fifth cell, left unbuilt
+// by `backup-console` because nothing produced an export yet;
+// `userdata-git-history` is what fills it in.
 const PHASES = [
   { label: "dumping databases", test: (t) => /entrypoint: dumping /.test(t) },
   { label: "mirroring blobs · audio", test: (t) => /entrypoint: syncing /.test(t) },
+  { label: "exporting accounts", test: (t) => /entrypoint: exporting account documents/.test(t) },
   { label: "committing", test: (t) => /no changes, nothing to commit|retrying push|git add|committed and pushed/.test(t) },
   { label: "pushing", test: (t) => /committed and pushed|pushed previously-committed|push/.test(t) },
 ];
@@ -436,6 +439,56 @@ function sources(s) {
 </div>`;
 }
 
+
+// ---- 4b. the account export (userdata-git-history task 2.6) --------------
+//
+// WHY THIS PANEL IS NOT JUST ANOTHER SOURCE ROW. Every other source is a copy
+// of something that still exists somewhere else — lose `stabbur.sql` and the
+// live database is still there. These files are the ARCHIVE OF RECORD: the
+// account tables' data is excluded from `mjolnir.sql`, so a restore of the
+// dump yields two empty tables and the operator's learning progress comes
+// from here and nowhere else. The three facts that matter are therefore not
+// "how big" but WHEN IT LAST CHANGED and HOW MANY VERSIONS EXIST — git's
+// history is the document's history, which is the whole design.
+
+function exportsPanel(s) {
+  const ex = s.exports || { present: false, files: [], total: 0 };
+  const head = `
+<div class="section-head" id="exports">
+  <h3>Account documents</h3>
+  <span class="note">one mutable file per account · git's own history is the document's history <span class="ro-tag">read-only</span></span>
+</div>`;
+
+  if (!ex.present || ex.total === 0) {
+    return `${head}
+<div class="panel panel-pad">
+  <span class="note">nothing exported yet — <code>userdata/</code> does not exist in the clone. The export runs as part of every backup run,
+  immediately before the commit; until the first one completes, <code>userdata_history</code>'s rolling window is the only copy of recent progress.</span>
+</div>`;
+  }
+
+  const rows = ex.files.map((f) => `<tr>
+      <td><code>userdata/${escapeHtml(f.name)}</code></td>
+      <td class="num">${escapeHtml(bytes(f.bytes))}</td>
+      <td>${f.lastEpoch ? `${escapeHtml(stamp(f.lastEpoch))} <span style="color:var(--text-faint)">${escapeHtml(f.lastShort)}</span>` : '<span style="color:var(--text-faint)">never committed</span>'}</td>
+      <td class="num">${f.commits ? `${ex.truncated ? "≥" : ""}${count(f.commits)}` : "—"}</td>
+    </tr>`);
+
+  return `${head}
+<div class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>file</th><th class="num">size</th><th>last change</th><th class="num">commits touching it</th></tr></thead>
+      <tbody>${rows.join("\n")}</tbody>
+    </table>
+  </div>
+  <div class="panel-head" style="border-bottom:0;border-top:1px solid var(--border-soft)">
+    <span class="note">${count(ex.total)} account(s)${ex.truncated ? ` · commit counts are lower bounds — only the most recent commits touching <code>userdata/</code> were scanned` : ""}
+    · serialized with Postgres's own <code>jsonb_pretty</code>, whose key order is stable (by length, then bytewise), so one changed field is one changed line</span>
+  </div>
+</div>`;
+}
+
 // ---- 5. settings ---------------------------------------------------------
 
 function settings(s) {
@@ -595,6 +648,7 @@ ${healthBanner(s)}
 ${runNow(s)}
 ${runHistory(s)}
 ${sources(s)}
+${exportsPanel(s)}
 ${settings(s)}
 ${commits(s)}
 ${restore(s)}`;
