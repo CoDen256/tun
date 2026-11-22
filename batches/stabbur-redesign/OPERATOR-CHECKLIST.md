@@ -239,7 +239,11 @@ the previous images of `stabbur-backend` and `mjolnir-builder`.
    contributes what it has and is not topped up.
 4. **Provider order per language (finding 4).** Settings → Provider order
    now lists "Translations · en" and "Translations · de" separately. Reorder
-   one; the other must not move. Open a note's translations sheet: it is
+   one by dragging its handle; the other must not move. **Reload and check
+   the order stuck** — a browser-automated drag could not commit one during
+   testing (no "Order saved" toast), so a real mouse drag is the one part of
+   finding 4 confirmed by nothing but a keyboard reorder.
+   Open a note's translations sheet: it is
    grouped by language, each group's boxes in that language's order. Add a
    language in Translation languages — its list appears, starting from the
    order the others started from.

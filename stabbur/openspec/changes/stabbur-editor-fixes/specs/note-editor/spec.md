@@ -3,9 +3,19 @@
 ## MODIFIED Requirements
 
 ### Requirement: A word note's lemma follows its text until the operator edits it
-The system SHALL keep a word note's `lemma` synchronised with the first
-whitespace-separated token of its `text` as the operator types, without
-requiring any explicit action. Once the operator edits `lemma` directly,
+The system SHALL keep a word note's `lemma` synchronised with its `text` as
+the operator types, without requiring any explicit action. The derivation
+strips a leading article or infinitive marker (`en`, `ei`, `et`, `å`) and a
+trailing particle (`til`, `ut`, `opp`, `i`, …) and keeps what is between:
+`"å legge til"` gives `"legge"`, and `"skynde seg"` gives `"skynde seg"`,
+because `seg` is not a particle.
+
+CORRECTION, 2026-11-22: this requirement used to say "the first
+whitespace-separated token", which was never what the code did — the
+stopword derivation shipped with `lemma-first-suggestions` and the sentence
+was not updated with it. Found by the tester for this change, on a note
+whose text is `"skynde seg"`. The behaviour is right; only the sentence was
+wrong, so the sentence changed. Once the operator edits `lemma` directly,
 the system SHALL stop synchronising it for that note and SHALL preserve the
 operator's value. Loading a different note SHALL clear that state, so the
 next note begins synchronised again.
@@ -22,6 +32,11 @@ still empty — so that pressing Prefill is never refused for want of a lemma.
 - **WHEN** the operator types `"legge til"` into `text` on a word note whose
   lemma they have not edited
 - **THEN** `lemma` reads `"legge"`
+
+#### Scenario: A multi-word text with nothing to strip
+- **WHEN** the operator types `"skynde seg"` into `text` on a word note whose
+  lemma they have not edited
+- **THEN** `lemma` reads `"skynde seg"` — the whole phrase, not its first word
 
 #### Scenario: The operator overrides the lemma
 - **WHEN** the operator edits `lemma` by hand and then continues editing
