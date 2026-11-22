@@ -1,6 +1,11 @@
 # System-Wide Master Backlog
 
 ## Quick Log (Manual Dump)
+[ux] builder "s" is replaced with space when i hover over any card to see its contents. 
+[ux] builder should have proper diff display between old content and new content of cards that update their content. it actually shows the old content i guess and i have no idea what have changed.
+[ux] stabbur settings drag and drop not working and in general the whole settings page is very slow and not responsive
+[ux] stabbur for prefill ask the number from settings providers, but when opened a suggestion drawer it should ask for more sentences.
+[ux] stabbur example prefiiling should add examples when one is already there, but do not repeat
 
 ## Triage & Planned Packages
 
