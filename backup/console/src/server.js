@@ -220,7 +220,22 @@ export function createServer() {
             activeZone: `${PREFIX}/`,
             activeHref: "#health",
             rail,
-            body: `<style>${PAGE_STYLE}</style>${renderContent(state)}<script>${PAGE_SCRIPT}</script>`,
+            // THE STYLE AND THE SCRIPT LIVE OUTSIDE THE SWAPPED REGION, and
+            // that is load-bearing rather than tidiness. `renderShell` nests
+            // this whole body inside `<div class="content">`, and the poll
+            // below refreshes the page by assigning `innerHTML` from
+            // `/api/view` — which returns `renderContent` ALONE. With the
+            // `<style>` inside the swapped element, the first refresh tick
+            // DELETED THE PAGE'S OWN STYLESHEET: the shared shell CSS in
+            // `<head>` survived, so the page degraded to readable-but-unstyled
+            // text and bare forms, and only a reload brought it back. Reported
+            // from live use, 2026-11-26.
+            //
+            // So the refreshable content gets its own element, `#view`, and
+            // the style and script sit beside it where no swap can reach them.
+            // Anything added here later must go outside `#view` too unless it
+            // is meant to be re-rendered on every tick.
+            body: `<style>${PAGE_STYLE}</style><div id="view">${renderContent(state)}</div><script>${PAGE_SCRIPT}</script>`,
           })
         );
       }

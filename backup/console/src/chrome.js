@@ -70,7 +70,13 @@ button[disabled]:hover { border-color: var(--border); }
 .hb-cell .v.warny { color: var(--warn); }
 .hb-cell .v.good { color: var(--ok); }
 .hb.state-ok { border-color: var(--ok); }
-.hb.state-fail, .hb.state-stale { border-width: 2px; }
+.hb.state-fail, .hb.state-stale, .hb.state-never { border-width: 2px; }
+/* "never completed" is DASHED where a failed run is solid: nothing has ever
+   happened, as against a definite failure event with an older good backup
+   behind it. Criterion 12 wants the two distinguishable without reading. */
+.hb.state-never { border-color: var(--err); border-style: dashed; }
+.hb.state-never .hb-top { background: var(--err-soft); }
+.hb.state-never .hb-ico { background: transparent; color: var(--err); border: 2px dashed var(--err); }
 .hb.state-fail { border-color: var(--err); }
 .hb.state-fail .hb-top { background: var(--err-soft); }
 .hb.state-fail .hb-ico { background: var(--err); color: #fff; }
@@ -181,7 +187,19 @@ tr.src-alarm .why { color: var(--err); font-weight: 650; white-space: normal; }
 // re-opens the rows that were open, keyed by their stable ids.
 export const PAGE_SCRIPT = `
 const API = "/backup/api";
-const content = document.querySelector(".content");
+// THE SWAP TARGET IS #view, NOT .content, AND THAT IS THE WHOLE BUG FIX.
+// renderShell nests the page body inside div.content, and this page's own
+// style block sits in that body. Refreshing by assigning content.innerHTML
+// from /api/view -- which returns the content ALONE -- therefore DELETED THE
+// PAGE'S STYLESHEET on the first tick: the shared shell CSS in <head>
+// survived, so the console degraded to unstyled text and bare forms a few
+// seconds after loading, and only a reload restored it. Reported from live
+// use, 2026-11-26.
+//
+// #view wraps only the refreshable content; the style and the script sit
+// outside it, where no swap can reach them. NOTE: this whole script is a
+// template literal in chrome.js, so never use a backtick in these comments.
+const content = document.getElementById("view") || document.querySelector(".content");
 
 function applyStoredTheme() {
   const t = localStorage.getItem("tun.theme");

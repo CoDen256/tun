@@ -164,8 +164,15 @@ function healthBanner(s) {
     // NO AGE AND NO TIMESTAMP HERE, deliberately. There is no success to date,
     // and rendering an unknown as "0s ago" is how a service that has backed up
     // nothing comes to look like one that just succeeded.
-    cls = "state-fail";
-    ico = "✕";
+    // ITS OWN STATE, NOT state-fail's. These two were rendered identically —
+    // same class, same ✕, same solid red — and they are different situations:
+    // a FAILED run still leaves an older good backup on the remote, while
+    // "never completed" means NOTHING EXISTS ANYWHERE. Telling them apart by
+    // reading the headline is exactly the "glance at the banner" case this
+    // panel is for, so the distinction is carried by the border style and the
+    // glyph too (acceptance criterion 12; found in testing, 2026-11-26).
+    cls = "state-never";
+    ico = "∅";
     pill = ["no backup has ever completed", "pill-err"];
     head = "No backup has EVER completed";
     sub = `There is no success stamp at <code>${escapeHtml(s.environmentOnly.stamp)}</code>. Nothing has been pushed to the remote by this service — not an old backup, not a partial one. ${s.runsTotal ? "Runs have been recorded; open the newest one below for the reason." : "No run has been recorded either."}`;
