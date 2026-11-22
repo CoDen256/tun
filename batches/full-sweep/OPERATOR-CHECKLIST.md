@@ -510,3 +510,148 @@ popup's own prefs — the new Save-view feature was the first thing to
 actually hit it. Worth knowing if a future feature's settings seem to
 silently not load: check `cardPreviewPopup.js`'s `settingsCache` seeding
 first.
+
+---
+
+## Device sync & userdata storage (archived 2026-11-22)
+
+Three changes: `backup-console`, `userdata-git-history`, `ota-pull-tracking`.
+Agent-verified against 129 written criteria: **106 PASS, 8 partial, 15
+untested, 0 FAIL**. Archived ≠ accepted — the untested ones are below, for you.
+
+### Deploy
+
+Standard pull / build / restart, with three things that are NOT standard:
+
+1. **`backup` moved out of the root `compose.yaml`** into its own
+   `backup/compose.yaml`, which the root now `include:`s. The
+   `backup-repo-clone` volume keeps its explicit `name: tun_backup-repo-clone`,
+   so your existing clone is reused. After the first `docker compose up`,
+   confirm there is **no second clone volume**:
+   ```
+   docker volume ls | grep backup
+   ```
+   Expect `tun_backup-repo-clone`, plus the new `tun_backup-state`. (A
+   `tun_backup-dev-remote` only appears in dev.)
+
+2. **`backup` must be rebuilt, not just restarted.** `entrypoint.sh` is
+   `COPY`'d into the image, so a pull alone does nothing:
+   ```
+   docker compose build backup && docker compose up -d backup backup-console
+   ```
+
+3. **Leave `BACKUP_REPO_URL` exactly as it is.** It now accepts two shapes and
+   the shape itself is the switch: a `git@github.com:…` URL is production, an
+   absolute path is a local dev remote. Your value is already the former, so
+   the dev path is unreachable by construction.
+
+New `.env` values are **first-boot seeds only** (`BACKUP_INTERVAL_SECONDS`,
+`BACKUP_RETRY_SECONDS`, and run-log retention). Once stored, the console owns
+them and the variable no longer wins — that is deliberate (D165).
+
+### One-time migrations
+
+- **`021_ota_pulls.sql`** — applied automatically on hub boot, no manual step.
+  Confirm after restart:
+  ```
+  docker compose exec postgres psql -U mjolnir -d mjolnir -c "\d ota_pulls"
+  ```
+
+- **No migration for the account tables.** `userdata`/`userdata_history` keep
+  their schema; what changed is that their DATA leaves `mjolnir.sql` and the
+  archive becomes `userdata/<uid>.json` in the backup repo.
+
+### ⚠ Do this in order, on the first backup run after deploy
+
+The first run is the one that matters, because from then on the committed
+export is the only copy of your learning progress.
+
+1. Trigger one run and watch it finish — `/backup/` → **Run now**, or wait.
+2. **Confirm the export exists and looks right** before letting anything else
+   happen:
+   ```
+   docker compose exec backup sh -c 'ls -la /data/tun-backup/userdata/ && head -20 /data/tun-backup/userdata/<your-uid>.json'
+   ```
+   You should see one pretty-printed JSON file per account, one value per line.
+3. Confirm it reached the remote (`/backup/` → Commit history, or `git log` in
+   the backup repo).
+4. Only then let a second run happen. **The sweep deletes `userdata_history`
+   rows older than 48h, and that is irreversible.** It is gated — it refuses to
+   delete any period the committed archive does not already cover — but the
+   gate only helps if step 2 actually succeeded.
+
+Your VPS currently carries ~82 history rows / ~42 MB inside `mjolnir.sql`.
+After this, `mjolnir.sql` drops to roughly its real size and the 106 MB of
+existing git history stays as-is (deliberately — growth stops, the past stays).
+
+### Restore, which has changed
+
+Restoring `mjolnir.sql` now brings `userdata` back **empty by design**. Your
+progress comes from the committed export, via the import step shown on
+`/backup/` → Restore. Two safeguards were added after review found them
+missing:
+
+- the export **refuses to prune** when the account table is empty while
+  archived exports exist — which is exactly the mid-restore state, and without
+  the guard the next run deleted and pushed away the whole archive (reproduced
+  live before it was fixed);
+- the sweep **holds** any account the archive does not currently cover.
+
+### Live flows to test
+
+**`/backup/`** — the page is new, so most of this is first contact.
+- The health banner. Three bad states exist and look different: never-completed
+  (dashed, ∅), failed (solid red, ✕), stale remote (amber, !).
+- **Run now** → it should report *queued*, then run, then appear in history.
+- **Settings** (untested by agents — please check these): change the schedule
+  interval, confirm the next-run time moves, then restart both services and
+  confirm the value survived and `.env` did not override it.
+- Run history: open a run and read its full log.
+- Sources: sizes and per-run deltas. There is deliberately no control to
+  exclude a source.
+- Restore: the commands are copyable.
+
+**`/mjolnir/device` (Sync)** — the history panel is now two tiers in one
+timeline: per-PATCH for 48h from Postgres, one entry per backup run from git
+below a labelled horizon. Worth testing: stop `backup-console` and reload — the
+recent tier must still render fully, with only the archived region reporting
+unavailability.
+
+**`/mjolnir/device/pulls`** (new) and **Publish history** — after the phone
+fetches a bundle, the pull count and last-pulled should move. A build that is
+current and never pulled is flagged; one superseded before anything checked in
+stays quiet.
+
+### Not verified by agents — your call
+
+- backup-console **settings persistence** across a restart, the stored-interval
+  health threshold, the queued/in-progress run window, and
+  `cd backup && docker compose up` standalone.
+- backup-console **criterion 33**: a source going empty while its mirror is not.
+  Never exercised, because producing it means emptying a real volume. It is the
+  condition most likely to matter on the VPS.
+- **Visual/theme fidelity** on all three pages — CDP screenshots were
+  unavailable for most of the build.
+- The Sync page's **archived tier older than 48h** was demonstrated partly
+  against fabricated backdated commits in the dev clone. On your VPS the real
+  ages only appear after a few days of runs.
+
+### Known, deliberate, and already in the backlog
+
+- The ingest file cursor can skip lines if Caddy rolls the log and the
+  replacement outgrows the old offset within 60s. Negligible at your volume.
+- Pull ingest runs on two page renders; invisible at ~16 requests/day.
+
+### Rode along, outside this package
+
+- `fix(insights)` — the Insights charts read `c.DECK_ID`, a field that does not
+  exist on a userdata card (all cards carry `D`). The route answered 500 and
+  every chart drew nothing. Pre-existing; fixed on its own merits.
+- `fix(backup-console)` — the console lost its stylesheet on the first
+  auto-refresh; reported from live use.
+- `refactor(ui)` — the Pulls, Sync and backup pages were cut from
+  1010/1215/1466 words visible on load to 731/902/748, on your feedback that
+  they were overloaded. Explanations moved behind one collapsed note per page
+  rather than being deleted. If they still feel heavy, the remaining lever is
+  default page size (25 pull events, 50 per-card rows), which is a one-line
+  change per page.

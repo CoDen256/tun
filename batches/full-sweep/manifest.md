@@ -43,7 +43,7 @@ All other packages are parallel-safe.
 | Builder UI rehaul & data versioning | archived — mjolnir: `2026-11-19-flush-record-atomicity`, `2026-11-19-builder-ship-strips` |
 | Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` (item 3 redone by "Card preview redo") |
 | Card preview redo | archived — `mjolnir/openspec/changes/archive/2026-11-20-card-preview-popup` |
-| Device sync & userdata storage | building (root: `backup-console`, `userdata-git-history`, `ota-pull-tracking`) |
+| Device sync & userdata storage | archived 2026-11-22 — root: `2026-11-22-backup-console`, `2026-11-22-userdata-git-history`, `2026-11-22-ota-pull-tracking` |
 | Stabbur merging & dict.cc translations | archived — smia `2026-11-18-dictcc-parsing-fixes`; stabbur `2026-11-18-stabbur-merge-fixes`, `2026-11-18-stabbur-triage-queues` |
 | Shadow studying mode | archived — `shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode` |
 | Calst/pygmalion audio consolidation | archived (smia: `2026-11-15-calst-audio-union`) |
