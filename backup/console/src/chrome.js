@@ -164,6 +164,9 @@ tr.src-alarm .why { color: var(--err); font-weight: 650; white-space: normal; }
 
 /* restore */
 .rs { display: flex; flex-direction: column; }
+details.rs { display: block; }
+details.rs > summary { cursor: pointer; padding: 12px 18px; font-size: 12.5px; color: var(--text-dim); font-weight: 650; }
+details.rs[open] > summary { border-bottom: 1px solid var(--border-soft); }
 .rs-step { border-top: 1px solid var(--border-soft); padding: 14px 18px; }
 .rs-step:first-child { border-top: 0; }
 .rs-step h4 { font-size: 12.5px; display: flex; align-items: center; gap: 9px; }
@@ -218,7 +221,7 @@ let busy = false;
 let timer = null;
 
 function openRowIds() {
-  return [...document.querySelectorAll("details.row-x[open]")].map((d) => d.id);
+  return [...document.querySelectorAll("details.row-x[open], details.keepopen[open]")].map((d) => d.id);
 }
 
 function editingSettings() {
@@ -261,6 +264,17 @@ function schedule() {
   timer = setTimeout(refresh, live ? 2000 : 20000);
 }
 schedule();
+
+// A rail link to a section whose body is collapsed must open it, or the
+// anchor lands on a heading with nothing under it.
+function openHashTarget() {
+  const id = location.hash.slice(1);
+  if (!id) return;
+  const d = document.getElementById(id + "-steps") || document.getElementById(id);
+  if (d && d.tagName === "DETAILS") d.open = true;
+}
+openHashTarget();
+window.addEventListener("hashchange", openHashTarget);
 
 document.addEventListener("click", async (e) => {
   const theme = e.target.closest(".theme-toggle button");

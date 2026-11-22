@@ -175,7 +175,7 @@ function healthBanner(s) {
     ico = "∅";
     pill = ["no backup has ever completed", "pill-err"];
     head = "No backup has EVER completed";
-    sub = `There is no success stamp at <code>${escapeHtml(s.environmentOnly.stamp)}</code>. Nothing has been pushed to the remote by this service — not an old backup, not a partial one. ${s.runsTotal ? "Runs have been recorded; open the newest one below for the reason." : "No run has been recorded either."}`;
+    sub = `Nothing has been pushed to the remote by this service — not an old backup, not a partial one. ${s.runsTotal ? "Open the newest run below for the reason." : "No run has been recorded either."}`;
   } else if (h.state === "fail") {
     // THE FAILURE IS THE PRIMARY STATE, ahead of any older success — showing
     // a stale success as the current state is this ecosystem's signature
@@ -190,33 +190,33 @@ function healthBanner(s) {
       ? `Last run FAILED — committed locally, so the remote is STALE (${unpushed} unpushed commit${unpushed === 1 ? "" : "s"})`
       : "Last run FAILED — nothing was backed up this cycle";
     sub = unpushed > 0
-      ? `${unpushed} commit${unpushed === 1 ? "" : "s"} exist only in <code>${escapeHtml(s.environmentOnly.clone)}</code> inside the backup container — <b>losing the host loses them.</b> Retry ${h.nextRunEpoch ? `is due <b>${escapeHtml(stamp(h.nextRunEpoch))}</b>` : "interval is in force"} — the <b>retry</b> interval of ${duration(h.retrySeconds)}, not the schedule. The newest backup that reached the remote is the one from <b>${escapeHtml(stamp(h.stampEpoch))}</b>.`
-      : `Every committed <code>.sql</code> was left untouched and no commit was made this cycle. The newest backup that reached the remote is the one from <b>${escapeHtml(stamp(h.stampEpoch))}</b>. Retry ${h.nextRunEpoch ? `is due <b>${escapeHtml(stamp(h.nextRunEpoch))}</b>` : "interval is in force"} — the <b>retry</b> interval of ${duration(h.retrySeconds)}, not the schedule.`;
+      ? `${unpushed} commit${unpushed === 1 ? "" : "s"} exist only inside the backup container — <b>losing the host loses them.</b> Last on the remote: <b>${escapeHtml(stamp(h.stampEpoch))}</b>. Retry ${h.nextRunEpoch ? `due <b>${escapeHtml(stamp(h.nextRunEpoch))}</b>` : `in ${duration(h.retrySeconds)}`}.`
+      : `Nothing was committed this cycle. Last on the remote: <b>${escapeHtml(stamp(h.stampEpoch))}</b>. Retry ${h.nextRunEpoch ? `due <b>${escapeHtml(stamp(h.nextRunEpoch))}</b>` : `in ${duration(h.retrySeconds)}`}.`;
   } else if (h.state === "stale" && unpushed > 0) {
     cls = "state-stale";
     ico = "!";
     pill = ["remote stale", "pill-warn"];
     head = "Committed locally — but the push has not landed, so the remote is STALE";
-    sub = `${unpushed} local commit${unpushed === 1 ? "" : "s"} exist only in <code>${escapeHtml(s.environmentOnly.clone)}</code> inside the backup container. <b>Losing the host loses them.</b>`;
+    sub = `${unpushed} local commit${unpushed === 1 ? "" : "s"} exist only inside the backup container. <b>Losing the host loses them.</b>`;
   } else if (h.state === "stale") {
     cls = "state-stale";
     ico = "!";
     pill = ["overdue", "pill-warn"];
     head = "The last successful backup is older than one scheduled interval";
-    sub = `The container health check judges this against the <b>stored</b> schedule: age ${duration(h.ageSeconds)} against a limit of ${duration(h.limitSeconds)} (interval + interval/4). ${s.scheduler.known ? "The scheduler is running." : "The backup service's own state cannot be determined."}`;
+    sub = `age ${duration(h.ageSeconds)} against a limit of ${duration(h.limitSeconds)}. ${s.scheduler.known ? "The scheduler is running." : "<b>The backup service's own state cannot be determined.</b>"}`;
   } else {
     cls = "state-ok";
     ico = "✓";
     pill = ["healthy", "pill-ok"];
     head = "Backed up";
-    sub = "A full run finished end to end — dumps, mirrors, commit and push.";
+    sub = "dumps · mirrors · commit · push";
   }
 
   const nextCell = s.scheduler.known && h.nextRunEpoch
     ? `<div class="v${h.state === "fail" ? " warny" : ""}">in ${duration(h.nextRunEpoch - s.nowEpoch)}</div>
        <div class="x">${escapeHtml(stamp(h.nextRunEpoch))} · ${escapeHtml(s.scheduler.nextRunReason === "retry" ? `retry interval ${duration(h.retrySeconds)}` : `interval ${duration(h.intervalSeconds)}`)}</div>`
     : `<div class="v warny">unknown</div>
-       <div class="x">the backup service's scheduler is not reporting — nothing is known to be due</div>`;
+       <div class="x">the scheduler is not reporting</div>`;
 
   return `
 <div class="hb ${cls}" id="health">
@@ -235,7 +235,7 @@ function healthBanner(s) {
     <div class="hb-cell">
       <div class="k">Last success</div>
       <div class="v${h.stampEpoch ? "" : " bad"}">${h.stampEpoch ? escapeHtml(stamp(h.stampEpoch)) : "never"}</div>
-      <div class="x">${h.stampEpoch ? `${escapeHtml(duration(h.ageSeconds))} ago · stamp <code>${escapeHtml(s.environmentOnly.stamp)}</code>` : `no <code>${escapeHtml(s.environmentOnly.stamp)}</code> exists`}</div>
+      <div class="x" title="stamp ${escapeHtml(s.environmentOnly.stamp)}">${h.stampEpoch ? `${escapeHtml(duration(h.ageSeconds))} ago` : `no success stamp exists`}</div>
     </div>
     <div class="hb-cell">
       <div class="k">Next run</div>
@@ -246,15 +246,15 @@ function healthBanner(s) {
       <div class="v ${unpushed === null ? "warny" : unpushed > 0 ? "bad" : "good"}">${unpushed === null ? "unknown" : count(unpushed)}</div>
       <div class="x">${s.git.present
         ? unpushed > 0
-          ? `HEAD <code>${escapeHtml(s.git.head || "?")}</code> · ${escapeHtml(s.git.upstream || "upstream")} <code>${escapeHtml(s.git.upstreamSha || "?")}</code>`
-          : `HEAD = ${escapeHtml(s.git.upstream || "upstream")} at <code>${escapeHtml(s.git.head || "?")}</code>`
-        : "there is no clone to compare against"}</div>
+          ? `HEAD <code>${escapeHtml(s.git.head || "?")}</code> ≠ <code>${escapeHtml(s.git.upstreamSha || "?")}</code>`
+          : `HEAD = ${escapeHtml(s.git.upstream || "upstream")}`
+        : "no clone to compare against"}</div>
     </div>
     <div class="hb-cell">
       <div class="k">Container health</div>
       <div class="v ${h.containerHealthy ? "good" : "bad"}">${h.containerHealthy ? "healthy" : "UNHEALTHY"}</div>
-      <div class="x">${h.stampEpoch
-        ? `age ${count(h.ageSeconds)}s · limit ${count(h.limitSeconds)}s (stored interval ${escapeHtml(duration(h.intervalSeconds))} + a quarter)`
+      <div class="x" title="the limit is the stored interval plus a quarter of it">${h.stampEpoch
+        ? `age ${count(h.ageSeconds)}s / limit ${count(h.limitSeconds)}s`
         : `healthcheck.sh exits 1 while no run has completed`}</div>
     </div>
   </div>
@@ -292,7 +292,7 @@ function runNow(s) {
     // QUEUED, NOT RUNNING. The request is a file; the scheduler claims it on
     // its next tick. Reporting it as running before it has started is the
     // failure shape this page is written against.
-    hint = `the request is written and waiting for the scheduler to claim it${sch.tickSeconds ? ` (it looks every ${sch.tickSeconds}s)` : ""} — nothing has started yet`;
+    hint = `waiting for the scheduler to claim it${sch.tickSeconds ? ` (it looks every ${sch.tickSeconds}s)` : ""} — nothing has started yet`;
     disabled = true;
   } else if (running) {
     state = `<span class="pill pill-warn">running</span>`;
@@ -300,11 +300,11 @@ function runNow(s) {
     disabled = true;
   } else if (!sch.known) {
     state = `<span class="pill pill-err">scheduler unknown</span>`;
-    hint = "the backup service is not reporting, so a request would sit unclaimed — start it first";
+    hint = "not reporting — a request would sit unclaimed; start the service first";
     disabled = true;
   } else {
     state = "";
-    hint = "dumps → file mirrors → commit → push, exactly as the schedule runs it";
+    hint = "dumps → mirrors → commit → push";
   }
 
   const last = s.runs[0];
@@ -313,8 +313,7 @@ function runNow(s) {
   return `
 <div class="panel" id="runnow">
   <div class="panel-head">
-    <h3>Run now</h3>
-    <span class="note">identical to the scheduled run — the console never dumps, commits or pushes</span>
+    <h3 title="identical to the scheduled run — the console itself never dumps, commits or pushes">Run now</h3>
   </div>
   <div class="panel-pad">
     <div class="toolbar" style="margin-bottom:12px">
@@ -329,7 +328,7 @@ function runNow(s) {
       <span class="pill ${pill[1]}">${escapeHtml(pill[0])}</span>
       <span class="big">${escapeHtml(duration(last.duration_seconds))}</span>
       <span>${escapeHtml(last.summary || "")}</span>
-      <span style="color:var(--text-faint)">${last.head ? `HEAD <code>${escapeHtml(last.head)}</code>` : ""} · triggered by ${escapeHtml(last.trigger)}</span>
+      <span style="color:var(--text-faint)" title="trigger: ${escapeHtml(last.trigger)}">${last.head ? `<code>${escapeHtml(last.head)}</code>` : ""} · ${escapeHtml(last.trigger)}</span>
       <span class="spacer"></span>
       <button type="button" class="btn-sm" data-open-run="${escapeHtml(last.id)}">Show log</button>
     </div>`
@@ -376,17 +375,13 @@ function runHistory(s) {
   return `
 <div class="section-head" id="runs">
   <h3>Run history</h3>
-  <span class="note">one record + one log per run under <code>${escapeHtml(s.environmentOnly.stateDir)}/runs/</code> · ${count(s.runsTotal)} retained (retention ${count(s.retention)} runs) · ${count(s.runs.length)} shown</span>
+  <span class="note" title="one record + one log per run under ${escapeHtml(s.environmentOnly.stateDir)}/runs/">${count(s.runs.length)} of ${count(s.runsTotal)} retained · retention ${count(s.retention)}</span>
 </div>
 <div class="panel">
-  <div class="panel-head">
-    <h3 style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint)">started · duration · outcome · what changed</h3>
-    <span class="note">click a row for its full captured log</span>
-  </div>
-  ${rows.length ? rows.join("\n") : `<div class="panel-pad"><div class="inline-note">No run has been recorded yet. A run record appears here the moment the backup service finishes one, including a run that failed.</div></div>`}
+  ${rows.length ? rows.join("\n") : `<div class="panel-pad"><div class="inline-note">No run has been recorded yet.</div></div>`}
   ${s.runsTotal > s.runs.length
     ? `<div class="panel-head" style="border-bottom:0;border-top:1px solid var(--border-soft)">
-    <span class="note">${count(s.runs.length)} of ${count(s.runsTotal)} retained runs · records older than the retention window are pruned, the commits are not</span>
+    <span class="note" title="records older than the retention window are pruned; the commits are not">${count(s.runs.length)} of ${count(s.runsTotal)}</span>
     <button type="button" class="btn-sm" id="more-runs">Load 20 more</button>
   </div>`
     : ""}
@@ -407,13 +402,13 @@ function sources(s) {
       </tr>`;
     }
     const delta = src.fault
-      ? `<span class="why">${escapeHtml(src.fault)} The run aborted rather than commit a green, mirror-nothing backup.</span>`
+      ? `<span class="why" title="The run aborted rather than commit a green, mirror-nothing backup.">${escapeHtml(src.fault)}</span>`
       : src.deltaFiles
         ? `<span class="delta-good">${src.deltaFiles > 0 ? "+" : "−"}${count(Math.abs(src.deltaFiles))} files</span> <span style="color:var(--text-faint)">(${count(src.files - src.deltaFiles)} → ${count(src.files)})</span>`
         : src.deltaBytes
           ? `<span class="delta-good">${escapeHtml(signedBytes(src.deltaBytes))}</span>`
           : src.deltaBytes === null
-            ? `<span class="delta-flat">no previous run to compare against</span>`
+            ? `<span class="delta-flat">no previous run</span>`
             : `<span class="delta-flat">no change</span>`;
     return `<tr${src.fault ? ' class="src-alarm"' : ""}>
       <td><b>${escapeHtml(src.label)}</b>${src.note ? `<div style="font-size:11.5px;color:var(--text-dim);white-space:normal">${src.note}</div>` : ""}</td>
@@ -429,19 +424,19 @@ function sources(s) {
   return `
 <div class="section-head" id="sources">
   <h3>Sources</h3>
-  <span class="note">sizes read live from the clone${s.sources[0]?.asOf ? `, counts as of the run at ${escapeHtml(isoShort(s.sources[0].asOf))}` : ""} <span class="ro-tag">read-only</span></span>
+  <span class="note" title="sizes read live from the clone${s.sources[0]?.asOf ? `; counts as of the run at ${escapeHtml(isoShort(s.sources[0].asOf))}` : ""}"><span class="ro-tag">read-only</span></span>
 </div>
 <div class="panel">
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>source</th><th>in the repo</th><th class="num">size</th><th class="num">files</th><th>change since the previous run</th></tr>
+        <tr><th>source</th><th>in the repo</th><th class="num">size</th><th class="num">files</th><th title="change since the previous run">change</th></tr>
       </thead>
       <tbody>${rows.join("\n")}</tbody>
     </table>
   </div>
   <div class="panel-head" style="border-bottom:0;border-top:1px solid var(--border-soft)">
-    <span class="note">repo ${escapeHtml(bytes(s.runs[0]?.repo_bytes ?? null))} + git ${escapeHtml(bytes(s.runs[0]?.git_bytes ?? null))} · there is deliberately no switch to exclude a source: a source switched off is indistinguishable, afterwards, from one that silently stopped being backed up</span>
+    <span class="note" title="A source switched off is indistinguishable, afterwards, from one that silently stopped being backed up.">repo ${escapeHtml(bytes(s.runs[0]?.repo_bytes ?? null))} + git ${escapeHtml(bytes(s.runs[0]?.git_bytes ?? null))} · no exclude switch, deliberately</span>
   </div>
 </div>`;
 }
@@ -463,14 +458,13 @@ function exportsPanel(s) {
   const head = `
 <div class="section-head" id="exports">
   <h3>Account documents</h3>
-  <span class="note">one mutable file per account · git's own history is the document's history <span class="ro-tag">read-only</span></span>
+  <span class="note" title="one mutable file per account — git's own history is the document's history"><span class="ro-tag">read-only</span></span>
 </div>`;
 
   if (!ex.present || ex.total === 0) {
     return `${head}
 <div class="panel panel-pad">
-  <span class="note">nothing exported yet — <code>userdata/</code> does not exist in the clone. The export runs as part of every backup run,
-  immediately before the commit; until the first one completes, <code>userdata_history</code>'s rolling window is the only copy of recent progress.</span>
+  <span class="note" title="The export runs as part of every backup run, immediately before the commit. Until the first one completes, userdata_history's rolling window is the only copy of recent progress.">nothing exported yet — <code>userdata/</code> does not exist in the clone</span>
 </div>`;
   }
 
@@ -485,13 +479,12 @@ function exportsPanel(s) {
 <div class="panel">
   <div class="table-wrap">
     <table>
-      <thead><tr><th>file</th><th class="num">size</th><th>last change</th><th class="num">commits touching it</th></tr></thead>
+      <thead><tr><th>file</th><th class="num">size</th><th>last change</th><th class="num" title="commits touching this file">commits</th></tr></thead>
       <tbody>${rows.join("\n")}</tbody>
     </table>
   </div>
   <div class="panel-head" style="border-bottom:0;border-top:1px solid var(--border-soft)">
-    <span class="note">${count(ex.total)} account(s)${ex.truncated ? ` · commit counts are lower bounds — only the most recent commits touching <code>userdata/</code> were scanned` : ""}
-    · serialized with Postgres's own <code>jsonb_pretty</code>, whose key order is stable (by length, then bytewise), so one changed field is one changed line</span>
+    <span class="note" title="Serialized with Postgres's own jsonb_pretty, whose key order is stable (by length, then bytewise), so one changed field is one changed line.">${count(ex.total)} account(s)${ex.truncated ? ` · commit counts are lower bounds` : ""}</span>
   </div>
 </div>`;
 }
@@ -501,8 +494,8 @@ function exportsPanel(s) {
 function settings(s) {
   const v = s.settings.values;
   const b = s.settings.bounds;
-  const cell = (key, title, current, help) => `
-    <div class="set-cell" data-set="${key}">
+  const cell = (key, title, current, help, why = "") => `
+    <div class="set-cell" data-set="${key}"${why ? ` title="${escapeHtml(why)}"` : ""}>
       <div class="k">${escapeHtml(title)}</div>
       <div class="cur">current ${escapeHtml(current)}</div>
       <div class="ctl">
@@ -516,16 +509,16 @@ function settings(s) {
   return `
 <div class="section-head" id="settings">
   <h3>Settings</h3>
-  <span class="note">stored by this service at <code>${escapeHtml(s.environmentOnly.stateDir)}/settings.json</code> — the root <code>.env</code> is only the first-boot default</span>
+  <span class="note" title="stored by this service at ${escapeHtml(s.environmentOnly.stateDir)}/settings.json — the root .env is only the first-boot default">stored here, not in <code>.env</code></span>
 </div>
 <div class="panel panel-pad">
   <div class="set-grid">
     ${cell("interval_seconds", "Schedule interval", `${duration(v.interval_seconds)} (${count(v.interval_seconds)}s)`,
-      `stored${s.settings.stored ? "" : " nowhere yet — this is the seed"} · first-boot default came from <code>BACKUP_INTERVAL_SECONDS</code> (${count(s.settings.seeds.interval_seconds)}s). The container health limit follows this value: interval + interval/4.`)}
+      `${s.settings.stored ? "" : "not stored yet — this is the seed · "}default <code>BACKUP_INTERVAL_SECONDS</code> ${count(s.settings.seeds.interval_seconds)}s`, "The container health limit follows this value: interval + interval/4.")}
     ${cell("retry_seconds", "Retry after a failure", `${duration(v.retry_seconds)} (${count(v.retry_seconds)}s)`,
-      `stored${s.settings.stored ? "" : " nowhere yet — this is the seed"} · first-boot default came from <code>BACKUP_RETRY_SECONDS</code> (${count(s.settings.seeds.retry_seconds)}s). Applies only after a failed run, never after a successful one.`)}
+      `${s.settings.stored ? "" : "not stored yet — this is the seed · "}default <code>BACKUP_RETRY_SECONDS</code> ${count(s.settings.seeds.retry_seconds)}s`, "Applies only after a failed run, never after a successful one.")}
     ${cell("run_retention", "Run-log retention", `${count(v.run_retention)} runs (${count(s.runsTotal)} on the volume)`,
-      `stored${s.settings.stored ? "" : " nowhere yet — this is the seed"} · prunes <code>${escapeHtml(s.environmentOnly.stateDir)}/runs/</code> only. Commit history in the backup repository is never pruned.`)}
+      `${s.settings.stored ? "" : "not stored yet — this is the seed · "}prunes run logs only`, "Prunes the state volume's runs/ directory only. Commit history in the backup repository is never pruned.")}
   </div>
   <div class="save-bar">
     <button type="button" class="btn-primary" id="set-save" disabled>Save settings</button>
@@ -533,11 +526,11 @@ function settings(s) {
     <span class="save-msg" id="set-msg">${s.settings.updatedAt ? `last saved ${escapeHtml(isoShort(s.settings.updatedAt))}${s.settings.updatedBy ? ` (${escapeHtml(s.settings.updatedBy)})` : ""}` : ""}</span>
   </div>
   <div class="ro-facts">
-    <div class="ro-fact"><div class="k">Repo URL · environment only</div><div class="v">${escapeHtml(s.environmentOnly.repoUrl)}</div></div>
-    <div class="ro-fact"><div class="k">Deploy key · environment only</div><div class="v">${escapeHtml(s.environmentOnly.sshKeyPath)}</div></div>
-    <div class="ro-fact"><div class="k">Clone · state volume</div><div class="v">${escapeHtml(s.environmentOnly.clone)}</div></div>
+    <div class="ro-fact"><div class="k">Repo URL</div><div class="v">${escapeHtml(s.environmentOnly.repoUrl)}</div></div>
+    <div class="ro-fact"><div class="k">Deploy key</div><div class="v">${escapeHtml(s.environmentOnly.sshKeyPath)}</div></div>
+    <div class="ro-fact"><div class="k">Clone</div><div class="v">${escapeHtml(s.environmentOnly.clone)}</div></div>
   </div>
-  <div class="inline-note">The repository URL, the deploy key path and the database password are not editable here and never will be: a console that can repoint the backup remote is a console that can silently stop backing up.</div>
+  <div class="inline-note" title="A console that can repoint the backup remote is a console that can silently stop backing up.">The repo URL, the deploy key and the database password are not editable here, by design.</div>
 </div>`;
 }
 
@@ -565,17 +558,13 @@ function commits(s) {
   return `
 <div class="section-head" id="commits">
   <h3>Commit history</h3>
-  <span class="note">${count(s.commitsTotal)} commits in the backup repository · ${count(s.commits.length)} shown · newest first</span>
+  <span class="note" title="newest first">${count(s.commits.length)} of ${count(s.commitsTotal)}</span>
 </div>
 <div class="panel">
-  <div class="panel-head">
-    <h3 style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint)">commit · sha · message · pushed</h3>
-    <span class="note">click a commit for the files it changed</span>
-  </div>
   ${rows.length ? rows.join("\n") : `<div class="panel-pad"><div class="inline-note">${s.git.present ? "the clone holds no commits yet" : escapeHtml(s.git.reason || "there is no clone to read")}</div></div>`}
   ${s.commitsTotal > s.commits.length
     ? `<div class="panel-head" style="border-bottom:0;border-top:1px solid var(--border-soft)">
-    <span class="note">${count(s.commits.length)} of ${count(s.commitsTotal)} commits</span>
+    <span class="note">${count(s.commits.length)} of ${count(s.commitsTotal)}</span>
     <button type="button" class="btn-sm" id="more-commits">Load 20 more</button>
   </div>`
     : ""}
@@ -603,7 +592,8 @@ function restore(s) {
   <h3>Restore</h3>
   <span class="note">run from a clone of the backup repository, at its root</span>
 </div>
-<div class="panel rs">
+<details class="panel rs keepopen" id="restore-steps">
+  <summary class="rs-sum">6 steps — clone · databases · account documents · blobs · audio · smia</summary>
   ${step(0, "Get the backup",
     "Any commit is a complete, self-consistent snapshot — pick one, do not merge two.",
     `git clone ${escapeHtml(url)} tun-backup
@@ -619,7 +609,7 @@ docker compose exec -T postgres \\
     psql -v ON_ERROR_STOP=1 -U phonexa phonexa &lt; phonexa.sql`,
     "<code>ON_ERROR_STOP=1</code> is not optional — without it psql reports success having skipped every failed statement.")}
   ${step(2, "account documents — <code>userdata/</code>",
-    "<b>Required, not optional.</b> <code>userdata</code> and <code>userdata_history</code> are excluded from <code>mjolnir.sql</code> (data only — their schema is in the dump), so the restore above yields two EMPTY tables. These files are the only copy of the operator's learning progress. Run this after step 1 and before letting a device sync, or the device's next <code>GET</code> auto-creates factory defaults over an account that was never restored.",
+    "<b>Required, not optional.</b> <code>userdata</code> is excluded from <code>mjolnir.sql</code>, so step 1 yields EMPTY tables — these files are the only copy of the operator's progress. Run it before letting a device sync, or the device's next <code>GET</code> auto-creates factory defaults over an account that was never restored.",
     `<span class="c"># one file per account; the loop is the whole procedure</span>
 for f in userdata/*.json; do
   uid=$(basename "$f" .json)
@@ -644,7 +634,7 @@ docker compose exec backup rm ${escapeHtml(s.environmentOnly.clone.split(" @ ")[
   ${step(5, "smia — not here",
     "Deliberately not backed up. Recovery is a re-import; keep <code>smia/providers/</code> safe instead.",
     `docker compose exec smia-backend python -m scripts.bootstrap`)}
-</div>`;
+</details>`;
 }
 
 // ---- the content area, re-rendered on every poll -------------------------

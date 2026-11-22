@@ -500,23 +500,23 @@ export async function accountVersion(uid, sha, { diff = false } = {}) {
 // listed as DELIBERATELY EXCLUDED rather than omitted, for the same reason —
 // an absence has to read as a decision.
 const SOURCE_DEFS = [
-  { key: "mjolnir.sql", label: "mjolnir", kind: "db", note: "minus <code>job_logs</code> and <code>build_jobs</code> (data only)" },
+  { key: "mjolnir.sql", label: "mjolnir", kind: "db", note: "minus <code>job_logs</code>, <code>build_jobs</code>" },
   { key: "stabbur.sql", label: "stabbur", kind: "db", note: "" },
-  { key: "phonexa.sql", label: "phonexa", kind: "db", note: "no table excluded — every table is user data (D147)" },
+  { key: "phonexa.sql", label: "phonexa", kind: "db", note: "no table excluded (D147)" },
   { key: "shadow.sql", label: "shadow", kind: "db", note: "" },
   {
     key: "blobs/",
     label: "stabbur blobs",
     kind: "mirror",
     mirror: "blobs",
-    note: "flat, content-addressed, write-once",
+    note: "content-addressed, write-once",
   },
   {
     key: "phonexa-audio/",
     label: "phonexa audio",
     kind: "mirror",
     mirror: "phonexa-audio",
-    note: "nested <code>lang/&lt;lang&gt;/ingested/&lt;name&gt;.wav</code> · copy-if-absent, never overwritten",
+    note: "copy-if-absent, never overwritten",
   },
   // userdata-git-history: NOT a dump and not a mirror — one mutable file per
   // account, overwritten in place each run, so that git's own history is the
@@ -527,7 +527,7 @@ const SOURCE_DEFS = [
     key: "userdata/",
     label: "account documents",
     kind: "export",
-    note: "one mutable <code>&lt;uid&gt;.json</code> per account, <code>jsonb_pretty</code>-serialized · <b>the archive of record</b> — this data is excluded from <code>mjolnir.sql</code>",
+    note: "<b>the archive of record</b> — excluded from <code>mjolnir.sql</code>",
   },
 ];
 
@@ -632,7 +632,7 @@ export function buildSources({ runs, lastLog }) {
     key: "smia",
     label: "smia",
     kind: "excluded",
-    note: "not in the backup set — every table is a cache or a re-importable corpus (operator decision, 2026-11-14). Recovery is a re-import, so <code>smia/providers/</code> is the thing to keep safe",
+    note: "<b>deliberately not in the backup set</b> — a cache or a re-importable corpus; recovery is a re-import",
     present: false,
     bytes: null,
     files: null,
