@@ -17,7 +17,7 @@ them in that order.
 | package | status |
 |---|---|
 | Stabbur editor redesign | archived 2026-11-21. C28 was BLOCKED on an operator ruling; the ruling arrived 2026-11-22 (finding 6: badges only after Prefill or opening a sheet — the shipped behaviour), so C28 is **PASS** and the block is lifted. The rule is written down in the `stabbur-editor-fixes` `note-editor-surface` delta. |
-| Stabbur editor fixes | building |
+| Stabbur editor fixes | archived 2026-11-22 |
 
 ## Packages
 
@@ -143,8 +143,14 @@ Deferred to the builder's judgement (tier 2, not guesses):
 
 ### Stabbur editor fixes
 projects: stabbur, mjolnir (builder projector only)
-status: building — stabbur `stabbur-editor-fixes`, mjolnir
-`projector-translation-langs`. Deploy together, stabbur first.
+status: archived 2026-11-22 — stabbur
+`archive/2026-11-22-stabbur-editor-fixes`, mjolnir
+`archive/2026-11-22-projector-translation-langs`. Deploy together, stabbur
+first (OPERATOR-CHECKLIST.md). All 28 stabbur acceptance criteria PASS,
+observed in a browser by an agent that did not write the code. The mjolnir
+change's M01–M05 could NOT be observed here — the card preview only renders
+an already-minted card, which needs the hub stack and a publish; that is the
+same blocker the previous package's C05 had, and it is checklist step 6.
 
 The return leg of D161: the operator deployed the redesign, tested it live,
 and filed thirteen findings on 2026-11-22. They are quoted verbatim in

@@ -90,16 +90,18 @@ must turn green. The design decisions are `design.md` D1–D11.
 
 ## 10. C28 (F28)
 
-- [ ] 10.1 No code change. Confirm by observation that no ✨ badge appears on
+- [x] 10.1 No code change. Confirm by observation that no ✨ badge appears on
   a freshly opened note and that one appears after Prefill and after opening
   a sheet. The spec delta already states it. (Tester criterion F28.)
 
 ## 11. Close
 
 - [x] 11.1 `pytest` green in `stabbur/`.
-- [ ] 11.2 Tester agent verifies `acceptance.md` against the running dev
-  stack; reviewer agent reviews the diff.
-- [ ] 11.3 Archive both changes, append the operator checklist section with
+- [x] 11.2 Tester agent verifies `acceptance.md` against the running dev
+  stack; reviewer agent reviews the diff. **All 28 criteria PASS**; the
+  mjolnir change's M01–M05 are UNVERIFIED (no hub stack — see its own
+  tasks 1.4).
+- [x] 11.3 Archive both changes, append the operator checklist section with
   the migration spelled out, update the batch manifest.
 
 ## Verification actually performed
