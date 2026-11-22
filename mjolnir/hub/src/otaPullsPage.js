@@ -54,6 +54,8 @@ th.sortable.sorted .arrow { opacity: 1; color: var(--accent-text); }
 
 .flow-banner { font-size: 12.5px; color: var(--text-dim); background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; margin: 14px 0; line-height: 1.6; }
 .flow-banner b { color: var(--text); }
+details.flow-banner > summary { cursor: pointer; font-weight: 650; color: var(--text-dim); }
+details.flow-banner[open] > summary { margin-bottom: 2px; }
 .pager { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
 .pager-readout { font-size: 12px; color: var(--text-faint); margin-right: auto; }
 .pager a.btn-ghost[aria-disabled="true"] { opacity: .4; pointer-events: none; }
@@ -313,8 +315,7 @@ export function activityStrip(days) {
   const span = days.length ? `${days[0].day} → ${days[days.length - 1].day}` : "no data";
   return `<div class="panel">
   <div class="panel-head">
-    <div><h3>Activity · last ${days.length} days</h3>
-      <div class="page-sub">Bars are <code>current.json</code> polls per day (liveness). Dots are bundle pulls.</div></div>
+    <div><h3>Activity · last ${days.length} days</h3></div>
     <span class="mono st-dim" style="font-size:12px">${span}</span>
   </div>
   <div class="actstrip">
@@ -323,8 +324,8 @@ export function activityStrip(days) {
     </svg>
     <div class="act-legend">
       <span class="sw"><i style="background:var(--accent)"></i> bundle pull (<code>/ota/bundle/*</code>)</span>
-      <span class="sw"><i style="background:var(--text-faint);opacity:.45"></i> <code>current.json</code> polls per day</span>
-      <span class="sw"><i style="background:var(--err);opacity:.18"></i> no requests at all</span>
+      <span class="sw"><i style="background:var(--text-faint);opacity:.45"></i> polls per day</span>
+      <span class="sw"><i style="background:var(--err);opacity:.18"></i> silence</span>
     </div>
   </div>
 </div>`;
@@ -336,7 +337,7 @@ function pagerHtml(filters, rowCount, pages, counts) {
       disabled ? ' aria-disabled="true"' : ""
     }>${label}</a>`;
   return `<div class="pager">
-    <span class="pager-readout">${rowCount} row(s) · ${counts.total} raw event(s) in window (${counts.pulls} bundle pull(s), ${counts.polls} poll(s)) · page ${filters.page} of ${pages}</span>
+    <span class="pager-readout" title="raw events in the window, before poll runs are collapsed">${rowCount} row(s) · ${counts.pulls} pull / ${counts.polls} poll · page ${filters.page} of ${pages}</span>
     ${link(1, "« first", filters.page === 1)}
     ${link(Math.max(1, filters.page - 1), "‹ prev", filters.page === 1)}
     <span class="btn-ghost pager-current">${filters.page}</span>
@@ -363,16 +364,16 @@ export function renderPullsBody({ stats, events, activity, builds, filters, coun
     .join("");
 
   const ingestNote = ingest && ingest.error
-    ? `<div class="inline-note">The gateway's pull log could not be read just now (<code>${escapeHtml(
+    ? `<div class="inline-note" title="Everything already recorded is still shown — the table is the record, the log file is only how it gets here. Devices are unaffected: /ota/* is served off disk whether this file is readable or not.">⚠ Pull log unreadable (<code>${escapeHtml(
         String(ingest.error)
-      )}</code>), so this page may be missing the most recent events. Everything already recorded is shown — the table is the record, the log file is only how it gets here. Devices are unaffected: <code>/ota/*</code> is served off disk whether this file is readable or not.</div>`
+      )}</code>) — recent events may be missing. Devices unaffected.</div>`
     : "";
 
   return `<style>${PULLS_PAGE_STYLE}</style>
 <div class="page-head">
   <div>
     <h2>OTA pulls</h2>
-    <div class="page-sub">What was actually fetched from the gateway, read from its own access log — <code>/ota/*</code> is served off disk by <code>caddy</code> with no process and no database in the path, so the log is the only record there is. Nothing device-facing changed to produce it.</div>
+    <div class="page-sub" title="/ota/* is served off disk by caddy with no process and no database in the path, so the access log is the only record there is.">Read from the gateway's own access log.</div>
   </div>
   <a class="btn btn-ghost" href="${pullsUrl(filters)}">↻ Refresh</a>
 </div>
@@ -398,11 +399,13 @@ export function renderPullsBody({ stats, events, activity, builds, filters, coun
   <div class="stat">
     <div class="label">Last seen checking</div>
     <div class="value" style="font-size:19px">${timeAgo(stats.lastPollAt, now)}</div>
-    <div class="sub">${stats.pollsToday} poll(s) today · liveness only</div>
+    <div class="sub" title="A poll is GET /ota/current.json at launch: liveness only, with no build id.">${stats.pollsToday} poll(s) today</div>
   </div>
 </div>
 
-<div class="flow-banner" style="margin-top:0">
+<details class="flow-banner" style="margin-top:0">
+  <summary>What counts as a pull, and what a row cannot tell you</summary>
+  <div style="margin-top:8px">
   <b>Two event kinds, two meanings.</b> A <b>bundle</b> row is a download of one immutable build — low volume, high meaning.
   A <b>poll</b> row is <code>GET /ota/current.json</code> at launch (<code>Cache-Control: no-store</code>) — high volume, and the only
   liveness signal there is since <code>device_state</code> was dropped as permanently empty (D126). A poll is not a pull, and the log
@@ -411,13 +414,18 @@ export function renderPullsBody({ stats, events, activity, builds, filters, coun
   build: the native boot watchdog can quarantine a bundle that was fetched perfectly (D08). And the source column is a
   <b>network address</b>, not a device, account or handset: the OTA token is shared, one home connection looks like one address,
   and that address changes.
-</div>
+  <br><b>Counting.</b> Bytes are the gateway's own <code>size</code> field. A <code>206</code> is a resumed transfer and counts as the
+  same pull, not a second one; a <code>404</code> or <code>401</code> counts as no pull anywhere on this page. A collapsed row is a run
+  of consecutive <code>200</code> polls — click it to expand; a non-200 is never collapsed, because a <code>401</code> is an
+  unauthenticated scan rather than the device and a <code>404</code> is a request for a build no longer on disk.
+  </div>
+</details>
 
 ${activityStrip(activity)}
 
 <div class="panel">
   <div class="panel-head">
-    <div><h3>Event log</h3><div class="page-sub">Ingested from the gateway access log into <code>ota_pulls</code> · ${stats.totalRows} event(s) recorded in total.</div></div>
+    <div><h3>Event log</h3><div class="page-sub" title="Ingested from the gateway access log into ota_pulls.">${stats.totalRows} event(s) recorded</div></div>
     <a class="btn-ghost" href="${pullsUrl(filters, { collapse: !filters.collapse, page: 1 })}">${
       filters.collapse ? "☑" : "☐"
     } collapse poll runs</a>
@@ -461,10 +469,9 @@ ${activityStrip(activity)}
   </div>
   <div class="panel-pad" style="padding-top:12px">
     ${pagerHtml({ ...filters, page }, grouped.length, pages, counts)}
-    <div class="inline-note">A collapsed row is a run of consecutive <code>200</code> polls — click it to expand. A non-200 is never collapsed: a <code>401</code> is an unauthenticated scan rather than the device, and a <code>404</code> is a request for a build that is no longer on disk.${
-      filters.sort === "ts" ? "" : " Collapsing is off while the table is sorted by something other than time, because &ldquo;consecutive&rdquo; stops meaning anything."
-    }</div>
-    <div class="inline-note">Bytes are the gateway's own <code>size</code> field. A <code>206</code> is a resumed transfer and counts as the same pull, not a second one; a <code>404</code> or <code>401</code> counts as no pull anywhere on this page.</div>
+    ${
+      filters.sort === "ts" ? "" : `<div class="inline-note">Collapsing is off while the table is sorted by something other than time — &ldquo;consecutive&rdquo; stops meaning anything.</div>`
+    }
     ${ingestNote}
   </div>
 </div>
