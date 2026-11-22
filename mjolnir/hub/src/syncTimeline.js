@@ -54,6 +54,9 @@ export const SYNC_TIMELINE_STYLE = `
 .grain-note { display: flex; gap: 10px; align-items: flex-start; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 8px; padding: 12px 14px; font-size: 12.5px; color: var(--text); line-height: 1.6; }
 .grain-note .gn-icon { font-weight: 700; color: var(--accent-text); }
 .grain-note b { font-weight: 700; }
+details.grain-note { display: block; }
+details.grain-note > summary { cursor: pointer; color: var(--accent-text); }
+details.flow-banner > summary { cursor: pointer; font-weight: 650; color: var(--text-dim); }
 .arch-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 650; font-family: var(--mono); padding: 1px 7px 2px; border-radius: 4px; border: 1px dashed var(--accent); color: var(--accent-text); background: transparent; cursor: pointer; }
 .arch-chip:hover { background: var(--accent-soft); }
 .arch-chip.pending { border: 1px dashed var(--border); color: var(--text-faint); cursor: default; }
@@ -197,9 +200,8 @@ function patchRowHtml(entry, uid, commitsAscending, recentEntries) {
     });
     const summary = summarizeCommit(commit);
     chip = `<span class="arch-chip" title="see this same change at the archived tier's resolution">⇣ archived · ${escapeHtml(commit.short)}</span>`;
-    box = `<details class="arch-box"><summary class="ab-head">the same change, one tier down</summary>
-      <div>Commit <b>${escapeHtml(commit.short)}</b> (${escapeHtml(isoMinute(commitMs))} backup run) is the archived entry that captured this PATCH.
-      It merged <b>${covered.length} PATCH${covered.length === 1 ? "" : "es"}</b> into one entry titled <b>${escapeHtml(summary.title)}</b>${summary.detail.length ? ` — ${deltaHtml(summary.detail)}` : ""}.</div>
+    box = `<details class="arch-box"><summary class="ab-head" title="the same change as the archived tier recorded it">one tier down</summary>
+      <div>Commit <b>${escapeHtml(commit.short)}</b> (${escapeHtml(isoMinute(commitMs))} backup run) merged <b>${covered.length} PATCH${covered.length === 1 ? "" : "es"}</b> into one entry titled <b>${escapeHtml(summary.title)}</b>${summary.detail.length ? ` — ${deltaHtml(summary.detail)}` : ""}.</div>
       <ul>${covered
         .map((r) => `<li><span class="mono">${escapeHtml(new Date(r.at).toISOString().slice(0, 16).replace("T", " "))}</span> · ${escapeHtml(r.title)} ${deltaHtml(r.detail)}</li>`)
         .join("")}</ul>
@@ -233,14 +235,13 @@ function patchRowHtml(entry, uid, commitsAscending, recentEntries) {
 function recentTierHtml({ uid, recent, latestAt, retentionHours, commitsAscending }) {
   const head = `<div class="tier-head">
     <span class="tier-name">Last ${retentionHours} hours</span>
-    <span class="fid-badge patch">per-PATCH · full fidelity</span>
-    <span class="tier-src">userdata_history · Postgres</span>
+    <span class="fid-badge patch" title="full fidelity: one row per PATCH the device sent">per-PATCH</span>
+    <span class="tier-src" title="source: the userdata_history table in Postgres">userdata_history</span>
   </div>`;
 
   if (!recent.length) {
-    return `${head}<div class="state-box neutral" style="margin-bottom:4px"><span class="sb-icon">⌛</span><div>
-      <b>No sync in the last ${retentionHours} hours.</b> The window is empty, not broken —
-      <code>userdata_history</code> is swept to ${retentionHours}h, so an idle device leaves this tier blank while the archived tier below is untouched.
+    return `${head}<div class="state-box neutral" style="margin-bottom:4px" title="userdata_history is swept to ${retentionHours}h, so an idle device leaves this tier blank while the archived tier below is untouched. The window is empty, not broken."><span class="sb-icon">⌛</span><div>
+      <b>No sync in the last ${retentionHours} hours.</b>
       ${latestAt ? `Last PATCH on record: <span class="mono">${escapeHtml(isoMinute(latestAt))}</span>.` : "This account has never written a history row."}
     </div></div>`;
   }
@@ -260,7 +261,7 @@ function gitRowHtml(commit, prev, uid) {
     <div class="tl-rail"><div class="tl-dot"></div></div>
     <div>
       <div class="tl-title">${escapeHtml(summary.title)} <span class="commit-sha">${escapeHtml(commit.short)}</span>
-        <span class="chip">${escapeHtml(at.toISOString().slice(11, 16))} backup run</span> <span class="fid-badge daily">one entry per backup run</span></div>
+        <span class="chip">${escapeHtml(at.toISOString().slice(11, 16))} backup run</span> <span class="fid-badge daily">per backup run</span></div>
       ${summary.detail.length ? `<div class="tl-detail">${deltaHtml(summary.detail)}</div>` : ""}
       <div class="tl-actions">
         <details class="json-toggle" data-doc-url="${escapeHtml(docUrl)}"><summary>document</summary><pre>loading…</pre></details>
@@ -272,8 +273,8 @@ function gitRowHtml(commit, prev, uid) {
 
 function archiveTierHtml({ uid, archive, horizonMs, retentionHours }) {
   const divider = `<div class="tier-div"><div class="td-label">
-      <span>Older than ${retentionHours} h — swept, archived only</span>
-      <span class="fid-badge daily">one entry per backup run</span>
+      <span>Older than ${retentionHours} h — archived only</span>
+      <span class="fid-badge daily">per backup run</span>
       <span class="td-when">horizon ${escapeHtml(isoMinute(horizonMs))}</span>
     </div></div>`;
 
@@ -284,8 +285,7 @@ function archiveTierHtml({ uid, archive, horizonMs, retentionHours }) {
     return `${divider}<div class="state-box err"><span class="sb-icon" style="color:var(--err)">⚠</span><div>
       <b>Archived tier unavailable — ${archive.configured === false ? "no archive service is configured for this deployment" : "the backup service could not be reached"}.</b>
       ${escapeHtml(archive.reason || "no reason given")}${archive.url ? ` <code>${escapeHtml(archive.url)}</code>` : ""}.
-      <div style="margin-top:6px">The ${retentionHours}h tier above is unaffected: it is a local Postgres read, and a backup outage degrades this half of the panel, never the page (D157).
-      Nothing is lost — the commits still exist in the backup repository, they just cannot be listed right now.</div>
+      <div style="margin-top:6px" title="A backup outage degrades this half of the panel, never the page (D157). The commits still exist in the backup repository; they just cannot be listed right now.">The ${retentionHours}h tier above is unaffected, and nothing is lost.</div>
       <div style="margin-top:10px"><a class="btn" href="/mjolnir/device?uid=${encodeURIComponent(uid)}#sync-history">↻ Retry archived tier</a></div>
     </div></div>`;
   }
@@ -300,26 +300,22 @@ function archiveTierHtml({ uid, archive, horizonMs, retentionHours }) {
   // NOTHING ARCHIVED, which is a different fact from unreachable and says so.
   if (!archive.present || !(archive.commits || []).length) {
     return `${divider}<div class="state-box neutral"><span class="sb-icon">∅</span><div>
-      <b>Nothing archived yet for this account.</b> <code>userdata/${escapeHtml(uid)}.json</code> does not exist in the backup repository yet,
-      so the ${retentionHours}h tier above is the entire history there is.
-      <div style="margin-top:6px">The backup service writes the export on its next run; the first archived entry appears after it.
-      Until then, anything swept out of <code>userdata_history</code> is <b>gone</b> — the window is the only copy.</div>
+      <b>Nothing archived yet for this account.</b> <code>userdata/${escapeHtml(uid)}.json</code> does not exist in the backup repository yet —
+      the ${retentionHours}h tier above is the whole history, and anything swept out of it is <b>gone</b>.
+      <details style="margin-top:6px"><summary>what happens next</summary>The backup service writes the export on its next run; the first archived entry appears after it.</details>
     </div></div>`;
   }
 
-  const caveat = `<div class="grain-note" style="margin:0 0 12px"><span class="gn-icon">⌛</span><div>
-    <b>Below this line the resolution is one entry per backup run, and that is all there is.</b>
-    The per-PATCH rows for these periods have been swept out of <code>userdata_history</code>; what remains is the git log of
+  const caveat = `<details class="grain-note" style="margin:0 0 12px"><summary><b>One entry per backup run below this line — and that is all there is.</b></summary>
+    <div style="margin-top:6px">The per-PATCH rows for these periods have been swept out of <code>userdata_history</code>; what remains is the git log of
     <code>userdata/${escapeHtml(uid)}.json</code>, which the backup service commits once per run. So several syncs inside one run's period are
     <b>one</b> entry, a period with no change is <b>no</b> entry, and a value that changed and changed back between two runs left no trace at all.
     Deltas are inferred by comparing consecutive commits — the same inference the tier above makes between consecutive PATCHes, over coarser input.
-  </div></div>`;
+  </div></details>`;
 
   if (!older.length) {
-    return `${divider}${caveat}<div class="state-box neutral"><span class="sb-icon">∅</span><div>
-      <b>Every archived version is newer than the horizon.</b> ${(archive.commits || []).length} committed version(s) exist, but all of them fall inside the
-      ${retentionHours}h window — so they are shown as the <span class="arch-chip pending">⇣ archived</span> marker on the per-PATCH rows above rather than as separate entries here,
-      which is what keeps one change from being rendered as two events.
+    return `${divider}${caveat}<div class="state-box neutral" title="They are shown as the archived marker on the per-PATCH rows above rather than as separate entries here, which keeps one change from being rendered as two events."><span class="sb-icon">∅</span><div>
+      <b>Every archived version is newer than the horizon</b> — all ${(archive.commits || []).length} of them, marked on the rows above.
     </div></div>`;
   }
 
@@ -334,17 +330,19 @@ export function renderSyncHistoryPanel({ uid, recent = [], latestAt = null, arch
   // forward-looking question.
   const commitsAscending = archive.ok ? [...(archive.commits || [])].sort((a, b) => a.epoch - b.epoch) : [];
 
-  const banner = `<div class="flow-banner">
-    <b>Two tiers, one timeline.</b> The last ${retentionHours} hours are per-PATCH rows from <code>userdata_history</code> — kept, but swept to a rolling
+  const banner = `<details class="flow-banner">
+    <summary>Two tiers, one timeline</summary>
+    <div style="margin-top:8px">The last ${retentionHours} hours are per-PATCH rows from <code>userdata_history</code> — kept, but swept to a rolling
     ${retentionHours}h window, and its data is excluded from <code>mjolnir.sql</code> (the export below is the long-term record, not the dump).
     Everything older is one entry per backup commit of <code>userdata/${escapeHtml(uid)}.json</code>.
     The two tiers read from different places and <b>fail independently</b>.
-  </div>`;
+    <br>Above the line: &ldquo;raw doc&rdquo; is that history row's full document, and &ldquo;archived · &lt;sha&gt;&rdquo; opens the same change as the
+    archived tier recorded it. Below the line: &ldquo;document&rdquo; is that commit's full export and &ldquo;diff&rdquo; is <code>git diff</code>
+    against the previous commit — all fetched on demand, never inlined into this page.</div>
+  </details>`;
 
   return `${banner}<div class="timeline">
 ${recentTierHtml({ uid, recent, latestAt, retentionHours, commitsAscending })}
 ${archiveTierHtml({ uid, archive, horizonMs, retentionHours })}
-</div>
-<div class="inline-note">Above the line: "raw doc" is that history row's full document (<code>historyDoc</code>), and "archived · &lt;sha&gt;" opens the same change as the archived tier recorded it.
-Below the line: "document" is that commit's full export and "diff" is <code>git diff</code> against the previous commit — all fetched on demand, never inlined into this page.</div>`;
+</div>`;
 }

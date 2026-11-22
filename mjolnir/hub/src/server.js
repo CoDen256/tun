@@ -707,7 +707,7 @@ function renderDevicePage({ accounts, selectedUid, doc, perCard, total, history,
   const bundleNote = cardIndexInfo.reason
     ? `<div class="inline-note">Content for stock cards is unavailable: ${escapeHtml(cardIndexInfo.reason)}. Every other column is unaffected.</div>`
     : perCard.some((r) => r.contentSource === "bundle")
-      ? `<div class="inline-note">Content for stock cards is read from the currently published bundle (build <code>${escapeHtml(cardIndexInfo.buildId || "")}</code>).</div>`
+      ? `<div class="inline-note" title="Content for stock cards is read from the currently published bundle.">stock card content · build <code>${escapeHtml(cardIndexInfo.buildId || "")}</code></div>`
       : "";
 
   return renderShell({
@@ -717,7 +717,7 @@ function renderDevicePage({ accounts, selectedUid, doc, perCard, total, history,
 <div class="page-head">
   <div>
     <h2>Device sync</h2>
-    <div class="page-sub">Progress reported by the signed-in account, kept as a mirror — this view is read-only.</div>
+    <div class="page-sub" title="Progress reported by the signed-in account, kept as a mirror.">Read-only mirror of the account's progress.</div>
   </div>
   <a class="btn btn-ghost" href="${escapeHtml(deviceQueryUrl(selectedUid, filters))}">↻ Refresh</a>
 </div>
@@ -733,7 +733,7 @@ function renderDevicePage({ accounts, selectedUid, doc, perCard, total, history,
 
 <div class="panel">
   <div class="panel-head">
-    <div><h3>Progress snapshot</h3><div class="page-sub">From the device's current <code>userdata</code> document.</div></div>
+    <div><h3>Progress snapshot</h3></div>
   </div>
   <div class="panel-pad">
     ${snapGrid}
@@ -743,7 +743,7 @@ function renderDevicePage({ accounts, selectedUid, doc, perCard, total, history,
 
 <div class="panel">
   <div class="panel-head">
-    <div><h3>Per-card progress</h3><div class="page-sub">Every occurrence with SRS state, joined against card content — ${total} matching.</div></div>
+    <div><h3>Per-card progress</h3><div class="page-sub" title="Every occurrence with SRS state, joined against card content.">${total} matching</div></div>
   </div>
   <div class="panel-pad" style="padding-bottom:0;">
     <form class="toolbar" method="GET" action="/mjolnir/device">
@@ -772,20 +772,20 @@ function renderDevicePage({ accounts, selectedUid, doc, perCard, total, history,
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Card</th><th>Content</th><th>Side</th><th>Deck</th><th class="num">Stage</th><th>Status</th><th class="num">Interval</th><th>Next due</th><th class="num">Reschedules</th><th>Flags</th></tr></thead>
+      <thead><tr><th>Card</th><th title="always the card's N field, stripped of HTML — the same for every row regardless of which side was reviewed. N identifies the card; E is only ever the answer.">Content</th><th title="the stored direction letter (N/E/A), never an actual language">Side</th><th>Deck</th><th class="num">Stage</th><th>Status</th><th class="num">Interval</th><th>Next due</th><th class="num">Reschedules</th><th>Flags</th></tr></thead>
       <tbody>${perCardRows || `<tr><td colspan="10">no per-card progress matches this filter</td></tr>`}</tbody>
     </table>
   </div>
   <div class="panel-pad" style="padding-top:12px; padding-bottom:14px;">
     ${pagerHtml(selectedUid, filters, total)}
-    <div class="inline-note">"Content" is always the card's <strong>N</strong> field (stripped of HTML), the same for every row regardless of which side was reviewed — N identifies the card, E is only ever the answer. "Side" is the stored direction letter (N/E/A), never an actual language.</div>
+
     ${bundleNote}
   </div>
 </div>
 
 <div class="panel" id="sync-history">
   <div class="panel-head">
-    <div style="min-width:0"><h3>Sync history</h3><div class="page-sub">One chronological timeline at two fidelities — per-PATCH for ${HISTORY_RETENTION_HOURS} h, one entry per backup run before that.</div></div>
+    <div style="min-width:0"><h3>Sync history</h3><div class="page-sub">per-PATCH for ${HISTORY_RETENTION_HOURS} h, one entry per backup run before that</div></div>
   </div>
   <div class="panel-pad">
     ${historyPanel}
