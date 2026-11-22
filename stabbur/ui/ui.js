@@ -630,9 +630,16 @@
       if (!langs.length) return { list: [] };
       const answers = await Promise.all(langs.map((to) => enrich('translations', p, { text: q, from: lang, to }, force)));
       const list = [];
+      // Per language, so that a 502 on de alone is reported in the de group
+      // rather than showing there as "nothing for this word".
+      const errs = {};
       let failed = 0;
       answers.forEach((r, i) => {
-        if (r.status !== 200 || !r.body || !Array.isArray(r.body.candidates)) { failed += 1; return; }
+        if (r.status !== 200 || !r.body || !Array.isArray(r.body.candidates)) {
+          failed += 1;
+          errs[langs[i]] = errMsg(r, 'Lookup failed');
+          return;
+        }
         const seen = new Set();
         r.body.candidates.forEach((c) => {
           // design D9: a provider answering "hurry/rush" is offering two
@@ -646,11 +653,13 @@
           });
         });
       });
-      if (failed === langs.length) return { list: [], error: errMsg(answers[0], 'Lookup failed') };
-      return { list };
+      if (failed === langs.length) return { list: [], errs, error: errMsg(answers[0], 'Lookup failed') };
+      return { list, errs };
     }
     const fields = kind === 'ipa' ? { text: q, lang }
       : (kind === 'pos' || kind === 'inflections') ? { word: q, lang }
+          // `examples_count` is M, the PER-PROVIDER number of sentences
+          // (design D3) — so it is exactly this provider's limit.
         : kind === 'examples' ? { text: q, lang, limit: Math.min(10, Math.max(1, settings().examples_count || 3)) }
           : { text: q, lang };
     const r = await enrich(API_KIND[kind], p, fields, force);
@@ -1082,8 +1091,9 @@
         ${k === 'stt' ? '' : `<button class="pqb ${over ? 'over' : ''}" data-act="pqedit" data-p="${esc(p)}" title="Query for ${esc(p)} only">${over ? `“${esc(pqv)}”` : `${ic('pen', 's')} query`}</button>`}
         <span class="sp"></span><span class="c">${R.loading ? '…' : `${n || 'no'} result${n === 1 ? '' : 's'}`}</span></div>`;
     if (st.pqOpen[p]) body += `<div class="pqrow"><input class="in" data-f="pq" data-p="${esc(p)}" value="${esc(st.pq[p] !== undefined ? st.pq[p] : '')}" aria-label="Query for ${esc(p)}" spellcheck="false" placeholder="${esc(q)}"><button class="ib" data-act="pqreset" data-p="${esc(p)}" title="Back to the shared query">Reset</button><button class="ib ${R.loading && S.sheet.pspin === p ? 'spin' : ''}" data-act="prerun" data-p="${esc(p)}" aria-label="Run ${esc(p)} again">${ic('rerun')}</button></div>`;
+    const langErr = onlyLang && R.errs ? R.errs[onlyLang] : null;
     if (R.loading) body += '<div class="skel"></div>';
-    else if (R.error) body += `<div class="err">${esc(R.error)}</div>`;
+    else if (R.error || langErr) body += `<div class="err">${esc(langErr || R.error)}</div>`;
     else if (R.note) body += `<div class="none">${esc(R.note)}</div>`;
     else if (!n && !list.length) body += `<div class="none">Nothing for “${esc(R.query !== undefined ? R.query : pqv)}”</div>`;
     if (!R.loading) orderedList(k, list).forEach((c) => { body += candRow(k, p, c, all.indexOf(c)); });
@@ -1120,7 +1130,11 @@
       }
       body += audioActions();
     }
-    body += `<div class="shf">Order follows Settings · <button data-act="go" data-v="settings">Provider order</button>${off ? ` · ${off} switched off` : ''}</div>`;
+    // Per language for translations, so the count is not just en's.
+    const offCount = k === 'translations'
+      ? targetLangs().reduce((a, lang) => a + kindProviders('translations', lang).off, 0)
+      : off;
+    body += `<div class="shf">Order follows Settings · <button data-act="go" data-v="settings">Provider order</button>${offCount ? ` · ${offCount} switched off` : ''}</div>`;
     const spinning = S.sheet.spin && enabled.some((p) => st.P[p] && st.P[p].loading);
     return sheetShell(`${KINDS[k]} suggestions`, KINDS[k], `<div class="shq"><input class="in" id="shq" data-f="q" value="${esc(q)}" aria-label="Shared query" spellcheck="false" ${k === 'stt' ? 'readonly' : ''}><button class="ib ${spinning ? 'spin' : ''}" data-act="rerun" aria-label="Run all providers again">${ic('rerun')}</button></div><div class="shb">${body}</div>`);
   }
@@ -1397,6 +1411,11 @@
     else if (el.dataset.f) {
       sel = `[data-f="${el.dataset.f}"]`;
       ['i', 'k', 'p'].forEach((a) => { if (el.dataset[a] !== undefined) sel += `[data-${a}="${CSS.escape(el.dataset[a])}"]`; });
+      // The translations sheet renders one box per provider PER LANGUAGE
+      // group, so a per-provider query input exists more than once and the
+      // bare selector would restore focus to the wrong group's copy.
+      const grp = el.closest('.lgrp[data-lang]');
+      if (grp) sel = `.lgrp[data-lang="${CSS.escape(grp.dataset.lang)}"] ${sel}`;
     }
     if (!sel) return null;
     let start = null; let end = null;
@@ -1581,13 +1600,17 @@
       if (!missing.length) return false;
       await ensureKind('translations', force);
       let any = false;
-      if (force) E.f.translations = E.f.translations.filter((t) => hasText(t.text) && !missing.some((l) => l.toLowerCase() === (t.lang || '').toLowerCase()));
       missing.forEach((lang) => {
         const hit = firstWith('translations', (P) => (P.list || []).some((c) => c.lang === lang), lang);
         if (!hit) return;
         const c = orderByPos(hit.P.list.filter((x) => x.lang === lang), E.f.pos)[0];
         if (!c || !c.v) return;
-        E.f.translations = E.f.translations.filter((t) => hasText(t.text));
+        // A language's old rows go ONLY once a replacement is in hand.
+        // Clearing first and discovering afterwards that no provider
+        // answered would delete the operator's translations and then report
+        // that nothing was filled — this house's defining defect.
+        E.f.translations = E.f.translations.filter((t) => hasText(t.text)
+          && !(force && (t.lang || '').toLowerCase() === lang.toLowerCase()));
         E.f.translations.push({ lang, text: c.v });
         E.prov.translations = hit.p;
         any = true;
@@ -1650,7 +1673,10 @@
       const before = E.f.audio_blob;
       const r = await api('/api/enrich/tts/use', jsonReq('POST', { sha256: c.sha }));
       if (E !== e0 || r.status !== 200 || !r.body || !r.body.sha256) return false;
-      if (!force && E.f.audio_blob !== before) return false;
+      // Unconditional, force included: "replace what was there" is about the
+      // value this walk started from, never about a recording the operator
+      // attached (or dropped) WHILE it was running.
+      if (E.f.audio_blob !== before) return false;
       setAudio(r.body.sha256, hit.p, hit.p);
       E.usedSha = c.sha; E.usedBlob = r.body.sha256;
       return true;
@@ -1671,8 +1697,11 @@
     }
     render();
     // Fetch every kind in parallel up front (badges fill in as answers
-    // land); the fills then run in their fixed order.
-    PREFILL_ORDER.forEach((k) => { if (defaultQuery(k)) ensureKind(k, force); });
+    // land); the fills then run in their fixed order. Skipped under force,
+    // where `ensureKind` never considers an answer ready: the warm-up and
+    // the step's own fetch would then both be in flight, asking every
+    // provider twice with the cache bypassed on both.
+    if (!force) PREFILL_ORDER.forEach((k) => { if (defaultQuery(k)) ensureKind(k); });
     let filled = 0;
     for (const name of PREFILL_ORDER) {
       if (E !== e0) return;
@@ -2167,7 +2196,10 @@
       });
     });
     if (S.refocusHandle) {
-      const [kind, p] = S.refocusHandle.split(':');
+      // Split on the LAST colon: a kind key can contain one of its own
+      // ("translations:en"), which an unlimited split would tear in half.
+      const cut = S.refocusHandle.lastIndexOf(':');
+      const kind = S.refocusHandle.slice(0, cut); const p = S.refocusHandle.slice(cut + 1);
       const h = app.querySelector(`.plist[data-kind="${CSS.escape(kind)}"] li[data-p="${CSS.escape(p)}"] .h`);
       if (h && document.activeElement !== h) h.focus({ preventScroll: true });
     }
@@ -2243,6 +2275,10 @@
     if (!E || !dragHasFiles(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
+    // A render during the drag (an in-flight lookup answering, say)
+    // replaces #app's contents and takes the overlay with it. dragover
+    // keeps firing, so it is the one place that can put it back.
+    if (dragDepth) setDropOverlay(true);
   });
   document.addEventListener('dragleave', (e) => {
     if (!E || !dragHasFiles(e)) return;
@@ -2548,6 +2584,10 @@
   // opened: restoring to it is not a scroll by the operator.
   app.addEventListener('scroll', (e) => {
     if (!S.pick) return;
+    // Scrolling the menu's own list is using it, not scrolling away from
+    // it: a picker with more entries than fit (the grammar rules, the
+    // languages) overflows and must survive a wheel inside itself.
+    if (e.target && e.target.closest && e.target.closest('.menu')) return;
     const sc = scroller();
     if (e.target === sc && sc.scrollTop === S.pick.sc) return;
     S.pick = null;

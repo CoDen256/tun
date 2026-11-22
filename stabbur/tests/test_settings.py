@@ -473,3 +473,22 @@ def test_a_language_configured_in_the_same_request_can_be_ordered(client, monkey
     )
     assert resp.status_code == 200
     assert resp.get_json()["providers"]["translations:sv"]["order"] == ["google", "dictcc"]
+
+
+def test_target_languages_are_normalised_on_write(client, monkeypatch):
+    """A target language is a provider-preference storage key since D4, so a
+    duplicate would render the same list twice and an upper-cased one would
+    be served by GET and refused by PATCH."""
+    _mock_catalogue(monkeypatch, {"translations": ["dictcc"]})
+    resp = client.patch(
+        "/api/settings",
+        json={"default_target_langs": [" EN ", "de", "en", "", "DE"]},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["default_target_langs"] == ["en", "de"]
+    assert sorted(k for k in body["providers"] if k.startswith("translations:")) == [
+        "translations:de",
+        "translations:en",
+    ]

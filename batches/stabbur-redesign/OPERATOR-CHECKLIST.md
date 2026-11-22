@@ -196,6 +196,14 @@ A row whose text was nothing but slashes and spaces is deliberately left
 verbatim rather than deleted. Pre-existing duplicate rows are left alone —
 this undoes joins, it does not de-duplicate.
 
+**Every slash is split, which is what you asked for — including the ones
+that are not alternatives.** A translation reading `km/h`, `and/or` or
+`he/she` becomes two rows, and the card then renders it as `km / h`. Step
+2's `slash_rows` query lists exactly the rows about to be split: run it
+BEFORE step 3 and eyeball them, because the migration cannot be reversed.
+Anything you want kept whole, edit first (a space-free alternative spelling,
+or just the one side you want).
+
 **5. Then deploy the builder.** Never before stabbur: a builder with the old
 projector would put each split translation on its own card line.
 ```bash
@@ -245,6 +253,10 @@ the previous images of `stabbur-backend` and `mjolnir-builder`.
 7. **Force prefill (finding 10).** On a note whose IPA and translation hold
    values you do not want, ⋯ → **Force prefill**. It re-asks the providers
    and replaces them. Plain Prefill on the same note must leave them alone.
+   Two things to know: a field no provider answers for is **left as it was**
+   rather than emptied, and a language that holds several translations is
+   replaced by the one value the provider leads with — so force-prefilling a
+   note whose English reads "hurry" and "rush" leaves one of them.
 8. **Previous (finding 11).** With prefill timing on "On open", triage
    forward a couple of notes and press Previous: the note comes back as you
    left it and nothing re-runs. Prefill by hand still works there.

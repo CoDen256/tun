@@ -42,6 +42,23 @@ TRANSLATIONS_LANG_PREFIX = f"{TRANSLATIONS_KIND}:"
 TRANSLATIONS_LANG_KEY_RE = re.compile(r"^translations:[a-z]{2,8}(-[a-z0-9]{2,8})*$")
 
 
+def normalize_target_langs(langs: list[str]) -> list[str]:
+    """Lower-cased, stripped, de-duplicated, order kept.
+
+    stabbur-editor-fixes D4 makes a target language a STORAGE KEY
+    ("translations:<lang>"), which two things depend on: a duplicate would
+    render the same list twice in Settings and push the same language twice
+    in the prefill walk, and an upper-cased language would be served by GET
+    and then refused by PATCH's key check — a list the operator can see and
+    never reorder. Normalising once, on write, closes both."""
+    out: list[str] = []
+    for lang in langs:
+        value = lang.strip().lower()
+        if value and value not in out:
+            out.append(value)
+    return out
+
+
 def _lang_provider_kinds(db) -> tuple[str, ...]:
     """The per-language translations keys this read should resolve: one per
     configured target language, then any already stored for a language the
@@ -253,6 +270,11 @@ def register_settings_routes(app):
         error = _validate_patch_body(body)
         if error:
             return jsonify({"error": error}), 400
+
+        # A target language is a storage key since D4, so it is normalised
+        # before anything stores or resolves against it.
+        if "default_target_langs" in body:
+            body = {**body, "default_target_langs": normalize_target_langs(body["default_target_langs"])}
 
         with session_scope() as db:
             # D12: "custom" means "use value_color_custom", so it needs one —
