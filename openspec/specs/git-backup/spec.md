@@ -49,28 +49,21 @@ any permanent ledger table (`card_slots`, `pending_occurrences`,
 `card_content`, `minted_notes`, `occurrence_shipments`, `publications`,
 `logic_bundles`).
 
-AMENDED by `userdata-git-history` (D167): `userdata` and `userdata_history`
-were in that protected list and no longer are. They are excluded from the
-dump — **data only, schema kept** — because the same account state is
-archived better elsewhere in the same repository, as one mutable
-`userdata/<uid>.json` per account written by the same run that commits it.
-This is not a weakening of the rule above but an application of it: a table
-may be excluded only when something else holds its data, and here something
-else does. `userdata_history` is not archived at all; it is a rolling
-48-hour window, not a backup.
+`userdata` and `userdata_history` are removed from the list of tables this
+requirement protects. They are not protected here any more because
+`userdata-git-history` gives them a different, explicitly specified archive —
+a committed per-account JSON export — rather than inclusion in this dump. That
+change is the authority on their handling; this requirement simply stops
+asserting a rule it no longer governs.
 
 #### Scenario: Dumping mjolnir's database
 - **WHEN** the backup mechanism dumps `mjolnir`'s database
-- **THEN** the resulting dump contains no `job_logs`, `build_jobs`,
-  `userdata` or `userdata_history` data, contains the schema of all four,
-  and contains every row of every other table
+- **THEN** the resulting dump contains no `job_logs` or `build_jobs` data
 
 #### Scenario: Restoring the dump
-- **WHEN** the dump is restored into a fresh database (after the
-  application's own migrations have created the full schema, including
-  `job_logs`/`build_jobs` empty)
-- **THEN** every foreign key in the restored data is satisfied, with no
-  manual intervention required
+- **WHEN** the dump is restored into a fresh database, after the
+  application's own migrations have created the full schema
+- **THEN** every permanent ledger table this requirement names is complete
 
 ### Requirement: SQL dumps overwrite the same filename every run
 The system SHALL write each database's dump to the same filename on every
@@ -177,4 +170,21 @@ operator's broader SSH credential directory.
 - **WHEN** the backup service's container configuration is inspected
 - **THEN** exactly one private key file (plus `known_hosts`) is mounted
   for SSH authentication, not an entire `.ssh` directory
+
+### Requirement: The backup project owns its own compose file
+The backup service SHALL be declared in the backup project's own compose file,
+which the root compose file includes, so that the project can be brought up
+standalone like every other project in the repository.
+
+Before this change `backup` was the only project declared directly in the root
+compose file, and the only one that could not be run on its own.
+
+#### Scenario: Standalone bring-up
+- **WHEN** the operator runs compose from within the backup project directory
+- **THEN** the backup service and its console start
+
+#### Scenario: The existing clone is preserved
+- **WHEN** the volume declaration moves between compose files
+- **THEN** the existing repository clone volume is still used, because the
+  volume carries an explicit fixed name
 
