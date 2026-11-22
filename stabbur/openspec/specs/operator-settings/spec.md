@@ -47,31 +47,42 @@ because it was never set or because it was set to that value.
   defaults for the rest
 
 ### Requirement: Each enrichment kind has an operator-ordered provider preference
-The system SHALL store, per enrichment kind, an operator-defined ordering
-of that kind's providers together with which of them are enabled. The
-first enabled provider in that ordering is that kind's **primary**
-provider.
+Each kind stabbur proxies SHALL carry its own ordered list of providers,
+with each provider individually enabled or disabled. The primary provider is
+derived as the first enabled provider in the effective order and is never
+stored separately.
 
-The system SHALL derive the primary from the ordering rather than storing
-it separately, so the two cannot disagree.
+The **translations** kind SHALL be ordered **per target language**, not once
+globally. Its preference is stored under a key per language, and the kinds a
+read resolves SHALL be computed from the operator's configured target
+languages together with any per-language key already stored — so adding a
+language in Settings adds its list.
 
-The system SHALL store only ordering and enablement. It SHALL NOT store
-provider definitions, addresses, or credentials, which remain the
-enrichment service's own.
+A per-language translations preference with nothing stored SHALL resolve from
+the plain `translations` preference rather than from the raw catalogue, so a
+newly added language starts at the order the operator already configured. The
+plain key SHALL remain in storage as that seed.
 
-#### Scenario: Identifying the primary provider
-- **WHEN** a kind's ordering is read and its first provider is enabled
-- **THEN** that provider is the kind's primary
+Every other kind SHALL keep one list.
 
-#### Scenario: The first provider is disabled
-- **WHEN** a kind's ordering is read and its first provider is disabled
-- **THEN** the first *enabled* provider is the primary
+#### Scenario: Reading a per-language order
+- **GIVEN** the operator's target languages are en and de
+- **WHEN** settings are read
+- **THEN** the response carries a translations provider order for en and one for de, each reconciled against the translations catalogue
 
-#### Scenario: Reordering changes the primary
-- **WHEN** the operator moves a different provider to the top of a kind's
-  ordering and it is enabled
-- **THEN** that provider becomes the kind's primary, with no separate
-  primary setting to update
+#### Scenario: A new language inherits the configured order
+- **GIVEN** the stored plain translations order is `dictcc, google` and nothing is stored for fr
+- **WHEN** the operator adds fr to their target languages and reads settings
+- **THEN** fr's translations order is `dictcc, google`
+
+#### Scenario: Orders are independent
+- **GIVEN** the operator moves `google` to the top of the de list
+- **WHEN** settings are read
+- **THEN** de's order begins with `google` and en's order is unchanged
+
+#### Scenario: Other kinds stay single
+- **WHEN** settings are read
+- **THEN** part of speech, pronunciation, inflections, examples, audio and text-from-audio each carry exactly one order, regardless of how many target languages exist
 
 ### Requirement: Stored provider preferences are reconciled against the live provider catalogue
 The system SHALL reconcile a stored provider ordering against the
@@ -112,30 +123,29 @@ surprise.
   kind still resolves a primary
 
 ### Requirement: Preferences are editable from a settings page
-The system SHALL provide a settings page in the authoring UI's navigation
-where every stored preference can be inspected and changed, grouped by what
-the preference affects.
+The settings page SHALL let the operator edit every preference it stores,
+and SHALL persist each change as it is made.
 
-The page SHALL present each kind's provider ordering as a reorderable list
-showing which provider is currently primary, and SHALL indicate a provider
-that cannot answer automatically — such as one that only returns a link to
-its own site for a human to check — so the operator can see why it is a
-poor choice of primary.
+Provider order SHALL be presented as one draggable list per kind, with the
+**Translations** kind shown as one list per configured target language,
+labelled with its language, and with no generic translations list.
 
-#### Scenario: Changing a provider order
-- **WHEN** the operator reorders a kind's providers on the settings page
-- **THEN** the new ordering is stored and takes effect on subsequent
-  lookups
+The examples prefill controls SHALL be labelled for what they do:
+**Providers to ask** (how many providers, in order) and **Sentences per
+provider** (how many from each), with the resulting maximum shown.
 
-#### Scenario: Seeing which provider is primary
-- **WHEN** the operator views a kind's provider ordering
-- **THEN** the provider currently acting as that kind's primary is
-  identified
+#### Scenario: A translations list per language
+- **GIVEN** target languages en and de
+- **WHEN** the operator opens Settings
+- **THEN** Provider order shows "Translations · en" and "Translations · de" as separate draggable lists, and no unlabelled Translations list
 
-#### Scenario: A manual-link provider is marked as such
-- **WHEN** a kind's ordering includes a provider that answers only with a
-  link for a human to follow
-- **THEN** the page marks it as not automatable
+#### Scenario: Reordering one language only
+- **WHEN** the operator drags a provider to the top of the de list
+- **THEN** that order is saved for de and the en list is unchanged
+
+#### Scenario: The examples controls say what they mean
+- **WHEN** the operator opens Settings
+- **THEN** the examples section reads "Providers to ask" and "Sentences per provider" and states the resulting maximum number of sentences
 
 ### Requirement: Triage navigation can autosave edits or require an explicit save
 The system SHALL store an operator preference, with two values
