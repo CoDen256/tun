@@ -9,6 +9,7 @@ preference was last written.
 
 from __future__ import annotations
 
+import re
 import uuid
 
 from flask import jsonify, request
@@ -26,6 +27,33 @@ from routes.enrich import ENRICHABLE_KINDS
 # list. "stt" is smia's own speech-to-text kind (text from audio).
 PROVIDER_KINDS = (*ENRICHABLE_KINDS, "pos", "stt")
 CATALOGUE_SOURCE = {"pos": "inflections"}
+
+# stabbur-editor-fixes D4: translations are ordered PER TARGET LANGUAGE, under
+# keys of the shape "translations:<lang>". They are reconciled against the
+# translations catalogue exactly as "pos" is reconciled against the
+# inflections one, and the set served is computed per read from the
+# operator's target languages plus whatever is already stored — so adding a
+# language in Settings adds its list, and removing one does not destroy it.
+TRANSLATIONS_KIND = "translations"
+TRANSLATIONS_LANG_PREFIX = f"{TRANSLATIONS_KIND}:"
+# Deliberately loose: a language tag is the operator's own string (the
+# Translation languages field is free text), so this only refuses shapes that
+# could collide with another kind's key or with nothing at all.
+TRANSLATIONS_LANG_KEY_RE = re.compile(r"^translations:[a-z]{2,8}(-[a-z0-9]{2,8})*$")
+
+
+def _lang_provider_kinds(db) -> tuple[str, ...]:
+    """The per-language translations keys this read should resolve: one per
+    configured target language, then any already stored for a language the
+    operator has since removed (kept so re-adding it restores its order)."""
+    langs = settings_store.read_scalars(db)["default_target_langs"]
+    wanted = [f"{TRANSLATIONS_LANG_PREFIX}{lang}" for lang in langs]
+    wanted += settings_store.stored_kinds_with_prefix(db, TRANSLATIONS_LANG_PREFIX)
+    out: list[str] = []
+    for kind in wanted:
+        if kind not in out:
+            out.append(kind)
+    return tuple(out)
 
 ALLOWED_SETTINGS_KEYS = {
     "override_prefill", "default_target_langs", "providers", "prefill_timing",
@@ -50,8 +78,10 @@ def _fetch_catalogue() -> dict:
 def _serialize(db) -> dict:
     scalars = settings_store.read_scalars(db)
     catalogue = _fetch_catalogue()
-    catalogue = {**catalogue, **{kind: catalogue.get(src, []) for kind, src in CATALOGUE_SOURCE.items()}}
-    scalars["providers"] = settings_store.resolve_providers(db, catalogue, PROVIDER_KINDS)
+    lang_kinds = _lang_provider_kinds(db)
+    sources = {**CATALOGUE_SOURCE, **{kind: TRANSLATIONS_KIND for kind in lang_kinds}}
+    catalogue = {**catalogue, **{kind: catalogue.get(src, []) for kind, src in sources.items()}}
+    scalars["providers"] = settings_store.resolve_providers(db, catalogue, (*PROVIDER_KINDS, *lang_kinds))
     # stabbur-triage-queues D1: the triage selector reads its queues from
     # here, so they ride along with every settings read.
     scalars["triage_queues"] = settings_store.read_queues(db)
@@ -106,8 +136,11 @@ def _validate_patch_body(body: dict) -> str | None:
         if not isinstance(providers, dict):
             return "providers must be an object keyed by kind"
         for kind, kind_update in providers.items():
-            if kind not in PROVIDER_KINDS:
-                return f"unknown kind {kind!r}; must be one of {list(PROVIDER_KINDS)}"
+            if kind not in PROVIDER_KINDS and not TRANSLATIONS_LANG_KEY_RE.match(kind):
+                return (
+                    f"unknown kind {kind!r}; must be one of {list(PROVIDER_KINDS)} "
+                    f"or {TRANSLATIONS_LANG_PREFIX}<lang>"
+                )
             if not isinstance(kind_update, dict):
                 return f"providers.{kind} must be an object"
             if "order" in kind_update:
@@ -230,5 +263,13 @@ def register_settings_routes(app):
                 custom = body.get("value_color_custom", current["value_color_custom"])
                 if color == "custom" and not custom:
                     return jsonify({"error": "value_color 'custom' requires value_color_custom"}), 400
-            settings_store.write(db, body, PROVIDER_KINDS)
+            writable = (*PROVIDER_KINDS, *_lang_provider_kinds(db))
+            # A language the operator has typed into Translation languages in
+            # the SAME request is not in the stored scalars yet, so the keys
+            # this body carries are accepted on their own validated shape too.
+            writable += tuple(
+                kind for kind in (body.get("providers") or {})
+                if TRANSLATIONS_LANG_KEY_RE.match(kind) and kind not in writable
+            )
+            settings_store.write(db, body, writable)
             return jsonify(_serialize(db)), 200

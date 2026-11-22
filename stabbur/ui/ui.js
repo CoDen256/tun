@@ -92,11 +92,34 @@
   const LINKP = ['forvo', 'filmot'];
   // Settings lists, in the reference's order. `pos` is its own list (served
   // from the inflections lookup, ordered independently); `stt` is smia's.
-  const SETTINGS_KINDS = [['pos', 'Part of speech'], ['ipa', 'Pronunciation'], ['translations', 'Translations'], ['inflections', 'Inflections'], ['examples', 'Examples'], ['tts', 'Audio'], ['stt', 'Text from audio']];
+  // The Settings lists, in the reference's order, with the translations
+  // entry expanded to one list per target language (design D4) — the
+  // generic translations list is not shown, it is only the seed a new
+  // language's list resolves from.
+  const settingsKinds = () => [
+    ['pos', 'Part of speech'],
+    ['ipa', 'Pronunciation'],
+    ...targetLangs().map((lang) => [trKey(lang), `Translations · ${lang}`]),
+    ['inflections', 'Inflections'],
+    ['examples', 'Examples'],
+    ['tts', 'Audio'],
+    ['stt', 'Text from audio'],
+  ];
   // Which Settings provider list a sheet follows (the endpoint is API_KIND).
   const PREF_KIND = { pos: 'pos', inflections: 'inflections', ipa: 'ipa', translations: 'translations', examples: 'examples', audio: 'tts', stt: 'stt' };
   const LANG_FALLBACK = ['en', 'de', 'fr', 'sv', 'es'];
   const NAV = [['triage', 'Triage'], ['notes', 'Notes'], ['grammar', 'Grammar'], ['settings', 'Settings']];
+
+  // design D9, the one slash rule, shared by the candidate normaliser here
+  // and by the migration that split the stored rows: a translation value is
+  // split on EVERY "/", spaces or no spaces; each part is trimmed; an empty
+  // part is dropped; a value that yields no part is kept as it was.
+  function splitAlternatives(text) {
+    const raw = String(text == null ? '' : text);
+    if (!raw.includes('/')) return [raw];
+    const parts = raw.split('/').map((x) => x.trim()).filter(Boolean);
+    return parts.length ? parts : [raw];
+  }
 
   // smia's `_pos_for()` fallback tokens, mapped onto the canonical six.
   const POS_FALLBACK_MAP = { prep: 'preposisjon', konj: 'konjunksjon', sbu: 'konjunksjon', subst: 'substantiv' };
@@ -450,9 +473,25 @@
     E.customPos = !!(E.f.pos && !POS.includes(E.f.pos));
     E.shapeSeen = E.f.pos; // the form's inflections are the stored ones
     E.base = snapshot(E.f, ctx);
+    // AFTER the baseline, deliberately: a derived lemma has to count as an
+    // unsaved edit, or Save would read "Saved" and the value would never
+    // reach the database (design D2).
+    deriveLemmaOnOpen();
     if (E.f.audio_blob) loadWave(E.f.audio_blob);
     S.tab = 'word';
     return E;
+  }
+  // The lemma leads every lemma-queried lookup (inflections, part of
+  // speech), so it is derived when a note is OPENED — in all three contexts,
+  // not only on the belt, where Prefill used to be the only way to reach a
+  // lemma-less note. A lemma the operator has actually set (one that differs
+  // from the raw text) is never touched.
+  function deriveLemmaOnOpen() {
+    if (!E) return;
+    const raw = E.f.text;
+    if (E.f.lemma.trim() && E.f.lemma.trim() !== raw.trim()) return;
+    const guess = deriveLemmaGuess(raw);
+    if (guess && guess !== E.f.lemma.trim()) { E.f.lemma = guess; E.prov.lemma = 'derived from text'; }
   }
   // After a save or a merge: the stored row is the new baseline; everything
   // the session learned (candidates, provenance) stays.
@@ -508,13 +547,26 @@
   function afterEdit() { refreshMarkers(); refreshSave(); }
 
   /* ------------------------------------------------------ suggestions -- */
-  function kindProviders(kind) {
+  // The operator's target languages, with the same fallback the lookups and
+  // the prefill walk use, so "which languages" is answered in one place.
+  const targetLangs = () => {
+    const l = settings().default_target_langs || [];
+    return l.length ? l : ['en', 'de'];
+  };
+  // design D4: translations are ordered per target language, under
+  // "translations:<lang>". Every other kind keeps one list.
+  const trKey = (lang) => `translations:${lang}`;
+  function kindProviders(kind, lang) {
     const prefs = settings().providers || {};
     if (kind === 'stt' && !prefs.stt) {
       const list = (S.catalog && S.catalog.stt) || [];
       return { enabled: list, off: 0, links: [] };
     }
-    const info = prefs[PREF_KIND[kind]] || { order: [], disabled: [] };
+    const key = kind === 'translations' ? trKey(lang || targetLangs()[0]) : PREF_KIND[kind];
+    // The plain `translations` preference is the seed the server resolves a
+    // language's list from; falling back to it here too keeps the sheet
+    // sane in the one frame before the first settings read lands.
+    const info = prefs[key] || prefs[PREF_KIND[kind]] || { order: [], disabled: [] };
     const dis = new Set(info.disabled || []);
     const order = info.order || [];
     let enabled = order.filter((p) => !dis.has(p));
@@ -525,6 +577,17 @@
     }
     return { enabled, off: order.filter((p) => dis.has(p)).length, links };
   }
+  // The providers a KIND needs boxes and answers for. Translations are the
+  // union across the target languages, in first-appearance order: one box
+  // per provider, asked once, rendered under every language that enables it.
+  function enabledFor(kind) {
+    if (kind !== 'translations') return kindProviders(kind).enabled;
+    const out = [];
+    targetLangs().forEach((lang) => kindProviders('translations', lang).enabled.forEach((p) => { if (!out.includes(p)) out.push(p); }));
+    return out;
+  }
+  // Which of the target languages this provider is enabled for.
+  const langsFor = (p) => targetLangs().filter((lang) => kindProviders('translations', lang).enabled.includes(p));
   // editor-session-hygiene D1: each kind queries from one named field.
   function defaultQuery(kind) {
     const f = E.f;
@@ -562,13 +625,26 @@
     }
     if (!q) return { list: [] };
     if (kind === 'translations') {
-      const langs = (settings().default_target_langs || []).length ? settings().default_target_langs : ['en', 'de'];
+      // Only the languages whose own order enables this provider (D4).
+      const langs = langsFor(p);
+      if (!langs.length) return { list: [] };
       const answers = await Promise.all(langs.map((to) => enrich('translations', p, { text: q, from: lang, to }, force)));
       const list = [];
       let failed = 0;
       answers.forEach((r, i) => {
         if (r.status !== 200 || !r.body || !Array.isArray(r.body.candidates)) { failed += 1; return; }
-        r.body.candidates.forEach((c) => list.push({ lang: langs[i], v: c.text || '', ctx: c.context || '', tag: contextPosTag(c.context) }));
+        const seen = new Set();
+        r.body.candidates.forEach((c) => {
+          // design D9: a provider answering "hurry/rush" is offering two
+          // alternatives, not one value — with or without spaces round the
+          // slash. Each becomes its own candidate, so using one can never
+          // write a joined string into a row.
+          splitAlternatives(c.text || '').forEach((v) => {
+            if (!v || seen.has(v)) return;
+            seen.add(v);
+            list.push({ lang: langs[i], v, ctx: c.context || '', tag: contextPosTag(c.context) });
+          });
+        });
       });
       if (failed === langs.length) return { list: [], error: errMsg(answers[0], 'Lookup failed') };
       return { list };
@@ -623,8 +699,8 @@
     if (kind === 'stt') await loadCatalog();
     const st = E.cands[kind] || (E.cands[kind] = { q: defaultQuery(kind), pq: {}, pqOpen: {}, P: {}, edited: false });
     if (opts.q !== undefined) st.q = opts.q;
-    const { enabled, links } = kindProviders(kind);
-    const targets = opts.only ? [opts.only] : enabled.concat(links);
+    const { links } = kindProviders(kind);
+    const targets = opts.only ? [opts.only] : enabledFor(kind).concat(links);
     if (!opts.only) st.fetched = true;
     await Promise.all(targets.map(async (p) => {
       const own = st.pq[p] !== undefined && st.pq[p].trim() ? st.pq[p].trim() : null;
@@ -641,19 +717,22 @@
   }
   // The answers a prefill or a reopened sheet can use as they stand: fetched
   // for the field's current default query, and not mid-flight.
-  async function ensureKind(kind) {
+  async function ensureKind(kind, force) {
     const st = E.cands[kind];
     const q = defaultQuery(kind);
-    const { enabled } = kindProviders(kind);
-    const ready = st && st.fetched && st.q === q && enabled.every((p) => st.P[p] && !st.P[p].loading && st.P[p].query === q);
+    const enabled = enabledFor(kind);
+    // A forced prefill is a genuine re-ask, never a replay of what is
+    // already held: it always refetches, and `force` makes the lookup
+    // bypass both this session's cache and smia's (design D7).
+    const ready = !force && st && st.fetched && st.q === q && enabled.every((p) => st.P[p] && !st.P[p].loading && st.P[p].query === q);
     if (ready) return st;
     if (st) { st.pq = {}; st.pqOpen = {}; st.edited = false; }
-    return fetchKind(kind, { q });
+    return fetchKind(kind, { q, force: !!force });
   }
   function ccount(kind) {
     const st = E && E.cands[kind];
     if (!st) return 0;
-    return kindProviders(kind).enabled.reduce((a, p) => a + ((st.P[p] && st.P[p].list) || []).filter((c) => !c.gap).length, 0);
+    return enabledFor(kind).reduce((a, p) => a + ((st.P[p] && st.P[p].list) || []).filter((c) => !c.gap).length, 0);
   }
 
   /* ------------------------------------------------------- render util -- */
@@ -773,7 +852,9 @@
     const hwIn = `<textarea class="hw" id="f_text" data-f="text" rows="1" placeholder="Norwegian text" aria-label="Text" spellcheck="false">${esc(E.f.text)}</textarea>${sgb('stt')}`;
     const belt = E.ctx === 'triage' ? headBelt() : '';
     if (!desk) {
-      const chip = sim.length ? `<button class="chip" data-act="similar">${ic('merge', 's')} ${sim.length} similar</button>` : '';
+      // design D6: a filled accent badge, not a quiet outline chip — the
+      // operator was missing these. Rendered only when there is a match.
+      const chip = sim.length ? `<button class="chip simbadge" data-act="similar">${ic('merge', 's')} ${sim.length} similar</button>` : '';
       const tabs = [['word', 'Word'], ['sound', 'Sound'], ['meaning', 'Meaning'], ['grammar', 'Grammar']];
       const body = { word: secWord, sound: secSound, meaning: secMeaning, grammar: secGrammar }[S.tab]();
       return `<div class="wrap">${belt}
@@ -784,7 +865,7 @@
     }
     const r = ruleById(E.f.grammar_rule_id);
     const simline = sim.length
-      ? `Similar ${sim.map((s) => `<button class="nm" data-act="similar" data-v="${esc(s.id)}">${esc(s.text)}</button>`).join('<span class="dotsep"></span>')} <button class="lnk" data-act="similar" style="margin-left:6px">${ic('merge')} Review &amp; merge</button>`
+      ? `<button class="simbadge" data-act="similar">${ic('merge', 's')} ${sim.length} similar</button> ${sim.map((s) => `<button class="nm" data-act="similar" data-v="${esc(s.id)}">${esc(s.text)}</button>`).join('<span class="dotsep"></span>')} <button class="lnk" data-act="similar" style="margin-left:6px">${ic('merge')} Review &amp; merge</button>`
       : '<span style="color:var(--faint)">No similar notes</span>';
     return `<div class="wrap">${belt}
       <div class="dmeta"><div class="meta">${metaBits()}</div><div class="simline">${simline}</div></div>
@@ -848,8 +929,9 @@
     if (S.confirm === 'rule' && G.rule) {
       return `<div class="pop" role="dialog"><div class="q">Delete “${esc(G.rule.title)}”?<small>${G.rule.usage_count ? `${G.rule.usage_count} note${G.rule.usage_count === 1 ? '' : 's'} still use it — unlink them first.` : 'The rule is removed. This cannot be undone.'}</small></div><div class="two"><button data-act="cancel">Cancel</button><button class="danger" data-act="grdel-yes" ${G.rule.usage_count ? 'disabled' : ''}>Delete</button></div></div>`;
     }
-    if (S.menu === 'triage') return `<div class="pop" role="menu">${S.vp === 'phone' ? '<button data-act="t-skip">Skip<span class="sp"></span><kbd>S</kbd></button>' : ''}<button data-act="tdup">Duplicate note</button><button data-act="t-back">Send to back<span class="sp"></span><kbd>E</kbd></button><button data-act="t-save">Save<span class="sp"></span><kbd>M</kbd></button></div>`;
-    if (S.menu === 'note') return '<div class="pop" role="menu"><button data-act="dup">Duplicate note</button><button class="danger" data-act="n-del">Delete note</button></div>';
+    const forceItem = '<button data-act="prefill-force">Force prefill<small>re-asks and replaces what is already filled</small></button>';
+    if (S.menu === 'triage') return `<div class="pop" role="menu">${S.vp === 'phone' ? '<button data-act="t-skip">Skip<span class="sp"></span><kbd>S</kbd></button>' : ''}${forceItem}<button data-act="tdup">Duplicate note</button><button data-act="t-back">Send to back<span class="sp"></span><kbd>E</kbd></button><button data-act="t-save">Save<span class="sp"></span><kbd>M</kbd></button></div>`;
+    if (S.menu === 'note') return `<div class="pop" role="menu">${forceItem}<button data-act="dup">Duplicate note</button><button class="danger" data-act="n-del">Delete note</button></div>`;
     return '';
   }
 
@@ -910,11 +992,15 @@
     const on = (v) => (D.multi ? val.includes(v) : val === v);
     return `<div class="menu ${S.pick.up ? 'up' : ''}" role="listbox" style="left:${S.pick.x}px;top:${S.pick.y}px">${D.h ? `<div class="mh">${D.h}</div>` : ''}${D.o.map(([v, l]) => `<button class="mi" role="option" data-act="pickv" data-v="${esc(v)}" aria-checked="${on(v)}"><span class="ck">${on(v) ? ic('check', 's') : ''}</span>${esc(l)}</button>`).join('')}${D.acts ? `<div class="sep"></div>${D.acts.map(([v, l]) => `<button class="mi act" data-act="pickv" data-v="${esc(v)}"><span class="ck"></span>${esc(l)}</button>`).join('')}` : ''}</div>`;
   }
+  const scroller = () => app.querySelector('.scroll');
   function openPick(btn) {
     const r = btn.getBoundingClientRect(); const d = app.getBoundingClientRect();
     const x = Math.max(8, Math.min(r.left - d.left, d.width - 232));
     const below = d.bottom - r.bottom; const up = below < 260 && (r.top - d.top) > below;
-    S.pick = { k: btn.dataset.pick, x, y: up ? r.top - d.top - 4 : r.bottom - d.top + 4, up };
+    // `sc` is what tells a real scroll apart from a re-render's restore of
+    // the position the page already had (design D1).
+    const sc = scroller();
+    S.pick = { k: btn.dataset.pick, x, y: up ? r.top - d.top - 4 : r.bottom - d.top + 4, up, sc: sc ? sc.scrollTop : 0 };
   }
 
   /* ------------------------------------------------------------ sheets -- */
@@ -982,29 +1068,47 @@
     }
     return list;
   }
+  // One provider's box. `onlyLang`, used by the translations sheet, narrows
+  // what the box LISTS without changing what was asked or the indices the
+  // Use buttons carry — `data-i` always indexes the provider's own answer.
+  function provBox(k, p, pi, st, q, onlyLang) {
+    const R = st.P[p] || { loading: true, list: [] };
+    const over = st.pq[p] !== undefined && st.pq[p].trim() && st.pq[p].trim() !== q.trim();
+    const pqv = over ? st.pq[p].trim() : q;
+    const all = R.list || [];
+    const list = onlyLang ? all.filter((c) => c.lang === onlyLang) : all;
+    const n = list.filter((c) => !c.gap).length;
+    let body = `<div class="prv"><div class="prvh"><span class="n">${pi + 1}</span>${esc(p)}
+        ${k === 'stt' ? '' : `<button class="pqb ${over ? 'over' : ''}" data-act="pqedit" data-p="${esc(p)}" title="Query for ${esc(p)} only">${over ? `“${esc(pqv)}”` : `${ic('pen', 's')} query`}</button>`}
+        <span class="sp"></span><span class="c">${R.loading ? '…' : `${n || 'no'} result${n === 1 ? '' : 's'}`}</span></div>`;
+    if (st.pqOpen[p]) body += `<div class="pqrow"><input class="in" data-f="pq" data-p="${esc(p)}" value="${esc(st.pq[p] !== undefined ? st.pq[p] : '')}" aria-label="Query for ${esc(p)}" spellcheck="false" placeholder="${esc(q)}"><button class="ib" data-act="pqreset" data-p="${esc(p)}" title="Back to the shared query">Reset</button><button class="ib ${R.loading && S.sheet.pspin === p ? 'spin' : ''}" data-act="prerun" data-p="${esc(p)}" aria-label="Run ${esc(p)} again">${ic('rerun')}</button></div>`;
+    if (R.loading) body += '<div class="skel"></div>';
+    else if (R.error) body += `<div class="err">${esc(R.error)}</div>`;
+    else if (R.note) body += `<div class="none">${esc(R.note)}</div>`;
+    else if (!n && !list.length) body += `<div class="none">Nothing for “${esc(R.query !== undefined ? R.query : pqv)}”</div>`;
+    if (!R.loading) orderedList(k, list).forEach((c) => { body += candRow(k, p, c, all.indexOf(c)); });
+    return `${body}</div>`;
+  }
   function suggestSheet(k) {
     const st = E.cands[k] || { q: defaultQuery(k), pq: {}, pqOpen: {}, P: {} };
     const q = st.q;
-    const { enabled, off, links } = kindProviders(k);
+    const { off, links } = kindProviders(k);
+    const enabled = enabledFor(k);
     let body = '';
     if (!enabled.length) body += `<div class="none" style="margin-top:14px">No providers answer ${esc(KINDS[k].toLowerCase())} right now${k === 'stt' ? '' : ' — check Settings → Provider order, or whether smia is reachable'}.</div>`;
-    enabled.forEach((p, pi) => {
-      const R = st.P[p] || { loading: true, list: [] };
-      const over = st.pq[p] !== undefined && st.pq[p].trim() && st.pq[p].trim() !== q.trim();
-      const pqv = over ? st.pq[p].trim() : q;
-      const list = R.list || [];
-      const n = list.filter((c) => !c.gap).length;
-      body += `<div class="prv"><div class="prvh"><span class="n">${pi + 1}</span>${esc(p)}
-        ${k === 'stt' ? '' : `<button class="pqb ${over ? 'over' : ''}" data-act="pqedit" data-p="${esc(p)}" title="Query for ${esc(p)} only">${over ? `“${esc(pqv)}”` : `${ic('pen', 's')} query`}</button>`}
-        <span class="sp"></span><span class="c">${R.loading ? '…' : `${n || 'no'} result${n === 1 ? '' : 's'}`}</span></div>`;
-      if (st.pqOpen[p]) body += `<div class="pqrow"><input class="in" data-f="pq" data-p="${esc(p)}" value="${esc(st.pq[p] !== undefined ? st.pq[p] : '')}" aria-label="Query for ${esc(p)}" spellcheck="false" placeholder="${esc(q)}"><button class="ib" data-act="pqreset" data-p="${esc(p)}" title="Back to the shared query">Reset</button><button class="ib ${R.loading && S.sheet.pspin === p ? 'spin' : ''}" data-act="prerun" data-p="${esc(p)}" aria-label="Run ${esc(p)} again">${ic('rerun')}</button></div>`;
-      if (R.loading) body += '<div class="skel"></div>';
-      else if (R.error) body += `<div class="err">${esc(R.error)}</div>`;
-      else if (R.note) body += `<div class="none">${esc(R.note)}</div>`;
-      else if (!n && !(R.list || []).length) body += `<div class="none">Nothing for “${esc(R.query !== undefined ? R.query : pqv)}”</div>`;
-      if (!R.loading) orderedList(k, list).forEach((c) => { body += candRow(k, p, c, list.indexOf(c)); });
-      body += '</div>';
-    });
+    if (k === 'translations') {
+      // design D4: grouped by language, each group in ITS OWN provider
+      // order, so the sheet says the same thing Settings does.
+      targetLangs().forEach((lang) => {
+        const own = kindProviders('translations', lang).enabled;
+        body += `<div class="lgrp"><div class="lgh"><span class="lg">${esc(lang)}</span><span class="sp"></span><span class="c">${own.length} provider${own.length === 1 ? '' : 's'}</span></div>`;
+        if (!own.length) body += `<div class="none">No provider is enabled for ${esc(lang)} — Settings → Provider order.</div>`;
+        own.forEach((p, pi) => { body += provBox(k, p, pi, st, q, lang); });
+        body += '</div>';
+      });
+    } else {
+      enabled.forEach((p, pi) => { body += provBox(k, p, pi, st, q); });
+    }
     if (k === 'audio') {
       body += reuseBox();
       if (links.length) {
@@ -1215,7 +1319,7 @@
         <div class="si"><div class="t">Run providers<small>for every empty field</small></div>${seg('prefill_timing', [['on_open', 'On open'], ['on_demand', 'On Prefill']])}</div>
         <div class="si"><div class="t">Leaving a note<small>Send to back, Skip, Previous</small></div>${seg('triage_navigate_save', [['autosave', 'Autosave'], ['manual', 'Manual']])}</div></section>
       <section class="sg2"><h2>Provider order</h2><p class="hint">Drag to reorder. The first enabled provider prefills; suggestion sheets list them in this order.</p>
-        ${SETTINGS_KINDS.map(([k, label]) => {
+        ${settingsKinds().map(([k, label]) => {
     const info = providers[k] || { order: [], disabled: [] };
     const hint = k === 'tts' ? '<small>forvo and filmot open externally</small>' : '';
     return `<div class="pk"><div class="kh">${label}${hint}</div>
@@ -1225,8 +1329,9 @@
         <div class="si"><div class="t">Query starts prefilled<small>per-provider queries start from the shared one</small></div><button class="tg" data-act="qpre" aria-pressed="${s.override_prefill !== false}" aria-label="Query starts prefilled"></button></div>
         <div class="si"><div class="t">Translation languages</div><input class="txt-in" id="s_langs" data-f="langs" value="${esc((s.default_target_langs || []).join(', '))}" aria-label="Translation languages"></div></section>
       <section class="sg2"><h2>Examples prefill</h2>
-        <div class="si"><div class="t">Sentences to prefill</div>${step('examples_count')}</div>
-        <div class="si"><div class="t">Providers to try</div>${step('examples_max_providers')}</div></section>
+        <div class="si"><div class="t">Providers to ask<small>the first N in the Examples order</small></div>${step('examples_max_providers')}</div>
+        <div class="si"><div class="t">Sentences per provider<small>taken from each of them</small></div>${step('examples_count')}</div>
+        <div class="si"><div class="t" style="flex:1 1 100%"><small>Prefill takes at most ${(s.examples_max_providers || 1) * (s.examples_count || 3)} sentences — ${s.examples_max_providers || 1} × ${s.examples_count || 3}. A provider with fewer contributes what it has.</small></div></div></section>
     </div></div>`;
   }
 
@@ -1420,9 +1525,9 @@
   // and audio are ordered by it), then IPA, translations, inflections,
   // examples, audio — each step on its own, so one failing provider cannot
   // take the rest down.
-  function firstWith(kind, pred = (P) => (P.list || []).filter((c) => !c.gap).length > 0) {
+  function firstWith(kind, pred = (P) => (P.list || []).filter((c) => !c.gap).length > 0, lang) {
     const st = E.cands[kind];
-    for (const p of kindProviders(kind).enabled) {
+    for (const p of kindProviders(kind, lang).enabled) {
       const P = st && st.P[p];
       if (P && !P.error && pred(P)) return { p, P };
     }
@@ -1436,10 +1541,13 @@
     });
     return parts.every((x) => x === TRANSCRIPTION_GAP) ? null : parts.join(' ');
   }
+  // Every step takes `force`: the gap-filling Prefill passes it falsy and
+  // keeps its "already has a value" guards; Force prefill passes it true,
+  // which skips exactly those guards and nothing else (design D7).
   const PREFILL_STEPS = {
-    async pos() {
-      if (E.f.pos || !defaultQuery('pos')) return false;
-      await ensureKind('pos');
+    async pos(force) {
+      if ((E.f.pos && !force) || !defaultQuery('pos')) return false;
+      await ensureKind('pos', force);
       const hit = firstWith('pos');
       const mapped = hit && hit.P.list.map((c) => c.v).find(Boolean);
       if (!mapped) return false;
@@ -1447,9 +1555,9 @@
       E.prov.pos = hit.p;
       return true;
     },
-    async ipa() {
-      if (E.f.transcription.trim() || !defaultQuery('ipa')) return false;
-      await ensureKind('ipa');
+    async ipa(force) {
+      if ((E.f.transcription.trim() && !force) || !defaultQuery('ipa')) return false;
+      await ensureKind('ipa', force);
       const st = E.cands.ipa;
       for (const p of kindProviders('ipa').enabled) {
         const P = st.P[p];
@@ -1464,16 +1572,18 @@
       }
       return false;
     },
-    async translations() {
+    // Each language is walked in ITS OWN provider order (design D4).
+    async translations(force) {
       if (!defaultQuery('translations')) return false;
-      const langs = (settings().default_target_langs || []).length ? settings().default_target_langs : ['en', 'de'];
+      const langs = targetLangs();
       const have = new Set(E.f.translations.filter((t) => hasText(t.text)).map((t) => (t.lang || '').toLowerCase()));
-      const missing = langs.filter((l) => !have.has(l.toLowerCase()));
+      const missing = force ? langs.slice() : langs.filter((l) => !have.has(l.toLowerCase()));
       if (!missing.length) return false;
-      await ensureKind('translations');
+      await ensureKind('translations', force);
       let any = false;
+      if (force) E.f.translations = E.f.translations.filter((t) => hasText(t.text) && !missing.some((l) => l.toLowerCase() === (t.lang || '').toLowerCase()));
       missing.forEach((lang) => {
-        const hit = firstWith('translations', (P) => (P.list || []).some((c) => c.lang === lang));
+        const hit = firstWith('translations', (P) => (P.list || []).some((c) => c.lang === lang), lang);
         if (!hit) return;
         const c = orderByPos(hit.P.list.filter((x) => x.lang === lang), E.f.pos)[0];
         if (!c || !c.v) return;
@@ -1484,77 +1594,95 @@
       });
       return any;
     },
-    async inflections() {
+    async inflections(force) {
       if (!SHAPES[E.f.pos] || !E.f.lemma.trim()) return false;
-      await ensureKind('inflections');
+      await ensureKind('inflections', force);
       const hit = firstWith('inflections');
       const c = hit && hit.P.list[0];
       if (!c || !c.v) return false;
       let any = false;
       shapeKeys(E.f.pos).forEach((k) => {
-        if (!hasText(E.f.inflections[k]) && c.v[k]) { E.f.inflections[k] = normalizeInflectionValue(k, String(c.v[k])); any = true; }
+        if ((force || !hasText(E.f.inflections[k])) && c.v[k]) { E.f.inflections[k] = normalizeInflectionValue(k, String(c.v[k])); any = true; }
       });
-      if (shapeKeys(E.f.pos).includes('article') && !hasText(E.f.inflections.article)) {
+      if (shapeKeys(E.f.pos).includes('article') && (force || !hasText(E.f.inflections.article))) {
         const art = deriveArticleToken(c.v);
         if (art) { E.f.inflections.article = art; any = true; }
       }
       if (any) { E.prov.inflections = hit.p; E.shapeSeen = E.f.pos; }
       return any;
     },
-    // Examples are additive: providers with no entry are skipped, and up to
-    // `examples_max_providers` of them are pooled to reach `examples_count`.
-    async examples() {
-      if (E.f.examples.some(hasText) || !defaultQuery('examples')) return false;
-      await ensureKind('examples');
-      const count = settings().examples_count || 3;
+    // A grid, not a pool (design D3): the first N = `examples_max_providers`
+    // enabled providers are asked, and up to M = `examples_count` sentences
+    // are taken from EACH of them, so a full answer is N x M. A provider
+    // with fewer than M contributes what it has and is not backfilled from
+    // the others — the operator's ruling — so each provider's share stays
+    // its own.
+    async examples(force) {
+      if ((E.f.examples.some(hasText) && !force) || !defaultQuery('examples')) return false;
+      await ensureKind('examples', force);
+      const per = settings().examples_count || 3;
       const maxP = settings().examples_max_providers || 1;
       const texts = []; const usedP = [];
       kindProviders('examples').enabled.slice(0, maxP).forEach((p) => {
-        if (texts.length >= count) return;
         const P = E.cands.examples.P[p];
-        const add = ((P && !P.error && P.list) || []).map((c) => c.v).filter((t) => t && !texts.includes(t));
+        const add = ((P && !P.error && P.list) || [])
+          .map((c) => c.v)
+          .filter((t) => t && !texts.includes(t))
+          .slice(0, per);
         if (!add.length) return;
         texts.push(...add);
         usedP.push(p);
       });
       if (!texts.length) return false;
-      E.f.examples = texts.slice(0, count);
+      E.f.examples = texts;
       E.prov.examples = usedP.join(', ');
       return true;
     },
     // Only a real recording (a sha256) auto-attaches; manual-link providers
     // answer nothing and are walked past.
-    async audio() {
-      if (E.f.audio_blob || !defaultQuery('audio')) return false;
-      await ensureKind('audio');
+    async audio(force) {
+      if ((E.f.audio_blob && !force) || !defaultQuery('audio')) return false;
+      await ensureKind('audio', force);
       const hit = firstWith('audio');
       const c = hit && orderByPos(hit.P.list, E.f.pos)[0];
       if (!c || !c.sha) return false;
       const e0 = E;
+      const before = E.f.audio_blob;
       const r = await api('/api/enrich/tts/use', jsonReq('POST', { sha256: c.sha }));
-      if (E !== e0 || r.status !== 200 || !r.body || !r.body.sha256 || E.f.audio_blob) return false;
+      if (E !== e0 || r.status !== 200 || !r.body || !r.body.sha256) return false;
+      if (!force && E.f.audio_blob !== before) return false;
       setAudio(r.body.sha256, hit.p, hit.p);
       E.usedSha = c.sha; E.usedBlob = r.body.sha256;
       return true;
     },
   };
-  async function prefill() {
+  const PREFILL_ORDER = ['pos', 'ipa', 'translations', 'inflections', 'examples', 'audio'];
+  async function prefill(force) {
     if (!E || E.prefilling) return;
     const e0 = E;
     E.prefilling = true; S.menu = null;
+    // The lemma is what the inflections and part-of-speech lookups query
+    // from, so Prefill derives it itself rather than refusing for want of
+    // one (design D2) — a note whose lemma the operator cleared still
+    // prefills.
+    if (!E.f.lemma.trim()) {
+      const guess = deriveLemmaGuess(E.f.text);
+      if (guess) { E.f.lemma = guess; E.prov.lemma = 'derived from text'; }
+    }
     render();
     // Fetch every kind in parallel up front (badges fill in as answers
     // land); the fills then run in their fixed order.
-    ['pos', 'ipa', 'translations', 'inflections', 'examples', 'audio'].forEach((k) => { if (defaultQuery(k)) ensureKind(k); });
+    PREFILL_ORDER.forEach((k) => { if (defaultQuery(k)) ensureKind(k, force); });
     let filled = 0;
-    for (const name of ['pos', 'ipa', 'translations', 'inflections', 'examples', 'audio']) {
+    for (const name of PREFILL_ORDER) {
       if (E !== e0) return;
-      try { if (await PREFILL_STEPS[name]()) filled += 1; } catch (err) { console.error('prefill step failed:', name, err); }
+      try { if (await PREFILL_STEPS[name](force)) filled += 1; } catch (err) { console.error('prefill step failed:', name, err); }
     }
     if (E !== e0) return;
     E.prefilling = false;
     render();
-    toast(filled ? `Prefilled ${filled} empty field${filled > 1 ? 's' : ''}` : 'Nothing empty to prefill');
+    if (force) toast(filled ? `Force-filled ${filled} field${filled > 1 ? 's' : ''}, replacing what was there` : 'No provider answered for this note');
+    else toast(filled ? `Prefilled ${filled} empty field${filled > 1 ? 's' : ''}` : 'Nothing empty to prefill');
   }
   async function prefillInflectionsOnly() {
     const e0 = E;
@@ -1615,21 +1743,19 @@
     if (truncated) toast(`This queue has more than ${TRIAGE_QUEUE_MAX} notes — only the first ${TRIAGE_QUEUE_MAX} are on the belt`);
     await showTriageNote();
   }
-  async function showTriageNote() {
+  // `opts.prefill === false` is Previous (design D8): a note reached by
+  // going back has already been reviewed, so the automatic setting does not
+  // re-run providers over it. The Prefill control still works by hand.
+  async function showTriageNote(opts = {}) {
     stopAudio();
     if (T.index >= T.queue.length) { E = null; render(); return; }
     const note = T.queue[T.index];
+    // The lemma lands inside newEditor, before any provider is asked — the
+    // inflections walk queries on it (design D2).
     newEditor('triage', note);
-    // Lemma lands first, before any provider is asked — the inflections
-    // walk queries on it. Re-derived also when it is still the raw text.
-    const raw = E.f.text;
-    if (!E.f.lemma.trim() || E.f.lemma.trim() === raw.trim()) {
-      const guess = deriveLemmaGuess(raw);
-      if (guess && guess !== E.f.lemma.trim()) { E.f.lemma = guess; E.prov.lemma = 'derived from text'; }
-    }
     render();
     loadSimilar();
-    if ((settings().prefill_timing || 'on_open') === 'on_open') prefill();
+    if (opts.prefill !== false && (settings().prefill_timing || 'on_open') === 'on_open') prefill();
   }
   const autosaveOnNavigate = () => (settings().triage_navigate_save || 'autosave') !== 'manual';
   async function saveTriage() {
@@ -1713,7 +1839,7 @@
       T.index = entry.index;
     }
     T.index = Math.min(T.index, Math.max(0, T.queue.length - 1));
-    await showTriageNote();
+    await showTriageNote({ prefill: false });
     toast('Back to previous');
   }
   // The merge 404 fix (D10): a note that no longer exists leaves the
@@ -2068,6 +2194,70 @@
     R.rows = r.status === 200 ? (r.body.notes || []).filter((n) => !E || n.id !== E.id) : [];
     render();
   }
+  // One upload path, used by the Upload file control and by a file dropped
+  // onto the editor (design D5). A dropped recording replaces the current
+  // one exactly as an upload does.
+  const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac|webm|weba|mp4|3gp|amr)$/i;
+  const isAudioFile = (f) => !!f && (/^audio\//i.test(f.type || '') || AUDIO_EXT.test(f.name || ''));
+  async function uploadAudioFile(file) {
+    if (!file || !E) return false;
+    if (!isAudioFile(file)) { toast(`“${file.name}” is not an audio file`); return false; }
+    const form = new FormData();
+    form.append('audio', file);
+    const e0 = E;
+    toast(`Uploading ${file.name}…`);
+    let r;
+    try {
+      const resp = await fetch(`${API_BASE}/blobs`, { method: 'POST', body: form });
+      r = { status: resp.status, body: await resp.json().catch(() => ({})) };
+    } catch (err) { r = { status: 0, body: { error: err.message } }; }
+    if (E !== e0) return false;
+    if (r.status !== 200 || !r.body.sha256) { toast(errMsg(r, 'Upload failed')); return false; }
+    setAudio(r.body.sha256, `upload · ${file.name}`, 'upload');
+    S.sheet = null;
+    render();
+    toast(`Uploaded ${file.name}`);
+    return true;
+  }
+
+  // The drag counter, not a boolean: dragenter/dragleave fire for every
+  // child the pointer crosses, and a boolean flickers the overlay off the
+  // moment the pointer enters a field inside it.
+  let dragDepth = 0;
+  const dragHasFiles = (e) => !!(e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files'));
+  function setDropOverlay(on) {
+    const el = app.querySelector('.dropz');
+    if (on === !!el) return;
+    if (!on) { el.remove(); return; }
+    const d = document.createElement('div');
+    d.className = 'dropz';
+    d.innerHTML = `<div class="dropzi">${ic('snd')}<b>Drop an audio file</b><small>it replaces this note's recording</small></div>`;
+    app.appendChild(d);
+  }
+  document.addEventListener('dragenter', (e) => {
+    if (!E || !dragHasFiles(e)) return;
+    dragDepth += 1;
+    setDropOverlay(true);
+  });
+  document.addEventListener('dragover', (e) => {
+    if (!E || !dragHasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  document.addEventListener('dragleave', (e) => {
+    if (!E || !dragHasFiles(e)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) setDropOverlay(false);
+  });
+  document.addEventListener('drop', (e) => {
+    if (!E || !dragHasFiles(e)) return;
+    e.preventDefault();
+    dragDepth = 0;
+    setDropOverlay(false);
+    const file = (e.dataTransfer.files || [])[0];
+    if (file) uploadAudioFile(file);
+  });
+
   async function clipCapture() {
     if (!E || S.clipBusy) return;
     let text;
@@ -2121,7 +2311,7 @@
       }
       case 'sheet': openSuggest(b.dataset.kind); break;
       case 'close': S.sheet = null; render(); break;
-      case 'rerun': if (st) { S.sheet.spin = true; st.edited = st.q !== defaultQuery(S.sheet.kind); fetchKind(S.sheet.kind, { force: true }).then(() => { if (S.sheet) { S.sheet.spin = false; const ov = Object.keys(st.pq).filter((p) => st.pq[p] && st.pq[p].trim() && st.pq[p].trim() !== st.q).length; toast(`Ran ${kindProviders(S.sheet.kind).enabled.length} providers${ov ? ` · ${ov} with its own query` : ''}`); } }); render(); } break;
+      case 'rerun': if (st) { S.sheet.spin = true; st.edited = st.q !== defaultQuery(S.sheet.kind); fetchKind(S.sheet.kind, { force: true }).then(() => { if (S.sheet) { S.sheet.spin = false; const ov = Object.keys(st.pq).filter((p) => st.pq[p] && st.pq[p].trim() && st.pq[p].trim() !== st.q).length; toast(`Ran ${enabledFor(S.sheet.kind).length} providers${ov ? ` · ${ov} with its own query` : ''}`); } }); render(); } break;
       case 'pqedit': {
         if (!st) break;
         const p = b.dataset.p;
@@ -2180,6 +2370,7 @@
       case 't-save': S.menu = null; render(); triageAction(tActions.save); break;
       case 'tdup': S.menu = null; render(); triageAction(tActions.dup); break;
       case 'prefill': prefill(); break;
+      case 'prefill-force': S.menu = null; render(); prefill(true); break;
       case 'status': E.f.status = v; render(); break;
       case 'save': saveNote(); break;
       case 'dup': S.menu = null; render(); duplicateNote(); break;
@@ -2278,23 +2469,8 @@
     const el = e.target;
     if (el.id === 'fileIn') {
       const file = el.files[0];
-      if (!file || !E) return;
-      const form = new FormData();
-      form.append('audio', file);
-      const e0 = E;
-      toast(`Uploading ${file.name}…`);
-      let r;
-      try {
-        const resp = await fetch(`${API_BASE}/blobs`, { method: 'POST', body: form });
-        r = { status: resp.status, body: await resp.json().catch(() => ({})) };
-      } catch (err) { r = { status: 0, body: { error: err.message } }; }
       el.value = '';
-      if (E !== e0) return;
-      if (r.status !== 200 || !r.body.sha256) { toast(errMsg(r, 'Upload failed')); return; }
-      setAudio(r.body.sha256, `upload · ${file.name}`, 'upload');
-      S.sheet = null;
-      render();
-      toast(`Uploaded ${file.name}`);
+      await uploadAudioFile(file);
       return;
     }
     const f = el.dataset && el.dataset.f;
@@ -2351,8 +2527,23 @@
     if (renderPending) { renderPending = false; setTimeout(render, 0); }
   }, true);
 
-  // A scroll closes an open picker, as in the reference.
-  app.addEventListener('scroll', () => { if (S.pick) { S.pick = null; app.querySelector('.menu')?.remove(); } }, true);
+  // A scroll that MOVES the page closes an open picker, as in the reference.
+  //
+  // Not every scroll event is such a move. `render()` replaces #app's
+  // innerHTML, which resets .scroll's scrollTop to 0, and then restores it —
+  // and that restore dispatches a scroll event which lands here in the
+  // capture phase. Closing on it meant that OPENING a picker closed it
+  // again, since opening one renders; and only on a scrolled page, which is
+  // exactly the operator's "sometimes I can't open them at all" (design D1).
+  // So the position is compared against the one recorded when the picker
+  // opened: restoring to it is not a scroll by the operator.
+  app.addEventListener('scroll', (e) => {
+    if (!S.pick) return;
+    const sc = scroller();
+    if (e.target === sc && sc.scrollTop === S.pick.sc) return;
+    S.pick = null;
+    app.querySelector('.menu')?.remove();
+  }, true);
   mq.addEventListener('change', () => { S.vp = mq.matches ? 'desktop' : 'phone'; S.pick = null; render(); });
   window.addEventListener('hashchange', router);
   window.addEventListener('beforeunload', (e) => { if (E && E.ctx !== 'triage' && isDirty()) { e.preventDefault(); e.returnValue = ''; } });

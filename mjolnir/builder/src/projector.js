@@ -3,8 +3,26 @@
 // produces the same `{N, E, X, A}` + occurrence set.
 
 
+// One line per LANGUAGE, that language's values joined by " / "
+// (projector-translation-langs D1). stabbur stores translations as separate
+// rows and splits slash-joined values into more of them, so a note can carry
+// several values for one language; rendering each on its own line would turn
+// "hurry / rush" into two lines on the card. Languages keep the order in
+// which they first appear in the note, and values keep their stored order,
+// so the card reads the way the editor does.
+//
+// With at most one value per language every group holds one value, the join
+// is a no-op and the order is the stored order - i.e. byte-identical to what
+// this produced before.
 function translationsHtml(note) {
-  const lines = note.translations.map((t) => `${t.text}`);
+  const byLang = new Map();
+  for (const t of note.translations) {
+    // A row with no language is not dropped: it groups under its own key.
+    const key = t.lang || "";
+    if (!byLang.has(key)) byLang.set(key, []);
+    byLang.get(key).push(t.text);
+  }
+  const lines = [...byLang.values()].map((values) => values.join(" / "));
   return `<div class="center">${lines.join("<br>")}</div>`;
 }
 

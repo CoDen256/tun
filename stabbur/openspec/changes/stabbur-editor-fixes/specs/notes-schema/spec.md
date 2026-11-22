@@ -13,7 +13,10 @@ place, once — never by the reader, and never by guessing at display time.
   Each part SHALL be trimmed; a part empty after trimming SHALL be dropped;
   a row that yields no part SHALL be left as it was. Split rows SHALL be
   consecutive and SHALL keep the original row's position and language.
-  Within one note, `(lang, text)` duplicates SHALL collapse to the first.
+  A segment SHALL be dropped only when it duplicates a row that was already
+  separate, or a segment an earlier split in the same note emitted — the
+  rule the first migration used. Pre-existing duplicate rows SHALL be left
+  alone: this undoes joins, it does not de-duplicate.
 - No note SHALL be deleted, and no note SHALL lose a value it held.
 - The migration's `downgrade` SHALL refuse: neither split is recoverable.
 
@@ -49,6 +52,16 @@ and SHALL NOT be touched.
 - **GIVEN** a note whose translations are en `"hurry/rush"` and en `"rush"`
 - **WHEN** the migration runs
 - **THEN** the note has exactly two English translations, `"hurry"` and `"rush"`
+
+#### Scenario: A pre-existing duplicate is not touched
+- **GIVEN** a note whose translations are en `"x"` and en `"x"`, neither containing a slash
+- **WHEN** the migration runs
+- **THEN** the note still has both rows
+
+#### Scenario: A value that is only slashes is kept
+- **GIVEN** a note with one translation whose text is `" / "`
+- **WHEN** the migration runs
+- **THEN** that row is unchanged — nothing is deleted
 
 #### Scenario: Nothing is lost
 - **WHEN** the migration runs over the whole table

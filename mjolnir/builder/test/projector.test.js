@@ -67,6 +67,73 @@ test("translations: one per line, text only — no lang code, no field-name pref
   );
 });
 
+// projector-translation-langs: stabbur stores translations as separate rows
+// and splits slash-joined values into more of them, so one language can
+// carry several values. They belong on ONE line, joined by " / " - different
+// languages are what gets a line of its own.
+test("translations: two values in one language share a line", () => {
+  const note = fixtureNote({
+    type: "word",
+    translations: [
+      { lang: "en", text: "hurry" },
+      { lang: "en", text: "rush" },
+    ],
+  });
+  assert.equal(project(note).E, '<div class="center">hurry / rush</div>');
+});
+
+test("translations: several values across several languages", () => {
+  const note = fixtureNote({
+    type: "word",
+    translations: [
+      { lang: "en", text: "hurry" },
+      { lang: "de", text: "eilen" },
+      { lang: "en", text: "rush" },
+      { lang: "de", text: "hasten" },
+    ],
+  });
+  assert.equal(project(note).E, '<div class="center">hurry / rush<br>eilen / hasten</div>');
+});
+
+test("translations: language order follows first appearance", () => {
+  const note = fixtureNote({
+    type: "word",
+    translations: [
+      { lang: "de", text: "eilen" },
+      { lang: "en", text: "hurry" },
+      { lang: "de", text: "hasten" },
+    ],
+  });
+  assert.equal(project(note).E, '<div class="center">eilen / hasten<br>hurry</div>');
+});
+
+// A value with no language is kept, on a line of its own, rather than
+// dropped - the projection never loses a value the operator stored.
+test("translations: a value with no language is kept", () => {
+  const note = fixtureNote({
+    type: "word",
+    translations: [
+      { lang: "en", text: "hurry" },
+      { lang: "", text: "skynde" },
+    ],
+  });
+  assert.equal(project(note).E, '<div class="center">hurry<br>skynde</div>');
+});
+
+// The byte-identical guarantee: a note with at most one value per language
+// renders exactly as it did before the grouping was introduced.
+test("translations: unchanged for one value per language", () => {
+  const note = fixtureNote({
+    type: "word",
+    translations: [
+      { lang: "en", text: "house" },
+      { lang: "de", text: "Haus" },
+      { lang: "fr", text: "maison" },
+    ],
+  });
+  assert.equal(project(note).E, '<div class="center">house<br>Haus<br>maison</div>');
+});
+
 // Line order is headword, sg_def, **pl_indef, pl_def** — the expectation had
 // the last two the other way round. Corrected to the code on operator
 // direction. For "hus" that reads: et hus / huset / hus / husene, i.e.

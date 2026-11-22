@@ -212,6 +212,30 @@ def resolve_kind_order(stored: dict, catalogue_providers: list[str]) -> dict:
     return {"order": effective, "disabled": disabled, "primary": primary}
 
 
+def stored_kinds_with_prefix(db, prefix: str) -> list[str]:
+    """Stored provider-preference keys under a namespace, in stored order.
+    stabbur-editor-fixes D4 uses it to keep serving a per-language
+    translations order for a language the operator has removed from their
+    target languages, so re-adding the language restores its order."""
+    row = _row(db)
+    prefs = (row.provider_prefs if row else None) or {}
+    return [kind for kind in prefs if kind.startswith(prefix)]
+
+
+def _stored_for_kind(prefs: dict, kind: str) -> dict:
+    """What a kind's stored preference is, with one inheritance rule
+    (stabbur-editor-fixes D4): a NAMESPACED kind ("translations:de") that has
+    never been written falls back to its namespace's own preference
+    ("translations"), so a newly configured language starts at the order the
+    operator already has rather than at the raw catalogue order. A stored
+    empty dict is not "never written" — only a missing key is."""
+    if kind in prefs:
+        return prefs[kind] or {}
+    if ":" in kind:
+        return prefs.get(kind.split(":", 1)[0], {}) or {}
+    return {}
+
+
 def resolve_providers(db, catalogue: dict, kinds: tuple[str, ...]) -> dict:
     """Reconciles every kind stabbur proxies against smia's live catalogue
     (D3 — "every time the ordering is used"; reading settings counts). A
@@ -221,7 +245,7 @@ def resolve_providers(db, catalogue: dict, kinds: tuple[str, ...]) -> dict:
     row = _row(db)
     provider_prefs = (row.provider_prefs if row else None) or {}
     return {
-        kind: resolve_kind_order(provider_prefs.get(kind, {}), catalogue.get(kind, []))
+        kind: resolve_kind_order(_stored_for_kind(provider_prefs, kind), catalogue.get(kind, []))
         for kind in kinds
     }
 

@@ -367,3 +367,109 @@ def test_pos_and_stt_have_their_own_provider_order(client, monkeypatch):
     providers = resp.get_json()["providers"]
     assert providers["pos"] == {"order": ["dictcc_api", "ordbank"], "disabled": ["ordbank"], "primary": "dictcc_api"}
     assert providers["inflections"]["order"] == ["ordbank", "dictcc_api"]  # untouched
+
+
+# --------------------- stabbur-editor-fixes D4: per-language translations --
+# The Translations order is per TARGET LANGUAGE, under "translations:<lang>".
+# Every other kind keeps exactly one list.
+
+
+def test_a_translations_order_is_served_per_target_language(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {"translations": ["dictcc", "google"]})
+    body = client.get("/api/settings", headers=AUTH).get_json()
+    assert body["providers"]["translations:en"]["order"] == ["dictcc", "google"]
+    assert body["providers"]["translations:de"]["order"] == ["dictcc", "google"]
+
+
+def test_adding_a_target_language_adds_its_list(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {"translations": ["dictcc", "google"]})
+    client.patch("/api/settings", json={"default_target_langs": ["en", "de", "fr"]}, headers=AUTH)
+    body = client.get("/api/settings", headers=AUTH).get_json()
+    assert "translations:fr" in body["providers"]
+
+
+def test_a_new_language_inherits_the_configured_generic_order(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {"translations": ["dictcc", "google"]})
+    # The order the operator configured before any language had its own list.
+    client.patch(
+        "/api/settings",
+        json={"providers": {"translations": {"order": ["google", "dictcc"]}}},
+        headers=AUTH,
+    )
+    client.patch("/api/settings", json={"default_target_langs": ["en", "fr"]}, headers=AUTH)
+    body = client.get("/api/settings", headers=AUTH).get_json()
+    assert body["providers"]["translations:fr"]["order"] == ["google", "dictcc"]
+    assert body["providers"]["translations:fr"]["primary"] == "google"
+
+
+def test_one_languages_order_does_not_touch_anothers(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {"translations": ["dictcc", "google"]})
+    resp = client.patch(
+        "/api/settings",
+        json={"providers": {"translations:de": {"order": ["google", "dictcc"]}}},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    providers = resp.get_json()["providers"]
+    assert providers["translations:de"]["order"] == ["google", "dictcc"]
+    assert providers["translations:en"]["order"] == ["dictcc", "google"]
+
+
+def test_a_per_language_order_survives_a_second_read(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {"translations": ["dictcc", "google"]})
+    client.patch(
+        "/api/settings",
+        json={"providers": {"translations:de": {"order": ["google", "dictcc"], "disabled": ["dictcc"]}}},
+        headers=AUTH,
+    )
+    providers = client.get("/api/settings", headers=AUTH).get_json()["providers"]
+    assert providers["translations:de"]["order"] == ["google", "dictcc"]
+    assert providers["translations:de"]["disabled"] == ["dictcc"]
+    assert providers["translations:de"]["primary"] == "google"
+
+
+def test_a_language_removed_from_settings_keeps_its_stored_order(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {"translations": ["dictcc", "google"]})
+    client.patch(
+        "/api/settings",
+        json={"providers": {"translations:de": {"order": ["google", "dictcc"]}}},
+        headers=AUTH,
+    )
+    client.patch("/api/settings", json={"default_target_langs": ["en"]}, headers=AUTH)
+    providers = client.get("/api/settings", headers=AUTH).get_json()["providers"]
+    assert providers["translations:de"]["order"] == ["google", "dictcc"]
+
+
+def test_other_kinds_stay_single_however_many_languages_exist(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {"translations": ["dictcc"], "ipa": ["nst"]})
+    client.patch("/api/settings", json={"default_target_langs": ["en", "de", "fr"]}, headers=AUTH)
+    providers = client.get("/api/settings", headers=AUTH).get_json()["providers"]
+    assert [k for k in providers if k.startswith("ipa")] == ["ipa"]
+    assert [k for k in providers if k.startswith("examples")] == ["examples"]
+
+
+def test_a_malformed_per_language_kind_is_rejected(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {"translations": ["dictcc"]})
+    resp = client.patch(
+        "/api/settings",
+        json={"providers": {"translations:NOT A LANG": {"order": ["dictcc"]}}},
+        headers=AUTH,
+    )
+    assert resp.status_code == 400
+
+
+def test_a_language_configured_in_the_same_request_can_be_ordered(client, monkeypatch):
+    """The Settings page writes the language list and an order for it in one
+    session; the key must not be refused merely because the language was not
+    stored when the request arrived."""
+    _mock_catalogue(monkeypatch, {"translations": ["dictcc", "google"]})
+    resp = client.patch(
+        "/api/settings",
+        json={
+            "default_target_langs": ["en", "sv"],
+            "providers": {"translations:sv": {"order": ["google", "dictcc"]}},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["providers"]["translations:sv"]["order"] == ["google", "dictcc"]
