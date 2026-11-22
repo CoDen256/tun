@@ -117,7 +117,15 @@ export async function buildInsights(uid, { dataDir, now = Date.now() } = {}) {
   const dbContent = await resolveContent(ids);
 
   const rows = totalCards.map((c, i) => {
-    const dk = byCode.get(c.DECK_ID) || {};
+    // `c.D`, NOT `c.DECK_ID` — the latter does not exist on a userdata card
+    // and never has. Measured on the operator's own account: all 360 cards
+    // carry `D` (holding the deck CODE, e.g. "C30", which is what `byCode` is
+    // keyed on and what `FAM` takes its first letter from) and NONE carry
+    // `DECK_ID`. So this lookup always missed, `dk` below was always
+    // undefined, and `r.dk[0]` threw — insights.json answered 500 and the
+    // page's charts drew nothing. That is the whole of "the diagram never
+    // worked". Found 2026-11-26 from the operator's report.
+    const dk = byCode.get(c.D) || {};
     const db = dbContent.get(c.ID);
     const bundleCard = index.cardById.get(c.ID);
     const n = db?.n ?? bundleCard?.N ?? null;
@@ -129,7 +137,7 @@ export async function buildInsights(uid, { dataDir, now = Date.now() } = {}) {
       id: c.ID,
       s: c.language,
       a: c.A,
-      dk: c.DECK_ID,
+      dk: c.D,
       st: c.Stage,
       cf: c.CF,
       mi: dk.maxInterval ?? null,
@@ -215,8 +223,13 @@ export async function buildInsights(uid, { dataDir, now = Date.now() } = {}) {
       const f = futIdx[k] || [];
       const isPast = k <= todayK;
       FAM.forEach((fam, fi) => {
-        series.pastFam[fi].push(isPast ? p.filter((r) => r.dk[0] === fam).length : null);
-        series.futFam[fi].push(!isPast ? f.filter((r) => r.dk[0] === fam && r.st === STATE_STAGE.inRotation).length : null);
+        // `r.dk?.[0]`, defensively. The field above is correct now, but a
+        // card whose deck code is missing must not take the ENTIRE page down
+        // with a TypeError — which is exactly what happened here: one
+        // unreadable field 500'd insights.json and every chart on the page
+        // rendered empty. An unknown deck simply matches no family.
+        series.pastFam[fi].push(isPast ? p.filter((r) => r.dk?.[0] === fam).length : null);
+        series.futFam[fi].push(!isPast ? f.filter((r) => r.dk?.[0] === fam && r.st === STATE_STAGE.inRotation).length : null);
       });
       series.pastTot.push(isPast ? p.length : null);
       series.futTot.push(!isPast ? f.filter((r) => r.st === STATE_STAGE.inRotation).length : null);
