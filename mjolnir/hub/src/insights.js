@@ -203,11 +203,23 @@ export async function buildInsights(uid, { dataDir, now = Date.now() } = {}) {
   let ladder = [];
   let calKeys = [];
   let bestStreak = 0;
+  // PUBLISHED IN `meta` BELOW, and hoisting it is the whole fix. The page's
+  // `seriesFor()` rebuilds the chart from the filtered rows using
+  // `const k0 = M.minK` as the origin of its day axis. `minK` used to exist
+  // only inside the `if (rows.length > 0)` block below, so `M.minK` was
+  // ALWAYS undefined on the client: every bucket index came out NaN,
+  // `NaN >= 0` is false, no row was ever counted, and the hero chart drew
+  // flat zeros — axes, legend and the `now` line rendered, and not one
+  // series. That is "the chart shows nothing at all", and it is why the
+  // y-axis stopped at uPlot's default 100 while the note underneath
+  // correctly reported a peak of 221. Reported by the operator and
+  // reproduced in a browser against his own exported document, 2026-11-26.
+  let minK = null;
   let spanDays = 0;
 
   if (rows.length > 0) {
     const todayK = dayKey(now);
-    const minK = Math.min(...rows.map((r) => dayKey(r.lrT)));
+    minK = Math.min(...rows.map((r) => dayKey(r.lrT)));
     const maxK = Math.max(...rows.map((r) => dayKey(r.dueT)));
     const pastIdx = {};
     const futIdx = {};
@@ -340,6 +352,17 @@ export async function buildInsights(uid, { dataDir, now = Date.now() } = {}) {
     t100: rows.filter((r) => r.st === STATE_STAGE.parkedDormant).length,
     historyRows: (await query("SELECT count(*) FROM userdata_history WHERE device_id = $1", [uid])).rows[0].count,
     drawn: deckSum.reduce((a, d) => a + d.drawn, 0),
+    // SPLIT BY THE SAME LINE `stockTotal`/`hubTotal` ARE SPLIT ON. The page's
+    // "Stock corpus drawn" tile divided `drawn` — every deck, stock AND
+    // hub-managed — by `stockTotal`, which counts only `!managed` decks. Two
+    // different populations, so the ratio ran past 100% and the "left" figure
+    // went negative as soon as hub-minted occurrences were drawn: the
+    // operator saw "103.2% (5,050 / 4,895 · -155 left)" on 2026-11-26, where
+    // 5,050 is exactly sum(PullCounter)*5 over all 39 decks and the -155 is
+    // the hub-managed remainder. `drawn` is kept for anything that genuinely
+    // means every deck; the stock tile now uses `stockDrawn`.
+    stockDrawn: deckSum.filter((d) => !d.managed).reduce((a, d) => a + d.drawn, 0),
+    hubDrawn: deckSum.filter((d) => d.managed).reduce((a, d) => a + d.drawn, 0),
     stockTotal,
     hubTotal,
     hubPending,
@@ -370,6 +393,7 @@ export async function buildInsights(uid, { dataDir, now = Date.now() } = {}) {
       X: rows.filter((r) => r.a === "X").length,
     },
     todayK: rows.length ? dayKey(now) : null,
+    minK,
     cardIndexReason: index.reason,
   };
 

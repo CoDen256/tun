@@ -320,6 +320,16 @@ function archiveTierHtml({ uid, archive, horizonMs, retentionHours }) {
   if (!older.length) {
     return `${divider}${caveat}<div class="state-box neutral" title="They are shown as the archived marker on the per-PATCH rows above rather than as separate entries here, which keeps one change from being rendered as two events."><span class="sb-icon">∅</span><div>
       <b>Every archived version is newer than the horizon</b> — all ${(archive.commits || []).length} of them, marked on the rows above.
+      ${(() => {
+        // WHEN THIS HALF STARTS FILLING. Saying only "newer than the horizon"
+        // is true but leaves the obvious question unanswered, and the operator
+        // had to ask it: the archive simply has not aged past the window yet,
+        // because exporting began recently. One clause, not a paragraph.
+        const oldest = (archive.commits || []).reduce((a, c) => (!a || c.epoch < a.epoch ? c : a), null);
+        return oldest
+          ? `The oldest is <span class="td-when">${escapeHtml(isoMinute(oldest.epoch * 1000))}</span> — entries appear here once a version is older than the horizon.`
+          : "";
+      })()}
     </div></div>`;
   }
 

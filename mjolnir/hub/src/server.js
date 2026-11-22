@@ -741,6 +741,15 @@ function renderDevicePage({ accounts, selectedUid, doc, perCard, total, history,
   </div>
 </div>
 
+<div class="panel" id="sync-history">
+  <div class="panel-head">
+    <div style="min-width:0"><h3>Sync history</h3><div class="page-sub">per-PATCH for ${HISTORY_RETENTION_HOURS} h, one entry per backup run before that</div></div>
+  </div>
+  <div class="panel-pad">
+    ${historyPanel}
+  </div>
+</div>
+
 <div class="panel">
   <div class="panel-head">
     <div><h3>Per-card progress</h3><div class="page-sub" title="Every occurrence with SRS state, joined against card content.">${total} matching</div></div>
@@ -780,15 +789,6 @@ function renderDevicePage({ accounts, selectedUid, doc, perCard, total, history,
     ${pagerHtml(selectedUid, filters, total)}
 
     ${bundleNote}
-  </div>
-</div>
-
-<div class="panel" id="sync-history">
-  <div class="panel-head">
-    <div style="min-width:0"><h3>Sync history</h3><div class="page-sub">per-PATCH for ${HISTORY_RETENTION_HOURS} h, one entry per backup run before that</div></div>
-  </div>
-  <div class="panel-pad">
-    ${historyPanel}
   </div>
 </div>
 <script>
@@ -1617,7 +1617,9 @@ export function createServer(pool, config, boot) {
         const sizeParam = Number(url.searchParams.get("size"));
         const filters = {
           page: Math.max(1, Math.trunc(Number(url.searchParams.get("page"))) || 1),
-          size: PAGE_SIZES.includes(sizeParam) ? sizeParam : 50,
+          // 25 by default, at the operator's request — 50 rows made the page
+        // a wall. The preset list still offers 50/100/200.
+        size: PAGE_SIZES.includes(sizeParam) ? sizeParam : 25,
           sort: url.searchParams.get("sort") || "",
           dir: url.searchParams.get("dir") === "desc" ? "desc" : "asc",
           deck: url.searchParams.get("deck") || "",

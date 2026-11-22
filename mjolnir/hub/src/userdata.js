@@ -214,7 +214,7 @@ function matchCardIdsByContent(index, needle) {
 export async function perCardProgress(uid, opts = {}) {
   const {
     page = 1,
-    size = 50,
+    size = 25,
     sort = "",
     dir = "asc",
     deck = "",
