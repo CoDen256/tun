@@ -139,3 +139,120 @@ on open, shows them straight away.
   reloaded.
 - An `href="#"` link inside a grammar explanation navigates away from the
   rule page.
+
+## Stabbur editor fixes
+- `stabbur/openspec/changes/archive/<date>-stabbur-editor-fixes`
+- `mjolnir/openspec/changes/archive/<date>-projector-translation-langs`
+
+Your thirteen findings from the redesign. Same shape as the package before
+it: stabbur (UI, settings schema, one data migration) plus the mjolnir
+builder's projector. The device plane, the APK, grind, smia and
+hover-translate are untouched.
+
+### Deploy: stabbur first, both in one rollout
+
+**1. Take a fresh backup first.** The migration is irreversible and its
+`downgrade` refuses.
+```bash
+docker compose run --rm -e RUN_ONCE=1 backup
+```
+Confirm the run finished and the backup repo has a new commit dated now.
+
+**2. Record the before numbers** (stabbur database):
+```sql
+-- translations still carrying a slash, in either shape
+SELECT count(*) AS slash_rows
+  FROM notes, jsonb_array_elements(translations) t
+ WHERE t->>'text' LIKE '%/%';
+SELECT count(*) AS total_notes FROM notes;
+SELECT count(*) AS notes_with_translations
+  FROM notes WHERE jsonb_array_length(translations) > 0;
+```
+
+**3. Deploy stabbur**, which runs the migration:
+```bash
+git pull
+docker compose build stabbur-backend
+docker compose up -d stabbur-backend
+```
+It serves before it migrates (D157). Watch
+`docker compose logs -f stabbur-backend` until the alembic upgrade to
+revision `f7a2c9d4e3b1` reports done; the health check stays "degraded"
+until then.
+
+**4. Verify the migration:**
+```sql
+-- expect 0: no translation holds a slash with text on both sides any more
+SELECT count(*) FROM notes, jsonb_array_elements(translations) t
+ WHERE t->>'text' LIKE '%/%' AND btrim(replace(t->>'text', '/', '')) <> '';
+-- expect the total_notes figure from step 2 — nothing deleted
+SELECT count(*) FROM notes;
+-- expect the notes_with_translations figure from step 2 — nothing emptied
+SELECT count(*) FROM notes WHERE jsonb_array_length(translations) > 0;
+-- eyeball a note you know had a slashed translation: separate rows now
+SELECT text, translations FROM notes WHERE text = '<a word you know>';
+```
+A row whose text was nothing but slashes and spaces is deliberately left
+verbatim rather than deleted. Pre-existing duplicate rows are left alone —
+this undoes joins, it does not de-duplicate.
+
+**5. Then deploy the builder.** Never before stabbur: a builder with the old
+projector would put each split translation on its own card line.
+```bash
+docker compose build mjolnir-builder
+docker compose up -d mjolnir-builder
+```
+
+**6. Before the next publish, run a forecast** and open the card preview for
+a note that now carries two translations in one language. The E face shows
+them on ONE line, joined by " / "; different languages are on different
+lines. A note with at most one translation per language must be unchanged.
+This is **projector-translation-langs M01–M05** and needs the hub stack, so
+this is its first real check.
+
+**Rollback:** restore the step-1 dump into the stabbur database and redeploy
+the previous images of `stabbur-backend` and `mjolnir-builder`.
+
+### Flows to test live (phone and desktop)
+
+1. **Dropdowns (finding 1, 8).** Scroll the editor down so a control is in
+   the lower half of the screen, then open it: part of speech, the type
+   pill, a translation row's language, the grammar rule, the queue selector,
+   the Notes list's sort and filters. Each must open and stay open. Scroll
+   the page, click away, or press Escape to close it. Add a translation by
+   hand and change its language.
+2. **Lemma (finding 2).** Open a note from the **Notes list** that has no
+   lemma. The lemma field is already filled from the text, and Save offers
+   itself. Press Prefill without touching anything — it runs.
+3. **Examples (finding 3).** Settings → Examples prefill now reads
+   "Providers to ask" and "Sentences per provider", with the maximum under
+   them. Set 2 × 3 and prefill a note with no examples: up to six rows, the
+   first provider's first, then the second's. A provider with fewer
+   contributes what it has and is not topped up.
+4. **Provider order per language (finding 4).** Settings → Provider order
+   now lists "Translations · en" and "Translations · de" separately. Reorder
+   one; the other must not move. Open a note's translations sheet: it is
+   grouped by language, each group's boxes in that language's order. Add a
+   language in Translation languages — its list appears, starting from the
+   order the others started from.
+5. **Dropping audio (finding 5).** Drag an mp3 from your file manager onto
+   the editor. A drop panel appears while it is over the page; dropping
+   attaches the recording. Drop a non-audio file: it says so and the audio
+   is unchanged. Works in triage, in a note, and in New note.
+6. **Similar notes (finding 7).** A note with matches shows a filled
+   coloured "N similar" badge — on the phone's meta line, at the head of the
+   desktop similar line. Check it is now hard to miss.
+7. **Force prefill (finding 10).** On a note whose IPA and translation hold
+   values you do not want, ⋯ → **Force prefill**. It re-asks the providers
+   and replaces them. Plain Prefill on the same note must leave them alone.
+8. **Previous (finding 11).** With prefill timing on "On open", triage
+   forward a couple of notes and press Previous: the note comes back as you
+   left it and nothing re-runs. Prefill by hand still works there.
+9. **Slashes (findings 12, 13).** Open the translations sheet on a word
+   whose provider answers with a slash — `stor` gives "big/great/large" from
+   dict.cc and Google. They appear as three separate candidates, no slash in
+   any of them. Stored rows are separate after step 4.
+10. **C28 (finding 6).** Your ruling, now written into the spec: open a note
+    from the Notes list and no ✨ control carries a count. After Prefill, or
+    after opening one field's sheet, that field's control shows its count.
+    Confirm this is what you wanted.

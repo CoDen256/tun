@@ -1101,7 +1101,7 @@
       // order, so the sheet says the same thing Settings does.
       targetLangs().forEach((lang) => {
         const own = kindProviders('translations', lang).enabled;
-        body += `<div class="lgrp"><div class="lgh"><span class="lg">${esc(lang)}</span><span class="sp"></span><span class="c">${own.length} provider${own.length === 1 ? '' : 's'}</span></div>`;
+        body += `<div class="lgrp" data-lang="${esc(lang)}"><div class="lgh"><span class="lg">${esc(lang)}</span><span class="sp"></span><span class="c">${own.length} provider${own.length === 1 ? '' : 's'}</span></div>`;
         if (!own.length) body += `<div class="none">No provider is enabled for ${esc(lang)} — Settings → Provider order.</div>`;
         own.forEach((p, pi) => { body += provBox(k, p, pi, st, q, lang); });
         body += '</div>';
@@ -2317,8 +2317,17 @@
         const p = b.dataset.p;
         st.pqOpen[p] = !st.pqOpen[p];
         if (st.pqOpen[p] && st.pq[p] === undefined && settings().override_prefill !== false) st.pq[p] = st.q;
+        // The translations sheet shows one box per provider PER LANGUAGE
+        // group, so the same provider's query row exists more than once.
+        // Focus the one in the group whose control was pressed, not the
+        // first in the sheet.
+        const grp = b.closest('.lgrp');
         render();
-        if (st.pqOpen[p]) app.querySelector(`[data-f="pq"][data-p="${CSS.escape(p)}"]`)?.focus();
+        if (st.pqOpen[p]) {
+          const sel = `[data-f="pq"][data-p="${CSS.escape(p)}"]`;
+          const within = grp && grp.dataset.lang ? app.querySelector(`.lgrp[data-lang="${CSS.escape(grp.dataset.lang)}"] ${sel}`) : null;
+          (within || app.querySelector(sel))?.focus();
+        }
         break;
       }
       case 'pqreset': { if (!st) break; const p = b.dataset.p; delete st.pq[p]; st.pqOpen[p] = false; fetchKind(S.sheet.kind, { only: p }); render(); toast(`${p} uses the shared query again`); break; }
