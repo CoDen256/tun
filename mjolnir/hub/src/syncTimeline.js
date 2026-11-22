@@ -67,6 +67,10 @@ details.flow-banner > summary { cursor: pointer; font-weight: 650; color: var(--
 .arch-box ul { margin: 6px 0 0; padding-left: 18px; }
 .arch-box li { margin: 2px 0; }
 .arch-box details summary { cursor: pointer; }
+/* Collapsed, the box is one quiet line — it only becomes a panel once it is
+   opened. A full-width bordered box per row reads as noise on a timeline. */
+details.arch-box:not([open]) { border: 0; background: transparent; padding: 0; margin: 2px 0 0; }
+details.arch-box:not([open]) > summary { color: var(--text-faint); font-weight: 600; }
 .commit-sha { font-family: var(--mono); font-size: 11.5px; color: var(--text-faint); }
 .tl-actions { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
 .diffbox { margin: 8px 0 2px; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--bg-sunken); overflow-x: auto; }
