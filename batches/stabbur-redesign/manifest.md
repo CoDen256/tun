@@ -16,7 +16,8 @@ them in that order.
 
 | package | status |
 |---|---|
-| Stabbur editor redesign | BLOCKED(C28: should ✨ count badges show on note open, which needs a lookup per field on every open, against note-editor's explicit-action-only rule? Operator ruling needed. Everything else archived: stabbur `2026-11-21-stabbur-editor-redesign`, mjolnir `2026-11-21-projector-examples-column`) |
+| Stabbur editor redesign | archived 2026-11-21. C28 was BLOCKED on an operator ruling; the ruling arrived 2026-11-22 (finding 6: badges only after Prefill or opening a sheet — the shipped behaviour), so C28 is **PASS** and the block is lifted. The rule is written down in the `stabbur-editor-fixes` `note-editor-surface` delta. |
+| Stabbur editor fixes | building |
 
 ## Packages
 
@@ -139,3 +140,23 @@ Deferred to the builder's judgement (tier 2, not guesses):
 - the exact wording of the clipboard error messages
 - the duplicate endpoint's route shape
 - the filter query-parameter names
+
+### Stabbur editor fixes
+projects: stabbur, mjolnir (builder projector only)
+status: building — stabbur `stabbur-editor-fixes`, mjolnir
+`projector-translation-langs`. Deploy together, stabbur first.
+
+The return leg of D161: the operator deployed the redesign, tested it live,
+and filed thirteen findings on 2026-11-22. They are quoted verbatim in
+`stabbur/openspec/changes/stabbur-editor-fixes/proposal.md`. Finding 9 does
+not exist in the operator's list; finding 6 is the C28 ruling above.
+
+Readings settled with the operator before the change was written:
+- finding 5 is **dropping an audio file onto the editor** (a new feature),
+  not the waveform trim handles and not the Settings drag handle
+- finding 4 is the **Translations** provider list only — the other six ask
+  Norwegian-side questions that do not vary by target language
+- finding 3 does **not** backfill a short provider from the others
+
+Operator feedback outranks specs (D161): three requirements this amends were
+archived five days ago, and they are amended, not worked around.
