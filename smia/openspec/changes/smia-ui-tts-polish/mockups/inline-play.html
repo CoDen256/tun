@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>smia — linguistics service</title>
+<style>
+/* ── verbatim from smia/ui/ui.css ─────────────────────────────────────── */
+:root {
+  --bg:#1a2636; --surface:#213040; --border:#2e4560;
+  --muted:#6a8298; --card:#223042; --accent:#7eb8f7;
+  --ok:#5fd68a; --bad:#f0806b;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+body {
+  font-family:-apple-system,'Segoe UI',system-ui,sans-serif;
+  background:var(--bg); color:#d8e8f4;
+  min-height:100vh; padding:20px 16px 60px;
+}
+header { margin-bottom:16px; }
+header h1 { font-size:1.15rem; color:var(--accent); letter-spacing:.04em; margin-bottom:3px; }
+header p { font-size:.76rem; color:var(--muted); }
+nav { display:flex; gap:12px; margin-top:8px; flex-wrap:wrap; }
+nav a {
+  font-size:.76rem; color:var(--muted); text-decoration:none;
+  border:1px solid var(--border); border-radius:6px; padding:4px 10px;
+}
+nav a:hover { color:var(--accent); border-color:var(--accent); }
+.provider-empty { color:var(--muted); }
+.page { max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:20px; }
+section {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:10px; padding:14px 16px;
+}
+section h2 { font-size:.9rem; color:var(--accent); margin-bottom:10px; }
+table { width:100%; border-collapse:collapse; font-size:.78rem; }
+th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); }
+th { color:var(--muted); font-weight:600; }
+.ok { color:var(--ok); }
+.bad { color:var(--bad); }
+.muted { color:var(--muted); }
+label { display:block; font-size:.76rem; color:var(--muted); margin:8px 0 3px; }
+input, select, textarea {
+  width:100%; background:var(--card); border:1px solid var(--border); color:#d8e8f4;
+  border-radius:6px; padding:6px 8px; font-size:.82rem; font-family:inherit;
+}
+textarea { min-height:90px; font-family:monospace; }
+button {
+  margin-top:12px; background:var(--accent); color:#152030; border:none;
+  border-radius:6px; padding:8px 14px; font-size:.82rem; font-weight:600; cursor:pointer;
+}
+button:hover { opacity:.9; }
+pre {
+  background:var(--card); border:1px solid var(--border); border-radius:6px;
+  padding:10px; font-size:.76rem; overflow-x:auto; margin-top:12px; white-space:pre-wrap;
+}
+
+/* ── mockup-only additions ────────────────────────────────────────────── */
+.mock-banner {
+  max-width:1100px; margin:0 auto 14px; padding:7px 12px; border-radius:6px;
+  border:1px dashed #e0b85a; color:#e0b85a; background:rgba(224,184,90,.08);
+  font-size:.74rem; font-weight:600; letter-spacing:.02em;
+}
+/* tables scroll inside their section on phone width, never the page */
+.table-scroll { overflow-x:auto; }
+
+/* preset toggle (mockup affordance, above the result) */
+.presets { display:flex; gap:6px; flex-wrap:wrap; margin-top:14px; align-items:center; }
+.presets .muted { font-size:.72rem; margin-right:2px; }
+.presets button {
+  margin:0; padding:4px 10px; font-size:.72rem; font-weight:600;
+  background:transparent; color:var(--muted); border:1px solid var(--border);
+}
+.presets button.on { color:var(--accent); border-color:var(--accent); }
+
+/* result block: one div per JSON line, a 22px gutter on the left holds the
+   play control. white-space:pre (not pre-wrap) so a 64-hex sha line keeps
+   its shape and the block scrolls sideways internally instead of wrapping. */
+#tryResult { white-space:pre; padding:10px 10px 10px 0; position:relative; min-height:2.6em; }
+#tryResult .ln { position:relative; padding-left:28px; min-width:max-content; }
+#tryResult .ln.status { color:var(--muted); }
+#tryResult .k { color:#9fc7ee; }
+#tryResult .s { color:#cfe3b0; }
+#tryResult .n { color:#e6b97a; }
+#tryResult .ln.sha { background:rgba(126,184,247,.05); }
+#tryResult .ln.sha.playing { background:rgba(126,184,247,.12); }
+
+/* the control: empty element, glyph drawn by ::before so it is never part of
+   a text selection / clipboard copy; user-select:none as belt-and-braces. */
+.play {
+  position:absolute; left:6px; top:50%; transform:translateY(-50%);
+  width:17px; height:17px; margin:0; padding:0; border-radius:50%;
+  background:var(--accent); color:#152030; border:none; cursor:pointer;
+  user-select:none; -webkit-user-select:none;
+  display:flex; align-items:center; justify-content:center;
+  font-size:9px; line-height:1;
+}
+.play::before { content:"\25B6"; padding-left:1px; }
+.play.playing { background:var(--ok); }
+.play.playing::before { content:"\25A0"; padding-left:0; font-size:9px; }
+.play.loading { background:transparent; border:2px solid var(--border); border-top-color:var(--accent); animation:spin .8s linear infinite; cursor:progress; }
+.play.loading::before { content:""; }
+.play.error { background:transparent; color:var(--bad); font-size:13px; cursor:help; }
+.play.error::before { content:"\26A0"; padding-left:0; }
+@keyframes spin { to { transform:translateY(-50%) rotate(360deg); } }
+.play:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+/* thin progress bar along the bottom of the playing line */
+.prog { position:absolute; left:28px; bottom:0; height:2px; width:0; background:var(--ok); pointer-events:none; }
+
+.spin-inline { display:inline-block; width:10px; height:10px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin2 .8s linear infinite; vertical-align:-1px; margin-right:6px; }
+@keyframes spin2 { to { transform:rotate(360deg); } }
+
+/* custom tooltip for the error state (title= also set, for hover on desktop) */
+.tip {
+  position:fixed; z-index:10; pointer-events:none; display:none;
+  background:#0f1824; color:#f0c0b4; border:1px solid var(--bad); border-radius:5px;
+  padding:4px 8px; font:600 .7rem/1.3 monospace; max-width:calc(100vw - 32px); word-break:break-all;
+}
+</style>
+</head>
+<body>
+
+<div class="mock-banner">MOCKUP — smia UI: health moved below try-it; inline ▶ per sha256</div>
+
+<header>
+  <h1>smia</h1>
+  <p>Provider health · cache stats · manual try-it</p>
+  <nav>
+    <a href="#">tun</a>
+    <a href="#">phonexa</a>
+    <a href="#">stabbur</a>
+    <a href="#">smia (this page)</a>
+  </nav>
+</header>
+
+<div class="page">
+
+  <section>
+    <h2>Provider catalog</h2>
+    <div class="table-scroll">
+    <table>
+      <thead><tr><th>Kind</th><th>Providers</th></tr></thead>
+      <tbody id="catalog">
+        <tr><td>inflections</td><td>ordbank (318442), ordbokene</td></tr>
+        <tr><td>ipa</td><td>nb_uvi (156021), espeak</td></tr>
+        <tr><td>tts</td><td>pygmalion (41207), dictcc_api, <span class="provider-empty" title="configured but not yet imported">forvo_dump (0)</span>, azure</td></tr>
+        <tr><td>translations</td><td>dictcc (88314), deepl</td></tr>
+        <tr><td>examples</td><td>tatoeba (23980)</td></tr>
+        <tr><td>stt</td><td>whisper</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Manual try-it</h2>
+    <p class="muted">Body is prefilled with a ready-to-send example when you change "Kind" — edit it freely. Check "Force refresh" to bypass the cache (provider-catalog spec), e.g. to confirm a provider is actually live rather than just serving a cached answer; leave it unchecked to see normal cache-hit behavior on a repeat send.</p>
+    <form id="tryForm">
+      <label for="tryKind">Kind</label>
+      <select id="tryKind">
+        <option>inflections</option><option>ipa</option><option selected>tts</option>
+        <option>translations</option><option>examples</option><option>stt</option>
+      </select>
+      <label for="tryProvider">Provider</label>
+      <select id="tryProvider">
+        <option value="pygmalion" selected>pygmalion</option>
+        <option value="dictcc_api">dictcc_api</option>
+        <option value="forvo_dump">forvo_dump</option>
+        <option value="azure">azure</option>
+      </select>
+      <div id="tryBodyJson">
+        <label for="tryBody">Request body (JSON, minus "provider"/"forceRefresh")</label>
+        <textarea id="tryBody">{
+  "text": "målende",
+  "lang": "nb"
+}</textarea>
+      </div>
+      <label><input id="tryForceRefresh" type="checkbox" style="width:auto"> Force refresh (bypass cache)</label>
+      <button type="submit">Send</button>
+    </form>
+
+    <div class="presets">
+      <span class="muted">mockup preset:</span>
+      <button type="button" data-preset="pygmalion" class="on">example: pygmalion</button>
+      <button type="button" data-preset="dictcc_api">example: dictcc_api</button>
+    </div>
+    <pre id="tryResult"></pre>
+  </section>
+
+  <section>
+    <h2>Provider health</h2>
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Kind</th><th>Provider</th><th>Requests</th><th>Cache hit rate</th><th>Last success</th><th>Last failure</th></tr>
+      </thead>
+      <tbody id="health">
+        <tr><td>inflections</td><td>ordbank</td><td>1284</td><td>91% (1169/1284)</td><td class="ok">2026-11-23 09:41:07</td><td><span class="muted">—</span></td></tr>
+        <tr><td>ipa</td><td>nb_uvi</td><td>902</td><td>88% (794/902)</td><td class="ok">2026-11-23 09:40:55</td><td><span class="muted">—</span></td></tr>
+        <tr><td>tts</td><td>pygmalion</td><td>417</td><td>73% (304/417)</td><td class="ok">2026-11-23 09:38:12</td><td><span class="bad" title="blob missing on disk">2026-11-22 21:03:44</span></td></tr>
+        <tr><td>tts</td><td>dictcc_api</td><td>96</td><td>41% (39/96)</td><td class="ok">2026-11-23 08:12:30</td><td><span class="bad" title="HTTP 429 from dict.cc">2026-11-23 07:55:01</span></td></tr>
+        <tr><td>translations</td><td>deepl</td><td>58</td><td>62% (36/58)</td><td class="ok">2026-11-22 18:20:19</td><td><span class="muted">—</span></td></tr>
+        <tr><td>stt</td><td>whisper</td><td>12</td><td>0% (0/12)</td><td class="ok">2026-11-21 14:02:11</td><td><span class="bad" title="model load timeout">2026-11-20 10:15:48</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <button id="refreshBtn" type="button">Refresh</button>
+  </section>
+
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+// ── fake responses ─────────────────────────────────────────────────────
+const PRESETS = {
+  pygmalion: {
+    text: "målende", lang: "nb", provider: "pygmalion", cached: true,
+    candidates: [
+      { sha256: "f64551fcd6f07823cb87971cfb91446425da18286b3ab1ef935e0cbd7a69f68a", source: "human", voice: "Oslo" },
+      { sha256: "3946ca64ff78d93ca61090a437cbb6b3d2ca0d488f5f9ccf3059608368b27693", source: "human", voice: "Bergen" },
+      { sha256: "43bb00d0ce7790a53b91256b370c887b24791a5539a6fbfb70c5870e8c91ae5d", source: "human", voice: "Oslo" },
+    ],
+  },
+  dictcc_api: {
+    text: "målende", lang: "nb", provider: "dictcc_api", cached: false,
+    candidates: [
+      { sha256: "8b53639f152c8fc6ef30802fde462ba0be9cf085f7580dc69efd72e002abbb35", source: "human", context: "[adj] rett", voice: "nordlys_kari" },
+      { sha256: "e788103ee15318fcd2af9b73b4ebbb33a903b020de7b307d71f5fed0f433e548", source: "human", context: "[adj] rett", voice: "fjordgutten1987" },
+      { sha256: "f451a61749c611ba0fa0e16c61831db44f38c611dff25879cf271a24c81a88b6", source: "human", context: "[adj] rett", voice: "hvalross_ola" },
+    ],
+  },
+};
+// the one candidate per preset whose /tts/<sha> fetch "fails"
+const FAILING = new Set([
+  "43bb00d0ce7790a53b91256b370c887b24791a5539a6fbfb70c5870e8c91ae5d",
+  "e788103ee15318fcd2af9b73b4ebbb33a903b020de7b307d71f5fed0f433e548",
+]);
+let current = "pygmalion";
+
+// ── rendering: pretty JSON, one div per line, sha lines get a gutter control
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+function highlight(line) {
+  return esc(line)
+    .replace(/^(\s*)("[^"]*")(:)/, '$1<span class="k">$2</span>$3')
+    .replace(/(: )("(?:[^"\\]|\\.)*")/, '$1<span class="s">$2</span>')
+    .replace(/(: )(true|false|null|-?\d[\d.]*)/, '$1<span class="n">$2</span>');
+}
+
+let renderToken = 0;
+function render(status, data) {
+  stopAll();
+  const token = ++renderToken;
+  const el = document.getElementById("tryResult");
+  const lines = [`HTTP ${status}`, ...JSON.stringify(data, null, 2).split("\n")];
+  el.innerHTML = lines.map((l, i) => {
+    const m = l.match(/"sha256": "([0-9a-f]{64})"/);
+    if (!m) return `<div class="ln${i === 0 ? " status" : ""}">${highlight(l)}</div>`;
+    return `<div class="ln sha" data-sha="${m[1]}"><span class="play loading" role="button" tabindex="-1" aria-label="loading audio"></span>${highlight(l)}<span class="prog"></span></div>`;
+  }).join("");
+  // each candidate's audio "fetch" resolves at its own pace
+  el.querySelectorAll(".ln.sha").forEach((ln, i) => {
+    const btn = ln.querySelector(".play");
+    setTimeout(() => {
+      if (token !== renderToken) return;
+      btn.classList.remove("loading");
+      if (FAILING.has(ln.dataset.sha)) {
+        btn.classList.add("error");
+        btn.title = `404 from /tts/${ln.dataset.sha}`;
+        btn.setAttribute("aria-label", btn.title);
+        btn.tabIndex = 0;
+      } else {
+        btn.tabIndex = 0;
+        btn.setAttribute("aria-label", "play candidate");
+      }
+    }, 500 + i * 450);
+  });
+}
+
+function send() {
+  const el = document.getElementById("tryResult");
+  stopAll();
+  renderToken++;
+  el.innerHTML = `<div class="ln status"><span class="spin-inline"></span>POST /tts …</div>`;
+  const token = renderToken;
+  setTimeout(() => { if (token === renderToken) render(200, PRESETS[current]); }, 600);
+}
+
+// ── synthesized audio (Web Audio): two-syllable blip, pitch per candidate ─
+let ctx = null;
+let playing = null; // { ln, btn, nodes, start, dur, raf }
+const DUR = 1.2;
+
+function freqFor(sha) {
+  const all = [...PRESETS.pygmalion.candidates, ...PRESETS.dictcc_api.candidates].map((c) => c.sha256);
+  const base = [262, 330, 392, 294, 349, 440];
+  return base[all.indexOf(sha) % base.length] || 300;
+}
+
+function play(ln) {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state === "suspended") ctx.resume();
+  const btn = ln.querySelector(".play");
+  const f = freqFor(ln.dataset.sha);
+  const t0 = ctx.currentTime + 0.02;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, t0);
+  // syllable 1 ("må-") then syllable 2 ("-lende"), slight falling contour
+  gain.gain.linearRampToValueAtTime(0.25, t0 + 0.04);
+  gain.gain.setValueAtTime(0.25, t0 + 0.42);
+  gain.gain.linearRampToValueAtTime(0.02, t0 + 0.52);
+  gain.gain.linearRampToValueAtTime(0.2, t0 + 0.58);
+  gain.gain.setValueAtTime(0.2, t0 + DUR - 0.15);
+  gain.gain.linearRampToValueAtTime(0, t0 + DUR);
+  const osc = ctx.createOscillator();
+  osc.type = "triangle";
+  osc.frequency.setValueAtTime(f * 1.12, t0);
+  osc.frequency.linearRampToValueAtTime(f, t0 + 0.45);
+  osc.frequency.setValueAtTime(f * 1.05, t0 + 0.55);
+  osc.frequency.linearRampToValueAtTime(f * 0.85, t0 + DUR);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(t0);
+  osc.stop(t0 + DUR);
+  btn.classList.add("playing");
+  btn.setAttribute("aria-label", "stop");
+  ln.classList.add("playing");
+  const prog = ln.querySelector(".prog");
+  const p = { ln, btn, osc, prog, start: t0 };
+  osc.onended = () => { if (playing === p) stopAll(); };
+  const tick = () => {
+    if (playing !== p) return;
+    const frac = Math.min(1, Math.max(0, (ctx.currentTime - t0) / DUR));
+    prog.style.width = `calc((100% - 28px) * ${frac})`;
+    p.raf = requestAnimationFrame(tick);
+  };
+  playing = p;
+  tick();
+}
+
+function stopAll() {
+  if (!playing) return;
+  const p = playing;
+  playing = null;
+  cancelAnimationFrame(p.raf);
+  try { p.osc.onended = null; p.osc.stop(); } catch (e) {}
+  p.btn.classList.remove("playing");
+  p.btn.setAttribute("aria-label", "play candidate");
+  p.ln.classList.remove("playing");
+  p.prog.style.width = "0";
+}
+
+function activate(btn) {
+  if (btn.classList.contains("loading") || btn.classList.contains("error")) return;
+  const ln = btn.closest(".ln");
+  const wasThis = playing && playing.ln === ln;
+  stopAll();
+  if (!wasThis) play(ln);
+}
+
+// ── wiring ─────────────────────────────────────────────────────────────
+const result = document.getElementById("tryResult");
+result.addEventListener("click", (e) => {
+  const btn = e.target.closest(".play");
+  if (btn) activate(btn);
+});
+result.addEventListener("keydown", (e) => {
+  const btn = e.target.closest(".play");
+  if (btn && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); activate(btn); }
+});
+
+// error tooltip: hover on desktop, tap on touch
+const tip = document.getElementById("tip");
+function showTip(btn) {
+  const r = btn.getBoundingClientRect();
+  tip.textContent = btn.title;
+  tip.style.display = "block";
+  tip.style.left = Math.max(16, Math.min(r.left, window.innerWidth - tip.offsetWidth - 16)) + "px";
+  tip.style.top = (r.top - tip.offsetHeight - 6) + "px";
+}
+result.addEventListener("mouseover", (e) => {
+  const b = e.target.closest(".play.error");
+  if (b) showTip(b);
+});
+result.addEventListener("mouseout", (e) => { if (e.target.closest(".play.error")) tip.style.display = "none"; });
+result.addEventListener("touchstart", (e) => {
+  const b = e.target.closest(".play.error");
+  if (b) { showTip(b); setTimeout(() => (tip.style.display = "none"), 2500); }
+}, { passive: true });
+result.addEventListener("scroll", () => (tip.style.display = "none"));
+
+document.querySelectorAll(".presets button").forEach((b) => b.addEventListener("click", () => {
+  current = b.dataset.preset;
+  document.querySelectorAll(".presets button").forEach((x) => x.classList.toggle("on", x === b));
+  document.getElementById("tryProvider").value = current;
+  send();
+}));
+document.getElementById("tryProvider").addEventListener("change", (e) => {
+  if (PRESETS[e.target.value]) {
+    current = e.target.value;
+    document.querySelectorAll(".presets button").forEach((x) => x.classList.toggle("on", x.dataset.preset === current));
+  }
+});
+document.getElementById("tryForm").addEventListener("submit", (e) => { e.preventDefault(); send(); });
+document.getElementById("refreshBtn").addEventListener("click", () => {});
+
+render(200, PRESETS[current]);
+</script>
+</body>
+</html>
