@@ -36,8 +36,10 @@ projects: smia
 - Operator decision (build session, 2026-11-23): the FULL 8-dialect CALST
   crawl (~15–20 h) + extract + download + import runs on the VPS, operator-
   run, and the operator commits + pushes the resulting `providers/` data
-  from the VPS. The build verifies locally with the Oslo crawl plus a small
-  Bergen sample; OPERATOR-CHECKLIST carries the VPS commands.
+  from the VPS. The build verifies locally with the Oslo crawl ONLY (no other
+  dialect is crawled locally); `calst-full-coverage` acceptance 7 (a
+  non-Oslo `voice`) is verified by the operator on the VPS via
+  OPERATOR-CHECKLIST, which carries the VPS commands.
 
 - Operator decision (build session, 2026-11-23): claude-in-chrome cannot
   connect from this WSL setup, so `smia-ui-tts-polish` acceptance 2–7
