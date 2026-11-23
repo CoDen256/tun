@@ -19,12 +19,29 @@ from registry import ProviderRequiredError, UnknownProviderError
 
 
 def register_lookup_routes(
-    app, kind: str, extract_input, *, force_refresh_param: str = "forceRefresh", register_get: bool = True
+    app,
+    kind: str,
+    extract_input,
+    *,
+    force_refresh_param: str = "forceRefresh",
+    register_get: bool = True,
+    transform_payload=None,
 ):
     """`extract_input(body: dict) -> dict` returns the normalized input dict
     (everything the cache hashes on, i.e. the request body minus `provider`
     and minus `force_refresh_param`). Raise ValueError for a malformed body
-    — it's turned into a 400."""
+    — it's turned into a 400.
+
+    `transform_payload(payload) -> payload` is an optional pure function
+    applied to the payload on the way OUT, after the cache read (hit or
+    miss) and on `GET /<kind>/{id}`. It never touches what is stored:
+    `/examples` uses it to return sentence-normalised candidate text while
+    the cache keeps the provider's raw answer (examples-sentence-
+    normalisation D2).
+    """
+
+    def _out(payload):
+        return payload if transform_payload is None else transform_payload(payload)
 
     def _post():
         body = request.get_json(silent=True) or {}
@@ -44,7 +61,7 @@ def register_lookup_routes(
                 return jsonify({"error": "unknown provider", "available": exc.available}), 400
             except ProviderLookupError as exc:
                 return jsonify({"error": str(exc)}), 502
-            response = jsonify(payload)
+            response = jsonify(_out(payload))
             response.headers["Location"] = f"/{kind}/{rid}"
             return response, 200
 
@@ -53,7 +70,7 @@ def register_lookup_routes(
             payload = fetch_by_id(db, kind, rid)
         if payload is None:
             return jsonify({"error": "not found"}), 404
-        return jsonify(payload), 200
+        return jsonify(_out(payload)), 200
 
     app.add_url_rule(f"/{kind}", endpoint=f"post_{kind}", view_func=_post, methods=["POST"])
     if register_get:

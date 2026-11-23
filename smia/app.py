@@ -21,6 +21,7 @@ from pyservice.prefix import forwarded_prefix, render_page
 
 import audio_cache
 import cache
+from example_text import normalise_examples_payload
 from db.session import session_scope
 
 # static_folder="ui" / static_url_path="/static" is what moves the UI to the
@@ -131,7 +132,12 @@ def _extract_examples_input(body: dict) -> dict:
     return {"text": body["text"], "lang": lang, "limit": limit}
 
 
-register_lookup_routes(app, "examples", _extract_examples_input)
+# Response-boundary normalisation (examples-sentence-normalisation D2): the
+# cache keeps the provider's raw answer; candidates are shaped into sentences
+# on the way out, on a cache hit, a cache miss and `GET /examples/{id}` alike.
+register_lookup_routes(
+    app, "examples", _extract_examples_input, transform_payload=normalise_examples_payload
+)
 
 
 @app.route("/stt", methods=["POST"])

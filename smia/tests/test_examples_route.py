@@ -102,3 +102,102 @@ def test_providers_catalog_lists_examples_kind_with_counts(monkeypatch):
     for name in ("tatoeba", "leipzig", "kaikki"):
         assert name in counts
     assert "ordbokene" not in counts
+
+
+# --- examples-sentence-normalisation task 2.2 ----------------------------
+#
+# The normaliser runs at the response boundary, after the cache read (D2):
+# a raw row seeded into the cache comes back normalised and stays raw on disk.
+
+
+class _RawAdapter:
+    """Returns text exactly as a dictionary provider holds it: lower-case,
+    no final punctuation, and one pair that collides once normalised."""
+
+    def lookup(self, input_dict: dict) -> dict:
+        return {
+            "candidates": [
+                {"text": "ei lita jente", "source": "bm"},
+                {"text": "Ei lita jente."},
+                {"text": "komme seg opp"},
+            ]
+        }
+
+
+@pytest.fixture
+def raw_provider():
+    registry.register("examples", "rawtest", _RawAdapter())
+    return "rawtest"
+
+
+def _seed_examples_cache(input_dict, provider, payload):
+    """Writes a payload straight into the lookup cache, as a pre-change
+    entry would sit there, and returns its resource id."""
+    import cache as cache_module
+    from db.models import LookupCache
+    from db.session import session_scope
+
+    ihash = cache_module.input_hash(input_dict)
+    rid = cache_module.resource_id("examples", provider, ihash)
+    with session_scope() as db:
+        db.add(
+            LookupCache(
+                id=rid, kind="examples", provider=provider, input_hash=ihash, payload=payload
+            )
+        )
+        db.commit()
+    return rid
+
+
+def _stored_payload(rid):
+    from db.models import LookupCache
+    from db.session import session_scope
+
+    with session_scope() as db:
+        return dict(db.get(LookupCache, rid).payload)
+
+
+def test_post_examples_normalises_a_cache_miss(monkeypatch, raw_provider):
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
+    resp = _client().post("/examples", json={"text": "jente", "provider": raw_provider}, headers=AUTH)
+    assert resp.status_code == 200
+    candidates = resp.get_json()["candidates"]
+    # Normalised, and the two that collide once normalised are collapsed.
+    assert candidates == [
+        {"text": "Ei lita jente.", "source": "bm"},
+        {"text": "Komme seg opp."},
+    ]
+
+
+def test_cache_stores_the_raw_provider_payload(monkeypatch, raw_provider):
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
+    resp = _client().post("/examples", json={"text": "jente", "provider": raw_provider}, headers=AUTH)
+    rid = resp.headers["Location"].rsplit("/", 1)[-1]
+    stored = _stored_payload(rid)
+    assert [c["text"] for c in stored["candidates"]] == [
+        "ei lita jente",
+        "Ei lita jente.",
+        "komme seg opp",
+    ]
+
+
+def test_seeded_raw_cache_row_is_normalised_on_read_and_left_raw(monkeypatch, raw_provider):
+    monkeypatch.setenv("INTERNAL_TOKEN", "test-token")
+    input_dict = {"text": "jente", "lang": "nb", "limit": 3}
+    rid = _seed_examples_cache(
+        input_dict,
+        raw_provider,
+        {"provider": raw_provider, "candidates": [{"text": "ei lita jente"}]},
+    )
+
+    client = _client()
+    post = client.post("/examples", json={"text": "jente", "provider": raw_provider}, headers=AUTH)
+    assert post.headers["Location"].rsplit("/", 1)[-1] == rid
+    assert post.get_json()["candidates"] == [{"text": "Ei lita jente."}]
+
+    # GET /examples/{id} normalises the same way (task 2.1).
+    get = client.get(f"/examples/{rid}", headers=AUTH)
+    assert get.get_json()["candidates"] == [{"text": "Ei lita jente."}]
+
+    # ...and the stored row is untouched by either read.
+    assert _stored_payload(rid)["candidates"] == [{"text": "ei lita jente"}]

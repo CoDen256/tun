@@ -90,7 +90,9 @@ def test_examples(client, serve):
     body = resp.get_json()
     assert body["provider"] == "lexin"
     assert len(body["candidates"]) == 3
-    assert body["candidates"][0]["text"] == "konserten ble avlyst"
+    # Normalised at the response boundary (examples-sentence-normalisation):
+    # lexin stores the fragment lower-case and unterminated.
+    assert body["candidates"][0]["text"] == "Konserten ble avlyst."
 
 
 @pytest.mark.parametrize(
