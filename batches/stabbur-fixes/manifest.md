@@ -10,7 +10,7 @@ None — single package. Its two changes (stabbur, smia) are independent and can
 
 | package | status |
 |---|---|
-| stabbur fixes | building — `stabbur/openspec/changes/stabbur-prefill-and-settings-fixes`, `smia/openspec/changes/examples-sentence-normalisation` |
+| stabbur fixes | archived — `stabbur/openspec/changes/archive/2026-11-23-stabbur-prefill-and-settings-fixes`, `smia/openspec/changes/archive/2026-11-23-examples-sentence-normalisation` |
 
 ## Packages
 
