@@ -289,6 +289,15 @@ def write(db, updates: dict, kinds: tuple[str, ...]) -> None:
     if "triage_navigate_save" in updates:
         row.triage_navigate_save = updates["triage_navigate_save"]
     if "examples_count" in updates:
+        # D5: an UNSET sheet count resolves to max(5, examples_count), which
+        # makes K a function of M. Writing M while K is still NULL would
+        # therefore move a number the operator never touched — lowering M
+        # from 8 to 3 would drop a displayed sheet count of 8 to 5. So the
+        # value currently being SHOWN is frozen into storage first.
+        if row.examples_sheet_count is None and "examples_sheet_count" not in updates:
+            row.examples_sheet_count = default_examples_sheet_count(
+                row.examples_count or DEFAULT_EXAMPLES_COUNT
+            )
         row.examples_count = updates["examples_count"]
     if "examples_max_providers" in updates:
         row.examples_max_providers = updates["examples_max_providers"]

@@ -317,6 +317,11 @@
   async function saveSettings(key, apply, updates) {
     apply();
     applyLook(settings());
+    // The optimistic change has to reach the SCREEN, not just S.settings —
+    // a stepper or a segmented control has no other way to show it. Never
+    // while a drag is in progress, though: `render()` replaces app.innerHTML
+    // and would leave the drag mutating a detached list.
+    if (!DRAG) render();
     const mine = (SAVE.seq += 1);
     SAVE.per[key] = (SAVE.per[key] || 0) + 1;
     SAVE.inflight += 1;
@@ -333,7 +338,11 @@
     // The server's reconciled body is adopted only when this is still the
     // newest save and none is in flight — otherwise it would be an older
     // picture of state the operator has already changed.
-    if (mine === SAVE.seq && SAVE.inflight === 0) { S.settings = r.body; applyLook(r.body); render(); }
+    // …and never while a drag is in progress: re-rendering under the
+    // operator's finger is exactly what S02 forbids. The local state is
+    // already right; only the server's reconciliation is skipped, and the
+    // next settings read brings that back.
+    if (mine === SAVE.seq && SAVE.inflight === 0 && !DRAG) { S.settings = r.body; applyLook(r.body); render(); }
     if (SAVE.per[key] > 0) { setSaveStatus(key, savingLabel(SAVE.per[key]), ''); return true; }
     setSaveStatus(key, '✓ Saved', 'ok');
     setTimeout(() => {
@@ -854,8 +863,12 @@
   // one above it is still pending — the operator's ruling, verbatim: "it
   // should never violate picking the suggestion of the top provider, even if
   // the providers below have finished early".
-  async function walkKind(kind, force, pick, lang) {
-    const st = kindState(kind, force);
+  // `started` is passed when the caller has already begun the kind's
+  // lookup — translations walks three languages at once, and without it
+  // each of them would start its own forced fetch, asking every provider
+  // again with the cache bypassed.
+  async function walkKind(kind, force, pick, lang, started) {
+    const st = started || kindState(kind, force);
     for (const p of kindProviders(kind, lang).enabled) {
       await (st.W ? st.W[p] : undefined);
       if (!E || E.cands[kind] !== st) return null;
@@ -1467,7 +1480,7 @@
       return `<div class="stepper"><button data-act="step" data-k="${key}" data-v="-1" aria-label="Fewer" ${m ? `disabled title="${esc(offMinus ? why : 'at least 1')}"` : ''}>−</button><span>${cur}</span><button data-act="step" data-k="${key}" data-v="1" aria-label="More" ${pl ? `disabled title="${esc(offPlus ? why : 'at most 10')}"` : ''}>+</button></div>`;
     };
     const EXN = s.examples_max_providers || 1; const EXM = s.examples_count || 3;
-    const EXK = s.examples_sheet_count || Math.max(5, EXM);
+    const EXK = s.examples_sheet_count || 5;
     const atCap = EXM >= EXK;
     const custom = s.value_color_custom || '#c2185b';
     const providers = s.providers || {};
@@ -1736,13 +1749,15 @@
       // Each language walks its OWN provider order (design D4) and fills as
       // soon as that language's top answering provider has replied — the
       // languages do not wait for each other either.
+      const started = kindState('translations', force);
       const results = await Promise.all(missing.map(async (lang) => {
         const hit = await walkKind('translations', force, (P) => {
           const c = orderByPos((P.list || []).filter((x) => x.lang === lang), E.f.pos)[0];
           return c && c.v ? c.v : null;
-        }, lang);
+        }, lang, started);
         return { lang, hit };
       }));
+      if (!E || E.cands.translations !== started) return false;
       let any = false;
       results.forEach(({ lang, hit }) => {
         if (!hit) return;
@@ -1791,9 +1806,12 @@
       const per = settings().examples_count || 3;
       const maxP = settings().examples_max_providers || 1;
       const st = kindState('examples', force);
-      const base = force ? [] : E.f.examples.filter(hasText);
-      const seen = new Set(base.map(exKey).filter(Boolean));
+      const seen = new Set(E.f.examples.filter(hasText).map(exKey).filter(Boolean));
       const added = []; const usedP = [];
+      // Force replaces, but only once a replacement is actually in hand —
+      // clearing up front and finding that no provider answered would
+      // delete the operator's examples and then report nothing filled.
+      let replaced = !force;
       // Provider by provider, in the operator's order, writing each one's
       // rows as it answers: a later provider's sentences can never appear
       // above an earlier one's.
@@ -1810,13 +1828,12 @@
         if (!add.length) continue;
         added.push(...add);
         usedP.push(p);
-        E.f.examples = base.concat(added);
+        if (!replaced) { E.f.examples = add.slice(); replaced = true; } else E.f.examples = E.f.examples.concat(add);
         scheduleRender();
       }
       // "Filled" only when a row was actually added — a run that found
       // nothing new must not be counted in the toast.
       if (!added.length) return false;
-      E.f.examples = base.concat(added);
       E.prov.examples = usedP.join(', ');
       return true;
     },
@@ -2195,6 +2212,7 @@
     if (r.status === 200) { N.all = r.body.total; scheduleRender(); }
   }
   async function enterSettings() {
+    SAVE.st = {};
     render();
     await loadSettings();
     render();
@@ -2599,8 +2617,8 @@
         const next = Math.max(1, Math.min(10, examplesLimit(st, p) + Number(v)));
         if (!st.pc) st.pc = {};
         st.pc[p] = next;
-        S.sheet.pspin = p;
-        fetchKind(S.sheet.kind, { only: p }).then(() => { if (S.sheet) S.sheet.pspin = null; });
+        // Stepping does NOT re-ask: rerun (or Enter in the query input)
+        // does, once, so walking 5 -> 8 is one request and not three.
         render();
         break;
       }

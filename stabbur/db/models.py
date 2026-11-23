@@ -249,6 +249,17 @@ class Settings(Base):
             f"{SETTINGS_EXAMPLES_SHEET_COUNT_RANGE[0]} AND {SETTINGS_EXAMPLES_SHEET_COUNT_RANGE[1]}",
             name="ck_settings_examples_sheet_count",
         ),
+        # D5: M <= K, enforced on the PAIR. routes/settings.py checks it
+        # first for a readable 400, but that check is a read-then-write: two
+        # concurrent PATCHes, one raising M and one lowering K, can each read
+        # a state its own change is valid against and both pass. Optimistic
+        # saves make overlapping writes ordinary, so the invariant lives
+        # where it cannot be raced.
+        CheckConstraint(
+            "examples_count IS NULL OR examples_sheet_count IS NULL "
+            "OR examples_count <= examples_sheet_count",
+            name="ck_settings_examples_count_within_sheet_count",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)

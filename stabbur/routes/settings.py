@@ -15,6 +15,7 @@ import time
 import uuid
 
 from flask import jsonify, request
+from sqlalchemy.exc import IntegrityError
 
 import settings_store
 import smia_client
@@ -359,4 +360,18 @@ def register_settings_routes(app):
                 if TRANSLATIONS_LANG_KEY_RE.match(kind) and kind not in writable
             )
             settings_store.write(db, body, writable)
+            try:
+                db.flush()
+            except IntegrityError as exc:
+                # The M <= K pair constraint. The check above is a
+                # read-then-write, so two concurrent saves can each pass it;
+                # the database is what actually holds the invariant, and the
+                # loser gets a readable conflict rather than a 500.
+                db.rollback()
+                if "ck_settings_examples_count_within_sheet_count" not in str(exc.orig):
+                    raise
+                return jsonify({
+                    "error": "examples_count cannot exceed examples_sheet_count "
+                             "— another save changed them at the same time"
+                }), 409
             return jsonify(_serialize(db)), 200

@@ -30,8 +30,19 @@ def upgrade() -> None:
         'settings',
         'examples_sheet_count IS NULL OR examples_sheet_count BETWEEN 1 AND 10',
     )
+    # M <= K on the PAIR. Every existing row has a NULL sheet count, so
+    # nothing can fail this on the way in. It exists because the API check
+    # is a read-then-write and optimistic saves make overlapping PATCHes
+    # ordinary.
+    op.create_check_constraint(
+        'ck_settings_examples_count_within_sheet_count',
+        'settings',
+        'examples_count IS NULL OR examples_sheet_count IS NULL '
+        'OR examples_count <= examples_sheet_count',
+    )
 
 
 def downgrade() -> None:
+    op.drop_constraint('ck_settings_examples_count_within_sheet_count', 'settings', type_='check')
     op.drop_constraint('ck_settings_examples_sheet_count', 'settings', type_='check')
     op.drop_column('settings', 'examples_sheet_count')

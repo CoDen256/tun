@@ -5,9 +5,22 @@ tests/test_enrich.py."""
 
 from __future__ import annotations
 
+import pytest
+
 import smia_client
 from routes import settings as settings_routes
 from tests.conftest import AUTH
+
+
+@pytest.fixture(autouse=True)
+def _empty_catalogue_cache():
+    """The catalogue cache is process-global and holds for 60 s, so without
+    this a test that never installs its own mock is served a previous
+    test's catalogue — and `monkeypatch` undoing `smia_client.get` does not
+    undo what the cache already holds."""
+    settings_routes.reset_catalogue_cache()
+    yield
+    settings_routes.reset_catalogue_cache()
 
 
 def _mock_catalogue(monkeypatch, catalogue):
@@ -595,3 +608,22 @@ def test_a_failed_catalogue_fetch_is_not_cached(client, monkeypatch):
     assert client.get("/api/settings", headers=AUTH).get_json()["providers"]["ipa"]["order"] == []
     state["up"] = True
     assert client.get("/api/settings", headers=AUTH).get_json()["providers"]["ipa"]["order"] == ["nst"]
+
+
+def test_writing_sentences_per_provider_freezes_the_shown_sheet_count(client, monkeypatch):
+    """D5: an unset sheet count resolves to max(5, M), so writing M while K
+    is NULL would move a number the operator never touched."""
+    _mock_catalogue(monkeypatch, {})
+    # The pre-migration shape, written straight onto the row: M above 5
+    # with K never set. The API itself can no longer produce it, because
+    # raising M past the resolved K is refused.
+    from db.models import Settings
+    from db.session import session_scope
+    with session_scope() as db:
+        db.add(Settings(id=1, provider_prefs={}, examples_count=8, examples_sheet_count=None))
+    assert client.get("/api/settings", headers=AUTH).get_json()["examples_sheet_count"] == 8
+
+    resp = client.patch("/api/settings", json={"examples_count": 3}, headers=AUTH)
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert (body["examples_count"], body["examples_sheet_count"]) == (3, 8)
