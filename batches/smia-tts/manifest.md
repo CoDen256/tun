@@ -39,6 +39,12 @@ projects: smia
   from the VPS. The build verifies locally with the Oslo crawl plus a small
   Bergen sample; OPERATOR-CHECKLIST carries the VPS commands.
 
+- Operator decision (build session, 2026-11-23): claude-in-chrome cannot
+  connect from this WSL setup, so `smia-ui-tts-polish` acceptance 2–7
+  (playback, copy, layout, tooltip) are NOT agent-verified; the operator
+  verifies them live via OPERATOR-CHECKLIST. Criterion 1 (section order)
+  is checked over HTTP. Archive proceeds on that basis.
+
 ## Deferred to the builder (tier 2)
 
 - CALST saturation parameters: K consecutive zero-gain samples, the
