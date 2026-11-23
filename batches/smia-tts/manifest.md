@@ -11,7 +11,7 @@ ownership & responses" also touches dict.cc `/tts`, but is not in this batch.)
 
 | package | status |
 |---|---|
-| smia tts provider data and ui | pending |
+| smia tts provider data and ui | designing — smia: `calst-full-coverage` (item 5) |
 
 ## Packages
 
