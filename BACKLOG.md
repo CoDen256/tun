@@ -61,6 +61,8 @@ TTS
 TRANSLATION/AUDIO
 [bug] maybe we should move the PoS picking logic to smia, since each providers know how to pick their PoS, at least order them in the result .
 UI
+
+### smia tts provider data and ui 
 [ux] smia ui put provider healtch below the manual try it
 [ux] smia source should specify name of the human
 [ux] smia ui nice ux idea: can we somehow add within the json response text field small play buttons, near "sha256" that will play the audio when pressed, instead of placing them below the response field
