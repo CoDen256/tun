@@ -11,6 +11,10 @@ Dev compose (`cd smia && docker compose up`), smia UI manual try-it
 3. Text `hallo` → ≥ 1 candidate with `context: "Hallo!"`.
 4. Text `en bil` and text `å stille` → candidates (if `bil` / `stille` are
    stored), each with `context` naming the stored word.
+   *(Build note 2026-11-23: the corpus also stores `en bil` verbatim, so
+   `en bil` is a tier-1 exact hit and correctly carries NO `context` —
+   criterion 6's rule. Check this criterion with `å stille` and with an
+   article form not stored verbatim, e.g. `et ord` if `ord` is stored.)*
 5. Text `stille opp` → candidates with `context: "stille"`.
 6. Text `led` (stored exactly) → the same candidates as before this change,
    and none of them has a `context` key.
