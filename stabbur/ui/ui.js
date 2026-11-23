@@ -214,7 +214,14 @@
   async function api(path, options = {}) {
     let resp;
     try {
-      resp = await fetch(`${API_BASE}${path}`, options);
+      // `no-store`: these are the operator's own mutable state, never
+      // cacheable. Observed 2026-11-23 — after a settings change and a
+      // reload the boot `loadSettings()` came back with the PREVIOUS
+      // sheet count from Chrome's cache, so the page asked providers for a
+      // number the operator had already changed. None of these responses
+      // carries a Cache-Control header, which leaves it to the browser's
+      // heuristics.
+      resp = await fetch(`${API_BASE}${path}`, { cache: 'no-store', ...options });
     } catch (err) {
       return { status: 0, body: { error: `network error: ${err.message}` } };
     }
@@ -1806,7 +1813,12 @@
       const per = settings().examples_count || 3;
       const maxP = settings().examples_max_providers || 1;
       const st = kindState('examples', force);
-      const seen = new Set(E.f.examples.filter(hasText).map(exKey).filter(Boolean));
+      // Under FORCE the note's own examples are about to be discarded, so
+      // they must not seed the skip set: seeding it meant every sentence a
+      // provider returned that the note already held was skipped, nothing
+      // was "added", and the replace never happened — force behaved as a
+      // no-op and left behind rows no provider had returned.
+      const seen = new Set(force ? [] : E.f.examples.filter(hasText).map(exKey).filter(Boolean));
       const added = []; const usedP = [];
       // Force replaces, but only once a replacement is actually in hand —
       // clearing up front and finding that no provider answered would
