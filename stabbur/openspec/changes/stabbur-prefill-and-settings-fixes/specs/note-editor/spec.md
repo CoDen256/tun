@@ -50,9 +50,9 @@ previous one.
 ## ADDED Requirements
 
 ### Requirement: An examples provider's count can be overridden in the sheet for one note
-In the Examples sheet, the per-provider row opened from a provider's query
-pill SHALL carry, beside the query input, a **count stepper** (1–10)
-starting at the sheet sentence count. Changing it and re-running (the row's
+In the Examples sheet, the per-provider row opened from a provider's query pill SHALL carry,
+beside the query input, a **count stepper** (1–10) starting at the sheet
+sentence count. Changing it and re-running (the row's
 rerun button or Enter) SHALL re-ask **only that provider** for that many
 sentences, using that row's query. Other providers' boxes SHALL be
 unaffected.
@@ -80,9 +80,8 @@ affect prefill, and SHALL be forgotten when the note is closed or left.
 - **THEN** leipzig is asked for the sheet sentence count and its pill shows no count
 
 ### Requirement: An example candidate already on the note is marked
-In the Examples sheet, a candidate that matches a sentence the note already
-holds (by the same loose comparison prefill uses) SHALL be shown with a
-disabled action reading **On note** instead of Use. Using a candidate SHALL
+In the Examples sheet, a candidate that matches a sentence the note already holds (by the same loose comparison prefill uses) SHALL be shown
+with a disabled action reading **On note** instead of Use. Using a candidate SHALL
 turn it to On note at once, and removing that example from the note SHALL
 make it usable again.
 
