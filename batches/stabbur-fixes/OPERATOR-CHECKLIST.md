@@ -111,3 +111,20 @@ Settings value.
 rule we had to choose rather than read off the design: a quoted example comes
 back as `«Kom hit».` — the full stop goes *after* the closing quote. If you
 want it inside, that is a one-line backlog item.
+
+### Two things the agents saw but could not settle
+
+- **Translations provenance on `stor`.** In one run the EN/DE value came
+  from the *third* translations provider while the second answered 200 with
+  candidates that looked usable. It did not reproduce on a second note, and
+  the most likely explanation is benign — the second provider had nothing
+  for *that language* at that moment, which is exactly when the walk is
+  supposed to move on. Worth a glance while you test: if a translation's
+  provenance chip ever names a provider below one that clearly did answer
+  for that language, capture the note and the network log, because that
+  would be a genuine breach of "the top provider always wins".
+- **The exact cache assertion in N03** (hand-write a raw lower-case payload
+  into smia's `lookup_cache`, then read it back) could not be run — the
+  write was refused by a permission guard. It was verified instead against a
+  row that was already raw in the cache (`komme i tide` stored, `Komme i
+  tide.` returned, row unchanged afterwards), which is the same end state.

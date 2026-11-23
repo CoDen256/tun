@@ -19,3 +19,6 @@ Tier-2 decisions and diagnoses from `/tun-build`, one line each.
 - [smia] no re-fill from the pre-slice list after de-duplication — on a cache hit that list no longer exists, and re-filling would make a hit and a miss return different lengths for the same request.
 - [smia] text that is only punctuation is dropped like empty text, which D3 did not name.
 - [smia] `smia/Dockerfile` now COPYs `example_text.py`; without it smia crash-looped on `ModuleNotFoundError` at boot.
+- [stabbur fixes] M ≤ K is a database check constraint as well as an API check, because the API check is a read-then-write that two optimistic saves can both pass; the loser gets a 409.
+- [stabbur fixes] writing Sentences per provider also freezes the resolved sheet count, so lowering it can never silently lower a sheet count the operator never set.
+- [stabbur fixes] every `/api/*` read is `cache: 'no-store'` — a reload was observed picking up a stale settings body from Chrome's cache and asking providers for a count the operator had already changed.
