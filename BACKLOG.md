@@ -3,12 +3,10 @@
 ## Quick Log (Manual Dump)
 [ux] builder "s" is replaced with space when i hover over any card to see its contents. 
 [ux] builder should have proper diff display between old content and new content of cards that update their content. it actually shows the old content i guess and i have no idea what have changed.
-[ux] stabbur settings drag and drop not working and in general the whole settings page is very slow and not responsive
-[ux] stabbur for prefill ask the number from settings providers, but when opened a suggestion drawer it should ask for more sentences.
-[ux] stabbur example prefiiling should add examples when one is already there, but do not repeat
 
 ## Triage & Planned Packages
 
+[idea] alternate the audios when minting cards if available more audios, this should allow to support more audios per note.
 [idea] how about, after the 1000 cards are minted for C30, we rethink how to create pending occurances. 
 The point is, there is nothing about the content or order of currently created cards that actually influences how they appear in the resulting deck.
 In theory we could mint every card there is possible to mint and assign the occurances even before the stabbur actually has those cards available.
@@ -20,7 +18,6 @@ But is it worth it? is it just trying to make everything perfect?
 
 
 > Last triaged 2026-11-22.
-
 
 ### Hover translate fixes
 [ux] the translation popup has way to big text and it has different size each time, probably because of the original subtitle font
@@ -60,7 +57,6 @@ TTS
 [bug] smia/stabbur dict_cc when asked "rett" it has the same audio for both adv and adj, however in the stabbur it presented as only as adverb, even if the original PoS was adjective, it will not pick it, since its adverb
 TRANSLATION/AUDIO
 [bug] maybe we should move the PoS picking logic to smia, since each providers know how to pick their PoS, at least order them in the result .
-UI
 
 ### Pronunciation, tonelag & minimal-pair exercise notes
 projects: stabbur, mjolnir
