@@ -340,7 +340,8 @@ def test_empty_discovery_is_an_error(offline_main, monkeypatch, tmp_path):
     assert not (tmp_path / "x.json").exists()
 
 
-@pytest.mark.parametrize("args", [["--limit", "5"], ["--exercises", "947"], ["--dialects", "1"]])
+@pytest.mark.parametrize("args", [["--limit", "5"], ["--exercises", "947"], ["--dialects", "1"],
+                                  ["--max-samples", "3"]])
 def test_partial_run_refuses_the_default_manifest(offline_main, args):
     with pytest.raises(SystemExit) as e:
         cc.main(args)
@@ -440,3 +441,9 @@ def test_circuit_breaker_aborts_without_writing(tmp_path):
     assert "ABORTED" in out.getvalue()
     assert f"failures: {cc.ABORT_AFTER}" in out.getvalue()
     assert not (tmp_path / "m.json").exists()
+
+
+def test_default_max_samples_is_not_partial(offline_main, monkeypatch, tmp_path):
+    monkeypatch.setattr(cc, "OUT_FILE", tmp_path / "default.json")
+    assert cc.main(["--max-samples", str(cc.MAX_SAMPLES)]) == 0
+    assert (tmp_path / "default.json").exists()

@@ -653,10 +653,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, help=f"manifest path (default {OUT_FILE}; "
                     "required, and different, for a partial run)")
     args = ap.parse_args(argv)
-    partial = bool(args.exercises or args.limit or args.dialects)
+    partial = bool(args.exercises or args.limit or args.dialects
+                   or args.max_samples != MAX_SAMPLES)
     out = args.out or OUT_FILE
     if partial and out.resolve() == OUT_FILE.resolve():
-        ap.error("a partial run (--exercises/--limit/--dialects) needs an --out "
+        ap.error("a partial run (--exercises/--limit/--dialects/--max-samples) needs an --out "
                  "other than the default manifest")
 
     c = Client()
