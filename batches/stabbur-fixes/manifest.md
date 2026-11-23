@@ -4,13 +4,13 @@ Batch opened 2026-11-23 from one triaged package.
 
 ## Dependencies
 
-None — single package.
+None — single package. Its two changes (stabbur, smia) are independent and can ship in either order.
 
 ## Status
 
 | package | status |
 |---|---|
-| stabbur fixes | designing — `stabbur/…/stabbur-prefill-and-settings-fixes`, `smia/…/examples-sentence-normalisation` |
+| stabbur fixes | designed — `stabbur/openspec/changes/stabbur-prefill-and-settings-fixes`, `smia/openspec/changes/examples-sentence-normalisation` |
 
 ## Packages
 
@@ -26,7 +26,13 @@ projects: stabbur, smia *(smia added in design: the operator placed item 6's nor
 
 ## Deferred to the builder (tier 2)
 
-(none yet)
+Explicitly left to the builder in design (2026-11-23):
+- How saves are made stale-proof on the Settings page (per-key sequence numbers, ignoring stale responses, …), where the ≤60 s catalogue cache lives, and whether `PATCH /api/settings` returns the full body (stabbur D4).
+- Whether example prefill writes its rows in one go or provider by provider, as long as the final provider order is right (stabbur D1).
+- If the intermittent 500 is an upstream provider's own fault: containing it to its field counts as done (stabbur D2).
+- smia normalisation edge cases: where the final `.` goes around closing quotes in odd cases, and whether to re-fill from the pre-slice list after within-response de-duplication (smia D3).
+
+Not decided in design and still to be found by the builder: the actual cause of the drag failure and of the 500. Both get recorded in `DECISIONS-MADE.md`.
 
 ## Dropped / deferred
 

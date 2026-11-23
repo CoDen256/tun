@@ -30,8 +30,21 @@ The operator's findings, verbatim and numbered as they appear in the manifest:
 
 ## What changes
 
-Items are added here as the operator locks them in during design.
-
+- **Item 1 — a fast Settings page whose drag works.** Every change applies on
+  screen immediately, and an earlier save's response can never undo a later
+  change. Each section shows its own Saving…/Saved status. Settings reads and
+  saves stop waiting on smia's catalogue every time (it may be reused for up
+  to 60 s), because smia's `GET /providers` counts rows in its large
+  dictionary tables on every call.
+- **Item 3 — the Examples sheet asks for more than prefill takes.** A new
+  setting, *Sentences in the suggestion sheet* (K, default 5, at least
+  prefill's M). Every examples lookup asks each provider for K. Prefill takes
+  its first M from that answer, so opening the sheet after a prefill makes no
+  new request.
+- **Item 4 — a per-provider count override in the sheet.** A count stepper in
+  the provider's query row, used for one note only and not saved, like the
+  per-provider query override. Candidates already on the note show
+  **On note**.
 - **Item 2 — progressive prefill.** Each field fills as soon as the provider
   it will actually use has answered, and fields no longer wait on each other
   (apart from the part-of-speech dependency). A field still always takes its
