@@ -234,19 +234,21 @@ function stopTtsPlayback() {
   p.prog.style.width = "0";
 }
 
+// Returns the new render token: the caller owns the result area until a
+// later submission bumps it again.
 function resetTryResult() {
   stopTtsPlayback();
-  ttsRenderToken++;
+  const token = ++ttsRenderToken;
   ttsObjectUrls.forEach((u) => URL.revokeObjectURL(u));
   ttsObjectUrls = [];
   hideTip();
   const el = document.getElementById("tryResult");
   el.classList.remove("lines");
   el.textContent = "";
+  return token;
 }
 
-function renderTtsResult(status, data) {
-  const token = ttsRenderToken;
+function renderTtsResult(status, data, token) {
   const el = document.getElementById("tryResult");
   el.classList.add("lines");
   const lines = [`HTTP ${status}`, ...JSON.stringify(data, null, 2).split("\n")];
@@ -362,6 +364,13 @@ function wireTryResult() {
     const b = e.target.closest(".play.error");
     if (b) { showTip(b); setTimeout(hideTip, 2500); }
   }, { passive: true });
+  result.addEventListener("focusin", (e) => {
+    const b = e.target.closest(".play.error");
+    if (b) showTip(b);
+  });
+  result.addEventListener("focusout", (e) => {
+    if (e.target.closest(".play.error")) hideTip();
+  });
   result.addEventListener("scroll", hideTip);
   window.addEventListener("scroll", hideTip, { passive: true });
 }
@@ -372,7 +381,12 @@ async function submitTryIt(event) {
   const provider = document.getElementById("tryProvider").value;
   const forceRefresh = document.getElementById("tryForceRefresh").checked;
   const resultEl = document.getElementById("tryResult");
-  resetTryResult();
+  const myToken = resetTryResult();
+  const showPlain = (text) => {
+    if (myToken !== ttsRenderToken) return; // a newer submission owns the result
+    resultEl.classList.remove("lines");
+    resultEl.textContent = text;
+  };
   if (kind === "tts") {
     resultEl.classList.add("lines");
     resultEl.innerHTML = `<div class="ln status"><span class="spin-inline"></span>POST /tts …</div>`;
@@ -382,7 +396,7 @@ async function submitTryIt(event) {
   if (kind === "stt") {
     const audioBlob = recordedAudioBlob || document.getElementById("tryAudioFile").files[0];
     if (!audioBlob) {
-      resultEl.textContent = "Pick an audio file or record one first.";
+      showPlain("Pick an audio file or record one first.");
       return;
     }
     const form = new FormData();
@@ -391,41 +405,56 @@ async function submitTryIt(event) {
     const lang = document.getElementById("tryAudioLang").value.trim();
     if (lang) form.append("lang", lang);
     // No Content-Type header: the browser sets the multipart boundary.
-    resp = await fetch(`${API_BASE}/stt`, { method: "POST", headers: authHeaders(), body: form });
+    try {
+      resp = await fetch(`${API_BASE}/stt`, { method: "POST", headers: authHeaders(), body: form });
+    } catch (e) {
+      showPlain(`Request failed: ${e.message}`);
+      return;
+    }
   } else {
     let body;
     try {
       body = JSON.parse(document.getElementById("tryBody").value || "{}");
     } catch (e) {
-      resultEl.classList.remove("lines");
-      resultEl.textContent = `Invalid JSON body: ${e.message}`;
+      showPlain(`Invalid JSON body: ${e.message}`);
       return;
     }
     body.provider = provider;
     if (forceRefresh) body.forceRefresh = true;
-    resp = await fetch(`${API_BASE}/${kind}`, {
-      method: "POST",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    try {
+      resp = await fetch(`${API_BASE}/${kind}`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      showPlain(`Request failed: ${e.message}`);
+      return;
+    }
   }
 
-  // Parse-then-restringify (not resp.text()) for two reasons at once:
-  // pretty-printed indentation, and literal Unicode (IPA/Norwegian
+  // Read the body once as text, then parse-and-restringify for two reasons
+  // at once: pretty-printed indentation, and literal Unicode (IPA/Norwegian
   // characters) instead of however the wire bytes happened to be escaped.
-  let data = null;
-  let display;
+  // A non-JSON body (e.g. an HTML error page) is shown verbatim.
+  let raw;
   try {
-    data = await resp.json();
+    raw = await resp.text();
+  } catch (e) {
+    showPlain(`HTTP ${resp.status}\nReading the response failed: ${e.message}`);
+    return;
+  }
+  let data = null;
+  let display = raw;
+  try {
+    data = JSON.parse(raw);
     display = JSON.stringify(data, null, 2);
   } catch (e) {
-    display = await resp.text();
+    data = null;
   }
-  if (kind === "tts" && data) renderTtsResult(resp.status, data);
-  else {
-    resultEl.classList.remove("lines");
-    resultEl.textContent = `HTTP ${resp.status}\n${display}`;
-  }
+  if (myToken !== ttsRenderToken) return; // a newer submission owns the result
+  if (kind === "tts" && data) renderTtsResult(resp.status, data, myToken);
+  else showPlain(`HTTP ${resp.status}\n${display}`);
   refreshAll();
 }
 
