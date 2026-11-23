@@ -13,7 +13,7 @@ Tier-2 decisions and diagnoses from `/tun-build`, one line each.
 - [stabbur fixes] `PATCH /api/settings` still returns the full reconciled body — the page simply ignores it unless that rule holds, so no endpoint shape changed.
 - [stabbur fixes] the 60 s catalogue cache lives in `routes/settings.py` as a process-global guarded by a lock, with a `reset_catalogue_cache()` test seam, because it is the only module that fetches the catalogue.
 - [stabbur fixes] example prefill writes its rows **provider by provider** as each answers, rather than in one go, so the field fills progressively while keeping provider order.
-- [stabbur fixes] the Examples sheet's per-provider count stepper re-asks that provider immediately on each press, rather than waiting for rerun, matching how the per-provider query row already behaves.
+- [stabbur fixes] the Examples sheet's per-provider count stepper only sets the number; rerun or Enter re-asks that provider once, so walking 5 → 8 is one request and not three.
 - [stabbur fixes] `test_downgrade_refuses` now names the irreversible revision (`f7a2c9d4e3b1-1`) instead of `-1`, which silently meant "whatever is head" and broke the moment a migration landed on top.
 - [smia] the added full stop goes after any trailing closer (`«Kom hit»` → `«Kom hit».`), following D3's worked example rather than its "before those closers" prose, which contradicted it.
 - [smia] no re-fill from the pre-slice list after de-duplication — on a cache hit that list no longer exists, and re-filling would make a hit and a miss return different lengths for the same request.
