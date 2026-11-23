@@ -62,14 +62,6 @@ TRANSLATION/AUDIO
 [bug] maybe we should move the PoS picking logic to smia, since each providers know how to pick their PoS, at least order them in the result .
 UI
 
-### smia tts provider data and ui 
-[ux] smia ui put provider healtch below the manual try it
-[ux] smia source should specify name of the human
-[ux] smia ui nice ux idea: can we somehow add within the json response text field small play buttons, near "sha256" that will play the audio when pressed, instead of placing them below the response field
-[idea] fuzzy search for pygmalion, since there are a lot of similar audios?, maybe even for inflected ones, but the requests are only for lemma?
-[seed] provider pygmalion no entry for målende, målene, missing some big portion of audios, that accessible via calst, need to check the import and reimport.
-
-
 ### Pronunciation, tonelag & minimal-pair exercise notes
 projects: stabbur, mjolnir
 
