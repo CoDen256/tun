@@ -106,3 +106,52 @@ def display_dictcc_phrase(phrase: str) -> str:
     marker (annotations like "{m}" are kept — they're part of what's
     actually being displayed, unlike in `normalize_dictcc_phrase`)."""
     return strip_infinitive_marker(phrase)
+
+
+# --- match keys (tts-candidate-matching) -----------------------------------
+#
+# ONE normalisation, applied to both sides of a fuzzy match: at import to the
+# stored word (`pygmalion_audio.match_key`) and at lookup to the query. It is
+# a matching key only — never shown, never returned; the caller always sees
+# the stored text verbatim as `context`.
+
+_MATCH_PREFIXES = {"å", "en", "ei", "et", "ein", "eit"}
+_PAREN_RE = re.compile(r"\([^)]*\)")
+_PLUS_RE = re.compile(r"\s*\+\s*")
+_EDGE_PUNCT_RE = re.compile(r"^[\W_]+|[\W_]+$")
+
+# Trailing tokens dropped by `strip_trailing_particles`: verb particles,
+# prepositions and the reflexive. The design's required core is
+# `opp ned ut inn av på til med seg om fram frem bort igjen over`; the rest
+# are the other common Norwegian particle/preposition tails.
+TRAILING_PARTICLES = frozenset(
+    "opp ned ut inn av på til med seg om fram frem bort igjen over "
+    "fra for etter tilbake hjem unna mot ved".split()
+)
+
+
+def normalize_match_key(text: str) -> str:
+    """The fuzzy match key: casefolded; parenthesised annotations dropped
+    (`deres (3. person)` -> `deres`); ` + ` compounds joined, doubled spaces
+    tolerated (`flagg  + stang` -> `flaggstang`); whitespace collapsed;
+    surrounding punctuation dropped (`Hva heter du?` -> `hva heter du`); and
+    ONE leading `å`/`en`/`ei`/`et`/`ein`/`eit` dropped — only when another
+    token follows it, since `en` and `å` are words on their own."""
+    s = _PAREN_RE.sub(" ", text.casefold())
+    s = _PLUS_RE.sub("", s)
+    s = " ".join(s.split())
+    s = _EDGE_PUNCT_RE.sub("", s)
+    tokens = s.split(" ")
+    if len(tokens) > 1 and tokens[0] in _MATCH_PREFIXES:
+        s = _EDGE_PUNCT_RE.sub("", " ".join(tokens[1:]))
+    return s
+
+
+def strip_trailing_particles(key: str) -> str:
+    """Drops trailing particle/preposition/reflexive tokens from an already
+    normalised key (`stille opp` -> `stille`, `glede seg over` -> `glede`),
+    always keeping at least the first token."""
+    tokens = key.split(" ")
+    while len(tokens) > 1 and tokens[-1] in TRAILING_PARTICLES:
+        tokens.pop()
+    return " ".join(tokens)

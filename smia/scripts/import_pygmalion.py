@@ -3,7 +3,9 @@ scripts/import_pygmalion.py — load the Pygmalion recordings fetched by
 `scripts/fetch_pygmalion_audio.py` into smia: each mp3 goes into the private
 content-addressed audio cache (`audio_cache.store`) and its
 word / dialect / take -> sha256 mapping into `pygmalion_audio`, which is what
-the `pygmalion` /tts adapter queries.
+the `pygmalion` /tts adapter queries. Each row also gets the word verbatim
+(`text`) and its `normalize_match_key` (`match_key`) for the adapter's fuzzy
+tiers (tts-candidate-matching).
 
 Reads only committed files (the manifest and the mp3s beside it) — no network.
 Every file's sha256 is checked against the manifest before it enters the
@@ -36,6 +38,7 @@ from pathlib import Path
 from audio_cache import store
 from db.models import PygmalionAudio
 from db.session import session_scope
+from norwegian import normalize_match_key
 
 try:
     from rich.console import Console
@@ -132,10 +135,21 @@ def run(manifest_path: str) -> dict:
 
                 sha256 = store(db, data, "audio/mpeg")
                 key = (row["word"].casefold(), row["dialect"], row["take"])
-                if db.get(PygmalionAudio, key) is not None:
+                match_key = normalize_match_key(row["word"])
+                existing = db.get(PygmalionAudio, key)
+                if existing is not None:
+                    # Backfill rows imported before the fuzzy-match columns
+                    # existed (tts-candidate-matching); otherwise untouched.
+                    if existing.text is None:
+                        existing.text = row["word"]
+                    if existing.match_key is None:
+                        existing.match_key = match_key
                     progress.advance("existing")
                     continue
-                db.add(PygmalionAudio(word=key[0], dialect=key[1], take=key[2], sha256=sha256))
+                db.add(PygmalionAudio(
+                    word=key[0], dialect=key[1], take=key[2], sha256=sha256,
+                    match_key=match_key, text=row["word"],
+                ))
                 progress.advance("imported")
             db.commit()
     finally:

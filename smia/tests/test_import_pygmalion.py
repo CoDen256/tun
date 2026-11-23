@@ -76,6 +76,37 @@ def test_imports_mapping_and_stores_bytes_in_the_audio_cache(tmp_path):
     assert data == b"AAA" and ctype == "audio/mpeg"
 
 
+def test_import_fills_match_key_and_verbatim_text(tmp_path):
+    # tts-candidate-matching: the stored side of the fuzzy match.
+    m = _corpus(tmp_path, [
+        ("ei avis", "Oslo", 0, b"A", {}),
+        ("Hallo!", "Oslo", 0, b"B", {}),
+        ("flagg  + stang", "Bergen", 0, b"C", {}),
+    ])
+    import_pygmalion.run(m)
+    with get_sessionmaker()() as db:
+        rows = sorted((r.word, r.text, r.match_key) for r in db.query(PygmalionAudio).all())
+    assert rows == [
+        ("ei avis", "ei avis", "avis"),
+        ("flagg  + stang", "flagg  + stang", "flaggstang"),
+        ("hallo!", "Hallo!", "hallo"),
+    ]
+
+
+def test_rerun_backfills_rows_imported_before_match_key(tmp_path):
+    m = _corpus(tmp_path, [("Hallo!", "Oslo", 0, b"B", {})])
+    import_pygmalion.run(m)
+    with get_sessionmaker()() as db:
+        row = db.query(PygmalionAudio).one()
+        row.match_key, row.text = None, None
+        db.commit()
+    counts = import_pygmalion.run(m)
+    assert counts["existing"] == 1
+    with get_sessionmaker()() as db:
+        row = db.query(PygmalionAudio).one()
+        assert (row.text, row.match_key) == ("Hallo!", "hallo")
+
+
 def test_second_run_is_idempotent(tmp_path):
     m = _corpus(tmp_path, [("led", "Oslo", 0, b"AAA", {}), ("led", "Oslo", 1, b"BBB", {})])
     import_pygmalion.run(m)

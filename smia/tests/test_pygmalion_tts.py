@@ -1,6 +1,7 @@
 """The `pygmalion` /tts adapter (pygmalion-tts-provider tasks 4.x, 5.3-5.8):
 exact casefolded lookup, one `{sha256, source, voice}` candidate per recording,
-Oslo first, no new fields, no variant fan-out. Seeds `pygmalion_audio` itself,
+Oslo first; plus the fuzzy tiers 2/3 of tts-candidate-matching, whose
+candidates add `context` = the stored word. Seeds `pygmalion_audio` itself,
 so no real corpus is required; the end-to-end tests go through the real app."""
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from app import app as real_app
 from audio_cache import store
 from db.models import PygmalionAudio, TtsAudio
 from db.session import get_sessionmaker
+from norwegian import normalize_match_key
 
 AUTH = {"Authorization": "Bearer test-token"}
 
@@ -29,12 +31,16 @@ def _clean_pygmalion():
 
 
 def _seed(*entries):
-    """entries: (word, dialect, take, audio_bytes). Returns the sha256s in order."""
+    """entries: (word as the corpus spells it, dialect, take, audio_bytes),
+    stored the way `import_pygmalion` stores them. Returns the sha256s in order."""
     shas = []
     with get_sessionmaker()() as db:
         for word, dialect, take, data in entries:
             sha = store(db, data, "audio/mpeg")
-            db.add(PygmalionAudio(word=word, dialect=dialect, take=take, sha256=sha))
+            db.add(PygmalionAudio(
+                word=word.casefold(), dialect=dialect, take=take, sha256=sha,
+                match_key=normalize_match_key(word), text=word,
+            ))
             shas.append(sha)
         db.commit()
     return shas
@@ -105,9 +111,75 @@ def test_other_languages_get_no_candidates():
     assert _lookup("led", lang="en") == []
 
 
-def test_citation_form_is_not_retried_as_the_bare_noun():
-    _seed(("kalv", "Oslo", 0, b"x"))
-    assert _lookup("en kalv") == []  # no norwegian-input variant fan-out for this provider
+# ───────────── fuzzy tiers (tts-candidate-matching spec scenarios) ─────────────
+
+def test_article_stored_word_found_by_its_bare_form():
+    o, b = _seed(("ei avis", "Oslo", 0, b"o"), ("ei avis", "Bergen", 0, b"b"))
+    assert _lookup("avis") == [
+        {"sha256": o, "source": "human", "voice": "Oslo", "context": "ei avis"},
+        {"sha256": b, "source": "human", "voice": "Bergen", "context": "ei avis"},
+    ]
+
+
+def test_article_in_the_query():
+    (sha,) = _seed(("bil", "Oslo", 0, b"x"))
+    assert _lookup("en bil") == [{"sha256": sha, "source": "human", "voice": "Oslo", "context": "bil"}]
+
+
+def test_infinitive_marker_in_the_query():
+    _seed(("stille", "Oslo", 0, b"x"))
+    assert [c["context"] for c in _lookup("å stille")] == ["stille"]
+
+
+def test_compound_written_with_plus():
+    _seed(("bok + handel", "Oslo", 0, b"x"), ("flagg  + stang", "Oslo", 0, b"y"))
+    assert [c["context"] for c in _lookup("bokhandel")] == ["bok + handel"]
+    assert [c["context"] for c in _lookup("flaggstang")] == ["flagg  + stang"]
+
+
+def test_punctuation_and_case_context_is_verbatim():
+    _seed(("Hallo!", "Oslo", 0, b"x"), ("Hva heter du?", "Oslo", 0, b"y"))
+    assert [c["context"] for c in _lookup("hallo")] == ["Hallo!"]
+    assert [c["context"] for c in _lookup("Hva heter du")] == ["Hva heter du?"]
+
+
+def test_exact_casefold_hit_of_a_punctuated_word_has_no_context():
+    _seed(("Hallo!", "Oslo", 0, b"x"))
+    assert "context" not in _lookup("hallo!")[0]  # tier 1: casefolded text == word
+
+
+def test_trailing_particle_dropped_only_as_a_last_resort():
+    _seed(("stille", "Oslo", 0, b"x"))
+    assert [c["context"] for c in _lookup("stille opp")] == ["stille"]
+    assert _lookup("stille på") != [] and _lookup("roe seg") == []  # `roe` not stored
+
+
+def test_tier_2_beats_tier_3():
+    # `stille opp` stored as a phrase: tier 2 answers, tier 3's `stille` is not mixed in.
+    _seed(("å stille opp", "Oslo", 0, b"phrase"), ("stille", "Oslo", 0, b"bare"))
+    assert [(c["sha256"], c["context"]) for c in _lookup("stille opp")] == [(_sha(b"phrase"), "å stille opp")]
+
+
+def test_exact_hit_is_not_diluted():
+    (exact,) = _seed(("avis", "Oslo", 0, b"exact"))
+    _seed(("ei avis", "Oslo", 0, b"fuzzy"))
+    assert _lookup("avis") == [{"sha256": exact, "source": "human", "voice": "Oslo"}]
+
+
+def test_lone_article_is_not_stripped_to_nothing():
+    _seed(("en", "Oslo", 0, b"x"))
+    assert _lookup("en") and "context" not in _lookup("en")[0]
+    assert _lookup("å") == []
+
+
+def test_rows_without_verbatim_text_fall_back_to_word_as_context():
+    # Rows migrated before the re-import have match_key but no text.
+    with get_sessionmaker()() as db:
+        sha = store(db, b"x", "audio/mpeg")
+        db.add(PygmalionAudio(word="ei avis", dialect="Oslo", take=0, sha256=sha,
+                              match_key="avis", text=None))
+        db.commit()
+    assert [c["context"] for c in _lookup("avis")] == ["ei avis"]
 
 
 def test_identical_audio_is_deduplicated_by_sha256():

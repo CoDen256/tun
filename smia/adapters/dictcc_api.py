@@ -8,8 +8,10 @@ task 1.6).
 One `app_translations.php` call backs three kinds (D-S4's established
 "one dataset/adapter, several query paths" pattern, same as kaikki.org):
 `translations[]` for `/translations`, `inflections_repl` for
-`/inflections`, and (via the entry id) a follow-up `speak.audio.v2.php`
-call for `/tts`.
+`/inflections`, and for `/tts` the entries' recording list
+(`ajax_get_audiorecordings.php`) then one `speak.audio.v2.php` call per
+human recording, fetched by its recording id (`lang=rec`) so each candidate
+names its speaker in `voice` (tts-candidate-matching).
 
 ## lp/dir (task 1.1)
 
@@ -56,6 +58,7 @@ from __future__ import annotations
 
 import html
 import re
+from typing import NamedTuple
 
 import requests
 
@@ -122,7 +125,7 @@ _RECORDINGS_URL_TEMPLATE = "https://{host}.dict.cc/dict/ajax_get_audiorecordings
 # exists. Probing it therefore cannot tell human from generated — measured
 # live, it answered for all 29 "stille" entries including ones with no
 # Norwegian recording at all. Availability must be read from
-# `ajax_get_audiorecordings.php` instead (see `_entries_with_recording`).
+# `ajax_get_audiorecordings.php` instead (see `_fetch_recordings`).
 _DICTCC_LANG_CODE = {"nb": "NO", "en": "EN", "de": "DE"}
 
 _POS_MAP = {
@@ -311,9 +314,30 @@ def _parse_inflection_blocks(inflections: str) -> list[dict]:
     return candidates
 
 
-def _fetch_recording_lids(lp: str, entry_ids: list) -> dict:
-    """{entry_id: {lid, ...}} — which languages each entry has a real human
-    recording in, from dict.cc's own recordings endpoint.
+class Recording(NamedTuple):
+    rec_id: str
+    user: str
+    lid: str
+
+
+# `<recId>_<user>_<country>_lid<N>_v`. The user is matched greedily so a
+# name containing `_` stays whole; recId, country and lid never contain one.
+_RECORDING_KEY_RE = re.compile(r"^(\d+)_(.+)_([^_]+)_lid(\d+)_v$")
+
+
+def _parse_recording_key(key: str) -> Recording | None:
+    """One recording key -> (recId, user, lid); None for the `0` no-recording
+    token or anything not shaped like a key."""
+    m = _RECORDING_KEY_RE.match(key.strip())
+    if m is None:
+        return None
+    return Recording(rec_id=m.group(1), user=m.group(2), lid=m.group(4))
+
+
+def _fetch_recordings(lp: str, entry_ids: list) -> dict:
+    """{entry_id: [Recording, ...]} — every real human recording of each
+    entry (its id, speaker and language), from dict.cc's own recordings
+    endpoint.
 
     This is the ONLY reliable signal for "does a human recording exist".
     `speak.audio.v2.php?lang=<L>_rec_ip` returns audio bytes for almost
@@ -366,15 +390,10 @@ def _fetch_recording_lids(lp: str, entry_ids: list) -> dict:
             f"{len(entry_ids) + 1} requested ids — refusing to align them"
         )
 
-    lids_by_entry = {}
-    for entry_id, token in zip(entry_ids, tokens[1:]):
-        lids = set()
-        for rec in token.split("|"):
-            m = re.search(r"_lid(\d+)_", rec)
-            if m:
-                lids.add(m.group(1))
-        lids_by_entry[entry_id] = lids
-    return lids_by_entry
+    return {
+        entry_id: [rec for key in token.split("|") if (rec := _parse_recording_key(key))]
+        for entry_id, token in zip(entry_ids, tokens[1:])
+    }
 
 
 def _entry_context(
@@ -548,6 +567,10 @@ class DictccApiTtsAdapter:
         # recordings. The id is scoped to the pair's own dataset, so the key
         # carries `lp` too.
         seen_entries: set[tuple[str, object]] = set()
+        # A recording id is global across pairs (`1334012_mtbboy1993` is the
+        # same take under DENO and ENNO and on every entry that shares it), so
+        # one recording is fetched once and its first entry names it.
+        seen_recordings: set[str] = set()
         errors: list[ProviderLookupError] = []
         with session_scope() as db:
             for lp, dir_, variant in triples:
@@ -585,70 +608,80 @@ class DictccApiTtsAdapter:
                 # silently synthesises when no recording exists, so asking
                 # it is not a test of availability.
                 try:
-                    lids_by_entry = _fetch_recording_lids(lp, [e["id"] for e in new_entries])
+                    recs_by_entry = _fetch_recordings(lp, [e["id"] for e in new_entries])
                 except ProviderLookupError as exc:
                     errors.append(exc)
                     continue
 
-                entry_errors: list[ProviderLookupError] = []
-                entry_attempts = 0
+                rec_errors: list[ProviderLookupError] = []
+                rec_attempts = 0
                 for entry in new_entries:
-                    entry_id = entry["id"]
-                    if wanted_lid not in lids_by_entry.get(entry_id, ()):
-                        # No human recording in this language. Skipped
-                        # entirely rather than fetched — fetching would
-                        # return a synthesised clip and label it "human".
+                    # Only recordings in the requested language. An entry
+                    # with none is skipped entirely rather than fetched —
+                    # `*_rec_ip` would return a synthesised clip and label it
+                    # "human".
+                    recordings = [
+                        r for r in recs_by_entry.get(entry["id"], ()) if r.lid == wanted_lid
+                    ]
+                    if not recordings:
                         continue
-                    entry_attempts += 1
                     context = _entry_context(
                         entry.get("entry_type") or None, entry.get(source_field) or "",
                         query_norm, verbatim=True,
                     )
-                    try:
-                        self._collect_entry_audio(
-                            db, candidates, seen_sha,
-                            entry_id=entry_id, lp=lp, variant=variant,
-                            dictcc_lang=dictcc_lang, context=context,
-                        )
-                    except ProviderLookupError as exc:
-                        # An entry whose audio request fails is skipped,
-                        # not fatal.
-                        entry_errors.append(exc)
-                        continue
+                    # One candidate per recording, each naming its speaker:
+                    # `lang=rec&id=<recId>` serves exactly that recording
+                    # (providers/dict/api.md, verified live 2026-11-23).
+                    for rec in recordings:
+                        if rec.rec_id in seen_recordings:
+                            continue
+                        seen_recordings.add(rec.rec_id)
+                        rec_attempts += 1
+                        try:
+                            self._collect_recording(
+                                db, candidates, seen_sha, rec=rec, lp=lp, context=context,
+                            )
+                        except ProviderLookupError as exc:
+                            # A recording whose audio request fails is
+                            # skipped, not fatal.
+                            rec_errors.append(exc)
 
-                # The triple only counts as failed when every entry that
-                # HAD a recording failed to fetch. A triple where nothing
-                # had a recording is an empty result, not an error.
-                if entry_attempts and len(entry_errors) == entry_attempts:
-                    errors.append(entry_errors[0])
+                # The triple only counts as failed when every recording it
+                # tried failed to fetch. A triple where nothing had a
+                # recording is an empty result, not an error.
+                if rec_attempts and len(rec_errors) == rec_attempts:
+                    errors.append(rec_errors[0])
 
         if errors and len(errors) == len(triples):
             raise errors[0]
 
         return {"candidates": candidates}
 
-    def _collect_entry_audio(
+    def _collect_recording(
         self, db, candidates: list[dict], seen_sha: set[str], *,
-        entry_id, lp: str, variant: str, dictcc_lang: str, context: str | None,
+        rec: Recording, lp: str, context: str | None,
     ) -> None:
-        """Only reached for an entry already known to HAVE a recording in
-        the target language, so what comes back is the real thing rather
-        than a synthesised stand-in."""
-        human = self._fetch_audio(
-            {"id": entry_id, "lang": f"{dictcc_lang}_rec_ip", "lp": lp, "text": variant}
-        )
+        """Fetch ONE known human recording by its own id and append it as a
+        candidate whose `voice` is the speaker's dict.cc user name.
+
+        `lang=rec&id=<recId>` returns exactly that recording — measured live:
+        the bytes equal what the entry-level `NO_rec_ip` call returned for a
+        single-recording entry, and two German recordings of one entry came
+        back as two different files, one of which the entry-level call never
+        exposes. It is a recording id, not text, so there is nothing for
+        dict.cc to synthesise from."""
+        human = self._fetch_audio({"id": rec.rec_id, "lang": "rec", "lp": lp})
         if human is None:
             return
         sha256 = store(db, human, "audio/mpeg")
-        # Content-addressed identity (audio_cache.store) is enough dedup —
-        # two combinations resolving to byte-identical audio collapse
-        # naturally. Two DIFFERENT recordings of the same phrase (dict.cc
-        # files several) both survive, deliberately: they are different
-        # takes and the operator picks by ear.
+        # Content-addressed identity (audio_cache.store) is the backstop
+        # dedup. Two DIFFERENT recordings of the same phrase both survive,
+        # deliberately: they are different takes and the operator picks by
+        # ear.
         if sha256 in seen_sha:
             return
         seen_sha.add(sha256)
-        candidate = {"sha256": sha256, "source": "human"}
+        candidate = {"sha256": sha256, "source": "human", "voice": rec.user}
         if context:
             candidate["context"] = context
         candidates.append(candidate)

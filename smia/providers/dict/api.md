@@ -193,3 +193,35 @@ Norwegian is the second language of **both** `DENO` and `ENNO`, so both are
 *and* inflection tables — silently unreachable, which is the exact gap the
 multi-pair list was added to close. `å stille klokka`, `å stille klokken` and
 `å stille ut` exist only in that pair.
+
+# One specific recording — `lang=rec&id=<recordingId>`
+
+Added 2026-11-23 (`tts-candidate-matching`). The second request in the
+"Recordings (tts)" block at the top (`id=…&lang=rec`) takes a **recording
+id** — the `<recordingId>` of a key from `ajax_get_audiorecordings.php` —
+not an entry id:
+
+```
+GET https://audio.dict.cc/speak.audio.v2.php?error_as_text=1&type=mp3&id=<recordingId>&lang=rec&lp=<LP>&appversioncode=260804
+```
+
+Verified live on `stille` (DENO entry 383115, keys
+`126435_makro_atder_lid2_v|155195_Halmafelix_de_lid2_v|1334012_mtbboy1993_no_lid81_v`):
+
+| request | bytes (sha256 prefix) |
+|---|---|
+| `id=383115&lang=NO_rec_ip` (entry-level) | `f35cecf2…` |
+| `id=1334012&lang=rec` (mtbboy1993, lid81) | `f35cecf2…` — identical |
+| `id=383115&lang=DE_rec_ip` (entry-level) | `be62fdf7…` |
+| `id=155195&lang=rec` (Halmafelix, lid2) | `be62fdf7…` — identical |
+| `id=126435&lang=rec` (makro, lid2) | `4cd089a1…` — a different take, unreachable entry-level |
+
+So the entry-level call serves ONE of an entry's recordings (unknown whose);
+`lang=rec` serves each one. The adapter therefore fetches every
+requested-language recording by its id and returns one candidate per
+recording with `voice` = the key's `<username>`. A recording id is global —
+`1334012` is the same take on several entries and in both pairs — so it is
+fetched once per lookup.
+
+A nonsense recording id returned `text/html` (`Error: Bot detected!`), i.e. a
+text error, not synthesis; keep request volume modest.

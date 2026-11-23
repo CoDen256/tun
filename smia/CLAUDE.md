@@ -46,8 +46,10 @@ ordering is the **caller's** (stabbur's), done client-side on the
 dict.cc candidates carry `context` as `[type] phrase` — a leading
 bracketed part-of-speech tag. `/tts` candidates gained it so the caller can
 order audio the same way it orders translations; it is built by the one
-`_entry_context` helper. Other providers set no `context` and callers must
-treat it as optional.
+`_entry_context` helper. `pygmalion` sets `context` only on a fuzzy
+(tier-2/3) match, to the stored word it matched verbatim (`ei avis`) —
+never on an exact hit (tts-candidate-matching). Other providers set no
+`context`, and callers must treat it as optional everywhere.
 
 The two kinds differ in exactly one way, deliberately: a `/tts` context
 names **what is read aloud in that recording**, so the phrase is dict.cc's

@@ -282,12 +282,23 @@ class PygmalionAudio(Base):
     returned as the candidate's `voice`), `take` orders a word's recordings
     within one dialect. The mp3 bytes live once in `tts_audio`, keyed by
     `sha256`; there is deliberately no foreign key to it, because that cache
-    is a private, evictable optimisation (tts-api spec)."""
+    is a private, evictable optimisation (tts-api spec).
+
+    `match_key` is `norwegian.normalize_match_key(text)` — the indexed key
+    the adapter's fuzzy tiers 2/3 look up (tts-candidate-matching). `text` is
+    the word exactly as the corpus spells it (`Hallo!`, `ei avis`), returned
+    as a fuzzy candidate's `context`; NULL only on rows imported before that
+    change, where the adapter falls back to `word`."""
 
     __tablename__ = "pygmalion_audio"
-    __table_args__ = (Index("ix_pygmalion_audio_word", "word"),)
+    __table_args__ = (
+        Index("ix_pygmalion_audio_word", "word"),
+        Index("ix_pygmalion_audio_match_key", "match_key"),
+    )
 
     word: Mapped[str] = mapped_column(Text, primary_key=True)
     dialect: Mapped[str] = mapped_column(Text, primary_key=True)
     take: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    match_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    text: Mapped[str | None] = mapped_column(Text, nullable=True)

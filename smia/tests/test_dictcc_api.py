@@ -338,9 +338,10 @@ def test_inflect_en_de_still_query_exactly_one_pair(monkeypatch):
 
 def test_tts_two_step_flow_is_human_only(monkeypatch):
     # nb queries both DENO and ENNO pairs (dictcc-norwegian-multi-pair) —
-    # both resolve to the same entry and the same bytes here, so this also
-    # exercises dedup: 2 human fetches happen (one per pair) and one
-    # candidate survives. The synthetic voice is NOT requested at all.
+    # both resolve to the same entry and the same RECORDING here, so this
+    # also exercises dedup: the recording is fetched once (by its recording
+    # id, tts-candidate-matching) and one candidate survives, naming its
+    # speaker. The synthetic voice is NOT requested at all.
     translations_resp = _mock_response(_KALV_RESPONSE)
     audio_calls = []
 
@@ -359,12 +360,12 @@ def test_tts_two_step_flow_is_human_only(monkeypatch):
     with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
         result = DictccApiTtsAdapter().lookup({"text": "kalv", "lang": "nb"})
 
-    assert len(audio_calls) == 2  # 2 pairs x human only
+    assert len(audio_calls) == 1  # one recording, shared by both pairs
     assert len(result["candidates"]) == 1
     assert {c["source"] for c in result["candidates"]} == {"human"}
-    assert all("voice" not in c for c in result["candidates"])
-    # all audio calls were keyed by the translation entry's id
-    assert all(p["id"] == 528676 for p in audio_calls)
+    assert [c["voice"] for c in result["candidates"]] == ["rec0"]
+    # the audio call was keyed by the recording id, not the entry id
+    assert [(p["id"], p["lang"]) for p in audio_calls] == [("100000", "rec")]
     assert all("voice" not in p for p in audio_calls)
 
 
@@ -735,7 +736,7 @@ def test_tts_walks_every_entry_so_a_later_entry_audio_is_reachable():
     with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
         result = DictccApiTtsAdapter().lookup({"text": "do", "lang": "nb"})
 
-    assert {p["id"] for p in audio_calls} == {200}
+    assert {p["id"] for p in audio_calls} == {"100010"}  # entry 200's recording
     humans = [c for c in result["candidates"] if c["source"] == "human"]
     assert humans, "a later entry's recording must still be returned"
     assert all(c["context"] for c in humans)
@@ -788,7 +789,7 @@ def test_tts_one_failing_entry_is_skipped_not_fatal():
             return _mock_response(_MULTI_ENTRY_RESPONSE)
         if _is_recordings(url):
             return _recordings_response(params, {100: ["81"], 200: ["81"]})
-        if params["id"] == 100:
+        if params["id"] == "100000":  # entry 100's recording
             raise requests.RequestException("boom")
         return _audio_response(f"mp3-{params['lp']}-{params['lang']}".encode())
 
@@ -1028,18 +1029,18 @@ def _stille_fake_get(calls, recs_override=None, recordings_text=None):
             ids = [int(x) for x in params["id_str"].split(" ")[1:]]
             resp.text = " ".join(["0"] + [recs.get(i, "0") for i in ids]) + " "
             return resp
-        # Audio. The bytes a recording carries are identified by the
-        # RECORDING id, not the entry — entries sharing one recording return
-        # byte-identical audio, exactly as live, so content-hash dedupe is
-        # exercised for real.
+        # Audio, fetched by RECORDING id (`lang=rec`, tts-candidate-matching)
+        # — the bytes are the recording's, so a recording shared by several
+        # entries returns byte-identical audio, exactly as live.
+        assert params["lang"] == "rec", params
         recs = recs_override or _stille_recs_for(params["lp"])
-        token = recs.get(params["id"], "0")
-        nb_keys = [k for k in token.split("|") if "_lid81_" in k]
-        assert nb_keys, (
-            f"entry {params['id']} has no Norwegian recording and must never "
-            f"have been fetched — `_rec_ip` would have synthesised one"
+        nb_ids = {k.split("_")[0] for token in recs.values() for k in token.split("|")
+                  if "_lid81_" in k}
+        assert params["id"] in nb_ids, (
+            f"recording {params['id']} is not a Norwegian recording and must "
+            f"never have been fetched"
         )
-        return _audio_response(f"mp3-rec-{nb_keys[0].split('_')[0]}".encode())
+        return _audio_response(f"mp3-rec-{params['id']}".encode())
 
     return fake_get
 
@@ -1059,15 +1060,16 @@ def test_tts_stille_returns_far_more_than_the_first_entrys_audio():
 
 
 def test_tts_every_candidate_is_human_and_no_voice_is_ever_requested():
-    # Criterion 7. No `source: "synthetic"`, no `voice` key on a candidate,
-    # and — the part that matters — no outbound request carrying `voice=`.
+    # Criterion 7. No `source: "synthetic"`, and — the part that matters —
+    # no outbound request carrying `voice=`. A candidate's `voice` is the
+    # dict.cc SPEAKER (tts-candidate-matching), never a synthesiser voice.
     calls = []
     with patch("adapters.dictcc_api.requests.get", side_effect=_stille_fake_get(calls)):
         result = DictccApiTtsAdapter().lookup({"text": "stille", "lang": "nb"})
 
     assert result["candidates"]
     assert {c["source"] for c in result["candidates"]} == {"human"}
-    assert all("voice" not in c for c in result["candidates"])
+    assert {c["voice"] for c in result["candidates"]} == {"mtbboy1993"}
     assert all("voice" not in (params or {}) for _url, params in calls)
 
 
@@ -1083,9 +1085,9 @@ def test_tts_entry_recorded_only_in_the_other_language_is_skipped_unfetched():
         result = DictccApiTtsAdapter().lookup({"text": "stille", "lang": "nb"})
 
     fetched_ids = {p["id"] for p in _audio_calls(calls)}
-    assert 2240021 not in fetched_ids
-    for entry_id in (2266223, 1223599, 1849840):  # the operator's other three
-        assert entry_id not in fetched_ids
+    for entry_id in (2240021, 2266223, 1223599, 1849840):  # + the operator's other three
+        token = {**_STILLE_DENO_RECS, **_STILLE_ENNO_RECS}[entry_id]
+        assert not {k.split("_")[0] for k in token.split("|")} & fetched_ids
     contexts = " | ".join(c.get("context", "") for c in result["candidates"])
     assert "å stille opp noe" not in contexts
     assert "å gå stille i dørene" not in contexts
@@ -1099,7 +1101,7 @@ def test_tts_en_no_only_recording_is_returned():
     with patch("adapters.dictcc_api.requests.get", side_effect=_stille_fake_get(calls)):
         result = DictccApiTtsAdapter().lookup({"text": "stille", "lang": "nb"})
 
-    assert 2016116 in {p["id"] for p in _audio_calls(calls)}
+    assert "1388320" in {p["id"] for p in _audio_calls(calls)}  # 2016116's recording
     contexts = {c.get("context") for c in result["candidates"]}
     assert "[verb] å stille klokka" in contexts
     assert "[verb] å stille ut" in contexts
@@ -1226,13 +1228,56 @@ def test_tts_lid_is_matched_as_a_language_not_as_a_user_id():
             ids = [int(x) for x in params["id_str"].split(" ")[1:]]
             resp.text = " ".join(["0"] + [_HUS_TWO_USERS_RECS.get(i, "0") for i in ids]) + " "
             return resp
-        return _audio_response(b"mp3-hus")
+        return _audio_response(f"mp3-hus-{params['id']}".encode())
 
     with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
         result = DictccApiTtsAdapter().lookup({"text": "hus", "lang": "nb"})
 
-    assert len(result["candidates"]) == 1
-    assert result["candidates"][0]["source"] == "human"
+    # tts-candidate-matching: each Norwegian recording is its own candidate,
+    # fetched by recording id and named by its speaker; the lid1 one is not.
+    assert [(c["source"], c["voice"]) for c in result["candidates"]] == [
+        ("human", "55S55"), ("human", "mtbboy1993"),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# tts-candidate-matching: the speaker's dict.cc user name in `voice`.
+# ---------------------------------------------------------------------------
+
+def test_recording_key_parses_recid_user_and_lid():
+    from adapters.dictcc_api import Recording, _parse_recording_key
+
+    assert _parse_recording_key("1334012_mtbboy1993_no_lid81_v") == Recording("1334012", "mtbboy1993", "81")
+    assert _parse_recording_key("1299839_C-elegans_aur_lid1_v") == Recording("1299839", "C-elegans", "1")
+    # a user name containing `_` stays whole
+    assert _parse_recording_key("42_some_user_de_lid2_v") == Recording("42", "some_user", "2")
+    assert _parse_recording_key("0") is None
+    assert _parse_recording_key("") is None
+
+
+def test_tts_single_recording_entry_names_its_speaker():
+    # Spec scenario "Single recording names its speaker", on the live-captured
+    # `stille` fixtures: entry 2226742 ("å stille krav") has exactly one
+    # Norwegian recording, by mtbboy1993.
+    calls = []
+    with patch("adapters.dictcc_api.requests.get", side_effect=_stille_fake_get(calls)):
+        result = DictccApiTtsAdapter().lookup({"text": "stille", "lang": "nb"})
+
+    krav = [c for c in result["candidates"] if c.get("context") == "[verb] å stille krav"]
+    assert [(c["source"], c["voice"]) for c in krav] == [("human", "mtbboy1993")]
+    assert ("1481395", "rec") in {(p["id"], p["lang"]) for p in _audio_calls(calls)}
+
+
+def test_tts_each_recording_is_fetched_once_even_when_entries_share_it():
+    # 1334012 belongs to three ENNO entries and two DENO entries; it is one
+    # take, fetched once.
+    calls = []
+    with patch("adapters.dictcc_api.requests.get", side_effect=_stille_fake_get(calls)):
+        DictccApiTtsAdapter().lookup({"text": "stille", "lang": "nb"})
+
+    ids = [p["id"] for p in _audio_calls(calls)]
+    assert ids.count("1334012") == 1
+    assert len(ids) == len(set(ids))
 
 
 def test_inflect_nb_queries_both_norwegian_pairs_with_dir_2():

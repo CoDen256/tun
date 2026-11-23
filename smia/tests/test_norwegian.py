@@ -57,3 +57,55 @@ def test_tokenize_strips_trailing_punctuation():
 
 def test_tokenize_does_not_apply_prefix_rule():
     assert tokenize("en kalv") == ["en", "kalv"]
+
+
+# ---------------------------------------------------------------------------
+# tts-candidate-matching: the one fuzzy match key + trailing-particle strip,
+# on the corpus shapes from design.md.
+# ---------------------------------------------------------------------------
+
+import pytest  # noqa: E402
+
+from norwegian import TRAILING_PARTICLES, normalize_match_key, strip_trailing_particles  # noqa: E402
+
+
+@pytest.mark.parametrize("text, key", [
+    ("ei avis", "avis"),
+    ("en bil", "bil"),
+    ("et bord", "bord"),
+    ("å stille", "stille"),
+    ("ein gut", "gut"),
+    ("eit hus", "hus"),
+    ("bok + handel", "bokhandel"),
+    ("flagg  + stang", "flaggstang"),
+    ("Hallo!", "hallo"),
+    ("Hva heter du?", "hva heter du"),
+    ("Kan jeg få...", "kan jeg få"),
+    ("  Led  ", "led"),
+    ("en CD-spiller", "cd-spiller"),
+    ("deres (3. person)", "deres"),
+    ("Takk,   bare bra.", "takk, bare bra"),
+])
+def test_normalize_match_key_corpus_shapes(text, key):
+    assert normalize_match_key(text) == key
+
+
+@pytest.mark.parametrize("text", ["en", "å", "ei", "Et!"])
+def test_lone_article_or_marker_is_kept(text):
+    assert normalize_match_key(text) == text.casefold().rstrip("!")
+
+
+def test_only_one_leading_article_is_dropped():
+    assert normalize_match_key("en en") == "en"
+    assert normalize_match_key("å en bil") == "en bil"
+
+
+def test_strip_trailing_particles():
+    assert strip_trailing_particles("stille opp") == "stille"
+    assert strip_trailing_particles("glede seg over") == "glede"
+    assert strip_trailing_particles("opp") == "opp"  # at least one token survives
+    assert strip_trailing_particles("hva heter du") == "hva heter du"
+
+
+def test_particle_list_holds_the_required_core():
+    assert set("opp ned ut inn av på til med seg om fram frem bort igjen over".split()) <= TRAILING_PARTICLES

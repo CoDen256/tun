@@ -10,10 +10,18 @@ the speaker's dialect (`Oslo`, `Bergen`, `Sandnessjøen`, …). One candidate pe
 recording, never a pick (CLAUDE.md: candidates, not one answer).
 
 Coverage is tiny and mostly minimal-pair words, so a miss is the normal
-outcome: `{"candidates": []}`, not an error. Matching is exact on the
-casefolded, trimmed text — no citation-form/variant fan-out and no inflection;
-that is `/inflect`'s job, and other providers receive the caller's text
-unchanged (tts-api spec).
+outcome: `{"candidates": []}`, not an error. Matching runs in tiers, and the
+first tier with rows answers — tiers are never mixed (tts-candidate-matching):
+
+  1. exact: the casefolded, trimmed text equals the stored word;
+  2. `normalize_match_key(text)` equals the stored `match_key` (articles, `å`,
+     ` + ` compounds, case and punctuation are ignored on both sides);
+  3. as tier 2, with trailing particles/prepositions/reflexive dropped from
+     the query (`stille opp` -> `stille`).
+
+A tier-2/3 candidate carries `context` = the stored word verbatim (`ei avis`,
+`Hallo!`) so the caller sees it is not an exact hit; a tier-1 candidate
+carries none. No inflection — that is `/inflect`'s job.
 """
 
 from __future__ import annotations
@@ -22,6 +30,7 @@ from sqlalchemy import func, select
 
 from db.models import PygmalionAudio
 from db.session import session_scope
+from norwegian import normalize_match_key, strip_trailing_particles
 from registry import registry
 
 # Oslo is the reference variety (~86% of the data) so it leads; this is a
@@ -34,26 +43,44 @@ def pygmalion_audio_count(db) -> int:
     return db.execute(select(func.count()).select_from(PygmalionAudio)).scalar()
 
 
+_COLUMNS = (
+    PygmalionAudio.word, PygmalionAudio.text, PygmalionAudio.dialect,
+    PygmalionAudio.take, PygmalionAudio.sha256,
+)
+
+
+def _rows(db, column, value):
+    return db.execute(select(*_COLUMNS).where(column == value)).all()
+
+
 class PygmalionTtsAdapter:
     def lookup(self, input_dict: dict) -> dict:
         if input_dict.get("lang", "nb") != "nb":
             return {"candidates": []}
-        word = input_dict["text"].strip().casefold()
+        text = input_dict["text"]
 
+        fuzzy = False
         with session_scope() as db:
-            rows = db.execute(
-                select(PygmalionAudio.dialect, PygmalionAudio.take, PygmalionAudio.sha256).where(
-                    PygmalionAudio.word == word
-                )
-            ).all()
+            rows = _rows(db, PygmalionAudio.word, text.strip().casefold())
+            if not rows:
+                key = normalize_match_key(text)
+                if key:
+                    fuzzy = True
+                    rows = _rows(db, PygmalionAudio.match_key, key)
+                    stripped = strip_trailing_particles(key)
+                    if not rows and stripped != key:
+                        rows = _rows(db, PygmalionAudio.match_key, stripped)
 
-        rows.sort(key=lambda r: (r.dialect != _FIRST_DIALECT, r.dialect, r.take))
+        rows.sort(key=lambda r: (r.dialect != _FIRST_DIALECT, r.dialect, r.word, r.take))
         candidates, seen = [], set()
-        for dialect, _take, sha256 in rows:
-            if sha256 in seen:
+        for row in rows:
+            if row.sha256 in seen:
                 continue
-            seen.add(sha256)
-            candidates.append({"sha256": sha256, "source": "human", "voice": dialect})
+            seen.add(row.sha256)
+            candidate = {"sha256": row.sha256, "source": "human", "voice": row.dialect}
+            if fuzzy:
+                candidate["context"] = row.text or row.word
+            candidates.append(candidate)
         return {"candidates": candidates}
 
 
