@@ -186,6 +186,27 @@ def test_calst_dialect_parsed_from_filename():
     assert rows[0]["dialect"] == "Oslo" and rows[0]["path"] == "Oslo/Oslo_Normal_X.mp3"
 
 
+def test_calst_ascii_dialect_prefix_maps_to_the_pygmalion_display_name():
+    # calst-full-coverage: one dialect is one `voice` across both sources.
+    # `Sandnessjoeen_`/`Tromsoe_` are the server's ASCII prefixes; pygmalion
+    # rows say `Sandnessjøen`, so calst rows must too — and continue its takes.
+    takes = {("led", "Sandnessjøen"): 1}
+    doc = _calst_doc([_calst_entry("led", [
+        _calst_sound("Sandnessjoeen_Normal_S.mp3"),
+        _calst_sound("Tromsoe_Normal_T.mp3"),
+        _calst_sound("Malm_Normal_M.mp3"),
+        _calst_sound("Trondheim_Normal_R.mp3"),
+    ])])
+    rows, skipped = fpa.build_calst_inventory(doc, set(), takes)
+    assert skipped == []
+    assert sorted((r["dialect"], r["take"], r["path"]) for r in rows) == [
+        ("Malm", 0, "Malm/Malm_Normal_M.mp3"),
+        ("Sandnessjøen", 1, "Sandnessjoeen/Sandnessjoeen_Normal_S.mp3"),
+        ("Tromsø", 0, "Tromsoe/Tromsoe_Normal_T.mp3"),
+        ("Trondheim", 0, "Trondheim/Trondheim_Normal_R.mp3"),
+    ]
+
+
 def test_calst_phrases_and_letters_kept_verbatim():
     doc = _calst_doc([_calst_entry("A", [_calst_sound("Oslo_Normal_X.mp3")])])
     rows, _ = fpa.build_calst_inventory(doc, set(), {})

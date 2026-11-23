@@ -102,6 +102,15 @@ _MP3_PATH = re.compile(r"^.*[\\/]Words_MP3[\\/]([^\\/]+\.mp3)$", re.IGNORECASE)
 _CALST_BASENAME = re.compile(r"^([A-Za-z]+)_(Normal|Slow)_[^.]+\.mp3$", re.IGNORECASE)
 _SPEED_IN_PATH = re.compile(r"_(Normal|Slow)_", re.IGNORECASE)
 
+# calst filename prefixes are ASCII (`Sandnessjoeen_`, `Tromsoe_`), but a
+# dialect is one `voice` across both sources, and the pygmalion rows already
+# say `Sandnessjøen`. So a calst prefix maps to the display name; any prefix
+# not listed here (`Oslo`, `Bergen`, `Malm`, `Trondheim`, `Stavanger`,
+# `Elverum`) is already spelled the same in both sources. `dialect_slug` of
+# each display name gives back the prefix, so the files stay in the same
+# directory either way.
+_CALST_DIALECT_NAMES = {"Sandnessjoeen": "Sandnessjøen", "Tromsoe": "Tromsø"}
+
 _FIELD_ORDER = (
     "word", "dialect", "take", "translation", "url", "path", "status", "surplus", "origin", "bytes", "sha256",
 )
@@ -241,7 +250,7 @@ def build_calst_inventory(
                         "reason": "unrecognized calst filename",
                     })
                     continue
-                dialect = m.group(1)
+                dialect = _CALST_DIALECT_NAMES.get(m.group(1), m.group(1))
                 url = BASE_URL + basename
                 if url in known_urls:
                     continue  # already a pygmalion row, or a calst dup within this run
