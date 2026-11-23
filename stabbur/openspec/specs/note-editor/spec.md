@@ -713,11 +713,19 @@ offer to apply a value outside that set.
 ### Requirement: Translation candidates are tagged by language and always add a row
 The system SHALL query each of the operator's configured target languages
 using **that language's own provider order**. The translations sheet SHALL be
-grouped by language: one group per target language, inside it one box per
-provider in that language's order, listing only that language's candidates.
-Every candidate SHALL carry a tag naming its language. Target languages come
-only from Settings. The sheet SHALL NOT offer its own control for adding a
-language.
+grouped **by provider only**: one box per provider, in the order the
+providers first appear across the configured languages, each box listing that
+provider's candidates for **every target language it is enabled for** and
+naming those languages in its header. Within a box, candidates SHALL be
+grouped by language in the operator's target-language order. Every candidate
+SHALL carry a tag naming its language. Target languages come only from
+Settings, which keeps its own per-language ordering lists. The sheet SHALL
+NOT offer its own control for adding a language.
+
+*(Operator decision, 2026-11-23, superseding stabbur-editor-fixes D4's
+per-language grouping in the SHEET: one provider, one box, languages inside
+it. D4's per-language provider ORDER and its per-language lists in Settings
+are unchanged.)*
 
 A provider value containing `/` SHALL be offered as separate alternative
 candidates, one per part, whether or not the slash has spaces around it. Each
@@ -732,12 +740,17 @@ text. No merge-mode preference exists.
 #### Scenario: Candidates carry their language
 - **GIVEN** Settings lists target languages en and de
 - **WHEN** the operator opens the translations sheet
-- **THEN** the sheet has an en group and a de group, each listing its providers' candidates tagged with its language
+- **THEN** each provider has exactly one box, its header names en and de, and its rows are tagged with the language each belongs to
 
-#### Scenario: Each language uses its own provider order
-- **GIVEN** en lists `dictcc` before `google`, and de lists `google` before `dictcc`
+#### Scenario: A provider enabled for one language only
+- **GIVEN** `google` is enabled for en and switched off for de
 - **WHEN** the operator opens the translations sheet
-- **THEN** the en group's first box is `dictcc` and the de group's first box is `google`
+- **THEN** google's box names only en and lists no de candidate
+
+#### Scenario: A language with no provider
+- **GIVEN** no provider is enabled for de
+- **WHEN** the operator opens the translations sheet
+- **THEN** the sheet says so and names de, rather than showing an empty group
 
 #### Scenario: A slash without spaces is two candidates
 - **WHEN** a provider answers `"hurry/rush"` for English

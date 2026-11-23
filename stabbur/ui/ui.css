@@ -506,13 +506,10 @@ button:disabled{cursor:default}
 
 /* D4: the translations sheet is grouped by language, each group carrying
    its own provider order. */
-.lgrp{margin-top:18px}
-.lgrp:first-child{margin-top:8px}
-.lgh{display:flex;align-items:center;gap:8px;padding-bottom:2px;border-bottom:1px solid var(--line)}
-.lgh .lg{font:600 12px var(--f-mono);color:var(--ink);text-transform:uppercase;letter-spacing:.04em}
-.lgh .c{font-size:11.5px;color:var(--mute)}
-.lgh .sp{flex:1}
-.lgrp .prv{margin-top:10px}
+/* The translations sheet is one box per provider; the languages that
+   provider answers for are named in its header (operator, 2026-11-23). */
+.lgs{display:inline-flex;gap:4px}
+.lgs .lg{font:600 9.5px/15px var(--f-mono);text-transform:uppercase;letter-spacing:.04em;color:var(--mute);background:var(--sunk);border-radius:3px;padding:0 4px}
 
 /* D5: dropping an audio file onto the editor. Above the sheets (z-index 20)
    and the bar (8) — a drag can start anywhere. */

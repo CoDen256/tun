@@ -307,6 +307,26 @@ come back to it later with nothing lost.
   only governs whether Send to back, Skip, and Go to previous do so
   automatically
 
+### Requirement: A note can be marked ready without leaving it
+The system SHALL offer, in the triage action tray and in the note editor's
+action tray, a **Save & mark ready** action that persists the note's current
+edits with `status` set to `ready` and then **stays on that note** — the
+queue does not advance and no other note is shown. It differs from the
+"Ready & next" verdict only in that it does not move on (operator,
+2026-11-23: "sometimes i just want to save and mark ready, not go to the
+next note").
+
+#### Scenario: Marking ready in place
+- **GIVEN** a draft note under review
+- **WHEN** the operator chooses Save & mark ready from the tray
+- **THEN** the note's status reads ready, its edits are persisted, and the
+  same note is still on screen at the same position in the queue
+
+#### Scenario: Still available from the editor
+- **WHEN** the operator opens a draft note outside triage and chooses Save &
+  mark ready from its tray
+- **THEN** the note is saved as ready and the editor stays on that note
+
 ### Requirement: Returning to the previous note respects the navigation-save preference
 The system SHALL, when the operator returns to the previously-reviewed note
 and the navigation-save preference is set to autosave, save the note being

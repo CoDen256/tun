@@ -1087,8 +1087,8 @@
       return `<div class="pop" role="dialog"><div class="q">Delete “${esc(G.rule.title)}”?<small>${G.rule.usage_count ? `${G.rule.usage_count} note${G.rule.usage_count === 1 ? '' : 's'} still use it — unlink them first.` : 'The rule is removed. This cannot be undone.'}</small></div><div class="two"><button data-act="cancel">Cancel</button><button class="danger" data-act="grdel-yes" ${G.rule.usage_count ? 'disabled' : ''}>Delete</button></div></div>`;
     }
     const forceItem = '<button data-act="prefill-force">Force prefill<small>re-asks and replaces what is already filled</small></button>';
-    if (S.menu === 'triage') return `<div class="pop" role="menu">${S.vp === 'phone' ? '<button data-act="t-skip">Skip<span class="sp"></span><kbd>S</kbd></button>' : ''}${forceItem}<button data-act="tdup">Duplicate note</button><button data-act="t-back">Send to back<span class="sp"></span><kbd>E</kbd></button><button data-act="t-save">Save<span class="sp"></span><kbd>M</kbd></button></div>`;
-    if (S.menu === 'note') return `<div class="pop" role="menu">${forceItem}<button data-act="dup">Duplicate note</button><button class="danger" data-act="n-del">Delete note</button></div>`;
+    if (S.menu === 'triage') return `<div class="pop" role="menu">${S.vp === 'phone' ? '<button data-act="t-skip">Skip<span class="sp"></span><kbd>S</kbd></button>' : ''}${forceItem}<button data-act="t-ready-here">Save &amp; mark ready<small>stays on this note</small></button><button data-act="tdup">Duplicate note</button><button data-act="t-back">Send to back<span class="sp"></span><kbd>E</kbd></button><button data-act="t-save">Save<span class="sp"></span><kbd>M</kbd></button></div>`;
+    if (S.menu === 'note') return `<div class="pop" role="menu">${forceItem}<button data-act="n-ready">Save &amp; mark ready</button><button data-act="dup">Duplicate note</button><button class="danger" data-act="n-del">Delete note</button></div>`;
     return '';
   }
 
@@ -1221,17 +1221,31 @@
     return `<div class="cd ${c.asm ? 'asm' : ''}">${lead}<div class="v">${v}${pm}${c.ctx ? `<small>${esc(c.ctx)}</small>` : ''}</div>${btn}</div>`;
   }
   function orderedList(k, list) {
-    if (k === 'translations' || k === 'audio') return orderByPos(list, E.f.pos);
+    // One box per provider covers several languages now, so rows are
+    // grouped by language in the operator's own target-language order and
+    // each group is ordered by part of speech — the box reads top to
+    // bottom the way the Translations field does.
+    if (k === 'translations') {
+      const langs = targetLangs();
+      const grouped = langs.flatMap((l) => orderByPos(list.filter((c) => c.lang === l), E.f.pos));
+      const rest = list.filter((c) => !langs.includes(c.lang));
+      return grouped.concat(rest);
+    }
+    if (k === 'audio') return orderByPos(list, E.f.pos);
     if (k === 'pos' && E.f.pos) {
       const m = list.filter((c) => c.v === E.f.pos);
       return m.length ? m.concat(list.filter((c) => c.v !== E.f.pos)) : list.slice();
     }
     return list;
   }
-  // One provider's box. `onlyLang`, used by the translations sheet, narrows
-  // what the box LISTS without changing what was asked or the indices the
-  // Use buttons carry — `data-i` always indexes the provider's own answer.
-  function provBox(k, p, pi, st, q, onlyLang) {
+  // One provider's box. For translations it LISTS every target language
+  // that provider is enabled for (operator, 2026-11-23: one box per
+  // provider, languages inside it — superseding stabbur-editor-fixes D4's
+  // per-language grouping in the SHEET; Settings keeps its per-language
+  // lists). Narrowing what is listed never changes what was asked or the
+  // indices the Use buttons carry — `data-i` always indexes the provider's
+  // own answer.
+  function provBox(k, p, pi, st, q) {
     const R = st.P[p] || { loading: true, list: [] };
     const over = st.pq[p] !== undefined && st.pq[p].trim() && st.pq[p].trim() !== q.trim();
     const pqv = over ? st.pq[p].trim() : q;
@@ -1239,18 +1253,24 @@
     const cnt = k === 'examples' ? examplesLimit(st, p) : null;
     const cOver = k === 'examples' && st.pc && st.pc[p] !== undefined && st.pc[p] !== (settings().examples_sheet_count || 5);
     const all = R.list || [];
-    const list = onlyLang ? all.filter((c) => c.lang === onlyLang) : all;
+    const langs = k === 'translations' ? langsFor(p) : null;
+    const list = langs ? all.filter((c) => langs.includes(c.lang)) : all;
     const n = list.filter((c) => !c.gap).length;
     let body = `<div class="prv"><div class="prvh"><span class="n">${pi + 1}</span>${esc(p)}
+        ${langs && langs.length ? `<span class="lgs">${langs.map((l) => `<span class="lg">${esc(l)}</span>`).join('')}</span>` : ''}
         ${k === 'stt' ? '' : `<button class="pqb ${over || cOver ? 'over' : ''}" data-act="pqedit" data-p="${esc(p)}" title="Query${cnt === null ? '' : ' and count'} for ${esc(p)} only">${over ? `“${esc(pqv)}”` : `${ic('pen', 's')} query`}${cOver ? ` <span class="cnt">· ${cnt}</span>` : ''}</button>`}
         <span class="sp"></span><span class="c">${R.loading ? '…' : `${n || 'no'} result${n === 1 ? '' : 's'}`}</span></div>`;
     if (st.pqOpen[p]) {
       const stepper = cnt === null ? '' : `<div class="stepper ${cOver ? 'over' : ''}" title="Sentences from ${esc(p)} — this note only"><button data-act="pc" data-p="${esc(p)}" data-v="-1" aria-label="Fewer from ${esc(p)}" ${cnt <= 1 ? 'disabled' : ''}>−</button><span>${cnt}</span><button data-act="pc" data-p="${esc(p)}" data-v="1" aria-label="More from ${esc(p)}" ${cnt >= 10 ? 'disabled' : ''}>+</button></div>`;
       body += `<div class="pqrow"><input class="in" data-f="pq" data-p="${esc(p)}" value="${esc(st.pq[p] !== undefined ? st.pq[p] : '')}" aria-label="Query for ${esc(p)}" spellcheck="false" placeholder="${esc(q)}">${stepper}<button class="ib" data-act="pqreset" data-p="${esc(p)}" title="Back to the shared query${cnt === null ? '' : ' and count'}">Reset</button><button class="ib ${R.loading && S.sheet.pspin === p ? 'spin' : ''}" data-act="prerun" data-p="${esc(p)}" aria-label="Run ${esc(p)} again">${ic('rerun')}</button></div>`;
     }
-    const langErr = onlyLang && R.errs ? R.errs[onlyLang] : null;
+    // A per-language failure is named with its language, because one box
+    // now covers several and "Lookup failed" alone would not say which.
+    const langErr = langs && R.errs
+      ? langs.filter((l) => R.errs[l]).map((l) => `${l}: ${R.errs[l]}`).join(' · ')
+      : null;
     if (R.loading) body += '<div class="skel"></div>';
-    else if (R.error || langErr) body += `<div class="err">${esc(langErr || R.error)}</div>`;
+    else if (R.error || langErr) body += `<div class="err">${esc(R.error || langErr)}</div>`;
     else if (R.note) body += `<div class="none">${esc(R.note)}</div>`;
     else if (!n && !list.length) body += `<div class="none">Nothing for “${esc(R.query !== undefined ? R.query : pqv)}”</div>`;
     if (!R.loading) orderedList(k, list).forEach((c) => { body += candRow(k, p, c, all.indexOf(c)); });
@@ -1263,18 +1283,12 @@
     const enabled = enabledFor(k);
     let body = '';
     if (!enabled.length) body += `<div class="none" style="margin-top:14px">No providers answer ${esc(KINDS[k].toLowerCase())} right now${k === 'stt' ? '' : ' — check Settings → Provider order, or whether smia is reachable'}.</div>`;
+    // Every kind, translations included, is one box per provider. A
+    // translations box names the languages it answers for.
+    enabled.forEach((p, pi) => { body += provBox(k, p, pi, st, q); });
     if (k === 'translations') {
-      // design D4: grouped by language, each group in ITS OWN provider
-      // order, so the sheet says the same thing Settings does.
-      targetLangs().forEach((lang) => {
-        const own = kindProviders('translations', lang).enabled;
-        body += `<div class="lgrp" data-lang="${esc(lang)}"><div class="lgh"><span class="lg">${esc(lang)}</span><span class="sp"></span><span class="c">${own.length} provider${own.length === 1 ? '' : 's'}</span></div>`;
-        if (!own.length) body += `<div class="none">No provider is enabled for ${esc(lang)} — Settings → Provider order.</div>`;
-        own.forEach((p, pi) => { body += provBox(k, p, pi, st, q, lang); });
-        body += '</div>';
-      });
-    } else {
-      enabled.forEach((p, pi) => { body += provBox(k, p, pi, st, q); });
+      const bare = targetLangs().filter((lang) => !kindProviders('translations', lang).enabled.length);
+      if (bare.length) body += `<div class="none">No provider is enabled for ${bare.map(esc).join(', ')} — Settings → Provider order.</div>`;
     }
     if (k === 'audio') {
       body += reuseBox();
@@ -1287,9 +1301,12 @@
       }
       body += audioActions();
     }
-    // Per language for translations, so the count is not just en's.
+    // One box per provider, so the count is providers switched off for
+    // EVERY target language — summing per-language would count the same
+    // provider once per language it is off for.
     const offCount = k === 'translations'
-      ? targetLangs().reduce((a, lang) => a + kindProviders('translations', lang).off, 0)
+      ? [...new Set(targetLangs().flatMap((lang) => ((settings().providers || {})[trKey(lang)] || {}).order || []))]
+        .filter((pr) => !enabled.includes(pr)).length
       : off;
     body += `<div class="shf">Order follows Settings · <button data-act="go" data-v="settings">Provider order</button>${offCount ? ` · ${offCount} switched off` : ''}${k === 'examples' ? ` · each asked for ${settings().examples_sheet_count || 5} (<button data-act="go" data-v="settings">Examples</button>) · a per-provider count lasts until the note closes` : ''}</div>`;
     const spinning = S.sheet.spin && enabled.some((p) => st.P[p] && st.P[p].loading);
@@ -1579,11 +1596,6 @@
     else if (el.dataset.f) {
       sel = `[data-f="${el.dataset.f}"]`;
       ['i', 'k', 'p'].forEach((a) => { if (el.dataset[a] !== undefined) sel += `[data-${a}="${CSS.escape(el.dataset[a])}"]`; });
-      // The translations sheet renders one box per provider PER LANGUAGE
-      // group, so a per-provider query input exists more than once and the
-      // bare selector would restore focus to the wrong group's copy.
-      const grp = el.closest('.lgrp[data-lang]');
-      if (grp) sel = `.lgrp[data-lang="${CSS.escape(grp.dataset.lang)}"] ${sel}`;
     }
     if (!sel) return null;
     let start = null; let end = null;
@@ -2041,6 +2053,20 @@
     async save() {
       const saved = await saveTriage();
       if (saved) { rebase(saved); render(); toast('Saved'); }
+    },
+    // Everything `ready` does to the NOTE, and nothing it does to the
+    // queue: the operator stays on this card (operator, 2026-11-23 —
+    // "sometimes i just want to save and mark ready, not go to the next
+    // note").
+    async readyHere() {
+      if (!E || !E.id) return;
+      const body = payload(E.f, false); body.status = 'ready';
+      const r = await api(`/api/notes/${E.id}`, jsonReq('PATCH', body));
+      if (r.status !== 200) { toast(errMsg(r, 'Could not save')); return; }
+      T.queue[T.index] = r.body;
+      rebase(r.body);
+      render();
+      toast(`Saved — “${r.body.text}” is ready`);
     },
     async del() {
       const id = E.id; const text = E.f.text;
@@ -2606,17 +2632,10 @@
         const p = b.dataset.p;
         st.pqOpen[p] = !st.pqOpen[p];
         if (st.pqOpen[p] && st.pq[p] === undefined && settings().override_prefill !== false) st.pq[p] = st.q;
-        // The translations sheet shows one box per provider PER LANGUAGE
-        // group, so the same provider's query row exists more than once.
-        // Focus the one in the group whose control was pressed, not the
-        // first in the sheet.
-        const grp = b.closest('.lgrp');
+        // One box per provider in every kind now, so a provider's query
+        // row exists exactly once and the bare selector is unambiguous.
         render();
-        if (st.pqOpen[p]) {
-          const sel = `[data-f="pq"][data-p="${CSS.escape(p)}"]`;
-          const within = grp && grp.dataset.lang ? app.querySelector(`.lgrp[data-lang="${CSS.escape(grp.dataset.lang)}"] ${sel}`) : null;
-          (within || app.querySelector(sel))?.focus();
-        }
+        if (st.pqOpen[p]) app.querySelector(`[data-f="pq"][data-p="${CSS.escape(p)}"]`)?.focus();
         break;
       }
       // D6: Reset clears BOTH the per-provider query and its count.
@@ -2680,6 +2699,8 @@
       case 't-prev': S.menu = null; if (!T.busy) { T.busy = true; goPrevious().finally(() => { T.busy = false; }); } break;
       case 't-back': S.menu = null; triageAction(tActions.back); break;
       case 't-save': S.menu = null; render(); triageAction(tActions.save); break;
+      case 't-ready-here': S.menu = null; render(); triageAction(tActions.readyHere); break;
+      case 'n-ready': S.menu = null; E.f.status = 'ready'; render(); saveNote(); break;
       case 'tdup': S.menu = null; render(); triageAction(tActions.dup); break;
       case 'prefill': prefill(); break;
       case 'prefill-force': S.menu = null; render(); prefill(true); break;
