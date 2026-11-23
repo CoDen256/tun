@@ -12,7 +12,13 @@ from __future__ import annotations
 
 import re
 
-from db.models import SETTINGS_THEMES, SETTINGS_VALUE_COLOR_CUSTOM_PATTERN, SETTINGS_VALUE_COLORS, Settings
+from db.models import (
+    SETTINGS_EXAMPLES_SHEET_COUNT_RANGE,
+    SETTINGS_THEMES,
+    SETTINGS_VALUE_COLOR_CUSTOM_PATTERN,
+    SETTINGS_VALUE_COLORS,
+    Settings,
+)
 
 # stabbur-editor-redesign D12: appearance. Mirrors db/models.py, whose check
 # constraints are the enforced source of truth; validated here first so the
@@ -34,6 +40,9 @@ TRIAGE_NAVIGATE_SAVE_MODES = ("autosave", "manual")
 # for the validation error message in routes/settings.py).
 EXAMPLES_COUNT_RANGE = (1, 10)
 EXAMPLES_MAX_PROVIDERS_RANGE = (1, 10)
+# stabbur-prefill-and-settings-fixes D5: K, the Examples SHEET's per-provider
+# sentence count. Mirrors the model's check constraint for the 400 message.
+EXAMPLES_SHEET_COUNT_RANGE = SETTINGS_EXAMPLES_SHEET_COUNT_RANGE
 
 DEFAULT_OVERRIDE_PREFILL = True
 DEFAULT_TARGET_LANGS = ("en", "de")
@@ -44,6 +53,14 @@ DEFAULT_TRIAGE_NAVIGATE_SAVE = "autosave"
 # larger count or provider budget.
 DEFAULT_EXAMPLES_COUNT = 3
 DEFAULT_EXAMPLES_MAX_PROVIDERS = 1
+# D5: the sheet asks for at least 5, but never fewer than prefill's own M —
+# an operator who had already set M above 5 must not be served a default
+# that breaks the M <= K rule the API enforces.
+DEFAULT_EXAMPLES_SHEET_COUNT_FLOOR = 5
+
+
+def default_examples_sheet_count(examples_count: int) -> int:
+    return max(DEFAULT_EXAMPLES_SHEET_COUNT_FLOOR, examples_count)
 
 # --------------------------------------------------------- triage queues --
 # stabbur-triage-queues D1. A queue is a named filter set plus its own sort.
@@ -178,13 +195,17 @@ def read_scalars(db) -> dict:
     """Stored scalar preferences with defaults applied (D2) — no catalogue
     involved, since these aren't provider-ordering preferences."""
     row = _row(db)
+    examples_count = (row.examples_count if row else None) or DEFAULT_EXAMPLES_COUNT
     return {
         "override_prefill": DEFAULT_OVERRIDE_PREFILL if row is None or row.override_prefill is None else row.override_prefill,
         "default_target_langs": (row.default_target_langs if row else None) or list(DEFAULT_TARGET_LANGS),
         "prefill_timing": (row.prefill_timing if row else None) or DEFAULT_PREFILL_TIMING,
         "triage_navigate_save": (row.triage_navigate_save if row else None) or DEFAULT_TRIAGE_NAVIGATE_SAVE,
-        "examples_count": (row.examples_count if row else None) or DEFAULT_EXAMPLES_COUNT,
+        "examples_count": examples_count,
         "examples_max_providers": (row.examples_max_providers if row else None) or DEFAULT_EXAMPLES_MAX_PROVIDERS,
+        # D5: NULL is "never chosen", not 5 — see default_examples_sheet_count.
+        "examples_sheet_count": (row.examples_sheet_count if row else None)
+        or default_examples_sheet_count(examples_count),
         "theme": (row.theme if row else None) or DEFAULT_THEME,
         "value_color": (row.value_color if row else None) or DEFAULT_VALUE_COLOR,
         # No default: unset means "no custom colour picked yet".
@@ -271,6 +292,8 @@ def write(db, updates: dict, kinds: tuple[str, ...]) -> None:
         row.examples_count = updates["examples_count"]
     if "examples_max_providers" in updates:
         row.examples_max_providers = updates["examples_max_providers"]
+    if "examples_sheet_count" in updates:
+        row.examples_sheet_count = updates["examples_sheet_count"]
     for key in ("theme", "value_color", "value_color_custom"):
         if key in updates:
             setattr(row, key, updates[key])

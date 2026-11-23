@@ -195,6 +195,12 @@ SETTINGS_TRIAGE_NAVIGATE_SAVE_MODES = ("autosave", "manual")
 # hammer every configured provider or paste in an unreadable wall of text.
 SETTINGS_EXAMPLES_COUNT_RANGE = (1, 10)
 SETTINGS_EXAMPLES_MAX_PROVIDERS_RANGE = (1, 10)
+# stabbur-prefill-and-settings-fixes D5: K, how many sentences the Examples
+# SUGGESTION SHEET asks each enabled provider for. Every examples lookup is
+# made at this size and prefill slices its own M from the same answer, which
+# is why M <= K is an invariant the API enforces. Capped at 10 because smia
+# clamps `limit` to 1-10.
+SETTINGS_EXAMPLES_SHEET_COUNT_RANGE = (1, 10)
 
 
 class Settings(Base):
@@ -238,6 +244,11 @@ class Settings(Base):
             f"{SETTINGS_EXAMPLES_MAX_PROVIDERS_RANGE[0]} AND {SETTINGS_EXAMPLES_MAX_PROVIDERS_RANGE[1]}",
             name="ck_settings_examples_max_providers",
         ),
+        CheckConstraint(
+            "examples_sheet_count IS NULL OR examples_sheet_count BETWEEN "
+            f"{SETTINGS_EXAMPLES_SHEET_COUNT_RANGE[0]} AND {SETTINGS_EXAMPLES_SHEET_COUNT_RANGE[1]}",
+            name="ck_settings_examples_sheet_count",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
@@ -256,6 +267,11 @@ class Settings(Base):
     # answers, exactly 3 sentences" walk before this.
     examples_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     examples_max_providers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # stabbur-prefill-and-settings-fixes D5: K. NULL means "not chosen yet",
+    # which read_scalars resolves to max(5, examples_count) rather than a
+    # flat 5 — an operator whose M was already above 5 before this column
+    # existed must not be handed a stored state that breaks M <= K.
+    examples_sheet_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # stabbur-triage-queues D1: the operator's own saved triage queues, each
     # a named filter set with its own sort. Stored here rather than in the
     # browser because a queue is most useful on the phone and localStorage

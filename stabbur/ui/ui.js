@@ -259,7 +259,7 @@
   /* -------------------------------------------------- settings + look -- */
   const DEFAULT_SETTINGS = {
     default_target_langs: ['en', 'de'], providers: {}, prefill_timing: 'on_open', triage_navigate_save: 'autosave',
-    examples_count: 3, examples_max_providers: 1, override_prefill: true, theme: 'auto', value_color: 'blue', value_color_custom: null,
+    examples_count: 3, examples_max_providers: 1, examples_sheet_count: 5, override_prefill: true, theme: 'auto', value_color: 'blue', value_color_custom: null,
   };
   const settings = () => S.settings || DEFAULT_SETTINGS;
 
@@ -281,11 +281,76 @@
     if (r.status === 200) { S.settings = r.body; applyLook(r.body); }
     return settings();
   }
-  async function patchSettings(updates, okMsg = 'Saved') {
+  // Settings saves are OPTIMISTIC and LOCAL-FIRST (design D4). The page is
+  // the truth the moment the operator acts; a save only reports back.
+  //
+  // Three things follow, and each of them is the fix for something that was
+  // observed going wrong:
+  //
+  //  * the change is applied to `S.settings` BEFORE the request goes out, so
+  //    nothing on screen waits for a round trip;
+  //  * a reply never re-renders the page unless it is the newest save AND
+  //    nothing else is in flight — the old code re-rendered from the
+  //    server's body on every reply, which undid a second drag made while
+  //    the first was saving and destroyed the DOM of a drag still in
+  //    progress;
+  //  * state is reported INLINE per section or list ("Saving…" -> "✓ Saved",
+  //    or the error), never as a toast per save.
+  //
+  // On failure the stored value is read back, so the list returns to what is
+  // actually saved rather than keeping a change that did not take.
+  const SAVE = { seq: 0, inflight: 0, per: {}, st: {} };
+  function setSaveStatus(key, text, cls) {
+    SAVE.st[key] = text ? { text, cls } : null;
+    app.querySelectorAll(`[data-st="${CSS.escape(key)}"]`).forEach((el) => {
+      el.textContent = text || '';
+      el.className = `savest ${cls || ''}`;
+    });
+  }
+  function saveStatusSpan(key) {
+    const v = SAVE.st[key];
+    return `<span class="savest ${v ? v.cls : ''}" data-st="${esc(key)}" aria-live="polite">${v ? esc(v.text) : ''}</span>`;
+  }
+  const savingLabel = (n) => (n > 1 ? `Saving… (${n})` : 'Saving…');
+  // `apply()` mutates S.settings; `updates` is the PATCH body. `key` names
+  // the section or list whose status line reports this save.
+  async function saveSettings(key, apply, updates) {
+    apply();
+    applyLook(settings());
+    const mine = (SAVE.seq += 1);
+    SAVE.per[key] = (SAVE.per[key] || 0) + 1;
+    SAVE.inflight += 1;
+    setSaveStatus(key, savingLabel(SAVE.per[key]), '');
     const r = await api('/api/settings', jsonReq('PATCH', updates));
-    if (r.status === 200) { S.settings = r.body; applyLook(r.body); if (okMsg) toast(okMsg); } else toast(errMsg(r, 'Could not save'));
-    render();
-    return r.status === 200;
+    SAVE.inflight -= 1;
+    SAVE.per[key] = Math.max(0, (SAVE.per[key] || 1) - 1);
+    if (r.status !== 200) {
+      setSaveStatus(key, errMsg(r, 'Could not save'), 'bad');
+      await loadSettings();
+      render();
+      return false;
+    }
+    // The server's reconciled body is adopted only when this is still the
+    // newest save and none is in flight — otherwise it would be an older
+    // picture of state the operator has already changed.
+    if (mine === SAVE.seq && SAVE.inflight === 0) { S.settings = r.body; applyLook(r.body); render(); }
+    if (SAVE.per[key] > 0) { setSaveStatus(key, savingLabel(SAVE.per[key]), ''); return true; }
+    setSaveStatus(key, '✓ Saved', 'ok');
+    setTimeout(() => {
+      if (!SAVE.per[key] && SAVE.st[key] && SAVE.st[key].cls === 'ok') setSaveStatus(key, '', '');
+    }, 2200);
+    return true;
+  }
+  // Which status line a scalar preference reports on. Mirrors the sections
+  // of the Settings page; a key with no entry reports on "exs".
+  const SETTING_SECTION = {
+    theme: 'appearance', value_color: 'appearance', value_color_custom: 'appearance',
+    prefill_timing: 'triage', triage_navigate_save: 'triage',
+    override_prefill: 'lookups', default_target_langs: 'lookups',
+  };
+  function patchSettings(updates) {
+    const key = SETTING_SECTION[Object.keys(updates)[0]] || 'exs';
+    return saveSettings(key, () => { S.settings = { ...settings(), ...updates }; }, updates);
   }
   async function loadCatalog() {
     if (S.catalog) return S.catalog;
@@ -556,6 +621,24 @@
   // design D4: translations are ordered per target language, under
   // "translations:<lang>". Every other kind keeps one list.
   const trKey = (lang) => `translations:${lang}`;
+  // design D3: two example sentences are THE SAME when they match after
+  // trimming, collapsing internal whitespace, lower-casing, and dropping
+  // trailing terminal punctuation and closing quotes/brackets. This is what
+  // lets a sentence stored before smia started normalising examples
+  // ("komme seg opp") match the normalised candidate ("Komme seg opp.")
+  // instead of being added a second time.
+  const exKey = (t) => String(t || '').trim().replace(/\s+/g, ' ')
+    .replace(/[\s.!?…"'»”’)\]]+$/u, '')
+    .toLocaleLowerCase('nb');
+  // D5/D6: how many sentences THIS provider is asked for — the per-note
+  // override if the operator set one in the sheet, otherwise the stored
+  // sheet count K. smia clamps to 1-10 and so does this.
+  function examplesLimit(st, p) {
+    const own = st && st.pc ? st.pc[p] : undefined;
+    const k = own !== undefined ? own : (settings().examples_sheet_count || 5);
+    return Math.min(10, Math.max(1, k));
+  }
+
   function kindProviders(kind, lang) {
     const prefs = settings().providers || {};
     if (kind === 'stt' && !prefs.stt) {
@@ -615,7 +698,7 @@
 
   // One provider's answer for one kind, normalised to a list of candidate
   // objects with a display value `v`.
-  async function providerLookup(kind, p, q, force) {
+  async function providerLookup(kind, p, q, force, limit) {
     const lang = smiaLang(E.f.source_lang);
     if (kind === 'stt') {
       if (!E.f.audio_blob) return { list: [], note: 'No audio to transcribe yet' };
@@ -658,9 +741,11 @@
     }
     const fields = kind === 'ipa' ? { text: q, lang }
       : (kind === 'pos' || kind === 'inflections') ? { word: q, lang }
-          // `examples_count` is M, the PER-PROVIDER number of sentences
-          // (design D3) — so it is exactly this provider's limit.
-        : kind === 'examples' ? { text: q, lang, limit: Math.min(10, Math.max(1, settings().examples_count || 3)) }
+          // D5: EVERY examples lookup asks for K — the sheet's count, or
+          // this provider's ad-hoc override. Prefill slices its own M out
+          // of the same answer, so opening the sheet after a prefill needs
+          // no new request.
+        : kind === 'examples' ? { text: q, lang, limit }
           : { text: q, lang };
     const r = await enrich(API_KIND[kind], p, fields, force);
     if (r.status !== 200 || !r.body) return { list: [], error: errMsg(r, 'Lookup failed') };
@@ -706,37 +791,80 @@
     if (!E) return null;
     const e0 = E;
     if (kind === 'stt') await loadCatalog();
-    const st = E.cands[kind] || (E.cands[kind] = { q: defaultQuery(kind), pq: {}, pqOpen: {}, P: {}, edited: false });
+    const st = E.cands[kind] || (E.cands[kind] = { q: defaultQuery(kind), pq: {}, pc: {}, pqOpen: {}, P: {}, edited: false });
+    if (!st.pc) st.pc = {};
     if (opts.q !== undefined) st.q = opts.q;
     const { links } = kindProviders(kind);
     const targets = opts.only ? [opts.only] : enabledFor(kind).concat(links);
     if (!opts.only) st.fetched = true;
-    await Promise.all(targets.map(async (p) => {
+    // One promise PER PROVIDER, recorded on `st.W`, so a prefill step can
+    // wait for exactly the provider it is about to use instead of for every
+    // enabled provider of the kind (design D1). Nothing here rejects: a
+    // failed lookup becomes that provider's own `error`.
+    st.W = st.W || {};
+    const tasks = targets.map((p) => {
       const own = st.pq[p] !== undefined && st.pq[p].trim() ? st.pq[p].trim() : null;
       const q = own || st.q.trim();
-      st.P[p] = { ...(st.P[p] || {}), loading: true, query: q };
-      scheduleRender();
-      let res;
-      try { res = await providerLookup(kind, p, q, !!opts.force); } catch (err) { res = { list: [], error: err.message }; }
-      if (E !== e0) return;
-      st.P[p] = { ...res, loading: false, query: q };
-      scheduleRender();
-    }));
+      const limit = kind === 'examples' ? examplesLimit(st, p) : undefined;
+      st.P[p] = { ...(st.P[p] || {}), loading: true, query: q, asked: limit };
+      const task = (async () => {
+        let res;
+        try { res = await providerLookup(kind, p, q, !!opts.force, limit); } catch (err) { res = { list: [], error: err.message }; }
+        if (E !== e0) return;
+        st.P[p] = { ...res, loading: false, query: q, asked: limit };
+        scheduleRender();
+      })();
+      st.W[p] = task;
+      return task;
+    });
+    scheduleRender();
+    await Promise.all(tasks);
     return st;
   }
-  // The answers a prefill or a reopened sheet can use as they stand: fetched
-  // for the field's current default query, and not mid-flight.
-  async function ensureKind(kind, force) {
-    const st = E.cands[kind];
+  // The answers a prefill can use as they stand: asked for the field's
+  // current default query (and, for examples, at the current count).
+  //
+  // IN-FLIGHT COUNTS AS READY. It did not before, which mattered once
+  // prefill stopped waiting for whole kinds: every step now starts its own
+  // kind, and a step that treated a lookup already in flight as "not ready"
+  // would ask every provider a second time.
+  function kindReady(st, kind, q, force) {
+    if (force || !st || !st.fetched || st.q !== q) return false;
+    return enabledFor(kind).every((p) => st.P[p] && st.P[p].query === q
+      && (kind !== 'examples' || st.P[p].asked === examplesLimit(st, p)));
+  }
+  // Synchronous: starts the lookup if one is needed and returns the state
+  // at once, with `st.W[p]` already holding each provider's promise. Not
+  // awaited, because waiting for the whole kind is exactly what design D1
+  // removes.
+  function kindState(kind, force) {
     const q = defaultQuery(kind);
-    const enabled = enabledFor(kind);
+    const st = E.cands[kind];
+    if (kindReady(st, kind, q, force)) return st;
     // A forced prefill is a genuine re-ask, never a replay of what is
-    // already held: it always refetches, and `force` makes the lookup
-    // bypass both this session's cache and smia's (design D7).
-    const ready = !force && st && st.fetched && st.q === q && enabled.every((p) => st.P[p] && !st.P[p].loading && st.P[p].query === q);
-    if (ready) return st;
-    if (st) { st.pq = {}; st.pqOpen = {}; st.edited = false; }
-    return fetchKind(kind, { q, force: !!force });
+    // already held: `force` makes the lookup bypass both this session's
+    // cache and smia's (design D7).
+    if (st) { st.pq = {}; st.pc = {}; st.pqOpen = {}; st.edited = false; }
+    fetchKind(kind, { q, force: !!force });
+    return E.cands[kind];
+  }
+  // design D1: walk the enabled providers IN THE OPERATOR'S ORDER, waiting
+  // for each in turn, and take the first that answers with a usable value.
+  // A provider lower down that happened to answer first is never used while
+  // one above it is still pending — the operator's ruling, verbatim: "it
+  // should never violate picking the suggestion of the top provider, even if
+  // the providers below have finished early".
+  async function walkKind(kind, force, pick, lang) {
+    const st = kindState(kind, force);
+    for (const p of kindProviders(kind, lang).enabled) {
+      await (st.W ? st.W[p] : undefined);
+      if (!E || E.cands[kind] !== st) return null;
+      const P = st.P[p];
+      if (!P || P.error || P.loading) continue;
+      const v = pick(P, p);
+      if (v !== null && v !== undefined && v !== false) return { p, P, v };
+    }
+    return null;
   }
   function ccount(kind) {
     const st = E && E.cands[kind];
@@ -1030,7 +1158,10 @@
   function used(k, c) {
     const f = E.f;
     if (k === 'translations') return f.translations.some((t) => t.text === c.v && t.lang === c.lang);
-    if (k === 'examples') return f.examples.includes(c.v);
+    // D6: by the SAME loose comparison prefill de-duplicates with, and
+    // read from the note as it is right now — so deleting an example makes
+    // its candidate usable again.
+    if (k === 'examples') return f.examples.some((t) => exKey(t) === exKey(c.v));
     if (k === 'pos') return !!c.v && f.pos === c.v;
     if (k === 'ipa') return c.asm ? f.transcription.trim() === c.v : ` ${f.transcription.trim()} `.includes(` ${c.v} `);
     if (k === 'inflections') {
@@ -1047,10 +1178,10 @@
     const pm = (E.f.pos && c.tag && c.tag === normalizePosTag(E.f.pos) && (k === 'translations' || k === 'audio')) ? `<span class="pm" title="matches ${esc(E.f.pos)}">${esc(POSAB[E.f.pos] || E.f.pos)}</span>` : '';
     const busy = S.sheet.busy === `${p}:${i}`;
     const confirmStt = k === 'stt' && S.sheet.confirmStt === `${p}:${i}`;
-    let label = u ? 'Used' : (k === 'ipa' && c.asm ? 'Replace' : 'Use');
+    let label = u ? (k === 'examples' ? 'On note' : 'Used') : (k === 'ipa' && c.asm ? 'Replace' : 'Use');
     if (busy) label = '…';
     if (confirmStt) label = 'Replace?';
-    const disabled = (k === 'pos' && !c.v) || busy;
+    const disabled = (k === 'pos' && !c.v) || busy || (k === 'examples' && u);
     const btn = (k === 'pos' && !c.v) ? '' : `<button class="use ${u ? 'done' : ''}" data-act="use" data-p="${esc(p)}" data-i="${i}" ${disabled ? 'disabled' : ''}>${label}</button>`;
     if (k === 'inflections') {
       const order = shapeKeys(c.pos);
@@ -1084,13 +1215,19 @@
     const R = st.P[p] || { loading: true, list: [] };
     const over = st.pq[p] !== undefined && st.pq[p].trim() && st.pq[p].trim() !== q.trim();
     const pqv = over ? st.pq[p].trim() : q;
+    // D6: only Examples takes a count, because no other kind does.
+    const cnt = k === 'examples' ? examplesLimit(st, p) : null;
+    const cOver = k === 'examples' && st.pc && st.pc[p] !== undefined && st.pc[p] !== (settings().examples_sheet_count || 5);
     const all = R.list || [];
     const list = onlyLang ? all.filter((c) => c.lang === onlyLang) : all;
     const n = list.filter((c) => !c.gap).length;
     let body = `<div class="prv"><div class="prvh"><span class="n">${pi + 1}</span>${esc(p)}
-        ${k === 'stt' ? '' : `<button class="pqb ${over ? 'over' : ''}" data-act="pqedit" data-p="${esc(p)}" title="Query for ${esc(p)} only">${over ? `“${esc(pqv)}”` : `${ic('pen', 's')} query`}</button>`}
+        ${k === 'stt' ? '' : `<button class="pqb ${over || cOver ? 'over' : ''}" data-act="pqedit" data-p="${esc(p)}" title="Query${cnt === null ? '' : ' and count'} for ${esc(p)} only">${over ? `“${esc(pqv)}”` : `${ic('pen', 's')} query`}${cOver ? ` <span class="cnt">· ${cnt}</span>` : ''}</button>`}
         <span class="sp"></span><span class="c">${R.loading ? '…' : `${n || 'no'} result${n === 1 ? '' : 's'}`}</span></div>`;
-    if (st.pqOpen[p]) body += `<div class="pqrow"><input class="in" data-f="pq" data-p="${esc(p)}" value="${esc(st.pq[p] !== undefined ? st.pq[p] : '')}" aria-label="Query for ${esc(p)}" spellcheck="false" placeholder="${esc(q)}"><button class="ib" data-act="pqreset" data-p="${esc(p)}" title="Back to the shared query">Reset</button><button class="ib ${R.loading && S.sheet.pspin === p ? 'spin' : ''}" data-act="prerun" data-p="${esc(p)}" aria-label="Run ${esc(p)} again">${ic('rerun')}</button></div>`;
+    if (st.pqOpen[p]) {
+      const stepper = cnt === null ? '' : `<div class="stepper ${cOver ? 'over' : ''}" title="Sentences from ${esc(p)} — this note only"><button data-act="pc" data-p="${esc(p)}" data-v="-1" aria-label="Fewer from ${esc(p)}" ${cnt <= 1 ? 'disabled' : ''}>−</button><span>${cnt}</span><button data-act="pc" data-p="${esc(p)}" data-v="1" aria-label="More from ${esc(p)}" ${cnt >= 10 ? 'disabled' : ''}>+</button></div>`;
+      body += `<div class="pqrow"><input class="in" data-f="pq" data-p="${esc(p)}" value="${esc(st.pq[p] !== undefined ? st.pq[p] : '')}" aria-label="Query for ${esc(p)}" spellcheck="false" placeholder="${esc(q)}">${stepper}<button class="ib" data-act="pqreset" data-p="${esc(p)}" title="Back to the shared query${cnt === null ? '' : ' and count'}">Reset</button><button class="ib ${R.loading && S.sheet.pspin === p ? 'spin' : ''}" data-act="prerun" data-p="${esc(p)}" aria-label="Run ${esc(p)} again">${ic('rerun')}</button></div>`;
+    }
     const langErr = onlyLang && R.errs ? R.errs[onlyLang] : null;
     if (R.loading) body += '<div class="skel"></div>';
     else if (R.error || langErr) body += `<div class="err">${esc(langErr || R.error)}</div>`;
@@ -1100,7 +1237,7 @@
     return `${body}</div>`;
   }
   function suggestSheet(k) {
-    const st = E.cands[k] || { q: defaultQuery(k), pq: {}, pqOpen: {}, P: {} };
+    const st = E.cands[k] || { q: defaultQuery(k), pq: {}, pc: {}, pqOpen: {}, P: {} };
     const q = st.q;
     const { off, links } = kindProviders(k);
     const enabled = enabledFor(k);
@@ -1134,7 +1271,7 @@
     const offCount = k === 'translations'
       ? targetLangs().reduce((a, lang) => a + kindProviders('translations', lang).off, 0)
       : off;
-    body += `<div class="shf">Order follows Settings · <button data-act="go" data-v="settings">Provider order</button>${offCount ? ` · ${offCount} switched off` : ''}</div>`;
+    body += `<div class="shf">Order follows Settings · <button data-act="go" data-v="settings">Provider order</button>${offCount ? ` · ${offCount} switched off` : ''}${k === 'examples' ? ` · each asked for ${settings().examples_sheet_count || 5} (<button data-act="go" data-v="settings">Examples</button>) · a per-provider count lasts until the note closes` : ''}</div>`;
     const spinning = S.sheet.spin && enabled.some((p) => st.P[p] && st.P[p].loading);
     return sheetShell(`${KINDS[k]} suggestions`, KINDS[k], `<div class="shq"><input class="in" id="shq" data-f="q" value="${esc(q)}" aria-label="Shared query" spellcheck="false" ${k === 'stt' ? 'readonly' : ''}><button class="ib ${spinning ? 'spin' : ''}" data-act="rerun" aria-label="Run all providers again">${ic('rerun')}</button></div><div class="shb">${body}</div>`);
   }
@@ -1321,31 +1458,42 @@
     const s = settings();
     if (!S.settings) return '<div class="wrap"><div class="ph"><h1>Settings</h1></div><div class="loading">Loading…</div></div>';
     const seg = (key, opts) => `<div class="seg">${opts.map(([v, l]) => `<button data-act="set" data-k="${key}" data-v="${v}" aria-pressed="${s[key] === v}">${l}</button>`).join('')}</div>`;
-    const step = (key) => `<div class="stepper"><button data-act="step" data-k="${key}" data-v="-1" aria-label="Fewer">−</button><span>${s[key]}</span><button data-act="step" data-k="${key}" data-v="1" aria-label="More">+</button></div>`;
+    // A stepper button is disabled either at the hard 1-10 bound or because
+    // the move would break M <= K (design D5) — in which case the reason is
+    // on the button and spelled out under the label too.
+    const step = (key, offMinus, offPlus, why) => {
+      const cur = s[key] || 1;
+      const m = cur <= 1 || offMinus; const pl = cur >= 10 || offPlus;
+      return `<div class="stepper"><button data-act="step" data-k="${key}" data-v="-1" aria-label="Fewer" ${m ? `disabled title="${esc(offMinus ? why : 'at least 1')}"` : ''}>−</button><span>${cur}</span><button data-act="step" data-k="${key}" data-v="1" aria-label="More" ${pl ? `disabled title="${esc(offPlus ? why : 'at most 10')}"` : ''}>+</button></div>`;
+    };
+    const EXN = s.examples_max_providers || 1; const EXM = s.examples_count || 3;
+    const EXK = s.examples_sheet_count || Math.max(5, EXM);
+    const atCap = EXM >= EXK;
     const custom = s.value_color_custom || '#c2185b';
     const providers = s.providers || {};
     return `<div class="wrap"><div class="ph"><h1>Settings</h1></div><div class="sets">
-      <section class="sg2"><h2>Appearance</h2>
+      <section class="sg2"><h2>Appearance ${saveStatusSpan('appearance')}</h2>
         <div class="si"><div class="t">Theme<small>Auto follows the device</small></div>${seg('theme', [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']])}</div>
         <div class="si"><div class="t">Value colour<small>the colour of everything you type</small></div><div class="swr">${[['blue', '#0b5cff'], ['teal', '#00897b'], ['violet', '#7c3aed'], ['orange', '#d9480f']].map(([k, c]) => `<button class="sw" data-act="set" data-k="value_color" data-v="${k}" aria-pressed="${s.value_color === k}" aria-label="${k}" title="${k}" style="--c:${c}"></button>`).join('')}<label class="sw swc" title="Custom" aria-pressed="${s.value_color === 'custom'}" style="--c:${esc(custom)}"><input type="color" id="s_valc" data-f="valc" value="${esc(custom)}" aria-label="Custom value colour"></label></div></div>
         <div class="si"><div class="t" style="flex:1 1 100%"><small>Preview</small><span style="color:var(--val);font-size:16px">komme i vei · get going</span></div></div></section>
-      <section class="sg2"><h2>Triage prefilling</h2>
+      <section class="sg2"><h2>Triage prefilling ${saveStatusSpan('triage')}</h2>
         <div class="si"><div class="t">Run providers<small>for every empty field</small></div>${seg('prefill_timing', [['on_open', 'On open'], ['on_demand', 'On Prefill']])}</div>
         <div class="si"><div class="t">Leaving a note<small>Send to back, Skip, Previous</small></div>${seg('triage_navigate_save', [['autosave', 'Autosave'], ['manual', 'Manual']])}</div></section>
       <section class="sg2"><h2>Provider order</h2><p class="hint">Drag to reorder. The first enabled provider prefills; suggestion sheets list them in this order.</p>
         ${settingsKinds().map(([k, label]) => {
     const info = providers[k] || { order: [], disabled: [] };
     const hint = k === 'tts' ? '<small>forvo and filmot open externally</small>' : '';
-    return `<div class="pk"><div class="kh">${label}${hint}</div>
+    return `<div class="pk"><div class="kh">${label}${hint}${saveStatusSpan(k)}</div>
           ${info.order.length ? `<ul class="plist" data-kind="${k}">${info.order.map((p, i) => { const off = (info.disabled || []).includes(p); return `<li data-p="${esc(p)}" class="${off ? 'off' : ''}"><span class="h" tabindex="0" role="button" aria-label="Move ${esc(p)}">${ic('drag')}</span><span class="o">${i + 1}</span><span class="nm">${esc(p)}</span>${LINKP.includes(p) ? '<span class="lk">link</span>' : ''}<button class="tg" data-act="poff" data-k="${k}" data-v="${esc(p)}" aria-pressed="${!off}" aria-label="Enable ${esc(p)}"></button></li>`; }).join('')}</ul>` : '<div class="nopara">No providers — smia did not list any for this kind.</div>'}</div>`;
   }).join('')}</section>
-      <section class="sg2"><h2>Lookups</h2>
+      <section class="sg2"><h2>Lookups ${saveStatusSpan('lookups')}</h2>
         <div class="si"><div class="t">Query starts prefilled<small>per-provider queries start from the shared one</small></div><button class="tg" data-act="qpre" aria-pressed="${s.override_prefill !== false}" aria-label="Query starts prefilled"></button></div>
         <div class="si"><div class="t">Translation languages</div><input class="txt-in" id="s_langs" data-f="langs" value="${esc((s.default_target_langs || []).join(', '))}" aria-label="Translation languages"></div></section>
-      <section class="sg2"><h2>Examples prefill</h2>
+      <section class="sg2"><h2>Examples ${saveStatusSpan('exs')}</h2>
         <div class="si"><div class="t">Providers to ask<small>the first N in the Examples order</small></div>${step('examples_max_providers')}</div>
-        <div class="si"><div class="t">Sentences per provider<small>taken from each of them</small></div>${step('examples_count')}</div>
-        <div class="si"><div class="t" style="flex:1 1 100%"><small>Prefill takes at most ${(s.examples_max_providers || 1) * (s.examples_count || 3)} sentences — ${s.examples_max_providers || 1} × ${s.examples_count || 3}. A provider with fewer contributes what it has.</small></div></div></section>
+        <div class="si"><div class="t">Sentences per provider<small>taken from each of them${atCap ? ` — <em>can’t exceed the sheet’s ${EXK}</em>` : ''}</small></div>${step('examples_count', false, atCap, `can’t exceed the sheet’s ${EXK} — raise that first`)}</div>
+        <div class="si"><div class="t">Sentences in the suggestion sheet<small>asked from every enabled provider when the sheet opens${atCap ? ` — <em>at least prefill’s ${EXM}</em>` : ''}</small></div>${step('examples_sheet_count', atCap, false, `at least prefill’s ${EXM} — lower that first`)}</div>
+        <div class="si"><div class="t" style="flex:1 1 100%"><small>Prefill takes at most ${EXN} × ${EXM} sentences and adds only ones the note doesn’t already have. The Examples sheet asks each enabled provider for ${EXK}.</small></div></div></section>
     </div></div>`;
   }
 
@@ -1540,18 +1688,12 @@
 
   /* ----------------------------------------------------------- prefill -- */
   // Fills gaps, never opinions (note-triage D5), walking the operator's
-  // provider order (D4): pos first (inflections need a shape, translations
-  // and audio are ordered by it), then IPA, translations, inflections,
-  // examples, audio — each step on its own, so one failing provider cannot
-  // take the rest down.
-  function firstWith(kind, pred = (P) => (P.list || []).filter((c) => !c.gap).length > 0, lang) {
-    const st = E.cands[kind];
-    for (const p of kindProviders(kind, lang).enabled) {
-      const P = st && st.P[p];
-      if (P && !P.error && pred(P)) return { p, P };
-    }
-    return null;
-  }
+  // provider order (D4) within each field. The FIELDS no longer wait for
+  // one another (design D1): every step starts at once and writes its field
+  // the moment the provider it will use has answered. Part of speech is the
+  // one dependency — inflections need its shape, translations and audio are
+  // ordered by it — so those three start once it has settled. Each step is
+  // still on its own, so one failing provider cannot take the rest down.
   function assembleFromTokens(tokens) {
     if (!Array.isArray(tokens) || !tokens.length) return null;
     const parts = tokens.map((t) => {
@@ -1566,30 +1708,23 @@
   const PREFILL_STEPS = {
     async pos(force) {
       if ((E.f.pos && !force) || !defaultQuery('pos')) return false;
-      await ensureKind('pos', force);
-      const hit = firstWith('pos');
-      const mapped = hit && hit.P.list.map((c) => c.v).find(Boolean);
-      if (!mapped) return false;
-      setPos(mapped, true);
+      const hit = await walkKind('pos', force, (P) => P.list.map((c) => c.v).find(Boolean) || null);
+      if (!hit) return false;
+      setPos(hit.v, true);
       E.prov.pos = hit.p;
       return true;
     },
     async ipa(force) {
       if ((E.f.transcription.trim() && !force) || !defaultQuery('ipa')) return false;
-      await ensureKind('ipa', force);
-      const st = E.cands.ipa;
-      for (const p of kindProviders('ipa').enabled) {
-        const P = st.P[p];
-        if (!P || P.error) continue;
-        let value = null; let assembled = false;
-        if (P.perWord) { value = P.joined || assembleFromTokens(P.tokens); assembled = !P.joined && !!value; } else if (P.list.length) value = P.list[0].v;
-        if (value) {
-          E.f.transcription = value;
-          E.prov.ipa = assembled ? `${p} (assembled)` : p;
-          return true;
-        }
-      }
-      return false;
+      const hit = await walkKind('ipa', force, (P) => {
+        if (P.perWord) return P.joined || assembleFromTokens(P.tokens) || null;
+        return P.list.length ? P.list[0].v : null;
+      });
+      if (!hit) return false;
+      const assembled = !!hit.P.perWord && !hit.P.joined;
+      E.f.transcription = hit.v;
+      E.prov.ipa = assembled ? `${hit.p} (assembled)` : hit.p;
+      return true;
     },
     // Each language is walked in ITS OWN provider order (design D4).
     async translations(force) {
@@ -1598,20 +1733,26 @@
       const have = new Set(E.f.translations.filter((t) => hasText(t.text)).map((t) => (t.lang || '').toLowerCase()));
       const missing = force ? langs.slice() : langs.filter((l) => !have.has(l.toLowerCase()));
       if (!missing.length) return false;
-      await ensureKind('translations', force);
+      // Each language walks its OWN provider order (design D4) and fills as
+      // soon as that language's top answering provider has replied — the
+      // languages do not wait for each other either.
+      const results = await Promise.all(missing.map(async (lang) => {
+        const hit = await walkKind('translations', force, (P) => {
+          const c = orderByPos((P.list || []).filter((x) => x.lang === lang), E.f.pos)[0];
+          return c && c.v ? c.v : null;
+        }, lang);
+        return { lang, hit };
+      }));
       let any = false;
-      missing.forEach((lang) => {
-        const hit = firstWith('translations', (P) => (P.list || []).some((c) => c.lang === lang), lang);
+      results.forEach(({ lang, hit }) => {
         if (!hit) return;
-        const c = orderByPos(hit.P.list.filter((x) => x.lang === lang), E.f.pos)[0];
-        if (!c || !c.v) return;
         // A language's old rows go ONLY once a replacement is in hand.
         // Clearing first and discovering afterwards that no provider
         // answered would delete the operator's translations and then report
         // that nothing was filled — this house's defining defect.
         E.f.translations = E.f.translations.filter((t) => hasText(t.text)
           && !(force && (t.lang || '').toLowerCase() === lang.toLowerCase()));
-        E.f.translations.push({ lang, text: c.v });
+        E.f.translations.push({ lang, text: hit.v });
         E.prov.translations = hit.p;
         any = true;
       });
@@ -1619,9 +1760,8 @@
     },
     async inflections(force) {
       if (!SHAPES[E.f.pos] || !E.f.lemma.trim()) return false;
-      await ensureKind('inflections', force);
-      const hit = firstWith('inflections');
-      const c = hit && hit.P.list[0];
+      const hit = await walkKind('inflections', force, (P) => (P.list[0] && P.list[0].v ? P.list[0] : null));
+      const c = hit && hit.v;
       if (!c || !c.v) return false;
       let any = false;
       shapeKeys(E.f.pos).forEach((k) => {
@@ -1640,24 +1780,43 @@
     // with fewer than M contributes what it has and is not backfilled from
     // the others — the operator's ruling — so each provider's share stays
     // its own.
+    //
+    // design D3: plain Prefill APPENDS. The note's own examples stay where
+    // they are, the new sentences go after them, and a sentence the note
+    // already holds is skipped — by the loose `exKey` comparison, so a row
+    // stored before smia normalised its examples still matches. Force
+    // prefill still replaces (operator decision).
     async examples(force) {
-      if ((E.f.examples.some(hasText) && !force) || !defaultQuery('examples')) return false;
-      await ensureKind('examples', force);
+      if (!defaultQuery('examples')) return false;
       const per = settings().examples_count || 3;
       const maxP = settings().examples_max_providers || 1;
-      const texts = []; const usedP = [];
-      kindProviders('examples').enabled.slice(0, maxP).forEach((p) => {
-        const P = E.cands.examples.P[p];
+      const st = kindState('examples', force);
+      const base = force ? [] : E.f.examples.filter(hasText);
+      const seen = new Set(base.map(exKey).filter(Boolean));
+      const added = []; const usedP = [];
+      // Provider by provider, in the operator's order, writing each one's
+      // rows as it answers: a later provider's sentences can never appear
+      // above an earlier one's.
+      for (const p of kindProviders('examples').enabled.slice(0, maxP)) {
+        await (st.W ? st.W[p] : undefined);
+        if (!E || E.cands.examples !== st) return false;
+        const P = st.P[p];
+        // The budget is M per provider counted BEFORE de-duplication
+        // (D3) — a provider's shortfall is never backfilled from another.
         const add = ((P && !P.error && P.list) || [])
-          .map((c) => c.v)
-          .filter((t) => t && !texts.includes(t))
-          .slice(0, per);
-        if (!add.length) return;
-        texts.push(...add);
+          .map((c) => c.v).filter(Boolean)
+          .slice(0, per)
+          .filter((t) => { const k = exKey(t); if (!k || seen.has(k)) return false; seen.add(k); return true; });
+        if (!add.length) continue;
+        added.push(...add);
         usedP.push(p);
-      });
-      if (!texts.length) return false;
-      E.f.examples = texts;
+        E.f.examples = base.concat(added);
+        scheduleRender();
+      }
+      // "Filled" only when a row was actually added — a run that found
+      // nothing new must not be counted in the toast.
+      if (!added.length) return false;
+      E.f.examples = base.concat(added);
       E.prov.examples = usedP.join(', ');
       return true;
     },
@@ -1665,9 +1824,11 @@
     // answer nothing and are walked past.
     async audio(force) {
       if ((E.f.audio_blob && !force) || !defaultQuery('audio')) return false;
-      await ensureKind('audio', force);
-      const hit = firstWith('audio');
-      const c = hit && orderByPos(hit.P.list, E.f.pos)[0];
+      const hit = await walkKind('audio', force, (P) => {
+        const top = orderByPos(P.list || [], E.f.pos)[0];
+        return top && top.sha ? top : null;
+      });
+      const c = hit && hit.v;
       if (!c || !c.sha) return false;
       const e0 = E;
       const before = E.f.audio_blob;
@@ -1696,17 +1857,38 @@
       if (guess) { E.f.lemma = guess; E.prov.lemma = 'derived from text'; }
     }
     render();
-    // Fetch every kind in parallel up front (badges fill in as answers
-    // land); the fills then run in their fixed order. Skipped under force,
-    // where `ensureKind` never considers an answer ready: the warm-up and
-    // the step's own fetch would then both be in flight, asking every
-    // provider twice with the cache bypassed on both.
-    if (!force) PREFILL_ORDER.forEach((k) => { if (defaultQuery(k)) ensureKind(k); });
+    // Fetch every kind in parallel up front, so the suggestion badges fill
+    // in as answers land even for a field the walk will skip. Skipped under
+    // force, where nothing counts as ready: the warm-up and the step's own
+    // fetch would then both be in flight, asking every provider twice with
+    // the cache bypassed on both.
+    if (!force) PREFILL_ORDER.forEach((k) => { if (defaultQuery(k)) kindState(k, false); });
+    // design D1: THE STEPS RUN CONCURRENTLY, and each one resolves as soon
+    // as the provider it will actually use has answered. Only part of
+    // speech has dependents — inflections need its shape, and translations
+    // and audio are ORDERED by it — so those three wait for it and nothing
+    // else waits for anything. Before this, the six steps ran one after
+    // another and each awaited every enabled provider of its kind, so one
+    // slow provider the step would not even use held up its field and every
+    // field after it. That was the 5-10 seconds.
+    const run = (name, after) => (async () => {
+      if (after) await after;
+      if (E !== e0) return false;
+      try { return await PREFILL_STEPS[name](force); } catch (err) { console.error('prefill step failed:', name, err); return false; }
+    })();
+    const posStep = run('pos');
+    const steps = {
+      pos: posStep,
+      ipa: run('ipa'),
+      examples: run('examples'),
+      translations: run('translations', posStep),
+      inflections: run('inflections', posStep),
+      audio: run('audio', posStep),
+    };
     let filled = 0;
-    for (const name of PREFILL_ORDER) {
-      if (E !== e0) return;
-      try { if (await PREFILL_STEPS[name](force)) filled += 1; } catch (err) { console.error('prefill step failed:', name, err); }
-    }
+    await Promise.all(PREFILL_ORDER.map(async (name) => {
+      if (await steps[name]) { filled += 1; if (E === e0) scheduleRender(); }
+    }));
     if (E !== e0) return;
     E.prefilling = false;
     render();
@@ -2153,36 +2335,77 @@
   }
   // Provider order: drag by mouse or touch on the handle, or move with the
   // arrow keys when the handle has focus. Every change is saved.
+  //
+  // WHY THE DRAG LISTENERS ARE ON `document`, BOUND ONCE. The old code
+  // captured the pointer on the handle and listened for pointermove/pointerup
+  // ON THE HANDLE. Confirmed in a browser, 2026-11-23, by logging the handle's
+  // own events through one drag:
+  //
+  //   pointerdown -> gotpointercapture -> pointermove -> lostpointercapture
+  //
+  // and then nothing. The first `ul.insertBefore(li, …)` MOVES the handle in
+  // the DOM (a move is a remove plus an insert), and removing the capturing
+  // element releases pointer capture. So after the very first reorder the
+  // handle stopped receiving pointermove, and `pointerup` never reached it at
+  // all — which is why nothing was saved and the list snapped back. Listening
+  // on `document` makes the handle's own position irrelevant.
+  const listOrder = (ul) => [...ul.children].map((li) => li.dataset.p).join();
+  const renumberList = (ul) => [...ul.children].forEach((li, i) => { li.querySelector('.o').textContent = i + 1; });
   function saveProviderList(ul) {
     const kind = ul.dataset.kind;
     const items = [...ul.children];
     const order = items.map((li) => li.dataset.p);
     const disabled = items.filter((li) => li.classList.contains('off')).map((li) => li.dataset.p);
-    patchSettings({ providers: { [kind]: { order, disabled } } }, 'Order saved');
+    // Optimistic: the page already shows this order, so S.settings is made
+    // to agree with it before the request goes out. `primary` is derived the
+    // same way the server derives it — the first enabled provider.
+    const apply = () => {
+      const s = settings();
+      const prov = { ...(s.providers || {}) };
+      prov[kind] = { ...(prov[kind] || {}), order, disabled, primary: order.find((pr) => !disabled.includes(pr)) || null };
+      S.settings = { ...s, providers: prov };
+    };
+    return saveSettings(kind, apply, { providers: { [kind]: { order, disabled } } });
   }
+  let DRAG = null;
+  document.addEventListener('pointerdown', (e) => {
+    const h = e.target && e.target.closest ? e.target.closest('.plist .h') : null;
+    if (!h || e.button > 0) return;
+    e.preventDefault();
+    const li = h.parentElement; const ul = li.parentElement;
+    DRAG = { li, ul, id: e.pointerId, before: listOrder(ul) };
+    li.classList.add('drag');
+    try { h.setPointerCapture(e.pointerId); } catch { /* not required: we listen on document */ }
+    h.focus({ preventScroll: true });
+  });
+  document.addEventListener('pointermove', (e) => {
+    if (!DRAG || e.pointerId !== DRAG.id) return;
+    const items = [...DRAG.ul.children]; const i = items.indexOf(DRAG.li);
+    const prev = items[i - 1]; const next = items[i + 1]; const y = e.clientY;
+    if (prev) {
+      const r = prev.getBoundingClientRect();
+      if (y < r.top + r.height / 2) { DRAG.ul.insertBefore(prev, DRAG.li.nextElementSibling); renumberList(DRAG.ul); return; }
+    }
+    if (next) {
+      const r = next.getBoundingClientRect();
+      if (y > r.top + r.height / 2) { DRAG.ul.insertBefore(next, DRAG.li); renumberList(DRAG.ul); }
+    }
+  });
+  function endDrag(e) {
+    if (!DRAG || (e && e.pointerId !== undefined && e.pointerId !== DRAG.id)) return;
+    const { li, ul, before } = DRAG;
+    DRAG = null;
+    li.classList.remove('drag');
+    S.refocusHandle = `${ul.dataset.kind}:${li.dataset.p}`;
+    if (listOrder(ul) !== before) saveProviderList(ul);
+  }
+  document.addEventListener('pointerup', endDrag);
+  document.addEventListener('pointercancel', endDrag);
   function bindDrag() {
     app.querySelectorAll('.plist').forEach((ul) => {
-      const renumber = () => [...ul.children].forEach((li, i) => { li.querySelector('.o').textContent = i + 1; });
+      const renumber = () => renumberList(ul);
       ul.querySelectorAll('.h').forEach((h) => {
         const li = h.parentElement;
-        h.addEventListener('pointerdown', (e) => {
-          e.preventDefault();
-          h.setPointerCapture(e.pointerId);
-          li.classList.add('drag');
-          const before = [...ul.children].map((x) => x.dataset.p).join();
-          const mv = (ev) => {
-            const sibs = [...ul.children].filter((x) => x !== li);
-            const after = sibs.find((s) => { const r = s.getBoundingClientRect(); return ev.clientY < r.top + r.height / 2; });
-            ul.insertBefore(li, after || null);
-            renumber();
-          };
-          const up = () => {
-            li.classList.remove('drag');
-            h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
-            if ([...ul.children].map((x) => x.dataset.p).join() !== before) saveProviderList(ul);
-          };
-          h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
-        });
         h.addEventListener('keydown', (e) => {
           if (e.key === 'ArrowUp' && li.previousElementSibling) { ul.insertBefore(li, li.previousElementSibling); }
           else if (e.key === 'ArrowDown' && li.nextElementSibling) { ul.insertBefore(li.nextElementSibling, li); }
@@ -2211,7 +2434,7 @@
     const st = E.cands[kind];
     const q = defaultQuery(kind);
     if (!st || !st.fetched || (st.q !== q && !st.edited)) {
-      if (st) { st.pq = {}; st.pqOpen = {}; }
+      if (st) { st.pq = {}; st.pc = {}; st.pqOpen = {}; }
       fetchKind(kind, { q });
     }
     render();
@@ -2366,7 +2589,21 @@
         }
         break;
       }
-      case 'pqreset': { if (!st) break; const p = b.dataset.p; delete st.pq[p]; st.pqOpen[p] = false; fetchKind(S.sheet.kind, { only: p }); render(); toast(`${p} uses the shared query again`); break; }
+      // D6: Reset clears BOTH the per-provider query and its count.
+      case 'pqreset': { if (!st) break; const p = b.dataset.p; delete st.pq[p]; if (st.pc) delete st.pc[p]; st.pqOpen[p] = false; fetchKind(S.sheet.kind, { only: p }); render(); toast(`${p} uses the shared query again`); break; }
+      // D6: ad hoc, this note only, never written to settings and never
+      // read by prefill. The provider is re-asked at the new count.
+      case 'pc': {
+        if (!st) break;
+        const p = b.dataset.p;
+        const next = Math.max(1, Math.min(10, examplesLimit(st, p) + Number(v)));
+        if (!st.pc) st.pc = {};
+        st.pc[p] = next;
+        S.sheet.pspin = p;
+        fetchKind(S.sheet.kind, { only: p }).then(() => { if (S.sheet) S.sheet.pspin = null; });
+        render();
+        break;
+      }
       case 'prerun': { if (!st) break; const p = b.dataset.p; S.sheet.pspin = p; fetchKind(S.sheet.kind, { only: p, force: true }).then(() => { if (S.sheet) { S.sheet.pspin = null; toast(`Ran ${p} with “${(st.P[p] && st.P[p].query) || st.q}”`); } }); render(); break; }
       case 'use': useCand(b.dataset.p, +b.dataset.i); break;
       case 'cplay': previewToggle(b.dataset.key, b.dataset.url); break;
@@ -2435,7 +2672,19 @@
         break;
       }
       case 'set': patchSettings({ [b.dataset.k]: v }); break;
-      case 'step': { const k = b.dataset.k; const cur = settings()[k] || 1; const next = Math.max(1, Math.min(10, cur + Number(v))); if (next !== cur) patchSettings({ [k]: next }); break; }
+      case 'step': {
+        const k = b.dataset.k; const sc = settings();
+        const cur = sc[k] || 1;
+        let next = Math.max(1, Math.min(10, cur + Number(v)));
+        // D5: M <= K. The disabled button is the first line of defence and
+        // the API is the last; this stops a keyboard-activated press in
+        // between from sending a body that would come back 400.
+        const per = k === 'examples_count' ? next : (sc.examples_count || 3);
+        const sheet = k === 'examples_sheet_count' ? next : (sc.examples_sheet_count || 5);
+        if (per > sheet) next = cur;
+        if (next !== cur) patchSettings({ [k]: next });
+        break;
+      }
       case 'qpre': patchSettings({ override_prefill: !(settings().override_prefill !== false) }); break;
       case 'poff': {
         const li = b.closest('li'); li.classList.toggle('off');

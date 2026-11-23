@@ -10,6 +10,8 @@ preference was last written.
 from __future__ import annotations
 
 import re
+import threading
+import time
 import uuid
 
 from flask import jsonify, request
@@ -75,8 +77,47 @@ def _lang_provider_kinds(db) -> tuple[str, ...]:
 ALLOWED_SETTINGS_KEYS = {
     "override_prefill", "default_target_langs", "providers", "prefill_timing",
     "triage_navigate_save", "examples_count", "examples_max_providers",
-    "theme", "value_color", "value_color_custom",
+    "examples_sheet_count", "theme", "value_color", "value_color_custom",
 }
+
+# stabbur-prefill-and-settings-fixes D4: the catalogue is reused for up to
+# CATALOGUE_TTL seconds instead of being fetched on every read AND every
+# write. smia's GET /providers runs a COUNT over each registered dictionary
+# table (kaikki, nst, ipadict, dictcc_static, kaikki examples) per call, and
+# `_serialize` runs on both GET and PATCH — so every settings save paid for
+# a full table-count sweep before it could answer. This AMENDS
+# operator-settings D3's "reconciled on every read": reconciliation still
+# happens on every read, against a catalogue that may be up to a minute old.
+# A provider appearing or vanishing in smia is not a sub-minute event.
+#
+# A FAILED FETCH IS NEVER CACHED. _fetch_catalogue degrades to {} when smia
+# is down, and caching that would keep reconciliation degraded for a minute
+# after smia came back — turning a blip into a minute of appended-provider
+# loss. Only a real answer is stored.
+CATALOGUE_TTL = 60.0
+_catalogue_lock = threading.Lock()
+_catalogue_cache: dict = {"at": 0.0, "value": None}
+
+
+def _cached_catalogue() -> dict:
+    now = time.monotonic()
+    with _catalogue_lock:
+        if _catalogue_cache["value"] is not None and now - _catalogue_cache["at"] < CATALOGUE_TTL:
+            return _catalogue_cache["value"]
+    catalogue = _fetch_catalogue()
+    if catalogue:
+        with _catalogue_lock:
+            _catalogue_cache["at"] = time.monotonic()
+            _catalogue_cache["value"] = catalogue
+    return catalogue
+
+
+def reset_catalogue_cache() -> None:
+    """Test seam — the cache is process-global, so a test that asserts on
+    fetch counts has to start from a known state."""
+    with _catalogue_lock:
+        _catalogue_cache["at"] = 0.0
+        _catalogue_cache["value"] = None
 
 
 def _fetch_catalogue() -> dict:
@@ -94,7 +135,7 @@ def _fetch_catalogue() -> dict:
 
 def _serialize(db) -> dict:
     scalars = settings_store.read_scalars(db)
-    catalogue = _fetch_catalogue()
+    catalogue = _cached_catalogue()
     lang_kinds = _lang_provider_kinds(db)
     sources = {**CATALOGUE_SOURCE, **{kind: TRANSLATIONS_KIND for kind in lang_kinds}}
     catalogue = {**catalogue, **{kind: catalogue.get(src, []) for kind, src in sources.items()}}
@@ -142,6 +183,12 @@ def _validate_patch_body(body: dict) -> str | None:
         value = body["examples_max_providers"]
         if not isinstance(value, int) or isinstance(value, bool) or not (lo <= value <= hi):
             return f"examples_max_providers must be an integer between {lo} and {hi}"
+
+    if "examples_sheet_count" in body:
+        lo, hi = settings_store.EXAMPLES_SHEET_COUNT_RANGE
+        value = body["examples_sheet_count"]
+        if not isinstance(value, int) or isinstance(value, bool) or not (lo <= value <= hi):
+            return f"examples_sheet_count must be an integer between {lo} and {hi}"
 
     if "default_target_langs" in body:
         langs = body["default_target_langs"]
@@ -277,6 +324,24 @@ def register_settings_routes(app):
             body = {**body, "default_target_langs": normalize_target_langs(body["default_target_langs"])}
 
         with session_scope() as db:
+            # stabbur-prefill-and-settings-fixes D5: M <= K, checked against
+            # the MERGED state, because either number can arrive on its own.
+            # The page disables the stepper that would break the rule, but
+            # the rule lives here — the page is a convenience, not the
+            # enforcement, and prefill slicing M out of a K-sized answer is
+            # only coherent while this holds.
+            if "examples_count" in body or "examples_sheet_count" in body:
+                stored = settings_store.read_scalars(db)
+                per = body.get("examples_count", stored["examples_count"])
+                sheet = body.get("examples_sheet_count", stored["examples_sheet_count"])
+                if per > sheet:
+                    return jsonify({
+                        "error": (
+                            f"examples_count ({per}) cannot exceed examples_sheet_count "
+                            f"({sheet}) — raise the sheet count first"
+                        )
+                    }), 400
+
             # D12: "custom" means "use value_color_custom", so it needs one —
             # from this request or already stored.
             if body.get("value_color") == "custom" or "value_color_custom" in body:

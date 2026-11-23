@@ -527,3 +527,23 @@ button:disabled{cursor:default}
 /* D7: Force prefill states its consequence inside the tray item. */
 .pop button small{display:block;font-size:11.5px;color:var(--mute);font-weight:400;padding-top:2px}
 .pop button{flex-wrap:wrap}
+
+/* stabbur-prefill-and-settings-fixes: inline per-section / per-list save
+   status on the Settings page (design D4), replacing the toast per save. */
+.savest{font:400 11px var(--f-mono);letter-spacing:0;text-transform:none;color:var(--mute);margin-left:auto;transition:opacity .3s;white-space:nowrap}
+.savest.ok{color:var(--ok)}
+.savest.bad{color:var(--danger)}
+.savest:empty{opacity:0}
+.sg2 h2{display:flex;align-items:baseline;gap:10px}
+.plist li.drag{cursor:grabbing}
+.plist .h:active{cursor:grabbing}
+.stepper button:disabled{color:var(--faint);background:none;cursor:not-allowed}
+.si .t small em{font-style:normal;color:var(--warn)}
+/* D6: the per-provider sentence count, inside the query row it shares with
+   the per-provider query. Ad hoc, for one note, never stored. */
+.pqrow .stepper{flex:none;border-radius:7px}
+.pqrow .stepper button{width:26px;height:28px;font-size:14px}
+.pqrow .stepper span{min-width:22px;font-size:13px}
+.pqrow .stepper.over{border-color:var(--accent)}
+.pqrow .stepper.over span{color:var(--accent)}
+.pqb .cnt{font-family:var(--f-mono)}

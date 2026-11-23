@@ -20,7 +20,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY smia/app.py smia/cache.py smia/registry.py \
-     smia/audio_cache.py smia/health.py smia/norwegian.py ./
+     smia/audio_cache.py smia/health.py smia/norwegian.py \
+     smia/example_text.py ./
 COPY smia/db/ ./db/
 COPY smia/adapters/ ./adapters/
 COPY smia/routes/ ./routes/
