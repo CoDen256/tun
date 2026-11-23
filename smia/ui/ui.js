@@ -194,30 +194,176 @@ document.getElementById("tryAudioFile")?.addEventListener("change", (e) => {
   document.getElementById("tryRecordStatus").textContent = "";
 });
 
-// ── /tts: fetch and play each candidate's audio inline ───────────────────
+// ── /tts: inline play controls in the try-it result (smia-ui-tts-polish) ─
+//
+// The tts result is the same pretty-printed JSON, rendered one <div> per
+// line. Every line carrying a `"sha256": "<64 hex>"` gets a control in a
+// left gutter. The control is an empty element whose glyph is drawn by CSS
+// ::before (and user-select:none), so selecting/copying the result yields
+// clean JSON. States: loading (fetching GET /tts/{sha256}) → ready ▶ →
+// playing ■ with a progress bar under the line → ready; a failed fetch
+// shows ⚠ with the HTTP status and URL as its tooltip and cannot be played.
+// At most one candidate plays at a time.
 
-async function renderAudioPlayers(data) {
-  const container = document.getElementById("tryAudioPlayers");
-  container.innerHTML = "";
-  const candidates = (data.candidates || []).filter((c) => c.sha256);
-  for (const candidate of candidates) {
-    const resp = await fetch(`${API_BASE}/tts/${candidate.sha256}`, { headers: authHeaders() });
-    if (!resp.ok) continue;
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const label = ["source", "voice", "variety"]
-      .filter((k) => candidate[k])
-      .map((k) => `${k}: ${candidate[k]}`)
-      .join(" · ") || candidate.sha256.slice(0, 12);
-    const wrapper = document.createElement("div");
-    wrapper.className = "audio-candidate";
-    wrapper.innerHTML = `<div class="audio-label">${label}</div>`;
-    const audio = document.createElement("audio");
-    audio.controls = true;
-    audio.src = url;
-    wrapper.appendChild(audio);
-    container.appendChild(wrapper);
-  }
+const escHtml = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+function highlightJsonLine(line) {
+  return escHtml(line)
+    .replace(/^(\s*)("[^"]*")(:)/, '$1<span class="k">$2</span>$3')
+    .replace(/(: )("(?:[^"\\]|\\.)*")/, '$1<span class="s">$2</span>')
+    .replace(/(: )(true|false|null|-?\d[\d.eE+-]*)/, '$1<span class="n">$2</span>');
+}
+
+// Bumped on every new submission so late audio fetches from an earlier
+// result never touch the current one.
+let ttsRenderToken = 0;
+let ttsObjectUrls = [];
+let ttsPlaying = null; // { ln, btn, audio, prog, raf }
+
+function stopTtsPlayback() {
+  if (!ttsPlaying) return;
+  const p = ttsPlaying;
+  ttsPlaying = null;
+  cancelAnimationFrame(p.raf);
+  p.audio.onended = null;
+  p.audio.pause();
+  p.audio.currentTime = 0;
+  p.btn.classList.remove("playing");
+  p.btn.setAttribute("aria-label", "play candidate");
+  p.ln.classList.remove("playing");
+  p.prog.style.width = "0";
+}
+
+function resetTryResult() {
+  stopTtsPlayback();
+  ttsRenderToken++;
+  ttsObjectUrls.forEach((u) => URL.revokeObjectURL(u));
+  ttsObjectUrls = [];
+  hideTip();
+  const el = document.getElementById("tryResult");
+  el.classList.remove("lines");
+  el.textContent = "";
+}
+
+function renderTtsResult(status, data) {
+  const token = ttsRenderToken;
+  const el = document.getElementById("tryResult");
+  el.classList.add("lines");
+  const lines = [`HTTP ${status}`, ...JSON.stringify(data, null, 2).split("\n")];
+  el.innerHTML = lines
+    .map((l, i) => {
+      const m = l.match(/"sha256": "([0-9a-f]{64})"/);
+      if (!m) return `<div class="ln${i === 0 ? " status" : ""}">${i === 0 ? escHtml(l) : highlightJsonLine(l)}</div>`;
+      return `<div class="ln sha" data-sha="${m[1]}"><span class="play loading" role="button" tabindex="-1" aria-label="loading audio"></span>${highlightJsonLine(l)}<span class="prog"></span></div>`;
+    })
+    .join("");
+
+  el.querySelectorAll(".ln.sha").forEach(async (ln) => {
+    const btn = ln.querySelector(".play");
+    const url = `${API_BASE}/tts/${ln.dataset.sha}`;
+    let errorText = null;
+    let objectUrl = null;
+    try {
+      const resp = await fetch(url, { headers: authHeaders() });
+      if (!resp.ok) errorText = `${resp.status} from ${url}`;
+      else objectUrl = URL.createObjectURL(await resp.blob());
+    } catch (e) {
+      errorText = `request failed (${e.message}) for ${url}`;
+    }
+    if (token !== ttsRenderToken) {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      return;
+    }
+    btn.classList.remove("loading");
+    btn.tabIndex = 0;
+    if (errorText) {
+      btn.classList.add("error");
+      btn.title = errorText;
+      btn.setAttribute("aria-label", errorText);
+      return;
+    }
+    ttsObjectUrls.push(objectUrl);
+    btn.dataset.src = objectUrl;
+    btn.setAttribute("aria-label", "play candidate");
+  });
+}
+
+function playTtsLine(ln) {
+  const btn = ln.querySelector(".play");
+  const prog = ln.querySelector(".prog");
+  const audio = new Audio(btn.dataset.src);
+  const p = { ln, btn, audio, prog, raf: 0 };
+  audio.onended = () => { if (ttsPlaying === p) stopTtsPlayback(); };
+  btn.classList.add("playing");
+  btn.setAttribute("aria-label", "stop");
+  ln.classList.add("playing");
+  const tick = () => {
+    if (ttsPlaying !== p) return;
+    const frac = audio.duration > 0 && isFinite(audio.duration)
+      ? Math.min(1, audio.currentTime / audio.duration) : 0;
+    prog.style.width = `calc((100% - 28px) * ${frac})`;
+    p.raf = requestAnimationFrame(tick);
+  };
+  ttsPlaying = p;
+  audio.play().catch((e) => {
+    if (ttsPlaying !== p) return;
+    stopTtsPlayback();
+    btn.classList.add("error");
+    btn.title = `playback failed: ${e.message}`;
+    btn.setAttribute("aria-label", btn.title);
+  });
+  tick();
+}
+
+function activateTtsControl(btn) {
+  if (btn.classList.contains("loading") || btn.classList.contains("error")) return;
+  const ln = btn.closest(".ln");
+  const wasThis = ttsPlaying && ttsPlaying.ln === ln;
+  stopTtsPlayback();
+  if (!wasThis) playTtsLine(ln);
+}
+
+// Error tooltip: hover on desktop, tap on touch (title= is set as well).
+function showTip(btn) {
+  const tip = document.getElementById("tip");
+  const r = btn.getBoundingClientRect();
+  tip.textContent = btn.title;
+  tip.style.display = "block";
+  tip.style.left = Math.max(16, Math.min(r.left, window.innerWidth - tip.offsetWidth - 16)) + "px";
+  tip.style.top = (r.top - tip.offsetHeight - 6) + "px";
+}
+
+function hideTip() {
+  const tip = document.getElementById("tip");
+  if (tip) tip.style.display = "none";
+}
+
+function wireTryResult() {
+  const result = document.getElementById("tryResult");
+  result.addEventListener("click", (e) => {
+    const btn = e.target.closest(".play");
+    if (btn) activateTtsControl(btn);
+  });
+  result.addEventListener("keydown", (e) => {
+    const btn = e.target.closest(".play");
+    if (btn && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      activateTtsControl(btn);
+    }
+  });
+  result.addEventListener("mouseover", (e) => {
+    const b = e.target.closest(".play.error");
+    if (b) showTip(b);
+  });
+  result.addEventListener("mouseout", (e) => {
+    if (e.target.closest(".play.error")) hideTip();
+  });
+  result.addEventListener("touchstart", (e) => {
+    const b = e.target.closest(".play.error");
+    if (b) { showTip(b); setTimeout(hideTip, 2500); }
+  }, { passive: true });
+  result.addEventListener("scroll", hideTip);
+  window.addEventListener("scroll", hideTip, { passive: true });
 }
 
 async function submitTryIt(event) {
@@ -226,7 +372,11 @@ async function submitTryIt(event) {
   const provider = document.getElementById("tryProvider").value;
   const forceRefresh = document.getElementById("tryForceRefresh").checked;
   const resultEl = document.getElementById("tryResult");
-  document.getElementById("tryAudioPlayers").innerHTML = "";
+  resetTryResult();
+  if (kind === "tts") {
+    resultEl.classList.add("lines");
+    resultEl.innerHTML = `<div class="ln status"><span class="spin-inline"></span>POST /tts …</div>`;
+  }
 
   let resp;
   if (kind === "stt") {
@@ -247,6 +397,7 @@ async function submitTryIt(event) {
     try {
       body = JSON.parse(document.getElementById("tryBody").value || "{}");
     } catch (e) {
+      resultEl.classList.remove("lines");
       resultEl.textContent = `Invalid JSON body: ${e.message}`;
       return;
     }
@@ -270,9 +421,11 @@ async function submitTryIt(event) {
   } catch (e) {
     display = await resp.text();
   }
-  resultEl.textContent = `HTTP ${resp.status}\n${display}`;
-
-  if (kind === "tts" && data) await renderAudioPlayers(data);
+  if (kind === "tts" && data) renderTtsResult(resp.status, data);
+  else {
+    resultEl.classList.remove("lines");
+    resultEl.textContent = `HTTP ${resp.status}\n${display}`;
+  }
   refreshAll();
 }
 
@@ -280,5 +433,6 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("tryForm").addEventListener("submit", submitTryIt);
   document.getElementById("refreshBtn").addEventListener("click", refreshAll);
   document.getElementById("tryRecordBtn").addEventListener("click", toggleRecording);
+  wireTryResult();
   refreshAll();
 });

@@ -53,10 +53,57 @@ pre {
   padding:10px; font-size:.76rem; overflow-x:auto; margin-top:12px; white-space:pre-wrap;
 }
 
-#tryAudioPlayers { display:flex; flex-direction:column; gap:8px; margin-top:12px; }
-.audio-candidate {
-  background:var(--card); border:1px solid var(--border); border-radius:6px; padding:8px;
+input[type=checkbox] { width:auto; }
+
+/* tables scroll inside their section on phone width, never the page */
+.table-scroll { overflow-x:auto; }
+
+/* ── try-it result (smia-ui-tts-polish) ─────────────────────────────────
+   For kind tts the result is rendered one div per pretty-printed JSON line;
+   a 28px left gutter holds a play control on every "sha256" line.
+   white-space:pre (not pre-wrap) so a 64-hex sha line keeps its shape and
+   the block scrolls sideways internally instead of wrapping. Other kinds
+   keep the plain pre-wrap text they always had. */
+#tryResult { min-width:0; max-width:100%; }
+#tryResult.lines { white-space:pre; padding:10px 10px 10px 0; position:relative; min-height:2.6em; }
+#tryResult .ln { position:relative; padding-left:28px; min-width:max-content; }
+#tryResult .ln.status { color:var(--muted); }
+#tryResult .k { color:#9fc7ee; }
+#tryResult .s { color:#cfe3b0; }
+#tryResult .n { color:#e6b97a; }
+#tryResult .ln.sha { background:rgba(126,184,247,.05); }
+#tryResult .ln.sha.playing { background:rgba(126,184,247,.12); }
+
+/* the control: empty element, glyph drawn by ::before so it is never part of
+   a text selection / clipboard copy; user-select:none as belt-and-braces. */
+.play {
+  position:absolute; left:6px; top:50%; transform:translateY(-50%);
+  width:17px; height:17px; margin:0; padding:0; border-radius:50%;
+  background:var(--accent); color:#152030; border:none; cursor:pointer;
+  user-select:none; -webkit-user-select:none;
+  display:flex; align-items:center; justify-content:center;
+  font-size:9px; line-height:1;
 }
-.audio-candidate .audio-label { font-size:.74rem; color:var(--muted); margin-bottom:6px; }
-.audio-candidate audio { width:100%; }
+.play::before { content:"\25B6"; padding-left:1px; }
+.play.playing { background:var(--ok); }
+.play.playing::before { content:"\25A0"; padding-left:0; font-size:9px; }
+.play.loading { background:transparent; border:2px solid var(--border); border-top-color:var(--accent); animation:spin .8s linear infinite; cursor:progress; }
+.play.loading::before { content:""; }
+.play.error { background:transparent; color:var(--bad); font-size:13px; cursor:help; }
+.play.error::before { content:"\26A0"; padding-left:0; }
+@keyframes spin { to { transform:translateY(-50%) rotate(360deg); } }
+.play:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+/* thin progress bar along the bottom of the playing line */
+.prog { position:absolute; left:28px; bottom:0; height:2px; width:0; background:var(--ok); pointer-events:none; user-select:none; }
+
+.spin-inline { display:inline-block; width:10px; height:10px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin2 .8s linear infinite; vertical-align:-1px; margin-right:6px; }
+@keyframes spin2 { to { transform:rotate(360deg); } }
+
+/* tooltip for the error state (title= also set, for hover on desktop) */
+.tip {
+  position:fixed; z-index:10; pointer-events:none; display:none;
+  background:#0f1824; color:#f0c0b4; border:1px solid var(--bad); border-radius:5px;
+  padding:4px 8px; font:600 .7rem/1.3 monospace; max-width:calc(100vw - 32px); word-break:break-all;
+}
 #tryRecordBtn.recording { background:var(--bad); }

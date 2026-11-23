@@ -25,21 +25,12 @@
 
   <section>
     <h2>Provider catalog</h2>
+    <div class="table-scroll">
     <table>
       <thead><tr><th>Kind</th><th>Providers</th></tr></thead>
       <tbody id="catalog"></tbody>
     </table>
-  </section>
-
-  <section>
-    <h2>Provider health</h2>
-    <table>
-      <thead>
-        <tr><th>Kind</th><th>Provider</th><th>Requests</th><th>Cache hit rate</th><th>Last success</th><th>Last failure</th></tr>
-      </thead>
-      <tbody id="health"></tbody>
-    </table>
-    <button id="refreshBtn" type="button">Refresh</button>
+    </div>
   </section>
 
   <section>
@@ -72,10 +63,24 @@
       <button type="submit">Send</button>
     </form>
     <pre id="tryResult"></pre>
-    <div id="tryAudioPlayers"></div>
+  </section>
+
+  <section>
+    <h2>Provider health</h2>
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Kind</th><th>Provider</th><th>Requests</th><th>Cache hit rate</th><th>Last success</th><th>Last failure</th></tr>
+      </thead>
+      <tbody id="health"></tbody>
+    </table>
+    </div>
+    <button id="refreshBtn" type="button">Refresh</button>
   </section>
 
 </div>
+
+<div class="tip" id="tip"></div>
 
 <script>window.SMIA_PREFIX = "__SMIA_PREFIX__";</script>
 <script src="__SMIA_PREFIX__/static/ui.js"></script>
