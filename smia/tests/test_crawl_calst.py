@@ -52,7 +52,7 @@ class FakeClient:
         self.calls = []
         self.network_calls = 0
 
-    def request(self, method, path, data=None, *, dialect=cc.OSLO, sample=None):
+    def request(self, method, path, data=None, *, dialect=cc.OSLO, sample=None, accept=None):
         self.calls.append((method, path, dict(data or {}), dialect, sample))
         if self.raise_at is not None and sample == self.raise_at:
             raise RuntimeError("ReadTimeout on POST (after retry)")
@@ -153,7 +153,8 @@ def test_unsaturated_at_request_cap():
 
 
 def test_k_grows_with_the_pool():
-    assert cc.k_needed(20, 20) == cc.K_MIN
+    assert cc.k_needed(20, 20) == 3  # epsilon 0.001
+    assert cc.k_needed(94, 20) == 30
     assert cc.k_needed(94, 20) >= 10
     assert cc.k_needed(94, 20) > cc.k_needed(40, 20)
 
@@ -253,7 +254,7 @@ def test_empty_parse_makes_the_run_exit_non_zero(tmp_path):
     other = {**EX, "exercise_id": 935, "appearances": [{"title": "Stress, 2 syllables"}]}
 
     class Mixed(FakeClient):
-        def request(self, method, path, data=None, *, dialect=1, sample=None):
+        def request(self, method, path, data=None, *, dialect=1, sample=None, accept=None):
             body = (FIX / ("no_wordlist.html" if data["ExerciseId"] == 935
                            else "las_vocab.html")).read_text()
             return {"status": 200, "location": None, "body": body}
@@ -291,3 +292,151 @@ def test_report_lists_offered_dialects_when_crawl_is_restricted(tmp_path):
     assert "dialects crawled (restricted): 1=Oslo" in report
     assert "only Oslo is offered" not in report
     assert doc["meta"]["dialects_offered"] == offered
+
+
+# ─────────────────────────── review fixes (round 1) ───────────────────────────
+
+def test_capped_draw_with_repeats_keeps_sampling():
+    # 20 raw entries, 18 distinct: a capped draw, not a small pool (cf. 941)
+    body = (FIX / "capped_with_repeats.html").read_text()
+    words, _, _ = cc.parse_words(body)
+    assert len(words) == 20 and len({w["text"] for w in words}) == 18
+    more = [f"new{i:02d}" for i in range(20)]
+    c = FakeClient([body] + [more] * 20)
+    r = cc.sample_exercise(c, EX, cc.OSLO)
+    assert r["samples"] > 1
+    assert r["pool_size"] == 18 + 20
+    assert r["status"] == "saturated"
+
+
+def test_empty_todo_or_dialects_exits_non_zero_without_writing(tmp_path):
+    out = tmp_path / "m.json"
+    assert cc.run(FakeClient([["a"]]), [], [], DIALECTS, out, report_out=io.StringIO()) == 2
+    assert cc.run(FakeClient([["a"]]), [], [EX], [], out, report_out=io.StringIO()) == 2
+    assert not out.exists()
+
+
+@pytest.fixture
+def offline_main(monkeypatch):
+    monkeypatch.setattr(cc, "Client", lambda *a, **k: FakeClient([["a"]]))
+    monkeypatch.setattr(cc, "discover_dialects", lambda c: [
+        {"dialect_id": 1, "name": "Oslo"}, {"dialect_id": 2, "name": "Trondheim"}])
+    monkeypatch.setattr(cc, "discover", lambda c: ([{"lesson_id": 1}], {(947, 121, 0): EX}))
+
+
+def test_unknown_dialect_id_is_an_error(offline_main, tmp_path):
+    assert cc.main(["--dialects", "1", "42", "--out", str(tmp_path / "x.json")]) == 2
+    assert not (tmp_path / "x.json").exists()
+
+
+def test_unknown_exercise_id_is_an_error(offline_main, tmp_path):
+    assert cc.main(["--exercises", "947", "9999", "--out", str(tmp_path / "x.json")]) == 2
+    assert not (tmp_path / "x.json").exists()
+
+
+def test_empty_discovery_is_an_error(offline_main, monkeypatch, tmp_path):
+    monkeypatch.setattr(cc, "discover", lambda c: ([], {}))
+    assert cc.main(["--out", str(tmp_path / "x.json")]) == 2
+    assert not (tmp_path / "x.json").exists()
+
+
+@pytest.mark.parametrize("args", [["--limit", "5"], ["--exercises", "947"], ["--dialects", "1"]])
+def test_partial_run_refuses_the_default_manifest(offline_main, args):
+    with pytest.raises(SystemExit) as e:
+        cc.main(args)
+    assert e.value.code == 2
+    with pytest.raises(SystemExit):
+        cc.main(args + ["--out", str(cc.OUT_FILE)])
+
+
+def test_partial_run_with_explicit_out_writes_it(offline_main, tmp_path):
+    out = tmp_path / "x.json"
+    assert cc.main(["--exercises", "947", "--dialects", "1", "--out", str(out)]) == 0
+    assert out.exists()
+
+
+class _Resp:
+    def __init__(self, status, body="", headers=None):
+        self.status_code, self.text, self.headers = status, body, headers or {}
+
+
+def _client(tmp_path, monkeypatch, responses):
+    """A real Client whose session serves `responses` in order; no sleeping."""
+    monkeypatch.setattr(cc.time, "sleep", lambda s: None)
+    monkeypatch.setattr(cc, "PACE", (0, 0))
+    c = cc.Client(cache_dir=tmp_path)
+    seen = []
+
+    def fake(method, url, **kw):
+        seen.append((method, url))
+        return responses.pop(0)
+
+    c.s.request = fake
+    return c, seen
+
+
+DATA = {"ExerciseId": 947, "wrid": 121, "vwrid": 0, "Type": "LAS"}
+
+
+def test_failing_responses_are_not_cached(tmp_path, monkeypatch):
+    c, seen = _client(tmp_path, monkeypatch, [
+        _Resp(302, headers={"Location": "/Account/Login"}),
+        _Resp(200, (FIX / "no_wordlist.html").read_text()),
+        _Resp(200, _body(["a"])),
+    ])
+    for _ in range(3):
+        c.request("POST", "/Exercises/Details", DATA, dialect=2, sample=1,
+                  accept=cc.is_good_sample)
+    assert len(seen) == 3  # the 302 and the empty 200 were re-requested
+    assert len(list(tmp_path.glob("*.json.gz"))) == 1
+    rec = c.request("POST", "/Exercises/Details", DATA, dialect=2, sample=1,
+                    accept=cc.is_good_sample)
+    assert len(seen) == 3 and "text" in rec["body"]  # the good one replays
+
+
+def test_cached_failing_entry_is_re_requested(tmp_path, monkeypatch):
+    import gzip
+    bad = {"status": 200, "location": None, "body": (FIX / "no_wordlist.html").read_text()}
+    f = tmp_path / f"{cc.cache_key('POST', '/Exercises/Details', DATA, 1, 0)}.json.gz"
+    f.write_bytes(gzip.compress(json.dumps(bad).encode()))
+    c, seen = _client(tmp_path, monkeypatch, [_Resp(200, _body(["a"]))])
+    rec = c.request("POST", "/Exercises/Details", DATA, dialect=1, sample=0,
+                    accept=cc.is_good_sample)
+    assert len(seen) == 1 and cc.is_good_sample(rec)
+    assert cc.is_good_sample(json.loads(gzip.decompress(f.read_bytes())))
+
+
+def test_429_honours_retry_after_with_backoff(tmp_path, monkeypatch):
+    waits = []
+    c, seen = _client(tmp_path, monkeypatch, [
+        _Resp(429, headers={"Retry-After": "40"}), _Resp(429), _Resp(200, _body(["a"]))])
+    monkeypatch.setattr(cc.time, "sleep", lambda s: waits.append(s))
+    rec = c.request("POST", "/Exercises/Details", DATA, dialect=1, sample=5,
+                    accept=cc.is_good_sample)
+    assert rec["status"] == 200 and len(seen) == 3
+    first, _, _ = cc.BACKOFF_429
+    assert [w for w in waits if w >= first] == [40, first * 2]
+
+
+def test_consecutive_failures_counted_and_reset(tmp_path, monkeypatch):
+    c, _ = _client(tmp_path, monkeypatch, [_Resp(302), _Resp(404), _Resp(200, _body(["a"]))])
+    for _ in range(2):
+        c.request("POST", "/Exercises/Details", DATA, sample=1, accept=cc.is_good_sample)
+    assert c.consecutive_failures == 2
+    c.request("POST", "/Exercises/Details", DATA, sample=1, accept=cc.is_good_sample)
+    assert c.consecutive_failures == 0
+
+
+def test_circuit_breaker_aborts_without_writing(tmp_path):
+    class Down(FakeClient):
+        def request(self, *a, **k):
+            self.consecutive_failures = getattr(self, "consecutive_failures", 0) + 1
+            raise RuntimeError("ConnectionError (after retry)")
+
+    todo = [{**EX, "exercise_id": i} for i in range(cc.ABORT_AFTER + 5)]
+    out = io.StringIO()
+    code = cc.run(Down([]), [], todo, DIALECTS, tmp_path / "m.json", report_out=out)
+    assert code == 3
+    assert "ABORTED" in out.getvalue()
+    assert f"failures: {cc.ABORT_AFTER}" in out.getvalue()
+    assert not (tmp_path / "m.json").exists()

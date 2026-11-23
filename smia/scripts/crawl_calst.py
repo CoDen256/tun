@@ -7,7 +7,10 @@ manifest this writes).
     python -m scripts.crawl_calst                          # full crawl, every dialect
     python -m scripts.crawl_calst --exercises 947 937 \\
         --dialects 1 --out /tmp/x.json                     # smoke test
-    python -m scripts.crawl_calst --limit 5                # first 5 exercises
+    python -m scripts.crawl_calst --limit 5 --out /tmp/y.json   # first 5 exercises
+
+A partial run (--exercises / --limit / --dialects) must name an --out other
+than the default manifest, so it can never overwrite the full one.
 
 Walk:  /account/settings (the dialect list)
        /Home/Lessons -> /Home/Lesson/N -> (/Exercise/no/ID?wrid=N
@@ -26,10 +29,14 @@ calst-full-coverage (2026-11-23):
 * Every `Calst.<Name> = [ ... ]` array that carries word lists is parsed
   (incl. `Calst.WordList`, also in the `Calst.WordList = Calst.WordList = [`
   form). A 200 that yields no word is a FAILURE, never an empty success.
+  Only a successful sample is cached; a cached failing entry is ignored and
+  re-requested, so a re-run never replays a failure.
 * Every Norwegian `L2_Dialect` offered in the settings page's `l2d` selector
   is crawled; the dialect travels in the cookie.
 * A failure is isolated to its (exercise, dialect); timeouts are retried once
-  with RETRY_TIMEOUT. The run ends with a coverage report and exits non-zero
+  with RETRY_TIMEOUT; a 429 honours Retry-After with exponential backoff;
+  ABORT_AFTER consecutive failed requests abort the run (report printed,
+  manifest not written, non-zero exit). The run ends with a coverage report and exits non-zero
   if any (exercise, dialect) is unsaturated or failed.
 
 Every HTTP response is cached gzipped under providers/calst/.cache/. A Details
@@ -66,12 +73,27 @@ OUT_FILE = OUT_DIR / "calst_manifest.json"
 TYPE = "LAS"
 OSLO = 1
 RESPONSE_CAP = 20  # a first response with fewer words than this is the whole pool
-MISS_EPSILON = 0.01  # tolerated chance that one still-unseen word survives K zero-gain draws
+MISS_EPSILON = 0.001  # tolerated chance that one still-unseen word survives K zero-gain draws
 K_MIN = 2
 MAX_SAMPLES = 120
 TIMEOUT = 30
 RETRY_TIMEOUT = 90
 PACE = (0.5, 1.0)  # seconds between network requests (start to start, at least)
+BACKOFF_429 = (5, 4, 300)  # first wait (s), attempts, max wait (s) — doubled each time
+ABORT_AFTER = 10  # consecutive failed requests that abort the whole run
+
+
+class CrawlAborted(RuntimeError):
+    pass
+
+
+def retry_after(value: str | None) -> float:
+    """Seconds from a Retry-After header (delta-seconds form; an HTTP date
+    or garbage counts as 0, i.e. the backoff schedule decides)."""
+    try:
+        return max(0.0, float(value)) if value is not None else 0.0
+    except ValueError:
+        return 0.0
 
 
 def cookie_for(dialect: int | str) -> str:
@@ -98,6 +120,7 @@ class Client:
         self.s.headers.update({"User-Agent": UA})
         self.last = 0.0
         self.network_calls = 0
+        self.consecutive_failures = 0
 
     def _sleep(self) -> None:
         wait = random.uniform(*PACE) - (time.monotonic() - self.last)
@@ -106,38 +129,58 @@ class Client:
 
     def _fetch(self, method: str, url: str, data: dict | None, dialect: int,
                timeout: float) -> requests.Response:
-        self._sleep()
-        self.last = time.monotonic()
-        self.network_calls += 1
-        self.s.cookies.clear()  # the cookie header below is the only state
-        r = self.s.request(method, url, data=data, timeout=timeout, allow_redirects=False,
-                           headers={"Cookie": cookie_for(dialect)})
-        self.last = time.monotonic()
+        first, attempts, cap = BACKOFF_429
+        for attempt in range(attempts + 1):
+            self._sleep()
+            self.last = time.monotonic()
+            self.network_calls += 1
+            self.s.cookies.clear()  # the cookie header below is the only state
+            r = self.s.request(method, url, data=data, timeout=timeout, allow_redirects=False,
+                               headers={"Cookie": cookie_for(dialect)})
+            self.last = time.monotonic()
+            if r.status_code != 429 or attempt == attempts:
+                break
+            wait = min(cap, max(retry_after(r.headers.get("Retry-After")), first * 2 ** attempt))
+            print(f"  ! HTTP 429 on {method} {url}; backing off {wait:.0f}s", file=sys.stderr)
+            time.sleep(wait)
         if r.status_code == 429 or r.status_code >= 500:
             raise RuntimeError(f"HTTP {r.status_code} on {method} {url}")
         return r
 
     def request(self, method: str, path: str, data: dict | None = None, *,
-                dialect: int = OSLO, sample: int | None = None) -> dict:
-        """Returns {status, location, body}, cached (see cache_key). A failed
-        first attempt is retried once with RETRY_TIMEOUT; a second failure
-        raises RuntimeError."""
+                dialect: int = OSLO, sample: int | None = None, accept=None) -> dict:
+        """Returns {status, location, body}, cached (see cache_key) only if
+        `accept(rec)` (default: HTTP 200) holds — a failure is never cached,
+        and an already-cached entry that fails `accept` is treated as absent.
+        A failed first attempt is retried once with RETRY_TIMEOUT; a second
+        failure raises RuntimeError. Tracks consecutive failed requests."""
+        accept = accept or (lambda rec: rec["status"] == 200)
         cf = self.cache_dir / f"{cache_key(method, path, data, dialect, sample)}.json.gz"
         if cf.exists():
-            return json.loads(gzip.decompress(cf.read_bytes()))
+            rec = json.loads(gzip.decompress(cf.read_bytes()))
+            if accept(rec):
+                return rec
 
         url = urljoin(BASE, path)
         try:
-            r = self._fetch(method, url, data, dialect, TIMEOUT)
-        except (requests.RequestException, RuntimeError) as first:
-            print(f"  ! {method} {path} {data or ''} d={dialect}: {first}; "
-                  f"retrying with {RETRY_TIMEOUT}s timeout", file=sys.stderr)
-            time.sleep(5)
             try:
-                r = self._fetch(method, url, data, dialect, RETRY_TIMEOUT)
-            except requests.RequestException as e:
-                raise RuntimeError(f"{e.__class__.__name__} on {method} {url} (after retry)") from e
+                r = self._fetch(method, url, data, dialect, TIMEOUT)
+            except (requests.RequestException, RuntimeError) as first:
+                print(f"  ! {method} {path} {data or ''} d={dialect}: {first}; "
+                      f"retrying with {RETRY_TIMEOUT}s timeout", file=sys.stderr)
+                time.sleep(5)
+                try:
+                    r = self._fetch(method, url, data, dialect, RETRY_TIMEOUT)
+                except requests.RequestException as e:
+                    raise RuntimeError(f"{e.__class__.__name__} on {method} {url} (after retry)") from e
+        except RuntimeError:
+            self.consecutive_failures += 1
+            raise
         rec = {"status": r.status_code, "location": r.headers.get("Location"), "body": r.text}
+        if not accept(rec):
+            self.consecutive_failures += 1
+            return rec
+        self.consecutive_failures = 0
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         tmp = cf.with_suffix(".tmp")
         tmp.write_bytes(gzip.compress(json.dumps(rec).encode()))
@@ -322,6 +365,11 @@ def parse_words(body: str) -> tuple[list[dict], list[str], list[str]]:
     return words, variables, errors
 
 
+def is_good_sample(rec: dict) -> bool:
+    """A Details response worth caching: HTTP 200 with at least one word."""
+    return rec["status"] == 200 and bool(parse_words(rec["body"] or "")[0])
+
+
 def _word_key(w: dict) -> str:
     return f"{w.get('wordID', '')}\x1f{w['text']}"
 
@@ -333,7 +381,8 @@ def k_needed(pool: int, draw: int, epsilon: float = MISS_EPSILON) -> int:
     The hardest case is exactly one unseen word, i.e. a true pool of pool+1.
     One draw of `draw` words misses it with probability 1 - draw/(pool+1); K
     misses in a row happen with probability <= epsilon. Grows with the pool
-    (94 words, draws of 20 -> 20 samples), small when the draw is the pool."""
+    (epsilon 0.001: 94 words, draws of 20 -> 30 samples; a 20-word pool
+    drawn whole -> 3)."""
     p_miss = 1 - draw / (pool + 1)
     if p_miss <= 0:
         return K_MIN
@@ -351,7 +400,8 @@ def sample_exercise(c, ex: dict, dialect: int, max_samples: int = MAX_SAMPLES) -
     status, error = "unsaturated", None
     for i in range(max_samples):
         try:
-            rec = c.request("POST", "/Exercises/Details", data, dialect=dialect, sample=i)
+            rec = c.request("POST", "/Exercises/Details", data, dialect=dialect, sample=i,
+                            accept=is_good_sample)
         except Exception as e:  # noqa: BLE001 — isolate to this (exercise, dialect)
             status, error = "failed", f"sample {i}: {e}"
             break
@@ -382,7 +432,9 @@ def sample_exercise(c, ex: dict, dialect: int, max_samples: int = MAX_SAMPLES) -
             else:  # union the sounds of a word seen again
                 urls = {s.get("url") for s in have["sounds"]}
                 have["sounds"] += [s for s in (w.get("sounds") or []) if s.get("url") not in urls]
-        if i == 0 and len(distinct) < RESPONSE_CAP:
+        # the RAW entry count: a capped draw of 20 can repeat a word, and
+        # 18 distinct of 20 entries is a capped draw, not a small pool
+        if i == 0 and len(words) < RESPONSE_CAP:
             status = "saturated"
             break
         zero_run = 0 if gain else zero_run + 1
@@ -547,22 +599,42 @@ def run(c, lessons, todo, dialects, out_file: Path, max_samples: int = MAX_SAMPL
         report_out=sys.stdout, offered: list[dict] | None = None) -> int:
     """Sample every (exercise, dialect), write the manifest, print the
     report. Returns the process exit code."""
+    if not todo or not dialects:
+        print(f"nothing to crawl ({len(todo)} exercises x {len(dialects)} dialects); "
+              f"manifest not written", file=report_out)
+        return 2
     results, rows = {}, []
     total = len(todo) * len(dialects)
     n = 0
-    for d in dialects:  # dialect-major: Oslo completes first
-        for ex in todo:
-            n += 1
-            r = sample_exercise(c, ex, d["dialect_id"], max_samples)
-            results[(ex["exercise_id"], ex["wrid"], ex["vwrid"], d["dialect_id"])] = r
-            print(f"[{n}/{total}] ex={ex['exercise_id']} wrid={ex['wrid']} {d['name']}: "
-                  f"pool {r['pool_size']} samples {r['samples']} {r['status']} "
-                  f"(net {c.network_calls})", file=sys.stderr)
+    aborted = None
+    try:
+        for d in dialects:  # dialect-major: Oslo completes first
+            for ex in todo:
+                n += 1
+                r = sample_exercise(c, ex, d["dialect_id"], max_samples)
+                results[(ex["exercise_id"], ex["wrid"], ex["vwrid"], d["dialect_id"])] = r
+                print(f"[{n}/{total}] ex={ex['exercise_id']} wrid={ex['wrid']} {d['name']}: "
+                      f"pool {r['pool_size']} samples {r['samples']} {r['status']} "
+                      f"(net {c.network_calls})", file=sys.stderr)
+                if getattr(c, "consecutive_failures", 0) >= ABORT_AFTER:
+                    raise CrawlAborted(f"{c.consecutive_failures} consecutive failed requests "
+                                       f"(last: ex {ex['exercise_id']} {d['name']})")
+    except CrawlAborted as e:
+        aborted = str(e)
     for ex in todo:
         for d in dialects:
-            rows.append((ex, d, results[(ex["exercise_id"], ex["wrid"], ex["vwrid"], d["dialect_id"])]))
+            r = results.get((ex["exercise_id"], ex["wrid"], ex["vwrid"], d["dialect_id"]))
+            if r is not None:
+                rows.append((ex, d, r))
 
     failures = coverage_report(rows, dialects, c.network_calls, out=report_out, offered=offered)
+    if aborted:
+        print(f"ABORTED: {aborted}; {total - len(rows)} (exercise, dialect) not crawled; "
+              f"manifest not written — re-run to resume from cache", file=report_out)
+        return 3
+    if not rows:
+        print("no (exercise, dialect) crawled; manifest not written", file=report_out)
+        return 2
     doc = build_manifest(lessons, todo, dialects, results, failures, offered)
     out_file.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_file.with_suffix(".tmp")
@@ -578,23 +650,41 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--limit", type=int, help="only the first N exercises")
     ap.add_argument("--dialects", type=int, nargs="+", help="only these L2_Dialect ids")
     ap.add_argument("--max-samples", type=int, default=MAX_SAMPLES)
-    ap.add_argument("--out", type=Path, default=OUT_FILE)
+    ap.add_argument("--out", type=Path, help=f"manifest path (default {OUT_FILE}; "
+                    "required, and different, for a partial run)")
     args = ap.parse_args(argv)
+    partial = bool(args.exercises or args.limit or args.dialects)
+    out = args.out or OUT_FILE
+    if partial and out.resolve() == OUT_FILE.resolve():
+        ap.error("a partial run (--exercises/--limit/--dialects) needs an --out "
+                 "other than the default manifest")
 
     c = Client()
     offered = discover_dialects(c)
     print("dialects offered: " + ", ".join(f"{d['dialect_id']}={d['name']}" for d in offered))
     dialects = offered
     if args.dialects:
+        unknown = sorted(set(args.dialects) - {d["dialect_id"] for d in offered})
+        if unknown:
+            print(f"error: dialect id(s) not offered: {unknown}", file=sys.stderr)
+            return 2
         dialects = [d for d in offered if d["dialect_id"] in args.dialects]
     lessons, index = discover(c)
+    if not lessons or not index:
+        print(f"error: discovery found {len(lessons)} lessons, {len(index)} exercises; "
+              f"refusing to write an empty manifest", file=sys.stderr)
+        return 2
     todo = sorted(index.values(), key=lambda e: (e["wrid"], e["exercise_id"], e["vwrid"]))
     if args.exercises:
+        unknown = sorted(set(args.exercises) - {e["exercise_id"] for e in todo})
+        if unknown:
+            print(f"error: exercise id(s) not found: {unknown}", file=sys.stderr)
+            return 2
         todo = [e for e in todo if e["exercise_id"] in args.exercises]
     if args.limit:
         todo = todo[: args.limit]
     print(f"crawling {len(todo)} exercises x {len(dialects)} dialects")
-    return run(c, lessons, todo, dialects, args.out, args.max_samples, offered=offered)
+    return run(c, lessons, todo, dialects, out, args.max_samples, offered=offered)
 
 
 if __name__ == "__main__":
