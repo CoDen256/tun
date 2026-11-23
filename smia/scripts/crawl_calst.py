@@ -1,21 +1,44 @@
-"""Throwaway crawler: NTNU CALST (testcalst.hf.ntnu.no) -> one raw-ish JSON dump.
+"""Crawler: NTNU CALST (testcalst.hf.ntnu.no) -> providers/calst/calst_manifest.json.
 
-Private research use only. Metadata only: no audio is downloaded.
+Private research use only. Metadata only: no audio is downloaded (that is
+`scripts.fetch_pygmalion_audio`'s job, which walks every `wordList` in the
+manifest this writes).
 
-    python -m scripts.crawl_calst                 # full crawl
-    python -m scripts.crawl_calst --limit 5       # smoke test: first 5 exercises
-    python -m scripts.crawl_calst --types AXB MP  # restrict exercise types
+    python -m scripts.crawl_calst                          # full crawl, every dialect
+    python -m scripts.crawl_calst --exercises 947 937 \\
+        --dialects 1 --out /tmp/x.json                     # smoke test
+    python -m scripts.crawl_calst --limit 5                # first 5 exercises
 
-Walk:  /Home/Lessons -> /Home/Lesson/N -> (/Exercise/no/ID?wrid=N
+Walk:  /account/settings (the dialect list)
+       /Home/Lessons -> /Home/Lesson/N -> (/Exercise/no/ID?wrid=N
                                            | /Home/LessonGroup/G -> /Exercise/no/ID?wrid=G)
-       -> POST /Exercises/Details {ExerciseId, wrid, vwrid, Type}
+       -> POST /Exercises/Details {ExerciseId, wrid, vwrid, Type=LAS}  (x samples x dialects)
 
-Every HTTP response is cached gzipped under providers/calst/.cache/, so a
-re-run (or Ctrl-C and restart) costs no network for finished requests. The
-output keeps everything each exercise returns, per Type, untouched:
-    {AXB: {status, variable, data: [...]}, MP: ..., LAC: ..., LAS: ..., LAW: ...}
-The exercise data variable differs by type (MPExerciseData for AXB/MP,
-VocabExerciseData for LAS/LAW); the name is recorded next to the data.
+calst-full-coverage (2026-11-23):
+
+* CALST answers each Details request with a RANDOM draw of at most ~20 words
+  from the exercise's pool, and all exercise types share one pool. So only
+  `LAS` is requested (it answers for every exercise) and each
+  (exercise, dialect) is SAMPLED TO SATURATION: a first response with fewer
+  than RESPONSE_CAP words is the whole pool (1 request); otherwise sampling
+  continues until `k_needed(pool, draw)` consecutive samples add no new word,
+  or MAX_SAMPLES is hit (-> `unsaturated`, a failure).
+* Every `Calst.<Name> = [ ... ]` array that carries word lists is parsed
+  (incl. `Calst.WordList`, also in the `Calst.WordList = Calst.WordList = [`
+  form). A 200 that yields no word is a FAILURE, never an empty success.
+* Every Norwegian `L2_Dialect` offered in the settings page's `l2d` selector
+  is crawled; the dialect travels in the cookie.
+* A failure is isolated to its (exercise, dialect); timeouts are retried once
+  with RETRY_TIMEOUT. The run ends with a coverage report and exits non-zero
+  if any (exercise, dialect) is unsaturated or failed.
+
+Every HTTP response is cached gzipped under providers/calst/.cache/. A Details
+sample is keyed by (request, dialect, sample index), so a re-run replays every
+finished sample with zero network calls and never replays one sample as
+another. The pre-2026-11-23 cache (keyed by the request alone, Oslo cookie)
+is read as Oslo sample 0, and GET pages keep that legacy key (the lesson tree
+does not depend on the dialect: /Home/Lessons is byte-identical for
+L2_Dialect 1, 2 and 8).
 """
 from __future__ import annotations
 
@@ -24,66 +47,98 @@ import gzip
 import hashlib
 import html
 import json
+import math
 import random
 import re
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlparse
 
 import requests
 
 BASE = "https://testcalst.hf.ntnu.no"
-COOKIE = "IL1=en; L1=61; L2_Dialect=1; L2_LanguageId=1; L2_Id=552"
-UA = "smia-research-crawler/0.1 (private research)"
-ALL_TYPES = ["AXB", "MP", "LAC", "LAS", "LAW"]
+UA = "smia-research-crawler/0.2 (private research)"
 OUT_DIR = Path(__file__).resolve().parent.parent / "providers" / "calst"
 CACHE_DIR = OUT_DIR / ".cache"
 OUT_FILE = OUT_DIR / "calst_manifest.json"
 
-DATA_VARS = ("MPExerciseData", "VocabExerciseData", "VocabWordList")
+TYPE = "LAS"
+OSLO = 1
+RESPONSE_CAP = 20  # a first response with fewer words than this is the whole pool
+MISS_EPSILON = 0.01  # tolerated chance that one still-unseen word survives K zero-gain draws
+K_MIN = 2
+MAX_SAMPLES = 120
+TIMEOUT = 30
+RETRY_TIMEOUT = 90
+PACE = (0.5, 1.0)  # seconds between network requests (start to start, at least)
+
+
+def cookie_for(dialect: int | str) -> str:
+    return f"IL1=en; L1=61; L2_Dialect={dialect}; L2_LanguageId=1; L2_Id=552"
 
 
 # ---------------------------------------------------------------- HTTP + cache
+def cache_key(method: str, path: str, data: dict | None,
+              dialect: int = OSLO, sample: int | None = None) -> str:
+    """The legacy key (request only) for GETs and for Oslo sample 0 — that is
+    exactly what the pre-2026-11-23 cache holds; every other sample gets the
+    dialect and the sample index in its key."""
+    if sample is None or (dialect == OSLO and sample == 0):
+        material = [method, path, data]
+    else:
+        material = [method, path, data, {"dialect": dialect, "sample": sample}]
+    return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()[:32]
+
+
 class Client:
-    def __init__(self) -> None:
+    def __init__(self, cache_dir: Path = CACHE_DIR) -> None:
+        self.cache_dir = cache_dir
         self.s = requests.Session()
-        self.s.headers.update({"Cookie": COOKIE, "User-Agent": UA})
+        self.s.headers.update({"User-Agent": UA})
         self.last = 0.0
         self.network_calls = 0
 
     def _sleep(self) -> None:
-        wait = random.uniform(0.1, 0.3) - (time.monotonic() - self.last)
+        wait = random.uniform(*PACE) - (time.monotonic() - self.last)
         if wait > 0:
             time.sleep(wait)
 
-    def request(self, method: str, path: str, data: dict | None = None) -> dict:
-        """Returns {status, location, body}. Cached by (method, path, data)."""
-        key = hashlib.sha256(
-            json.dumps([method, path, data], sort_keys=True).encode()
-        ).hexdigest()[:32]
-        cf = CACHE_DIR / f"{key}.json.gz"
+    def _fetch(self, method: str, url: str, data: dict | None, dialect: int,
+               timeout: float) -> requests.Response:
+        self._sleep()
+        self.last = time.monotonic()
+        self.network_calls += 1
+        self.s.cookies.clear()  # the cookie header below is the only state
+        r = self.s.request(method, url, data=data, timeout=timeout, allow_redirects=False,
+                           headers={"Cookie": cookie_for(dialect)})
+        self.last = time.monotonic()
+        if r.status_code == 429 or r.status_code >= 500:
+            raise RuntimeError(f"HTTP {r.status_code} on {method} {url}")
+        return r
+
+    def request(self, method: str, path: str, data: dict | None = None, *,
+                dialect: int = OSLO, sample: int | None = None) -> dict:
+        """Returns {status, location, body}, cached (see cache_key). A failed
+        first attempt is retried once with RETRY_TIMEOUT; a second failure
+        raises RuntimeError."""
+        cf = self.cache_dir / f"{cache_key(method, path, data, dialect, sample)}.json.gz"
         if cf.exists():
             return json.loads(gzip.decompress(cf.read_bytes()))
 
         url = urljoin(BASE, path)
-        self._sleep()
         try:
-            r = self.s.request(method, url, data=data, timeout=30, allow_redirects=False)
-        except requests.RequestException as e:
-            self.last = time.monotonic()
-            raise RuntimeError(f"{e.__class__.__name__} on {method} {url}") from e
-        self.last = time.monotonic()
-        self.network_calls += 1
-        if r.status_code == 429 or r.status_code >= 500:
-            raise RuntimeError(f"HTTP {r.status_code} on {method} {url}")
-        rec = {
-            "status": r.status_code,
-            "location": r.headers.get("Location"),
-            "body": r.text,
-        }
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            r = self._fetch(method, url, data, dialect, TIMEOUT)
+        except (requests.RequestException, RuntimeError) as first:
+            print(f"  ! {method} {path} {data or ''} d={dialect}: {first}; "
+                  f"retrying with {RETRY_TIMEOUT}s timeout", file=sys.stderr)
+            time.sleep(5)
+            try:
+                r = self._fetch(method, url, data, dialect, RETRY_TIMEOUT)
+            except requests.RequestException as e:
+                raise RuntimeError(f"{e.__class__.__name__} on {method} {url} (after retry)") from e
+        rec = {"status": r.status_code, "location": r.headers.get("Location"), "body": r.text}
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
         tmp = cf.with_suffix(".tmp")
         tmp.write_bytes(gzip.compress(json.dumps(rec).encode()))
         tmp.replace(cf)
@@ -132,12 +187,44 @@ def get_page(c: Client, path: str) -> list[dict]:
     return parse_page(rec["body"])
 
 
-# ----------------------------------------------------- JS literal -> JSON
-def _extract_array(js: str, var: str) -> str | None:
-    m = re.search(rf"Calst\.{var}\s*=\s*\[", js)
+_L2D_SELECT = re.compile(r"<select[^>]*\bname=\"l2d\"[^>]*>(.*?)</select>", re.S | re.I)
+_OPTGROUP = re.compile(r"<optgroup\s+label=\"([^\"]*)\"\s*>(.*?)</optgroup>", re.S | re.I)
+_OPTION = re.compile(r"<option[^>]*\bvalue=\"(\d+)\"[^>]*>(.*?)</option>", re.S | re.I)
+
+
+def parse_dialects(page: str, language: str = "Norwegian") -> list[dict]:
+    """The `L2_Dialect` values CALST offers for `language`, from the settings
+    page's target-language selector (`<select name="l2d">`, one optgroup per
+    language). Raises if the selector is missing — a silent empty list would
+    crawl nothing and look like success."""
+    m = _L2D_SELECT.search(page)
     if not m:
-        return None
-    start = m.end() - 1
+        raise RuntimeError("settings page has no l2d selector; cannot discover dialects")
+    found = {}
+    for g in _OPTGROUP.finditer(m[1]):
+        if _text(g[1]) != language:
+            continue
+        for o in _OPTION.finditer(g[2]):
+            found[int(o[1])] = _text(o[2])
+    if not found:
+        raise RuntimeError(f"l2d selector has no {language} options")
+    return [{"dialect_id": k, "name": v} for k, v in sorted(found.items())]
+
+
+def discover_dialects(c: Client) -> list[dict]:
+    rec = c.request("GET", "/account/settings")
+    if rec["status"] != 200:
+        raise RuntimeError(f"GET /account/settings -> {rec['status']}")
+    return parse_dialects(rec["body"])
+
+
+# ----------------------------------------------------- JS literal -> JSON
+# `Calst.X = [` and the chained `Calst.X = Calst.X = [` form.
+_ARRAY_ASSIGN = re.compile(r"Calst\.(\w+)\s*=\s*(?:Calst\.\w+\s*=\s*)*\[")
+
+
+def _array_at(js: str, start: int) -> str | None:
+    """The bracket-balanced array literal starting at js[start] == '['."""
     depth, i, in_str, esc = 0, start, False, False
     while i < len(js):
         ch = js[i]
@@ -196,20 +283,127 @@ def _quote_keys(lit: str) -> str:
     return "".join(out)
 
 
-def parse_details(body: str) -> dict:
-    """Pull every Calst.*ExerciseData / VocabWordList array out of the page."""
-    found, errors = {}, {}
-    for var in DATA_VARS:
-        lit = _extract_array(body, var)
+def iter_wordlists(obj):
+    """Every `wordList` array at any depth (the same walk the extractor in
+    scripts.fetch_pygmalion_audio does)."""
+    if isinstance(obj, dict):
+        wl = obj.get("wordList")
+        if isinstance(wl, list):
+            yield wl
+        for v in obj.values():
+            yield from iter_wordlists(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from iter_wordlists(v)
+
+
+def parse_words(body: str) -> tuple[list[dict], list[str], list[str]]:
+    """(word entries, variables that held word lists, parse errors) from every
+    `Calst.<Name> = [ ... ]` array in the body. A word entry is any wordList
+    element with a non-empty `text`."""
+    words, variables, errors = [], [], []
+    for m in _ARRAY_ASSIGN.finditer(body):
+        lit = _array_at(body, m.end() - 1)
         if lit is None:
-            continue
-        if var == "VocabWordList":  # `shuffle(Calst.VocabExerciseData...)`, not a literal
+            errors.append(f"{m[1]}: unterminated array")
             continue
         try:
-            found[var] = json.loads(_quote_keys(lit))
+            value = json.loads(_quote_keys(lit))
         except json.JSONDecodeError as e:
-            errors[var] = f"{e} :: {lit[:120]}"
-    return {"variables": found, "parse_errors": errors}
+            if "wordList" in lit:  # only a word-list-shaped array matters
+                errors.append(f"{m[1]}: {e} :: {lit[:120]}")
+            continue
+        got = [w for wl in iter_wordlists(value) for w in wl
+               if isinstance(w, dict) and w.get("text")]
+        if got:
+            words.extend(got)
+            if m[1] not in variables:
+                variables.append(m[1])
+    return words, variables, errors
+
+
+def _word_key(w: dict) -> str:
+    return f"{w.get('wordID', '')}\x1f{w['text']}"
+
+
+# ---------------------------------------------------------------- sampling
+def k_needed(pool: int, draw: int, epsilon: float = MISS_EPSILON) -> int:
+    """Consecutive zero-gain samples required before calling a pool saturated.
+
+    The hardest case is exactly one unseen word, i.e. a true pool of pool+1.
+    One draw of `draw` words misses it with probability 1 - draw/(pool+1); K
+    misses in a row happen with probability <= epsilon. Grows with the pool
+    (94 words, draws of 20 -> 20 samples), small when the draw is the pool."""
+    p_miss = 1 - draw / (pool + 1)
+    if p_miss <= 0:
+        return K_MIN
+    return max(K_MIN, math.ceil(math.log(epsilon) / math.log(p_miss)))
+
+
+def sample_exercise(c, ex: dict, dialect: int, max_samples: int = MAX_SAMPLES) -> dict:
+    """Sample one (exercise, dialect) to saturation. Never raises for a
+    request failure: the result's `status` is saturated / unsaturated /
+    failed, and a failed result keeps whatever pool was seen before."""
+    data = {"ExerciseId": ex["exercise_id"], "wrid": ex["wrid"], "vwrid": ex["vwrid"], "Type": TYPE}
+    pool: dict[str, dict] = {}
+    variables: list[str] = []
+    samples = zero_run = draw = 0
+    status, error = "unsaturated", None
+    for i in range(max_samples):
+        try:
+            rec = c.request("POST", "/Exercises/Details", data, dialect=dialect, sample=i)
+        except Exception as e:  # noqa: BLE001 — isolate to this (exercise, dialect)
+            status, error = "failed", f"sample {i}: {e}"
+            break
+        samples += 1
+        if rec["status"] != 200:
+            status = "failed"
+            error = f"sample {i}: HTTP {rec['status']} type {TYPE} location {rec.get('location')}"
+            break
+        words, vars_, errors = parse_words(rec["body"])
+        if not words:
+            status = "failed"
+            head = " ".join((rec["body"] or "")[:300].split())
+            error = (f"sample {i}: HTTP 200 but no word list parsed, type {TYPE}"
+                     f"{'; ' + '; '.join(errors) if errors else ''}; body: {head}")
+            break
+        for v in vars_:
+            if v not in variables:
+                variables.append(v)
+        distinct = {_word_key(w) for w in words}
+        draw = max(draw, len(distinct))
+        gain = 0
+        for w in words:
+            k = _word_key(w)
+            have = pool.get(k)
+            if have is None:
+                pool[k] = {**w, "sounds": list(w.get("sounds") or [])}
+                gain += 1
+            else:  # union the sounds of a word seen again
+                urls = {s.get("url") for s in have["sounds"]}
+                have["sounds"] += [s for s in (w.get("sounds") or []) if s.get("url") not in urls]
+        if i == 0 and len(distinct) < RESPONSE_CAP:
+            status = "saturated"
+            break
+        zero_run = 0 if gain else zero_run + 1
+        if i > 0 and zero_run >= k_needed(len(pool), draw):
+            status = "saturated"
+            break
+    word_list = sorted(pool.values(), key=lambda w: (w["text"].casefold(), w["text"], str(w.get("wordID", ""))))
+    for w in word_list:
+        w["sounds"] = sorted(w["sounds"], key=lambda s: str(s.get("url", "")))
+    out = {
+        "dialect_id": dialect,
+        "status": status,
+        "pool_size": len(pool),
+        "samples": samples,
+        "max_draw": draw,
+        "variables": variables,
+        "wordList": word_list,
+    }
+    if error:
+        out["error"] = error
+    return out
 
 
 # ------------------------------------------------------------------- crawl
@@ -272,91 +466,136 @@ def discover(c: Client) -> tuple[list[dict], dict]:
                     add_exercise(gl, lesson, g)
             else:
                 add_exercise(ln, lesson, None)
-        print(
-            f"  lesson {lesson['lesson_id']:>3} {lesson['title']!r}: "
-            f"{len(lesson['groups'])} groups, {len(index)} exercises so far"
-        )
+    print(f"exercises: {len(index)}")
     return lessons, index
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--limit", type=int, help="only fetch details for first N exercises")
-    ap.add_argument("--types", nargs="+", default=ALL_TYPES, choices=ALL_TYPES)
-    args = ap.parse_args()
+def title_of(ex: dict) -> str:
+    return ex["appearances"][0]["title"] if ex.get("appearances") else ""
 
-    c = Client()
-    lessons, index = discover(c)
-    todo = sorted(index.values(), key=lambda e: (e["wrid"], e["exercise_id"], e["vwrid"]))
-    if args.limit:
-        todo = todo[: args.limit]
-    print(f"exercises: {len(index)} (fetching {len(todo)} x {len(args.types)} types)")
 
+def coverage_report(rows: list[tuple[dict, dict, dict]], dialects: list[dict],
+                    network_calls: int, out=sys.stdout,
+                    offered: list[dict] | None = None) -> list[dict]:
+    """Print one line per (exercise, dialect), the dialects found and the
+    failure list. Returns the failures (empty == clean run)."""
+    p = lambda s="": print(s, file=out)  # noqa: E731
+    p()
+    p("== CALST coverage report ==")
+    offered = dialects if offered is None else offered
+    fmt = lambda ds: ", ".join(f"{d['dialect_id']}={d['name']}" for d in ds)  # noqa: E731
+    p("dialects found: " + fmt(offered))
+    if offered != dialects:
+        p("dialects crawled (restricted): " + fmt(dialects))
+    if [d["dialect_id"] for d in offered] == [OSLO]:
+        p("only Oslo is offered: no non-Oslo voice can exist")
+    for ex, d, r in rows:
+        p(f"ex {ex['exercise_id']:>5} wrid {ex['wrid']:>4} vwrid {ex['vwrid']:>3} "
+          f"{d['name']:<14} pool {r['pool_size']:>4} samples {r['samples']:>3} "
+          f"{r['status']:<11} {title_of(ex)}")
+    failures = [
+        {"exercise_id": ex["exercise_id"], "wrid": ex["wrid"], "vwrid": ex["vwrid"],
+         "title": title_of(ex), "dialect_id": d["dialect_id"], "dialect": d["name"],
+         "status": r["status"], "pool_size": r["pool_size"], "samples": r["samples"],
+         "error": r.get("error")}
+        for ex, d, r in rows if r["status"] != "saturated"
+    ]
+    counts = {s: sum(1 for *_, r in rows if r["status"] == s)
+              for s in ("saturated", "unsaturated", "failed")}
+    p(f"totals: {len(rows)} (exercise, dialect) — " + ", ".join(f"{k} {v}" for k, v in counts.items()))
+    p(f"failures: {len(failures)}")
+    for f in failures:
+        p(f"  ! ex {f['exercise_id']} wrid {f['wrid']} {f['dialect']} [{f['status']}] "
+          f"pool {f['pool_size']} samples {f['samples']} — {f['title']}"
+          + (f": {f['error']}" if f["error"] else ""))
+    p(f"network calls: {network_calls}")
+    return failures
+
+
+def build_manifest(lessons, todo, dialects, results, failures, offered=None) -> dict:
+    names = {d["dialect_id"]: d["name"] for d in dialects}
     exercises = []
-    skipped = []
-    for n, ex in enumerate(todo, 1):
-        results, last_exc = None, None
-        for attempt in range(1, 3):
-            try:
-                results = {}
-                for t in args.types:
-                    rec = c.request(
-                        "POST",
-                        "/Exercises/Details",
-                        {
-                            "ExerciseId": ex["exercise_id"],
-                            "wrid": ex["wrid"],
-                            "vwrid": ex["vwrid"],
-                            "Type": t,
-                        },
-                    )
-                    res = {
-                        "status": rec["status"],
-                        "location": rec["location"],
-                        "bytes": len(rec["body"]),
-                    }
-                    if rec["status"] == 200:
-                        res.update(parse_details(rec["body"]))
-                        if not res["variables"]:
-                            res["body_head"] = rec["body"][:300]  # unexpected shape, keep a hint
-                    results[t] = res
-                break
-            except Exception as e:
-                last_exc = e
-                results = None
-                print(
-                    f"  ! ex={ex['exercise_id']} wrid={ex['wrid']} attempt {attempt}/2 failed: {e}",
-                    file=sys.stderr,
-                )
-        if results is None:
-            skipped.append({**ex, "error": str(last_exc)})
-            print(f"[{n}/{len(todo)}] ex={ex['exercise_id']} wrid={ex['wrid']} SKIPPED after 2 failed attempts")
-            continue
-        exercises.append({**ex, "types": results})
-        got = {t: sum(len(v) for v in r.get("variables", {}).values()) for t, r in results.items()}
-        print(f"[{n}/{len(todo)}] ex={ex['exercise_id']} wrid={ex['wrid']} {got}")
-
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    doc = {
+    for ex in todo:
+        per = []
+        for d in dialects:
+            r = results.get((ex["exercise_id"], ex["wrid"], ex["vwrid"], d["dialect_id"]))
+            if r is not None:
+                per.append({"dialect": names[d["dialect_id"]], **r})
+        exercises.append({**ex, "title": title_of(ex), "dialects": per})
+    return {
         "meta": {
             "source": BASE,
-            "crawled_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "cookie": COOKIE,
-            "types_requested": args.types,
-            "note": "private research; metadata only",
+            "cookie": cookie_for("<dialect_id>"),
+            "type_requested": TYPE,
+            "dialects_offered": offered if offered is not None else dialects,
+            "dialects_crawled": dialects,
+            "sampling": {
+                "response_cap": RESPONSE_CAP,
+                "miss_epsilon": MISS_EPSILON,
+                "k_min": K_MIN,
+                "max_samples": MAX_SAMPLES,
+            },
+            "note": "private research; metadata only; crawl date = this file's git history",
         },
         "lessons": lessons,
         "exercises": exercises,
-        "skipped": skipped,
+        "failures": failures,
     }
-    tmp = OUT_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
-    tmp.replace(OUT_FILE)
-    print(
-        f"wrote {OUT_FILE} ({OUT_FILE.stat().st_size / 1e6:.1f} MB); "
-        f"network calls: {c.network_calls}; skipped: {len(skipped)}"
-    )
+
+
+def run(c, lessons, todo, dialects, out_file: Path, max_samples: int = MAX_SAMPLES,
+        report_out=sys.stdout, offered: list[dict] | None = None) -> int:
+    """Sample every (exercise, dialect), write the manifest, print the
+    report. Returns the process exit code."""
+    results, rows = {}, []
+    total = len(todo) * len(dialects)
+    n = 0
+    for d in dialects:  # dialect-major: Oslo completes first
+        for ex in todo:
+            n += 1
+            r = sample_exercise(c, ex, d["dialect_id"], max_samples)
+            results[(ex["exercise_id"], ex["wrid"], ex["vwrid"], d["dialect_id"])] = r
+            print(f"[{n}/{total}] ex={ex['exercise_id']} wrid={ex['wrid']} {d['name']}: "
+                  f"pool {r['pool_size']} samples {r['samples']} {r['status']} "
+                  f"(net {c.network_calls})", file=sys.stderr)
+    for ex in todo:
+        for d in dialects:
+            rows.append((ex, d, results[(ex["exercise_id"], ex["wrid"], ex["vwrid"], d["dialect_id"])]))
+
+    failures = coverage_report(rows, dialects, c.network_calls, out=report_out, offered=offered)
+    doc = build_manifest(lessons, todo, dialects, results, failures, offered)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out_file.with_suffix(".tmp")
+    tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(out_file)
+    print(f"wrote {out_file} ({out_file.stat().st_size / 1e6:.1f} MB)", file=report_out)
+    return 1 if failures else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--exercises", type=int, nargs="+", help="only these exercise ids")
+    ap.add_argument("--limit", type=int, help="only the first N exercises")
+    ap.add_argument("--dialects", type=int, nargs="+", help="only these L2_Dialect ids")
+    ap.add_argument("--max-samples", type=int, default=MAX_SAMPLES)
+    ap.add_argument("--out", type=Path, default=OUT_FILE)
+    args = ap.parse_args(argv)
+
+    c = Client()
+    offered = discover_dialects(c)
+    print("dialects offered: " + ", ".join(f"{d['dialect_id']}={d['name']}" for d in offered))
+    dialects = offered
+    if args.dialects:
+        dialects = [d for d in offered if d["dialect_id"] in args.dialects]
+    lessons, index = discover(c)
+    todo = sorted(index.values(), key=lambda e: (e["wrid"], e["exercise_id"], e["vwrid"]))
+    if args.exercises:
+        todo = [e for e in todo if e["exercise_id"] in args.exercises]
+    if args.limit:
+        todo = todo[: args.limit]
+    print(f"crawling {len(todo)} exercises x {len(dialects)} dialects")
+    return run(c, lessons, todo, dialects, args.out, args.max_samples, offered=offered)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
