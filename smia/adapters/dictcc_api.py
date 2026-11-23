@@ -572,6 +572,11 @@ class DictccApiTtsAdapter:
         # one recording is fetched once and its first entry names it.
         seen_recordings: set[str] = set()
         errors: list[ProviderLookupError] = []
+        # Every recording fetch that raised or came back as a text error
+        # (`Error: Bot detected!`). A lookup whose candidates are empty
+        # BECAUSE of these must raise, never return `[]`: cache.run_lookup
+        # stores an empty success and would serve it forever.
+        fetch_failures: list[ProviderLookupError] = []
         with session_scope() as db:
             for lp, dir_, variant in triples:
                 # Which `term` field holds the queried language's own
@@ -635,16 +640,25 @@ class DictccApiTtsAdapter:
                     for rec in recordings:
                         if rec.rec_id in seen_recordings:
                             continue
-                        seen_recordings.add(rec.rec_id)
                         rec_attempts += 1
                         try:
-                            self._collect_recording(
+                            fetched = self._collect_recording(
                                 db, candidates, seen_sha, rec=rec, lp=lp, context=context,
                             )
                         except ProviderLookupError as exc:
                             # A recording whose audio request fails is
-                            # skipped, not fatal.
+                            # skipped, not fatal — and NOT marked seen, so a
+                            # later pair/entry carrying it retries the fetch.
                             rec_errors.append(exc)
+                            fetch_failures.append(exc)
+                            continue
+                        if not fetched:
+                            fetch_failures.append(ProviderLookupError(
+                                f"dict.cc audio for recording {rec.rec_id} came back as a text error"
+                            ))
+                            continue
+                        # Only a successful fetch marks the recording done.
+                        seen_recordings.add(rec.rec_id)
 
                 # The triple only counts as failed when every recording it
                 # tried failed to fetch. A triple where nothing had a
@@ -654,13 +668,18 @@ class DictccApiTtsAdapter:
 
         if errors and len(errors) == len(triples):
             raise errors[0]
+        # Empty because recordings existed but could not be fetched is a
+        # failure, not a result. Empty because no entry had a recording in
+        # this language (no fetch attempted) stays a genuine empty result.
+        if not candidates and fetch_failures:
+            raise fetch_failures[0]
 
         return {"candidates": candidates}
 
     def _collect_recording(
         self, db, candidates: list[dict], seen_sha: set[str], *,
         rec: Recording, lp: str, context: str | None,
-    ) -> None:
+    ) -> bool:
         """Fetch ONE known human recording by its own id and append it as a
         candidate whose `voice` is the speaker's dict.cc user name.
 
@@ -669,22 +688,27 @@ class DictccApiTtsAdapter:
         single-recording entry, and two German recordings of one entry came
         back as two different files, one of which the entry-level call never
         exposes. It is a recording id, not text, so there is nothing for
-        dict.cc to synthesise from."""
+        dict.cc to synthesise from.
+
+        Returns False when dict.cc answered with a text error instead of
+        audio (so the caller can count it as a failed fetch), True otherwise.
+        """
         human = self._fetch_audio({"id": rec.rec_id, "lang": "rec", "lp": lp})
         if human is None:
-            return
+            return False
         sha256 = store(db, human, "audio/mpeg")
         # Content-addressed identity (audio_cache.store) is the backstop
         # dedup. Two DIFFERENT recordings of the same phrase both survive,
         # deliberately: they are different takes and the operator picks by
         # ear.
         if sha256 in seen_sha:
-            return
+            return True
         seen_sha.add(sha256)
         candidate = {"sha256": sha256, "source": "human", "voice": rec.user}
         if context:
             candidate["context"] = context
         candidates.append(candidate)
+        return True
 
     def _fetch_audio(self, params: dict) -> bytes | None:
         try:

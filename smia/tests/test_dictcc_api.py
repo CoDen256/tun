@@ -1295,3 +1295,92 @@ def test_inflect_nb_queries_both_norwegian_pairs_with_dir_2():
 
     assert {lp for lp, _ in seen} == {"DENO", "ENNO"}
     assert all(dir_ == 2 for _lp, dir_ in seen), seen
+
+
+# ---------------------------------------------------------------------------
+# Never return (and so never cache) an empty result that fetch failures
+# caused — `cache.run_lookup` stores an empty success and would serve it
+# forever.
+# ---------------------------------------------------------------------------
+
+def test_tts_recording_failing_in_one_pair_is_retried_in_the_other():
+    # `kalv`: DENO and ENNO both carry recording 100000. DENO's fetch times
+    # out; the recording must NOT be marked seen, so ENNO fetches it.
+    audio_calls = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "app_translations" in url:
+            return _mock_response(_KALV_RESPONSE)
+        if _is_recordings(url):
+            return _recordings_response(params, {528676: ["81"]})
+        audio_calls.append((params["lp"], params["id"]))
+        if params["lp"] == "DENO":
+            raise requests.Timeout("read timed out")
+        return _audio_response(b"mp3-kalv")
+
+    with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
+        result = DictccApiTtsAdapter().lookup({"text": "kalv", "lang": "nb"})
+
+    assert audio_calls == [("DENO", "100000"), ("ENNO", "100000")]
+    assert [c["voice"] for c in result["candidates"]] == ["rec0"]
+
+
+def test_tts_recording_failing_everywhere_raises_rather_than_empty():
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "app_translations" in url:
+            return _mock_response(_KALV_RESPONSE if params["lp"] == "ENNO" else _NO_TABLE_RESPONSE)
+        if _is_recordings(url):
+            return _recordings_response(params, {528676: ["81"]})
+        raise requests.Timeout("read timed out")
+
+    with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
+        with pytest.raises(ProviderLookupError):
+            DictccApiTtsAdapter().lookup({"text": "kalv", "lang": "nb"})
+
+
+def test_tts_every_fetch_answered_with_text_raises_rather_than_empty():
+    # dict.cc throttling: `Error: Bot detected!` as text/html on every fetch.
+    audio_calls = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "app_translations" in url:
+            return _mock_response(_MULTI_ENTRY_RESPONSE)
+        if _is_recordings(url):
+            return _recordings_response(params, {100: ["81"], 200: ["81"]})
+        audio_calls.append(params["id"])
+        return _audio_response(None)  # text/plain error body
+
+    with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
+        with pytest.raises(ProviderLookupError, match="text error"):
+            DictccApiTtsAdapter().lookup({"text": "do", "lang": "nb"})
+    # a text reply does not mark the recording seen: the other pair retried it
+    assert sorted(audio_calls) == ["100000", "100000", "100010", "100010"]
+
+
+def test_tts_partial_text_errors_still_return_the_audio_that_came_back():
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "app_translations" in url:
+            return _mock_response(_MULTI_ENTRY_RESPONSE)
+        if _is_recordings(url):
+            return _recordings_response(params, {100: ["81"], 200: ["81"]})
+        return _audio_response(None if params["id"] == "100000" else b"mp3-200")
+
+    with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
+        result = DictccApiTtsAdapter().lookup({"text": "do", "lang": "nb"})
+    assert len(result["candidates"]) == 1
+
+
+def test_tts_no_norwegian_recording_at_all_is_a_genuine_empty_result():
+    audio_calls = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "app_translations" in url:
+            return _mock_response(_MULTI_ENTRY_RESPONSE)
+        if _is_recordings(url):
+            return _recordings_response(params, {100: ["2"], 200: []})
+        audio_calls.append(params)
+        return _audio_response(b"never")
+
+    with patch("adapters.dictcc_api.requests.get", side_effect=fake_get):
+        assert DictccApiTtsAdapter().lookup({"text": "do", "lang": "nb"}) == {"candidates": []}
+    assert audio_calls == []
