@@ -6,10 +6,16 @@ tests/test_enrich.py."""
 from __future__ import annotations
 
 import smia_client
+from routes import settings as settings_routes
 from tests.conftest import AUTH
 
 
 def _mock_catalogue(monkeypatch, catalogue):
+    # The catalogue cache is PROCESS-GLOBAL (stabbur-prefill-and-settings-fixes
+    # D4), so a mock installed by an earlier test would otherwise still be
+    # answering here — every test sets its own catalogue, so every test
+    # starts from an empty cache.
+    settings_routes.reset_catalogue_cache()
     monkeypatch.setattr(smia_client, "get", lambda path, timeout=20.0: (200, catalogue))
 
 
@@ -67,6 +73,10 @@ def test_triage_navigate_save_rejects_unknown_value(client, monkeypatch):
 
 def test_examples_count_can_be_set_within_range(client, monkeypatch):
     _mock_catalogue(monkeypatch, {})
+    # D5: M <= K, so the sheet count comes up first. Raising M alone past
+    # the default K of 5 is refused by design, not by accident.
+    resp = client.patch("/api/settings", json={"examples_sheet_count": 6}, headers=AUTH)
+    assert resp.status_code == 200
     resp = client.patch("/api/settings", json={"examples_count": 6}, headers=AUTH)
     assert resp.status_code == 200
     assert resp.get_json()["examples_count"] == 6
@@ -492,3 +502,96 @@ def test_target_languages_are_normalised_on_write(client, monkeypatch):
         "translations:de",
         "translations:en",
     ]
+
+
+# ------------------------------------- stabbur-prefill-and-settings-fixes --
+# D5 (the sheet sentence count K) and D4 (the catalogue is reused for up to
+# 60 s, and a failed fetch is never held).
+
+
+def test_sheet_count_defaults_to_five(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {})
+    body = client.get("/api/settings", headers=AUTH).get_json()
+    assert body["examples_sheet_count"] == 5
+
+
+def test_sheet_count_defaults_to_sentences_per_provider_when_that_is_larger(client, monkeypatch):
+    """An operator whose M was already above 5 before this column existed
+    must not be served a default that breaks M <= K."""
+    _mock_catalogue(monkeypatch, {})
+    client.patch("/api/settings", json={"examples_sheet_count": 8}, headers=AUTH)
+    client.patch("/api/settings", json={"examples_count": 8}, headers=AUTH)
+    # Clear the stored K, leaving M = 8 — the pre-migration shape.
+    import settings_store
+    from db.session import session_scope
+    with session_scope() as db:
+        settings_store.write(db, {"examples_sheet_count": None}, ())
+    body = client.get("/api/settings", headers=AUTH).get_json()
+    assert body["examples_count"] == 8
+    assert body["examples_sheet_count"] == 8
+
+
+def test_sheet_count_rejects_out_of_range_value(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {})
+    assert client.patch("/api/settings", json={"examples_sheet_count": 11}, headers=AUTH).status_code == 400
+    assert client.patch("/api/settings", json={"examples_sheet_count": 0}, headers=AUTH).status_code == 400
+    assert client.patch("/api/settings", json={"examples_sheet_count": "5"}, headers=AUTH).status_code == 400
+
+
+def test_sentences_per_provider_cannot_exceed_the_sheet_count(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {})
+    resp = client.patch("/api/settings", json={"examples_count": 6}, headers=AUTH)
+    assert resp.status_code == 400
+    assert "sheet" in resp.get_json()["error"]
+    assert client.get("/api/settings", headers=AUTH).get_json()["examples_count"] == 3
+
+
+def test_lowering_the_sheet_count_below_sentences_per_provider_is_refused(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {})
+    client.patch("/api/settings", json={"examples_sheet_count": 6}, headers=AUTH)
+    client.patch("/api/settings", json={"examples_count": 6}, headers=AUTH)
+    resp = client.patch("/api/settings", json={"examples_sheet_count": 4}, headers=AUTH)
+    assert resp.status_code == 400
+    assert client.get("/api/settings", headers=AUTH).get_json()["examples_sheet_count"] == 6
+
+
+def test_the_pair_can_be_raised_in_one_request(client, monkeypatch):
+    _mock_catalogue(monkeypatch, {})
+    resp = client.patch(
+        "/api/settings", json={"examples_count": 7, "examples_sheet_count": 7}, headers=AUTH
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert (body["examples_count"], body["examples_sheet_count"]) == (7, 7)
+
+
+def test_two_settings_reads_within_the_window_make_one_catalogue_call(client, monkeypatch):
+    calls = []
+
+    def fake_get(path, timeout=20.0):
+        calls.append(path)
+        return 200, {"ipa": ["nst"]}
+
+    settings_routes.reset_catalogue_cache()
+    monkeypatch.setattr(smia_client, "get", fake_get)
+    client.get("/api/settings", headers=AUTH)
+    client.get("/api/settings", headers=AUTH)
+    client.patch("/api/settings", json={"examples_max_providers": 2}, headers=AUTH)
+    assert calls == ["/providers"]
+
+
+def test_a_failed_catalogue_fetch_is_not_cached(client, monkeypatch):
+    """Caching a failure would keep reconciliation degraded for a minute
+    after smia came back, turning a blip into a minute of lost providers."""
+    state = {"up": False}
+
+    def fake_get(path, timeout=20.0):
+        if not state["up"]:
+            raise smia_client.SmiaUnavailableError("down")
+        return 200, {"ipa": ["nst"]}
+
+    settings_routes.reset_catalogue_cache()
+    monkeypatch.setattr(smia_client, "get", fake_get)
+    assert client.get("/api/settings", headers=AUTH).get_json()["providers"]["ipa"]["order"] == []
+    state["up"] = True
+    assert client.get("/api/settings", headers=AUTH).get_json()["providers"]["ipa"]["order"] == ["nst"]

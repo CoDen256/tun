@@ -148,7 +148,11 @@ def test_every_slash_is_split_and_nothing_is_lost(migration_db_url):
 
 
 def test_downgrade_refuses(migration_db_url):
+    """The revision is named, not reached as `-1`: this test is about THIS
+    data migration being irreversible, and `-1` meant whatever happened to
+    be head — which stopped being this revision the moment another
+    migration landed on top of it."""
     _alembic_ok(migration_db_url, "upgrade", "head")
-    result = _alembic(migration_db_url, "downgrade", "-1")
+    result = _alembic(migration_db_url, "downgrade", "f7a2c9d4e3b1-1")
     assert result.returncode != 0
     assert "cannot be reversed" in (result.stderr + result.stdout)
