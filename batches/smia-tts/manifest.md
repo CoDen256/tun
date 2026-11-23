@@ -33,6 +33,12 @@ projects: smia
 - Deploy: ONE truncate + re-import of `pygmalion_audio` serves both data
   changes; purge `lookup_cache` for (tts, pygmalion) and (tts, dictcc_api).
 
+- Operator decision (build session, 2026-11-23): the FULL 8-dialect CALST
+  crawl (~15–20 h) + extract + download + import runs on the VPS, operator-
+  run, and the operator commits + pushes the resulting `providers/` data
+  from the VPS. The build verifies locally with the Oslo crawl plus a small
+  Bergen sample; OPERATOR-CHECKLIST carries the VPS commands.
+
 ## Deferred to the builder (tier 2)
 
 - CALST saturation parameters: K consecutive zero-gain samples, the
