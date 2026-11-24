@@ -182,9 +182,9 @@ def test_real_committed_corpus_imports_cleanly():
     manifest row can never reach `status: "ok"`."""
     counts = import_pygmalion.run("providers/pygmalion/audio/manifest.jsonl")
     assert counts["mismatched"] == 0 and counts["skipped"] == 1
-    assert counts["imported"] == 5791
+    assert counts["imported"] == 7160
     with get_sessionmaker()() as db:
-        assert db.query(PygmalionAudio).count() == 5791
+        assert db.query(PygmalionAudio).count() == 7160
         assert {r.dialect for r in db.query(PygmalionAudio).all()} == {
             "Oslo", "Bergen", "Stavanger", "Trondheim", "Elverum", "Sandnessjøen", "Malm"
         }
