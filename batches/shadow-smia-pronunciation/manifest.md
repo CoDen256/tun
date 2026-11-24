@@ -55,17 +55,27 @@ so a type of tricky phonetic words, minimal pair which are hard to distinguish (
 ### Shadow playback, splitting & chapter reading
 projects: shadow
 
-[bug] shadow study doesn't trimmed merged/split sentences good enough
-[ux]  shadow pause/stop button needs to be added, but only as a secondary button. When picking where to split, when its already playing it doesn't stop or show the line where to split. I would reverse and put the line only after i pressed "split"
-[bug] shadow replay feature doesn't work for prepare/explore
-[ux] shadow explore plays audio laggily still, the live line doesn't match and it sometimes silenced
-[ux] the shadow website constantly has icon of using my mic, even if record not pressed. 
-[ux] shadow add chapterwise read where it will automatically read sentence by sentence of the whole chapter, probably even not trimming, but when stopped at a sentence it should play trimmed and then i would be able to continue as usual
-[ux] add option to split chapter anywhere
-[ux] opening a new sentence should play it immediately
-[ux] ready, next is a little laggy, waitning for something
-[ux] phone ui , put pull for nav/name of book, chapter nav, "more", exit and sentence on one/two lines to make it more compact
-[ux] phone shadow  should provide installable "app", if that's easy to do?in
+we need to polish the current state and fix optimization/bugs of the shadow:
+[bug] shadow study doesn't trim the previously merged/split sentences good enough, they don't have that trim, that normal sentences have.
+[ux]  shadow pause button needs to be added, but only as a secondary button in the tray.
+[ux] When picking where to split, when its already playing it doesn't stop or show the line where to split, also its buggy a little bit. I would reverse it and put the line only after i pressed "split"
+?[bug] shadow pause/stop/play feature doesn't work for prepare/explore as it works for normal sentence
+[ux] shadow explore still has lags when playing the sentences, the live line doesn't match and it sometimes silenced completely
+[ux] the shadow website constantly has icon of using my mic after i used it once, even if record not pressed.
+
+new ideas
+[rehaul] the settings page should match the design of the shadowing in general, currently it uses old phonexa design, make it also good minimalistic and cool. 
+Put following in the settings: theme, trim silence toggle, stt provider. Also manage users in the settings, to allow deleting/adding renaming
+[idea] shadow add chapterwise: this is needed for me to allow to read the audiobook exactly as it's recorded,without trims, just the natural tempo. but with the ability to stop at any given moment, exercise that sentence (as usual shadowing with trimming etc) and then resume the usual audiobook tempo 
+this will:automatically read sentence by sentence of the whole chapter, just as if i am pressing continue all the time(don't mark as ready), but when stopped at a sentence it should play trimmed and then i would be able to continue as usual
++ settings option that says whether to trim/not trim settings when played in the audiobook mode.
++ the audiomode should be visibly on the sreen, that it's currently being played automatically without my intervention, going from one sentence to the other and playing it with the live line etc
++ also think through the phone ui, how audio mode is gonna work there
+[ux] add option to split chapter anywhere in the prepare tab, so that i can customize chapters as i want.
+[ux] opening a new sentence should play it immediately (can be toggled of in the settings, this does not apply to audiobook mode, this is separate, as if i am reading it usually.) 
+[ux] (ready, next) is a little laggy, waitning for something, want to check if the performance could be improved
+[ux] phone ui , put pull for nav/name of book, chapter nav, "more", exit and sentence on one/two lines to make it more compact (the upper part)
+[ux] phone shadow  should provide installable "app", if that's easy to do?
 
 ## Dropped / deferred
 
