@@ -7,10 +7,10 @@
 
 ## 1. Single owner and shadow-owned settings
 
-- [ ] 1.1 Migration: add the settings store; pin the owner id from existing data (abort, changing nothing, on >1 distinct id) — verify with a test DB holding one id (succeeds) and two ids (aborts, rows unchanged)
-- [ ] 1.2 Server uses the owner id for every request and ignores a client `userId`; upload no longer calls phonexa to verify users — verify books/progress/cursor unchanged in the UI (A1.2)
-- [ ] 1.3 Settings read/write endpoints against the shadow store; one-time background import of `transcribeBackend` and `shadowTrimSilence` from phonexa with defaults on failure — verify A1.3, A1.4
-- [ ] 1.4 Remove the profile picker and the users/settings proxies from shadow's pages and JS — verify A1.1
+- [x] 1.1 Migration: add the settings store; pin the owner id from existing data (abort, changing nothing, on >1 distinct id) — verify with a test DB holding one id (succeeds) and two ids (aborts, rows unchanged)
+- [x] 1.2 Server uses the owner id for every request and ignores a client `userId`; upload no longer calls phonexa to verify users — verify books/progress/cursor unchanged in the UI (A1.2)
+- [x] 1.3 Settings read/write endpoints against the shadow store; one-time background import of `transcribeBackend` and `shadowTrimSilence` from phonexa with defaults on failure — verify A1.3, A1.4
+- [x] 1.4 Remove the profile picker and the users/settings proxies from shadow's pages and JS — verify A1.1
 
 ## 2. Player model
 
@@ -24,11 +24,11 @@
 
 ## 4. Trim parity
 
-- [ ] 4.1 Verify (and fix if needed) that split/merge speech windows match analysis within 20 ms — verify A6.1
+- [x] 4.1 Verify (and fix if needed) that split/merge speech windows match analysis within 20 ms — verify A6.1
 
 ## 5. Installable app
 
-- [ ] 5.1 Web manifest + icons, linked with credentials; scope/start at the shadow prefix; standalone — verify A7.1, A7.2
+- [x] 5.1 Web manifest + icons, linked with credentials; scope/start at the shadow prefix; standalone — verify A7.1, A7.2
 
 ## 6. Settings screen
 
@@ -51,7 +51,7 @@
 
 ## 9. Chapter editing in Prepare
 
-- [ ] 9.1 Migration: nullable `title` on segments; server operations: start chapter at sentence, merge with next chapter, set title — each a manual edit of its config, no span/progress change — verify A9.1, A9.2, A9.6
+- [x] 9.1 Migration: nullable `title` on segments; server operations: start chapter at sentence, merge with next chapter, set title — each a manual edit of its config, no span/progress change — verify A9.1, A9.2, A9.6
 - [ ] 9.2 Prepare UI per mockup screen B: hover break point, "Show chapter breaks", in-page confirms with ▶ hear the boundary, flash + Undo toast, Merge-with-next on headers, ✎ Title, last-sentence merge hint, edit count on config card, extended re-analyse warning — verify A9.3–A9.5, A9.7
 - [ ] 9.3 Chapter titles shown in Explore and in Study's chapter label — verify A9.8
 

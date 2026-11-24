@@ -406,6 +406,47 @@ def _serve_page(filename: str):
                        PHONEXA_PREFIX=phonexa_client.public_prefix())
 
 
+# ── The PWA manifest (shadow-playback-chapter-reading D8, task 5.1) ────
+#
+# A route rather than a static file for two reasons: start_url and scope
+# must be shadow's prefix AS SERVED (X-Forwarded-Prefix — '/shadow' behind the
+# gateway, '' on a published port), which is the same substitution
+# _serve_page makes; and the MIME type must be application/manifest+json,
+# which this sets itself instead of trusting the platform's mimetypes table.
+# No service worker and no offline mode (non-goal). It sits behind the same
+# operator gate as every page — the <link> asks for it with credentials.
+
+SHADOW_THEME = '#f6f6f4'       # --bg (light) in css/studio.css, as the page's theme-color meta
+SHADOW_BACKGROUND = '#f6f6f4'  # --bg (light) in css/studio.css
+
+
+@app.route('/manifest.webmanifest')
+def web_manifest():
+    base = _prefix() + '/'
+    body = {
+        'name': 'shadow',
+        'short_name': 'shadow',
+        'description': 'Shadowing audiobooks, sentence by sentence.',
+        'id': base,
+        'start_url': base,
+        'scope': base,
+        'display': 'standalone',
+        'theme_color': SHADOW_THEME,
+        'background_color': SHADOW_BACKGROUND,
+        'icons': [
+            {'src': base + 'icons/icon-192.png', 'sizes': '192x192', 'type': 'image/png',
+             'purpose': 'any'},
+            {'src': base + 'icons/icon-512.png', 'sizes': '512x512', 'type': 'image/png',
+             'purpose': 'any'},
+            {'src': base + 'icons/icon-maskable-512.png', 'sizes': '512x512',
+             'type': 'image/png', 'purpose': 'maskable'},
+        ],
+    }
+    resp = app.response_class(json.dumps(body), mimetype='application/manifest+json')
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+
 @app.route('/')
 def serve_index():
     return _serve_page('shadow.html')

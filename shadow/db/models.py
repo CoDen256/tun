@@ -15,6 +15,9 @@ shadowing.py therefore asks phonexa whether the profile exists (see
 phonexa_client.verify_user) instead of relying on a local FK, and falls
 back to accepting the id when phonexa is unreachable — losing a validation
 is the degradation we accept rather than losing the page.
+(CORRECTION, 2026-11-24, D168: no longer — shadow is single-user, the
+owner id is pinned once by migration in `shadow_owner` below, and phonexa
+is never asked about users.)
 
 CORRECTION, 2026-11-15 (shadow-studying-mode). THIS FILE USED TO SAY AUDIO
 IS NEVER STORED SERVER-SIDE. That is no longer true, and the stale claim is

@@ -45,6 +45,8 @@ COPY shadow/scripts/ ./scripts/
 COPY shadow/shadow.html shadow/settings.html ./
 COPY shadow/js/ ./js/
 COPY shadow/css/ ./css/
+# PWA icons (task 5.1); drawn by scripts/make_icons.py, committed as PNGs.
+COPY shadow/icons/ ./icons/
 
 EXPOSE 5051
 
