@@ -34,7 +34,10 @@ Expect the columns `match_key` and `text` and the index
 have no `text` yet, and cached `/tts` answers predate the new fields.
 
 ```bash
-docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d smia -c "TRUNCATE pygmalion_audio; DELETE FROM lookup_cache WHERE kind = '"'"'tts'"'"' AND provider IN ('"'"'pygmalion'"'"', '"'"'dictcc_api'"'"');"'
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d smia' <<'SQL'
+TRUNCATE pygmalion_audio;
+DELETE FROM lookup_cache WHERE kind = 'tts' AND provider IN ('pygmalion', 'dictcc_api');
+SQL
 docker compose exec -T smia-backend python -m scripts.import_pygmalion providers/pygmalion/audio/manifest.jsonl
 ```
 
@@ -131,7 +134,10 @@ docker compose run --rm --no-deps -v "$PWD/smia":/work smia-backend chown -R "$(
 be higher than 7160 now.
 
 ```bash
-docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d smia -c "TRUNCATE pygmalion_audio; DELETE FROM lookup_cache WHERE kind = '"'"'tts'"'"' AND provider = '"'"'pygmalion'"'"';"'
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d smia' <<'SQL'
+TRUNCATE pygmalion_audio;
+DELETE FROM lookup_cache WHERE kind = 'tts' AND provider = 'pygmalion';
+SQL
 docker compose exec -T smia-backend python -m scripts.import_pygmalion providers/pygmalion/audio/manifest.jsonl
 ```
 
