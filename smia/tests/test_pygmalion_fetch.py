@@ -229,6 +229,74 @@ def _row(word, dialect, take, speed="Normal"):
     }
 
 
+def _extract(tmp_path, pyg_doc, calst_doc):
+    pyg = tmp_path / "pyg.json"
+    pyg.write_text(json.dumps(pyg_doc), encoding="utf-8")
+    calst = tmp_path / "calst.json"
+    calst.write_text(json.dumps(calst_doc), encoding="utf-8")
+    audio = tmp_path / "audio"
+    rc = fpa.main(["extract", "--source", str(pyg), "--calst-source", str(calst), "--audio-dir", str(audio)])
+    assert rc == 0
+    return {r["url"]: r for r in fpa.load_manifest(audio / fpa.MANIFEST_NAME)}
+
+
+def test_reextraction_never_renumbers_existing_takes_or_flips_surplus(tmp_path):
+    # Regression: a re-crawl of calst lists the same sounds in a different
+    # order. Extraction used to renumber takes from the source's current order
+    # on every run, re-keying (and re-marking surplus on) rows already in the
+    # manifest — and in the table.
+    pyg = _doc(_rec("led", Oslo=["Oslo_Normal_P.mp3"]))
+    first = _calst_doc([
+        _calst_entry("led", [_calst_sound("Oslo_Normal_A.mp3"), _calst_sound("Oslo_Slow_B.mp3", "Slow"),
+                             _calst_sound("Oslo_Normal_C.mp3")]),
+        _calst_entry("Aud", [_calst_sound("Oslo_Normal_D.mp3"), _calst_sound("Oslo_Normal_E.mp3")]),
+        _calst_entry("gone", [_calst_sound("Oslo_Normal_G.mp3")]),
+    ])
+    before = _extract(tmp_path, pyg, first)
+    assert [before[fpa.BASE_URL + b]["take"] for b in ("Oslo_Normal_P.mp3", "Oslo_Normal_A.mp3",
+                                                       "Oslo_Slow_B.mp3", "Oslo_Normal_C.mp3")] == [0, 1, 2, 3]
+
+    # Same sounds, reversed order; "gone" vanished; new sounds for led and Aud,
+    # and a brand-new word — new sounds listed BEFORE the existing ones.
+    second = _calst_doc([
+        _calst_entry("aud", [_calst_sound("Oslo_Normal_F.mp3")]),
+        _calst_entry("Aud", [_calst_sound("Oslo_Normal_E.mp3"), _calst_sound("Oslo_Normal_D.mp3")]),
+        _calst_entry("led", [_calst_sound("Oslo_Normal_Z.mp3"), _calst_sound("Oslo_Normal_C.mp3"),
+                             _calst_sound("Oslo_Slow_B.mp3", "Slow"), _calst_sound("Oslo_Normal_A.mp3"),
+                             _calst_sound("Oslo_Normal_Y.mp3")]),
+        _calst_entry("ny", [_calst_sound("Oslo_Normal_N.mp3")]),
+    ])
+    after = _extract(tmp_path, pyg, second)
+
+    assert set(before) <= set(after)  # never deletes, incl. the vanished "gone" row
+    for url, old in before.items():
+        new = after[url]
+        for field in ("word", "dialect", "take", "path", "status", "origin"):
+            assert new.get(field) == old.get(field), (url, field)
+        assert bool(new.get("surplus")) == bool(old.get("surplus")), url
+
+    added = {u: r for u, r in after.items() if u not in before}
+    by_base = {u.rsplit("/", 1)[-1]: r for u, r in added.items()}
+    # led had takes 0–3: new ones continue at 4, 5 in source order (Z before Y)
+    assert by_base["Oslo_Normal_Z.mp3"]["take"] == 4 and by_base["Oslo_Normal_Y.mp3"]["take"] == 5
+    # "aud" casefolds onto "Aud" (takes 0, 1) → 2, and is beyond the 2-take budget
+    assert by_base["Oslo_Normal_F.mp3"]["take"] == 2 and by_base["Oslo_Normal_F.mp3"].get("surplus") is True
+    assert by_base["Oslo_Normal_Z.mp3"].get("surplus") is True
+    assert by_base["Oslo_Normal_N.mp3"]["take"] == 0 and not by_base["Oslo_Normal_N.mp3"].get("surplus")
+
+    # and a third run over the same source changes nothing
+    assert _extract(tmp_path, pyg, second) == after
+
+
+def test_merge_numbers_new_rows_after_vanished_rows_takes_too():
+    old = [{"word": "a", "dialect": "Oslo", "take": 3, "url": "u9", "path": "Oslo/Oslo_Normal_9.mp3", "status": "ok"}]
+    new = [{"word": "A", "dialect": "Oslo", "take": 0, "url": "u1", "path": "Oslo/Oslo_Normal_1.mp3", "status": "pending"}]
+    merged, dropped = fpa.merge_manifest(new, old)
+    by_url = {r["url"]: r for r in merged}
+    assert by_url["u9"]["take"] == 3 and [r["url"] for r in dropped] == ["u9"]
+    assert by_url["u1"]["take"] == 4
+
+
 def test_slow_recordings_are_always_surplus():
     rows = [_row("led", "Oslo", 0, "Slow")]
     fpa.mark_surplus(rows)

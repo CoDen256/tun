@@ -231,9 +231,10 @@ def build_calst_inventory(
     (and is mutated as calst rows are added, so a sound repeated across calst
     exercises yields one row too). `takes` must already hold the pygmalion
     take count per `(word, dialect)` (mutated the same way) so calst takes
-    continue the existing sequence and never renumber it. Both pygmalion and
-    calst extraction are purely source-derived, so re-running this with
-    freshly-seeded `known_urls`/`takes` reproduces identical rows."""
+    continue the pygmalion sequence. These takes are source-order only and
+    follow the crawl's sound order, which changes between crawls — so they are
+    provisional: `merge_manifest` keeps the take of every row already in the
+    manifest and numbers only new rows, after the existing ones."""
     rows, skipped = [], []
     for wordlist in iter_wordlists(doc):
         for entry in wordlist:
@@ -299,24 +300,56 @@ def mark_surplus(rows: list[dict]) -> None:
 
 
 def merge_manifest(new_rows: list[dict], old_rows: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Keep download progress across re-extraction (design D7): a URL already
-    in the manifest keeps its status/bytes/sha256. Rows that vanished from the
-    source are retained (never delete data silently) and returned as `dropped`
-    so the caller can report them."""
+    """Reconcile a fresh source extraction with the existing manifest.
+
+    The manifest, not the source, owns `take` once a row exists: the source's
+    order can change between crawls (a re-crawl of calst visits sounds in a
+    different order), and `take` is part of import's primary key, so
+    renumbering an existing row would re-key data already in the table. So:
+
+    - A URL already in the manifest keeps its row as is — `word`, `dialect`,
+      `take`, `path`, `origin`, download progress (`status`/`bytes`/`sha256`)
+      — taking only a non-empty `translation` from the source.
+    - A new URL gets the next take after the highest take its casefolded
+      `(word, dialect)` already has anywhere in the manifest (vanished rows
+      included), in source order: `new_rows`' own takes, grouped casefolded.
+    - Rows that vanished from the source are retained untouched (never delete
+      data silently) and returned as `dropped` so the caller can report them.
+
+    `surplus` is then recomputed over every row from these stable takes
+    (`mark_surplus`), so an existing row's marking moves only if the policy
+    does. Re-running with the same source is a no-op."""
     old_by_url = {r["url"]: r for r in old_rows}
-    merged = []
+    next_take: dict[tuple[str, str], int] = {}
+    for r in old_rows:
+        key = (r["word"].casefold(), r["dialect"])
+        next_take[key] = max(next_take.get(key, 0), r["take"] + 1)
+
+    kept, fresh = [], []
     for row in new_rows:
         old = old_by_url.get(row["url"])
-        if old is not None:
-            row = dict(row)
-            row["status"] = old.get("status", PENDING)
-            for k in ("bytes", "sha256"):
-                if k in old:
-                    row[k] = old[k]
-        merged.append(row)
+        if old is None:
+            fresh.append(row)
+            continue
+        row_kept = dict(old)
+        if row.get("translation"):
+            row_kept["translation"] = list(row["translation"])
+        kept.append(row_kept)
+
+    fresh.sort(key=lambda r: (r["dialect"], r["word"].casefold(), r["take"], r["word"], r["url"]))
+    added = []
+    for row in fresh:
+        key = (row["word"].casefold(), row["dialect"])
+        row = dict(row)
+        row["take"] = next_take.get(key, 0)
+        next_take[key] = row["take"] + 1
+        added.append(row)
+
     new_urls = {r["url"] for r in new_rows}
-    dropped = [r for r in old_rows if r["url"] not in new_urls]
-    return merged + dropped, dropped
+    dropped = [dict(r) for r in old_rows if r["url"] not in new_urls]
+    merged = sorted(kept + added, key=lambda r: (r["dialect"], r["word"], r["take"])) + dropped
+    mark_surplus(merged)
+    return merged, [r for r in merged if r["url"] not in new_urls]
 
 
 # ─────────────────────────── manifest I/O ───────────────────────────
@@ -781,10 +814,13 @@ def cmd_extract(args, console: Console) -> int:
         skipped += calst_skipped
         rows = sorted(rows + calst_rows, key=lambda r: (r["dialect"], r["word"], r["take"]))
 
-    mark_surplus(rows)
-
+    # `rows` carry source-order takes only; `merge_manifest` keeps every
+    # existing row's take, numbers new rows after them, and marks surplus.
     manifest = args.audio_dir / MANIFEST_NAME
-    merged, dropped = merge_manifest(rows, load_manifest(manifest))
+    old_rows = load_manifest(manifest)
+    merged, dropped = merge_manifest(rows, old_rows)
+    old_urls = {r["url"] for r in old_rows}
+    added = [r for r in merged if r["url"] not in old_urls]
     save_manifest(manifest, merged)
 
     table = Table(title="pygmalion audio — extract", title_justify="left")
@@ -801,10 +837,16 @@ def cmd_extract(args, console: Console) -> int:
     for s in skipped:
         console.print(f"[yellow]skipped[/yellow] «{s['word']}» ({s['dialect']}): {s['reason']} — {s['path']}", highlight=False)
     if calst_rows:
-        console.print(f"calst: {len(calst_rows)} new row(s) from {args.calst_source}")
-    surplus_n = sum(bool(r.get("surplus")) for r in rows)
+        console.print(f"calst: {len(calst_rows)} row(s) sourced from {args.calst_source}")
+    console.print(
+        f"{len(added)} new manifest row(s) "
+        f"({sum(not r.get('surplus') for r in added)} importable, takes numbered after existing ones)"
+    )
+    surplus_n = sum(bool(r.get("surplus")) for r in merged)
     if dropped:
-        console.print(f"[yellow]{len(dropped)} manifest row(s) no longer in the source were kept[/yellow]")
+        console.print(
+            f"[yellow]{len(dropped)} manifest row(s) no longer in the source were kept, takes unchanged[/yellow]"
+        )
     console.print(
         f"wrote {manifest} ({len(merged)} rows; {sum(r['status'] == DONE for r in merged)} already ok; "
         f"{surplus_n} surplus)"
