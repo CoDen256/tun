@@ -95,8 +95,35 @@ const Explore = (() => {
     } finally { busy = false; }
   }
 
+  // The cell's preview state, driven by the shared Player (D4): ▶ restarts,
+  // ❚❚ pauses/resumes, the line under the cell IS the playback position.
+  // Previous cells' adapters may be stale after a re-render; writing to a
+  // detached node is harmless.
+  function previewUi(cell, prevBtn, pauseBtn) {
+    return {
+      onState(x) {
+        cell.classList.toggle('loading', x === 'loading');
+        cell.classList.toggle('playing', x === 'playing' || x === 'paused');
+        cell.classList.toggle('paused', x === 'paused');
+        prevBtn.innerHTML = x === 'loading' ? '<span class="spin"></span>' : (x === 'playing' ? '↺' : '▶');
+        pauseBtn.textContent = x === 'paused' ? '▶' : '❚❚';
+        pauseBtn.title = x === 'paused' ? 'resume this preview' : 'pause this preview';
+        if (x === 'stopped' || x === 'loading') cell.style.setProperty('--pp', '0');
+      },
+      onFrame(f) { cell.style.setProperty('--pp', f.toFixed(4)); },
+    };
+  }
+
+  /** D3: an expanded chapter's audio is the chunk Study and Prepare use. */
+  function ensureChunk(ch) {
+    if (App.book && App.book.audioState === 'ready') ChapterAudio.prefetch(ch.id, App.userId);
+  }
+
+  const cellUis = new Map();   // segId -> the rendered cell's preview adapter
+
   function render() {
     const book = App.book;
+    cellUis.clear();
     if (!book) { host.innerHTML = ''; return; }
     bookEl.textContent = book.title || book.originalFilename || '';
     const sentences = App.sentences;
@@ -154,6 +181,7 @@ const Explore = (() => {
       const body = document.createElement('div');
       body.className = 'exbody';
       if (isOpen) {
+        ensureChunk(ch);
         const grid = document.createElement('div');
         grid.className = 'sgrid';
         kids.forEach((s) => {
@@ -164,29 +192,48 @@ const Explore = (() => {
           cell.setAttribute('role', 'button');
           cell.title = 'open this sentence in Study';
           cell.innerHTML =
-            '<button class="sprev" type="button" title="preview this sentence">▶</button>'
+            '<button class="sprev" type="button" title="preview this sentence (restarts if playing)">▶</button>'
             + '<span class="snum num"></span>'
             + '<span class="tickmark">✓</span>'
-            + `<span class="sdur num">${Fmt.secs(s.durationMs)}</span>`;
+            + `<span class="sdur num">${Fmt.secs(s.durationMs)}</span>`
+            + '<button class="spause" type="button" title="pause / resume this preview">❚❚</button>'
+            + '<span class="pline" aria-hidden="true"></span>';
           cell.querySelector('.snum').textContent = gi + 1;
           const activate = (shift) => {
             if (selectMode) { cellClick(s.id, shift); return; }
             Study.openAt(s.id);
           };
           cell.addEventListener('click', (e) => {
-            if (e.target.closest('.sprev')) return;   // the preview is its own target
+            if (e.target.closest('.sprev') || e.target.closest('.spause')) return;   // own targets
             activate(e.shiftKey);
           });
           cell.addEventListener('keydown', (e) => {
+            if (e.target !== cell) return;
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(e.shiftKey); }
           });
-          cell.querySelector('.sprev').addEventListener('click', (e) => {
+          const prevBtn = cell.querySelector('.sprev');
+          const pauseBtn = cell.querySelector('.spause');
+          // the Player talks to whichever cell is CURRENT for this sentence,
+          // so a re-render mid-preview keeps the new cell's line moving
+          cellUis.set(s.id, previewUi(cell, prevBtn, pauseBtn));
+          const ui = {
+            onState: (x) => { const u = cellUis.get(s.id); if (u) u.onState(x); },
+            onFrame: (f) => { const u = cellUis.get(s.id); if (u) u.onFrame(f); },
+          };
+          const live = Player.owned('preview:' + s.id);
+          if (live) {
+            ui.onState(live.paused ? 'paused' : 'playing');
+            if (live.fraction) ui.onFrame(live.fraction());
+          }
+          prevBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (App.book.audioState !== 'ready') { App.toast('This book has no stored audio.'); return; }
-            cell.classList.add('playing');
-            cell.style.setProperty('--pdur', Math.max(300, s.durationMs) + 'ms');
-            Preview.play(s.id, () => cell.classList.remove('playing'));
-            setTimeout(() => cell.classList.remove('playing'), s.durationMs + 400);
+            Player.preview(ch, s, ui);
+          });
+          pauseBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const hd = Player.owned('preview:' + s.id);
+            if (hd) hd.togglePause();
           });
           grid.appendChild(cell);
         });

@@ -116,40 +116,66 @@
 </section>
 
 <!-- =============== 3. STUDY ===============
-     ONE screen. Below 620px the primaries become the phone cluster and the
-     tray collapses into the ⋯ sheet whose trigger sits in the top bar. -->
+     ONE screen, mockups/study.html 1-1. Below 620px the desktop top bar is
+     replaced by the compact phone header (grabber + two lines, D14), the
+     primaries become the phone cluster and the tray collapses into the ⋯
+     sheet. -->
 <section class="screen" id="s-study">
-  <div class="topbar">
-    <!-- the phone's pull-tab: a short downward drag here reveals the nav
-         that is hidden while studying (task 6.1). Desktop never shows it. -->
-    <button class="m-pull js-pull" type="button" aria-label="pull down for navigation">
-      <span class="grabber"></span><span>pull for nav</span>
-    </button>
-    <span class="t-book" id="stBook"></span>
+  <!-- desktop top bar -->
+  <div class="topbar d-only">
+    <span class="t-book js-book"></span>
     <span class="t-ch-wrap">
       <button class="ch-nav js-chprev" type="button" title="previous chapter (Shift+←)" aria-label="previous chapter">‹</button>
-      <span class="t-ch" id="stChapter"></span>
+      <span class="t-ch js-chname"></span>
       <button class="ch-nav js-chnext" type="button" title="next chapter (Shift+→)" aria-label="next chapter">›</button>
     </span>
-    <button class="m-more-pill js-more" type="button">⋯ more</button>
-    <span class="t-count num">sentence <b id="stIdx">–</b> / <span id="stTotal">–</span></span>
+    <!-- AUDIOBOOK SLOT (D10, task 8.1): "▶▶ Listen" lives here. Rendered
+         hidden until audiobook mode is wired; un-hide and bind .js-ab. -->
+    <button class="ab-btn js-ab" type="button" hidden title="read this chapter aloud, sentence after sentence (L)"><span class="gl">▶▶</span>Listen<span class="kbd">L</span></button>
+    <span class="t-count num">sentence <b class="js-idx">–</b> / <span class="js-total">–</span></span>
     <button class="ctl-s js-exit" type="button">✕ exit<span class="kbd">Esc</span></button>
     <div class="t-progress bar"><i id="stProg" style="width:0%"></i></div>
   </div>
 
+  <!-- phone top, compacted to two lines (D14). The grabber reveals the
+       nav that is hidden while studying. -->
+  <div class="m-head p-only">
+    <button class="m-grab js-pull" type="button" aria-label="pull down for navigation"><span></span></button>
+    <div class="mh-row">
+      <button class="mh-ic js-exit" type="button" aria-label="exit to library">✕</button>
+      <span class="mh-book js-book"></span>
+      <button class="mh-ic js-more" type="button" aria-label="more actions">⋯</button>
+    </div>
+    <div class="mh-row mh-row2">
+      <button class="ch-nav js-chprev" type="button" aria-label="previous chapter">‹</button>
+      <span class="mh-ch js-chname"></span>
+      <button class="ch-nav js-chnext" type="button" aria-label="next chapter">›</button>
+      <span class="mh-dot">·</span>
+      <span class="mh-count num"><b class="js-idx">–</b> / <span class="js-total">–</span></span>
+      <!-- AUDIOBOOK SLOT (D10/D14): "▶▶ Listen" sits at the end of line 2. -->
+      <button class="ab-btn js-ab" type="button" hidden aria-label="listen: read this chapter aloud"><span class="gl">▶▶</span>Listen</button>
+    </div>
+  </div>
+
   <div class="stage">
+    <!-- a progress write that failed (D6): persistent, in-page, never a dialog -->
+    <div class="st-error hidden js-save-error" role="alert">
+      <span class="js-save-error-text"></span>
+      <button class="x js-save-error-x" type="button" aria-label="dismiss">✕</button>
+    </div>
+
     <div class="sentbox js-sentbox">
       <!-- TWO stacked lanes on ONE time axis (task 3.1). The take lane keeps
            its height when empty so the controls below never move (3.2), the
            live recording waveform occupies exactly that box (3.3), and each
-           pitch contour is drawn INSIDE its own lane (3.4) — there is no
-           separate contour panel any more. -->
+           pitch contour is drawn INSIDE its own lane (3.4). -->
       <div class="lanes contours js-lanes">
         <div class="lanes-head">
-          <span>one time axis · two takes</span>
+          <span class="d-only">one time axis · two takes</span>
           <span class="trim js-trimchip">silence trimmed</span>
+          <button class="auto-chip js-auto" type="button" title="autoplay — a setting; click to flip it here">↻ autoplay</button>
           <span class="sp"></span>
-          <button class="lane-toggle on js-contour-toggle" type="button" aria-pressed="true">pitch contour<span class="kbd">P</span></button>
+          <button class="lane-toggle on js-contour-toggle" type="button" aria-pressed="true">∿ contour<span class="kbd d-only">P</span></button>
         </div>
 
         <div class="lane lane-ref">
@@ -157,6 +183,10 @@
           <div class="wave-wrap js-wavewrap">
             <div class="js-wave"></div>
             <svg class="contour-over js-contour-ref" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <!-- split editing (D13): drawn ONLY after Split is pressed -->
+            <div class="split-shade js-split-shade"></div>
+            <span class="split-ab js-split-a">A</span><span class="split-ab js-split-b">B</span>
+            <div class="split-line js-split-line"></div>
             <div class="playhead js-playhead"></div>
           </div>
         </div>
@@ -176,38 +206,26 @@
       </div>
       <div class="sent-meta num">
         <span><b class="js-dur">–</b> long</span>
-        <span>at <b class="js-at">–</b> in the book</span>
+        <span class="d-only">at <b class="js-at">–</b> in the book</span>
         <span class="js-state">idle</span>
       </div>
       <div class="sent-text js-sent-text"></div>
     </div>
 
-    <div class="ticks js-ticks" aria-label="sentences in this chapter"></div>
-    <div class="tick-legend">
-      <span><i class="d"></i>done</span>
-      <span><i></i>not done</span>
-      <span><i class="c"></i>this sentence</span>
-    </div>
-
-    <div class="controls">
-      <button class="ctl primary js-play" type="button"><span class="gl">▶</span><span class="lbl">Play</span><span class="kbd">space</span></button>
-      <button class="ctl rec js-rec" type="button"><span class="gl">●</span><span class="lbl">Record</span><span class="kbd">R</span></button>
-      <button class="ctl js-cmp" type="button"><span class="gl">⇄</span><span class="lbl">Compare</span><span class="kbd">C</span></button>
-      <button class="ctl primary js-done" type="button"><span class="gl">✓</span><span class="lbl">Done &amp; next</span><span class="kbd">↵</span></button>
-    </div>
-
-    <div class="controls-2">
-      <button class="ctl-s js-prev" type="button">← prev<span class="kbd">←</span></button>
-      <button class="ctl-s js-next" type="button">→ next<span class="kbd">→</span></button>
-      <button class="ctl-s js-chprev" type="button">⟨ prev chapter<span class="kbd">⇧←</span></button>
-      <button class="ctl-s js-chnext" type="button">⟩ next chapter<span class="kbd">⇧→</span></button>
-      <button class="ctl-s js-split" type="button">✂ split here<span class="kbd">X</span></button>
-      <button class="ctl-s js-merge" type="button">⇢⇠ merge with next<span class="kbd">M</span></button>
-      <button class="ctl-s js-tr" type="button">📝 transcribe<span class="kbd">T</span></button>
-      <button class="ctl-s js-fl" type="button">🔬 Formant Lab<span class="kbd">F</span></button>
-      <button class="ctl-s js-jump" type="button">⤓ first unfinished<span class="kbd">U</span></button>
-      <button class="ctl-s js-contour-toggle on" type="button">∿ pitch contour<span class="kbd">P</span></button>
-      <button class="ctl-s js-help" type="button">? shortcuts<span class="kbd">?</span></button>
+    <!-- split editing: appears ONLY after Split is pressed (D13) -->
+    <div class="split-bar js-split-bar">
+      <div class="sb-top">
+        <span class="eyebrow">splitting sentence <span class="js-split-n">–</span></span>
+        <span class="num">at <b class="js-split-t">–</b> of <span class="js-split-d">–</span></span>
+        <span class="quiet sb-hint">drag or tap the red line · ←/→ nudges</span>
+      </div>
+      <div class="sb-acts">
+        <button class="mini js-hear-l" type="button">▶ hear left</button>
+        <button class="mini js-hear-r" type="button">▶ hear right</button>
+        <span class="sp"></span>
+        <button class="mini js-split-cancel" type="button">Cancel<span class="kbd">Esc</span></button>
+        <button class="mini go js-split-ok" type="button">✂ Confirm split<span class="kbd">↵</span></button>
+      </div>
     </div>
 
     <div class="panel hidden js-tr-panel">
@@ -226,20 +244,53 @@
       <div class="quiet js-fl-text"></div>
     </div>
 
-    <div class="ephemeral">Recordings are never uploaded. Closing this tab discards them.</div>
+    <div class="ticks js-ticks" aria-label="sentences in this chapter"></div>
+    <div class="tick-legend">
+      <span><i class="d"></i>done</span>
+      <span><i></i>not done</span>
+      <span><i class="c"></i>this sentence</span>
+    </div>
+
+    <div class="ctl-zone">
+      <div class="controls">
+        <button class="ctl primary js-play" type="button"><span class="gl">▶</span><span class="lbl">Play</span><span class="kbd">space</span></button>
+        <!-- Pause (D11): a SECONDARY pill, not a fifth primary. Desktop:
+             directly after Play; phone: a satellite over the Play column. -->
+        <button class="pause-btn js-pause" type="button" aria-disabled="true" title="pause / resume (K)"><span class="pg">❚❚</span><span class="pl">pause</span><span class="kbd">K</span></button>
+        <button class="ctl rec js-rec" type="button"><span class="gl">●</span><span class="lbl">Record</span><span class="kbd">R</span></button>
+        <button class="ctl js-cmp" type="button"><span class="gl">⇄</span><span class="lbl">Compare</span><span class="kbd">C</span></button>
+        <button class="ctl primary js-done" type="button"><span class="gl">✓</span><span class="lbl">Done &amp; next</span><span class="kbd">↵</span></button>
+      </div>
+
+      <div class="controls-2">
+        <button class="ctl-s js-prev" type="button">← prev<span class="kbd">←</span></button>
+        <button class="ctl-s js-next" type="button">→ next<span class="kbd">→</span></button>
+        <button class="ctl-s js-chprev" type="button">⟨ prev chapter<span class="kbd">⇧←</span></button>
+        <button class="ctl-s js-chnext" type="button">⟩ next chapter<span class="kbd">⇧→</span></button>
+        <button class="ctl-s js-split" type="button">✂ split…<span class="kbd">X</span></button>
+        <button class="ctl-s js-merge" type="button">⇢⇠ merge with next<span class="kbd">M</span></button>
+        <button class="ctl-s js-tr" type="button">📝 transcribe<span class="kbd">T</span></button>
+        <button class="ctl-s js-fl" type="button">🔬 Formant Lab<span class="kbd">F</span></button>
+        <button class="ctl-s js-jump" type="button">⤓ first unfinished<span class="kbd">U</span></button>
+        <button class="ctl-s js-contour-toggle on" type="button">∿ pitch contour<span class="kbd">P</span></button>
+        <button class="ctl-s js-help" type="button">? shortcuts<span class="kbd">?</span></button>
+      </div>
+      <div class="ephemeral d-only">Recordings are never uploaded. Closing this tab discards them.</div>
+    </div>
   </div>
 
+  <!-- phone ⋯ sheet (D14); its trigger is in the phone header -->
   <div class="m-scrim js-scrim"></div>
   <div class="m-sheet js-sheet">
     <div class="grab"></div>
-    <button class="item js-split" type="button">✂ <span>Split here</span><span class="tag">at the playhead</span></button>
+    <button class="item js-split" type="button">✂ <span>Split…</span><span class="tag">stops playback, opens the split line</span></button>
     <button class="item js-merge" type="button">⇢⇠ <span>Merge with next</span><span class="tag">joins 2 → 1</span></button>
     <button class="item js-tr" type="button">📝 <span>Transcribe</span><span class="tag">smia</span></button>
     <button class="item js-fl" type="button">🔬 <span>Formant Lab</span><span class="tag">phonexa</span></button>
-    <button class="item js-jump" type="button">⤓ <span>First unfinished</span><span class="tag">U</span></button>
+    <button class="item js-jump" type="button">⤓ <span>First unfinished</span></button>
+    <button class="item js-prev" type="button">← <span>Previous sentence</span><span class="tag">or swipe</span></button>
     <button class="item js-help" type="button">? <span>Shortcuts</span></button>
-    <button class="item" data-go="explore" type="button">☰ <span>Explore the book</span></button>
-    <button class="item" data-go="library" type="button">✕ <span>Exit to library</span></button>
+    <button class="item js-exit" type="button">✕ <span>Exit to library</span></button>
   </div>
 </section>
 
@@ -293,24 +344,22 @@
 <!-- =============== shortcut overlay =============== -->
 <div class="overlay hidden" id="kover">
   <div class="sheet">
-    <h3>Keyboard</h3>
+    <h3>Study shortcuts</h3>
     <div class="klist">
-      <div><span>Play the sentence</span><span class="kbd">space</span></div>
+      <div><span>Play — restarts from the start if playing</span><span class="kbd">space</span></div>
+      <div><span>Pause / resume</span><span class="kbd">K</span></div>
       <div><span>Record / stop</span><span class="kbd">R</span></div>
-      <div><span>Compare — reference then your take</span><span class="kbd">C</span></div>
-      <div><span>Done &amp; next</span><span class="kbd">↵</span></div>
-      <div><span>Previous sentence</span><span class="kbd">←</span></div>
-      <div><span>Next without marking</span><span class="kbd">→</span></div>
-      <div><span>Previous chapter</span><span class="kbd">⇧ ←</span></div>
-      <div><span>Next chapter</span><span class="kbd">⇧ →</span></div>
-      <div><span>Show / hide the pitch contours</span><span class="kbd">P</span></div>
-      <div><span>Split here (at the playhead)</span><span class="kbd">X</span></div>
+      <div><span>Compare</span><span class="kbd">C</span></div>
+      <div><span>Done &amp; next (autoplays the next)</span><span class="kbd">↵</span></div>
+      <div><span>Previous / next sentence</span><span class="kbd">← →</span></div>
+      <div><span>Previous / next chapter</span><span class="kbd">⇧← ⇧→</span></div>
+      <div><span>Audiobook: listen / resume</span><span class="kbd">L</span></div>
+      <div><span>Split… (stops, opens the split line)</span><span class="kbd">X</span></div>
+      <div><span>While splitting: nudge · confirm · cancel</span><span class="kbd">← → ↵ Esc</span></div>
       <div><span>Merge with next</span><span class="kbd">M</span></div>
-      <div><span>Transcribe (smia)</span><span class="kbd">T</span></div>
-      <div><span>Formant Lab (phonexa, book audio)</span><span class="kbd">F</span></div>
-      <div><span>Jump to first unfinished</span><span class="kbd">U</span></div>
-      <div><span>Close panel / exit</span><span class="kbd">Esc</span></div>
-      <div><span>This panel</span><span class="kbd">?</span></div>
+      <div><span>Transcribe · Formant Lab · first unfinished</span><span class="kbd">T F U</span></div>
+      <div><span>Pitch contours</span><span class="kbd">P</span></div>
+      <div><span>Stop audiobook / cancel split / leave</span><span class="kbd">Esc</span></div>
     </div>
     <div class="row-actions" style="margin-top:1.2rem"><button class="mini" id="koverClose" type="button">Close</button></div>
   </div>

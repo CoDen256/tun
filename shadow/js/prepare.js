@@ -197,22 +197,41 @@ const Prepare = (() => {
       el.className = 'prow' + (s.done ? ' done' : '');
       el.innerHTML =
         `<span class="pnum num">${ri + 1}</span>`
-        + '<button class="sprev" type="button" title="play just this sentence">▶</button>'
+        + '<button class="sprev" type="button" title="play just this sentence (restarts if playing)">▶</button>'
+        + '<button class="spause" type="button" title="pause / resume this preview">❚❚</button>'
         + `<span class="pw"><span class="ph"></span>${rowWave(entry, chapter, s)}</span>`
         + `<span class="ptime num">${Fmt.clock(s.startMs)} → ${Fmt.clock(s.endMs)} · ${Fmt.secs(s.durationMs)}</span>`
         + '<span class="pdone" title="covered by a completed time range">✓</span>'
         + '<span class="pacts"><button class="mini" data-a="split" type="button">✂ Split</button>'
         + '<button class="mini" data-a="merge" type="button">⇣ Merge</button></span>';
 
+      // The row preview is the shared player model (D4): ▶ restarts, ❚❚
+      // pauses/resumes, the playhead is the element's real position.
       const pw = el.querySelector('.pw');
-      el.querySelector('.sprev').addEventListener('click', () => {
-        const e = ChapterAudio.peek(chapter.id);
-        if (!e) { Preview.play(s.id); return; }
-        pw.classList.add('playing');
-        pw.style.setProperty('--pdur', s.durationMs + 'ms');
-        ChapterAudio.play(e, s.startMs - chapter.startMs, s.durationMs, {
-          onEnd: () => pw.classList.remove('playing'),
-        });
+      const ph = el.querySelector('.ph');
+      const prevBtn = el.querySelector('.sprev');
+      const pauseBtn = el.querySelector('.spause');
+      const ui = {
+        onState(x) {
+          el.classList.toggle('loading', x === 'loading');
+          el.classList.toggle('playing', x === 'playing' || x === 'paused');
+          el.classList.toggle('paused', x === 'paused');
+          pw.classList.toggle('playing', x === 'playing' || x === 'paused');
+          prevBtn.innerHTML = x === 'loading' ? '<span class="spin"></span>' : (x === 'playing' ? '↺' : '▶');
+          pauseBtn.textContent = x === 'paused' ? '▶' : '❚❚';
+          if (x === 'stopped') ph.style.left = '0%';
+        },
+        onFrame(f) { ph.style.left = 'calc(' + (f * 100).toFixed(2) + '% - ' + (f * 2).toFixed(2) + 'px)'; },
+      };
+      const live = Player.owned('preview:' + s.id);
+      if (live) ui.onState(live.paused ? 'paused' : 'playing');
+      prevBtn.addEventListener('click', () => {
+        if (App.book.audioState !== 'ready') { App.toast('This book has no stored audio.'); return; }
+        Player.preview(chapter, s, ui);
+      });
+      pauseBtn.addEventListener('click', () => {
+        const hd = Player.owned('preview:' + s.id);
+        if (hd) hd.togglePause();
       });
 
       el.querySelector('.pacts').addEventListener('click', async (e) => {

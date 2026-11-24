@@ -35,6 +35,9 @@ const App = (() => {
     // under `shadowTrimSilence` in shadow's OWN settings store (D168) — it
     // used to be proxied to phonexa.
     trim: true,
+    // "Play sentence when opened" (D12), default ON. Stored under
+    // `shadowAutoplay` {on} in the same store, loaded with the trim switch.
+    autoplay: true,
     // `P`'s state. It must survive moving between sentences (task 3.5), so
     // it lives here and not in Study's per-sentence state; localStorage
     // carries it across reloads too.
@@ -85,8 +88,19 @@ const App = (() => {
       const stored = all && all[TRIM_KEY];
       // absent → the default, which is ON
       state.trim = !(stored && stored.on === false);
-    } catch (e) { state.trim = true; }
+      const auto = all && all[AUTOPLAY_KEY];
+      state.autoplay = !(auto && auto.on === false);
+    } catch (e) { state.trim = true; state.autoplay = true; }
     paintTrim();
+  }
+
+  // ── autoplay: "Play sentence when opened" (D12) ───────────────────────
+  const AUTOPLAY_KEY = 'shadowAutoplay';
+  function setAutoplay(on) {
+    state.autoplay = !!on;
+    if (typeof Study !== 'undefined') Study.paintAuto();
+    Api.putSetting(AUTOPLAY_KEY, { on: state.autoplay })
+      .catch((e) => toast('Could not save the autoplay setting: ' + e.message, true));
   }
 
   function setContours(on) {
@@ -222,8 +236,9 @@ const App = (() => {
 
   return {
     state, show, toast, openBook, refreshBook, overlay, boot, reduced,
-    chapterIndexOf, globalIndexOf, setTrim, setContours,
+    chapterIndexOf, globalIndexOf, setTrim, setContours, setAutoplay,
     get trim() { return state.trim; },
+    get autoplay() { return state.autoplay; },
     get contours() { return state.contours; },
     get userId() { return state.userId; },
     get book() { return state.book; },

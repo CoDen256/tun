@@ -3,19 +3,35 @@
 // The centre of this screen is TWO stacked lanes on one time axis (design.md
 // §3): the audiobook's sentence above, the learner's take below, identical
 // edges so they compare bar for bar. Each pitch contour is drawn inside its
-// own lane; the separate contour panel that used to sit under the waveform
-// is gone.
+// own lane.
 //
 // Playback always comes out of the chapter chunk this screen already
 // downloaded, and always stops dead at the end of the window it is playing
-// rather than running into the next sentence. Recording is a MediaRecorder
-// blob held in a Map that dies with the tab: there is no endpoint to upload
-// it to and no control here that suggests otherwise. Trimming a take is a
-// window applied to bytes that are already ephemeral — nothing is re-encoded
-// for storage and nothing is sent anywhere.
+// rather than running into the next sentence. Every playback here goes
+// through the shared `Player` (chapteraudio.js, D4): ▶ restarts, the
+// secondary ❚❚ (K) pauses and resumes with the playhead frozen, and starting
+// any player stops every other one on the page.
 //
-// Slow playback (0.7×) and its `S` binding are GONE, deliberately — not
-// hidden, not disabled: absent.
+// Recording is a MediaRecorder blob held in a Map that dies with the tab:
+// there is no endpoint to upload it to. The microphone is acquired when a
+// take starts and every track is stopped when it ends, is cancelled, or the
+// screen is left (D5) — the browser's mic indicator goes away.
+//
+// Done-and-next is optimistic (D6): the next sentence is shown and starts
+// playing at once, the progress write runs in the background, and a failure
+// reverts the sentence to not-done and says so in the page.
+//
+// Split is reversed (D13): X / "Split…" stops playback and only THEN shows a
+// red line to place; nothing is split without Confirm.
+//
+// AUDIOBOOK HOOKS (task 8, D10): every study action is dispatched through
+// run(name, fn); `setGuard(fn)` installs ONE interceptor that sees the
+// action name first and swallows it by returning true — that is how "any
+// study action only stops audiobook mode" plugs in. Names: play pause rec
+// cmp done prev next tick chprev chnext split merge tr fl jump exit contour
+// help wave (a press on the sentence waveform) ab (L / ▶▶ Listen).
+//
+// Slow playback (0.7×) and its `S` binding are GONE, deliberately.
 
 const Study = (() => {
   'use strict';
@@ -26,18 +42,26 @@ const Study = (() => {
 
   const st = {
     segId: null,
-    pos: 0,                 // parked playhead, 0..1 of the DRAWN window
-    playing: false,
-    stopPlay: null,
+    pos: 0,                 // the ref playhead, 0..1 of the DRAWN window
+    takePos: 0,             // the take playhead, seconds into its window
+    // the ONE live playback of this screen: a Player handle (ref lane) or
+    // the take handle (usr lane); null when idle
+    player: null,
+    lane: null,             // 'ref' | 'usr'
+    auto: false,            // the live playback was started by autoplay
+    label: '',
+    note: 'idle',           // the state line while nothing plays
+    cmpTimer: 0,
+    split: null,            // {at: 0..1 of the drawn window} while splitting
     chapterId: null,
     entry: null,
     loading: false,
     recording: false,
+    acquiring: false,
     recorder: null,
-    micStream: null,
+    micStream: null,        // ONLY while a take records (D5)
     recTimer: 0, meterTimer: 0, recStart: 0,
     liveLevels: null,       // the envelope accumulating while the mic is open
-    stopTake: null,
     // Every move to another sentence bumps this. A pitch analysis that
     // returns after the move carries a stale generation and is dropped
     // instead of painting onto a sentence the operator has already left
@@ -51,7 +75,9 @@ const Study = (() => {
   function seg() { const i = idx(); return i < 0 ? null : App.sentences[i]; }
   function chapterOf(s) { return App.chapters.find((c) => c.id === s.parentId) || null; }
 
-  function setState(txt) { qa('.js-state').forEach((e) => { e.textContent = txt; }); }
+  /** The state line's resting text; while something plays, splits or
+      records, stateText() says that instead. */
+  function setState(txt) { st.note = txt; paintStateLine(); }
 
   // ── the window this sentence is drawn and played over ──────────────────
   // Chunk-relative milliseconds. With trimming ON this is the speech window
@@ -90,12 +116,18 @@ const Study = (() => {
     const ch = chapterOf(s);
     if (!ch) { st.entry = null; st.chapterId = null; return null; }
     if (!App.book || App.book.audioState !== 'ready') { st.entry = null; st.chapterId = null; return null; }
-    if (st.chapterId === ch.id && st.entry && !force) return st.entry;
+    // the cached chunk may have been evicted (LRU of 3 — Explore and Prepare
+    // load chunks too); an evicted entry has no audio any more
+    if (st.chapterId === ch.id && st.entry && !force && ChapterAudio.peek(ch.id) === st.entry) return st.entry;
     st.loading = true;
     setState('fetching this chapter…');
     paintWave();
     try {
-      st.entry = await ChapterAudio.ensure(ch.id, App.userId);
+      const e = await ChapterAudio.ensure(ch.id, App.userId);
+      // a later move to another chapter owns st.entry now
+      const cur = seg();
+      if (cur && cur.parentId !== ch.id) return st.entry;
+      st.entry = e;
       st.chapterId = ch.id;
       setState(s.done ? 'done' : 'idle');
     } catch (e) {
@@ -194,9 +226,16 @@ const Study = (() => {
       b.title = 'sentence ' + (App.globalIndexOf(k.id) + 1) + (k.done ? ' — done' : '');
       if (k.done) b.classList.add('done');
       if (k.id === s.id) b.classList.add('cur');
-      b.addEventListener('click', () => go(App.globalIndexOf(k.id), false));
+      b.addEventListener('click', run('tick', () => go(App.globalIndexOf(k.id), { autoplay: true })));
       host.appendChild(b);
     });
+  }
+
+  function paintProgress() {
+    const total = App.sentences.length;
+    const doneN = App.sentences.filter((x) => x.done).length;
+    const bar = q('#stProg');
+    if (bar) bar.style.width = (total ? (100 * doneN) / total : 0).toFixed(1) + '%';
   }
 
   /** A lane carries .has-contour only while a contour is really drawn over
@@ -226,26 +265,27 @@ const Study = (() => {
   function render() {
     const book = App.book;
     const s = seg();
-    q('#stBook').textContent = book ? (book.title || book.originalFilename || '') : '';
+    qa('.js-book').forEach((e) => { e.textContent = book ? (book.title || book.originalFilename || '') : ''; });
     paintContourState();
+    paintAuto();
     if (!s) {
-      q('#stIdx').textContent = '–';
-      q('#stTotal').textContent = '–';
-      q('#stChapter').textContent = '';
+      qa('.js-idx').forEach((e) => { e.textContent = '–'; });
+      qa('.js-total').forEach((e) => { e.textContent = '–'; });
+      qa('.js-chname').forEach((e) => { e.textContent = ''; });
       q('.js-wave').innerHTML = Wave.placeholder('this split config has no sentences yet — run an analysis in Prepare');
       q('.js-ticks').innerHTML = '';
       paintTake();
       paintChapterNav();
+      paintPlayState();
       return;
     }
     const gi = idx();
     const total = App.sentences.length;
-    const doneN = App.sentences.filter((x) => x.done).length;
     const ci = App.chapterIndexOf(s.parentId);
-    q('#stIdx').textContent = gi + 1;
-    q('#stTotal').textContent = Fmt.int(total);
-    q('#stChapter').textContent = ci >= 0 ? `Chapter ${ci + 1}` : '';
-    q('#stProg').style.width = (total ? (100 * doneN) / total : 0).toFixed(1) + '%';
+    qa('.js-idx').forEach((e) => { e.textContent = gi + 1; });
+    qa('.js-total').forEach((e) => { e.textContent = Fmt.int(total); });
+    qa('.js-chname').forEach((e) => { e.textContent = ci >= 0 ? `Chapter ${ci + 1}` : ''; });
+    paintProgress();
     qa('.js-dur').forEach((e) => { e.textContent = Fmt.secs(s.durationMs); });
     qa('.js-at').forEach((e) => { e.textContent = Fmt.clock(s.startMs); });
     const txt = q('.js-sent-text');
@@ -255,9 +295,72 @@ const Study = (() => {
     paintTake();
     paintTicks();
     paintChapterNav();
-    setState(s.done ? 'done' : 'idle');
-    q('.js-playhead').style.left = '0%';
-    q('.js-wavewrap').classList.remove('playing');
+    st.note = s.done ? 'done' : 'idle';
+    paintSplit();
+    paintPlayState();
+  }
+
+  // ── the play state: pause pill, ↺, playhead caps, the state line ───────
+  function stateText() {
+    if (st.split) return 'splitting — playback stopped';
+    if (st.recording) return 'recording';
+    const h = st.player;
+    if (h && h.paused) {
+      const at = st.lane === 'usr' ? st.takePos * 1000 : st.pos * drawnMs();
+      return 'paused at ' + Fmt.secs(at) + ' — K resumes, Space restarts';
+    }
+    if (h && st.auto) return 'autoplay ▸ playing';
+    if (h) return st.lane === 'usr' ? 'playing your take' : (st.label || 'playing');
+    return st.note;
+  }
+  function paintStateLine() {
+    const t = stateText();
+    qa('.js-state').forEach((e) => { e.textContent = t; });
+  }
+  function drawnMs() {
+    const s = seg();
+    if (!s) return 0;
+    const w = window_(s);
+    return Math.max(0, w.to - w.from);
+  }
+
+  function paintPlayState() {
+    const h = st.player;
+    const paused = !!(h && h.paused);
+    qa('.js-pause').forEach((b) => {
+      b.setAttribute('aria-disabled', h ? 'false' : 'true');
+      b.classList.toggle('paused', paused);
+      b.querySelector('.pg').textContent = paused ? '▶' : '❚❚';
+      b.querySelector('.pl').textContent = paused ? 'resume' : 'pause';
+    });
+    const restart = !!(h && !paused && st.lane === 'ref' && !st.split);
+    qa('.js-play .gl').forEach((g) => { g.textContent = restart ? '↺' : '▶'; });
+    const ww = q('.js-wavewrap'), uw = q('.js-userwrap');
+    ww.classList.toggle('playing', !!h && st.lane === 'ref' && !paused);
+    ww.classList.toggle('paused', !!h && st.lane === 'ref' && paused);
+    uw.classList.toggle('playing', !!h && st.lane === 'usr' && !paused);
+    uw.classList.toggle('paused', !!h && st.lane === 'usr' && paused);
+    qa('.js-rec').forEach((b) => b.classList.toggle('armed', st.recording));
+    paintStateLine();
+  }
+
+  // ── autoplay (D12) ─────────────────────────────────────────────────────
+  function paintAuto() {
+    const on = App.autoplay;
+    qa('.js-auto').forEach((c) => {
+      c.classList.toggle('off', !on);
+      c.textContent = on ? '↻ autoplay' : 'autoplay off';
+      c.setAttribute('aria-pressed', String(on));
+    });
+  }
+  function flashAuto() {
+    qa('.js-auto').forEach((c) => { c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); });
+  }
+  /** An operator-initiated move landed: play it if the setting says so. */
+  function autoplay() {
+    if (!App.autoplay || !st.entry || st.split || st.recording) return;
+    flashAuto();
+    play({ auto: true });
   }
 
   function paintChapterNav() {
@@ -270,14 +373,12 @@ const Study = (() => {
 
   // ── moving ─────────────────────────────────────────────────────────────
   function stopPlayback() {
-    if (st.stopPlay) { st.stopPlay(); st.stopPlay = null; }
-    if (st.stopTake) { st.stopTake(); st.stopTake = null; }
-    st.playing = false;
-    q('.js-wavewrap').classList.remove('playing');
+    clearTimeout(st.cmpTimer);
+    if (st.player) st.player.stop();       // its onEnd clears st.player
+    st.player = null; st.lane = null; st.auto = false;
     q('.js-playhead').style.left = '0%';
-    q('.js-userwrap').classList.remove('playing');
     q('.js-userplayhead').style.left = '0%';
-    qa('.js-play').forEach((b) => b.classList.remove('on'));
+    paintPlayState();
   }
 
   function hidePanels() {
@@ -285,22 +386,29 @@ const Study = (() => {
     qa('.js-cmp, .js-tr, .js-fl').forEach((b) => b.classList.remove('on'));
   }
 
-  async function go(nextIdx, markDone) {
+  /**
+   * Move to sentence `nextIdx`. opts.markDone — done-and-next, optimistic
+   * (D6); opts.autoplay — an operator-initiated move, which plays the new
+   * sentence when the setting is on (D12).
+   */
+  async function go(nextIdx, opts) {
+    const o = opts || {};
     const s = seg();
     if (!s) return;
-    if (markDone) {
-      try {
-        // The FULL stored span, always: trimming is a playback attribute and
-        // must never reach progress.
-        await Api.postProgress(App.book.id, { doneSegmentIds: [s.id] });
-        await App.refreshBook();
-      } catch (e) { App.toast('Could not save: ' + e.message, true); }
-    }
-    stopPlayback(); stopRecording();
-    st.gen++;                             // anything in flight is now stale
     const all = App.sentences;
     if (!all.length) { render(); return; }
+    if (o.markDone) markDoneOptimistic(s);
+    stopPlayback(); stopRecording();
+    if (st.split) endSplit();
     const i = Math.max(0, Math.min(all.length - 1, nextIdx));
+    if (o.markDone && all[i].id === s.id) {
+      // the very last sentence: marked, nowhere further to go
+      paintTicks(); paintProgress(); setState('done');
+      App.toast('That was the last sentence of this book.');
+      return;
+    }
+    st.gen++;                             // anything in flight is now stale
+    const mine = st.gen;
     st.segId = all[i].id;
     st.pos = 0;
     hidePanels();
@@ -309,8 +417,84 @@ const Study = (() => {
     if (box && !App.reduced) { box.classList.add('swap'); setTimeout(() => box.classList.remove('swap'), 170); }
     render();
     await ensureChapter(all[i]);
+    if (mine !== st.gen) return;          // moved on while the chapter loaded
     render();
     saveCursor();
+    if (o.autoplay) autoplay();
+  }
+
+  // ── optimistic done (D6) ───────────────────────────────────────────────
+  // The sentence reads done at once; the write runs behind. The newest
+  // answer reconciles every sentence from the server's ranges (no book
+  // reload), except ones whose own write is still in flight. A failure
+  // reverts that one sentence and leaves a persistent in-page error.
+  const pendingSaves = new Map();     // segId -> writes in flight
+  let saveSeq = 0, appliedSeq = 0;
+
+  function covers(ranges, start, end) {
+    if (end <= start) return false;
+    let cursor = start;
+    for (const r of ranges) {            // normalized: sorted, disjoint
+      if (r.startMs > cursor) return false;
+      if (r.endMs > cursor) cursor = r.endMs;
+      if (cursor >= end) return true;
+    }
+    return false;
+  }
+  function byId(id) { return App.sentences.find((x) => x.id === id) || null; }
+  function settle(id) {
+    const n = (pendingSaves.get(id) || 1) - 1;
+    if (n > 0) pendingSaves.set(id, n); else pendingSaves.delete(id);
+  }
+  function repaintDoneness() {
+    if (App.state.screen !== 'study') return;
+    paintTicks();
+    paintProgress();
+    const s = seg();
+    if (s && !st.player && !st.recording && !st.split && (st.note === 'idle' || st.note === 'done')) {
+      setState(s.done ? 'done' : 'idle');
+    }
+  }
+
+  function markDoneOptimistic(s) {
+    const id = s.id, was = !!s.done;
+    const bookId = App.book.id;
+    s.done = true;
+    pendingSaves.set(id, (pendingSaves.get(id) || 0) + 1);
+    const seq = ++saveSeq;
+    // The FULL stored span, always: trimming is a playback attribute and
+    // must never reach progress.
+    Api.postProgress(bookId, { doneSegmentIds: [id] }).then((res) => {
+      settle(id);
+      if (!App.book || App.book.id !== bookId) return;
+      const mineNow = byId(id);
+      if (mineNow) mineNow.done = true;
+      if (res && Array.isArray(res.ranges) && seq > appliedSeq) {
+        appliedSeq = seq;
+        App.sentences.forEach((x) => {
+          if (x.id === id || pendingSaves.has(x.id)) return;
+          x.done = covers(res.ranges, x.startMs, x.endMs);
+        });
+        App.book.progressRanges = res.ranges;
+      }
+      if (res && typeof res.doneCount === 'number') App.book.doneCount = res.doneCount;
+      repaintDoneness();
+    }).catch((e) => {
+      settle(id);
+      if (!App.book || App.book.id !== bookId) return;
+      const x = byId(id);
+      if (x) x.done = was;
+      showSaveError(x || s, e);
+      repaintDoneness();
+    });
+  }
+
+  function showSaveError(s, e) {
+    const n = App.globalIndexOf(s.id) + 1;
+    q('.js-save-error-text').textContent =
+      `Not saved — sentence ${n} is still NOT done (${e.message || e}). `
+      + 'Go back to it and press ↵ again.';
+    q('.js-save-error').classList.remove('hidden');
   }
 
   /** Shift+←/→ — chapter stepping. The ends of the book are a no-op, not a
@@ -327,7 +511,7 @@ const Study = (() => {
     }
     const kids = App.sentencesOf(target.id);
     if (!kids.length) { App.toast('That chapter has no sentences in this split config.'); return; }
-    go(App.globalIndexOf(kids[0].id), false);
+    go(App.globalIndexOf(kids[0].id), { autoplay: true });
   }
 
   let cursorTimer = 0;
@@ -342,7 +526,13 @@ const Study = (() => {
   }
 
   // ── play ───────────────────────────────────────────────────────────────
-  function play(label, after) {
+  /**
+   * Play the sentence lane through the shared Player. opts: label, auto
+   * (autoplay), fromF/toF (fractions of the drawn window — hear left /
+   * right), after (on a natural end).
+   */
+  function play(opts) {
+    const o = opts || {};
     const s = seg();
     if (!s) return;
     if (!st.entry) {
@@ -351,44 +541,67 @@ const Study = (() => {
         : 'This book has no stored audio.');
       return;
     }
+    if (st.recording) stopRecording();
     stopPlayback();
-    st.playing = true;
-    q('.js-wavewrap').classList.add('playing');
-    qa('.js-play').forEach((b) => b.classList.add('on'));
-    setState(label || 'playing');
     const ph = q('.js-playhead');
     const w = window_(s);
-    st.stopPlay = ChapterAudio.play(st.entry, w.from, Math.max(1, w.to - w.from), {
-      onFrame: (f) => { st.pos = f; ph.style.left = (f * 100).toFixed(2) + '%'; },
+    const span = Math.max(1, w.to - w.from);
+    const fromF = o.fromF || 0, toF = o.toF == null ? 1 : o.toF;
+    let h = null;
+    h = Player.chapter(st.entry, w.from + fromF * span, w.from + toF * span, {
+      owner: 'study',
+      onFrame: (f, ms) => {
+        if (st.player !== h) return;
+        st.pos = Math.max(0, Math.min(1, (ms - w.from) / span));
+        ph.style.left = (st.pos * 100).toFixed(2) + '%';
+      },
+      onState: () => { if (st.player === h) paintPlayState(); },
       onEnd: (reason) => {
-        st.playing = false; st.stopPlay = null;
-        q('.js-wavewrap').classList.remove('playing');
-        qa('.js-play').forEach((b) => b.classList.remove('on'));
-        if (reason === 'end') { st.pos = 1; setState(seg() && seg().done ? 'done' : 'idle'); if (after) after(); }
+        if (st.player !== h) return;
+        st.player = null; st.lane = null; st.auto = false;
+        paintPlayState();
+        if (reason === 'end' && o.after) o.after();
       },
       onError: (e) => App.toast('Playback failed: ' + (e.message || e), true),
     });
+    st.player = h; st.lane = 'ref'; st.auto = !!o.auto; st.label = o.label || '';
+    st.pos = fromF;
+    ph.style.left = (fromF * 100).toFixed(2) + '%';
+    paintPlayState();
   }
 
-  // Task 4.3: pressing play while it is already playing RESTARTS the
-  // sentence and puts the playhead back to 0. It used to stop, which is the
-  // behaviour the operator reported as wrong.
-  function togglePlay() {
-    const restarting = st.playing;
-    play(restarting ? 'restarted from the beginning' : 'playing');
+  // Play RESTARTS the sentence from its beginning whether it is playing or
+  // paused (D4); pausing is the secondary control, K.
+  function togglePlay() { play(); }
+
+  function togglePause() {
+    if (!st.player) { App.toast('Nothing is playing — K pauses a sentence mid-way.'); return; }
+    if (st.player.togglePause) st.player.togglePause();
+    paintPlayState();
   }
 
   // ── record (ephemeral) ─────────────────────────────────────────────────
   // The live waveform IS the take lane, in exactly the box the finished take
   // will occupy, so nothing below it moves when recording starts or stops
-  // (tasks 3.2 / 3.3).
+  // (tasks 3.2 / 3.3). The microphone is held ONLY while a take records
+  // (D5): acquired here per take, every track stopped when it ends.
+  function releaseStream(stream) {
+    if (!stream) return;
+    stream.getTracks().forEach((t) => { try { t.stop(); } catch (e) { /* already ended */ } });
+    if (st.micStream === stream) st.micStream = null;
+  }
+
   function stopRecording() {
     if (!st.recording) return;
     st.recording = false;
     clearInterval(st.recTimer); clearInterval(st.meterTimer);
+    const stream = st.micStream;
     try { st.recorder.stop(); } catch (e) { /* already stopped */ }
+    // onstop releases the tracks once the last chunk is flushed; this is the
+    // backstop in case it never fires — the mic indicator must go within 1 s.
+    setTimeout(() => releaseStream(stream), 600);
     q('.js-lane-usr').classList.remove('recording');
-    qa('.js-rec').forEach((b) => b.classList.remove('armed'));
+    paintPlayState();
   }
 
   /**
@@ -436,19 +649,27 @@ const Study = (() => {
 
   async function startRecording() {
     if (st.recording) { stopRecording(); return; }
+    if (st.acquiring) return;
     const s = seg();
     if (!s) return;
     stopPlayback();
-    try {
-      if (!st.micStream) st.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (e) { App.toast('Microphone unavailable: ' + e.message, true); return; }
-
     const mine = st.gen;
+    let stream = null;
+    st.acquiring = true;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) { App.toast('Microphone unavailable: ' + e.message, true); return; }
+    finally { st.acquiring = false; }
+    // moved or left while the permission/device came up: give it straight back
+    if (mine !== st.gen || App.state.screen !== 'study' || st.split) { releaseStream(stream); return; }
+    st.micStream = stream;
+
     const chunks = [];
     const mime = pickRecorderMime();
-    const rec = new MediaRecorder(st.micStream, mime ? { mimeType: mime } : undefined);
+    const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     rec.onstop = async () => {
+      releaseStream(stream);
       const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
       const take = { blob, buffer: null, peaks: null, trim: null };
       takes.set(s.id, take);
@@ -477,8 +698,7 @@ const Study = (() => {
     q('.js-userwave').innerHTML = '';
     Pitch.clear(q('.js-contour-usr'));
     markContour('.js-lane-usr', false);
-    qa('.js-rec').forEach((b) => b.classList.add('armed'));
-    setState('recording');
+    paintPlayState();
 
     const rt = q('.js-rectime');
     st.recTimer = setInterval(() => {
@@ -489,7 +709,7 @@ const Study = (() => {
     try {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       const ctx = new Ctx();
-      const src = ctx.createMediaStreamSource(st.micStream);
+      const src = ctx.createMediaStreamSource(stream);
       const an = ctx.createAnalyser();
       an.fftSize = 1024;
       src.connect(an);
@@ -510,14 +730,40 @@ const Study = (() => {
   }
 
   // ── playing a take, through the same trim window the lane draws ────────
+  // A handle on the shared Player too: it stops any other player, and K
+  // pauses it (the AudioContext is suspended, so its clock — and the
+  // playhead — freeze).
   let takeCtx = null;
   function playTake(take, after) {
+    if (st.recording) stopRecording();
+    stopPlayback();
+    let done = false;
+    const h = { owner: 'study-take', paused: false };
+    const ph = q('.js-userplayhead');
+    const end = (natural, cleanup) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      ph.style.left = '0%';
+      Player.release(h);
+      if (st.player === h) { st.player = null; st.lane = null; }
+      paintPlayState();
+      if (natural && after) after();
+    };
+
     if (!take.buffer) {                       // decode failed: play it whole
       const url = URL.createObjectURL(take.blob);
       const a = new Audio(url);
-      a.onended = () => { URL.revokeObjectURL(url); if (after) after(); };
-      a.play().catch(() => { URL.revokeObjectURL(url); if (after) after(); });
-      st.stopTake = () => { a.pause(); URL.revokeObjectURL(url); };
+      const cleanup = () => { a.pause(); URL.revokeObjectURL(url); };
+      h.stop = () => end(false, cleanup);
+      h.pause = () => { if (done || h.paused) return; h.paused = true; a.pause(); paintPlayState(); };
+      h.resume = () => { if (done || !h.paused) return; h.paused = false; a.play().catch(() => {}); paintPlayState(); };
+      h.togglePause = () => (h.paused ? h.resume() : h.pause());
+      a.onended = () => end(true, cleanup);
+      Player.claim(h);
+      st.player = h; st.lane = 'usr'; st.auto = false;
+      a.play().catch(() => end(true, cleanup));
+      paintPlayState();
       return;
     }
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -528,31 +774,41 @@ const Study = (() => {
     const src = takeCtx.createBufferSource();
     src.buffer = take.buffer;
     src.connect(takeCtx.destination);
-    const ph = q('.js-userplayhead');
-    const wrap = q('.js-userwrap');
-    wrap.classList.add('playing');
     const t0 = takeCtx.currentTime;
-    let raf = 0, done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
+    let raf = 0;
+    const cleanup = () => {
       cancelAnimationFrame(raf);
-      wrap.classList.remove('playing');
-      ph.style.left = '0%';
-      st.stopTake = null;
+      if (h.paused) { h.paused = false; takeCtx.resume().catch(() => {}); }
       try { src.stop(); } catch (e) { /* already stopped */ }
-      if (after) after();
     };
     const tick = () => {
-      if (done) return;
-      const f = Math.max(0, Math.min(1, (takeCtx.currentTime - t0) / dur));
-      ph.style.left = (f * 100).toFixed(2) + '%';
+      if (done || h.paused) return;
+      const el = Math.max(0, Math.min(dur, takeCtx.currentTime - t0));
+      st.takePos = el;
+      ph.style.left = ((el / dur) * 100).toFixed(2) + '%';
       raf = requestAnimationFrame(tick);
     };
-    src.onended = finish;
+    h.stop = () => end(false, cleanup);
+    h.pause = () => {
+      if (done || h.paused) return;
+      h.paused = true; cancelAnimationFrame(raf);
+      takeCtx.suspend().catch(() => {});
+      paintPlayState();
+    };
+    h.resume = () => {
+      if (done || !h.paused) return;
+      h.paused = false;
+      takeCtx.resume().catch(() => {});
+      raf = requestAnimationFrame(tick);
+      paintPlayState();
+    };
+    h.togglePause = () => (h.paused ? h.resume() : h.pause());
+    src.onended = () => { if (!h.paused) end(true, cleanup); };
+    Player.claim(h);
+    st.player = h; st.lane = 'usr'; st.auto = false; st.takePos = 0;
     src.start(0, offset, dur);
     raf = requestAnimationFrame(tick);
-    st.stopTake = finish;
+    paintPlayState();
   }
 
   /** The trimmed slice of a take, as WAV — for Praat only, never for us. */
@@ -597,9 +853,14 @@ const Study = (() => {
       return { refPitch, takePitch };
     })();
 
-    play('comparing — reference (book)', () => {
-      setTimeout(() => playTake(take, () => setState('compared')), 250);
-      setState('comparing — your take');
+    play({
+      label: 'comparing — reference (book)',
+      after: () => {
+        st.cmpTimer = setTimeout(() => {
+          if (mine !== st.gen) return;
+          playTake(take, () => setState('compared'));
+        }, 250);
+      },
     });
 
     try {
@@ -701,29 +962,86 @@ const Study = (() => {
     }
   }
 
-  // ── boundary editing from Study ───────────────────────────────────────
-  // The playhead is a fraction of the DRAWN window, which may be the trimmed
-  // one, so it is resolved back to an absolute millisecond through that same
-  // window — and then clamped inside the sentence's STORED span, because a
-  // boundary is a stored thing and trimming never moves one.
-  function playheadMs(s) {
+  // ── split, reversed (D13) ─────────────────────────────────────────────
+  // X / "Split…" stops playback and only then shows the red line — at the
+  // playing or paused position when that is inside the sentence, else the
+  // middle. The line is a fraction of the DRAWN window (maybe trimmed), so it
+  // is resolved back to an absolute millisecond through that window and then
+  // clamped inside the STORED span: a boundary is a stored thing and
+  // trimming never moves one.
+  function msAt(s, frac) {
     const w = window_(s);
     const ch = chapterOf(s);
     const base = ch ? ch.startMs : 0;
-    const at = base + w.from + st.pos * (w.to - w.from);
+    const at = base + w.from + frac * (w.to - w.from);
     return Math.round(Math.max(s.startMs + 1, Math.min(s.endMs - 1, at)));
   }
 
-  async function splitHere() {
+  function enterSplit() {
     const s = seg();
-    if (!s) return;
-    const atMs = (st.pos > 0.02 && st.pos < 0.98)
-      ? playheadMs(s)
-      : Math.round(s.startMs + 0.5 * s.durationMs);
+    if (!s || st.split) return;
+    if (st.recording) stopRecording();
+    let at = 0.5;
+    if (st.player && st.lane === 'ref' && st.pos > 0.04 && st.pos < 0.96) at = st.pos;
+    stopPlayback();
+    closeSheet();
+    st.split = { at };
+    paintSplit();
+    paintPlayState();
+  }
+
+  function paintSplit() {
+    root.classList.toggle('splitting', !!st.split);
+    const s = seg();
+    if (!st.split || !s) return;
+    const at = st.split.at;
+    q('.js-split-line').style.left = (at * 100).toFixed(2) + '%';
+    q('.js-split-shade').style.left = (at * 100).toFixed(2) + '%';
+    q('.js-split-a').style.left = 'calc(' + (at * 50).toFixed(2) + '% - 4px)';
+    q('.js-split-b').style.left = 'calc(' + (50 + at * 50).toFixed(2) + '% - 4px)';
+    const d = drawnMs();
+    q('.js-split-n').textContent = idx() + 1;
+    q('.js-split-t').textContent = Fmt.secs(at * d);
+    q('.js-split-d').textContent = Fmt.secs(d);
+  }
+
+  function endSplit() { st.split = null; paintSplit(); }
+
+  function cancelSplit() {
+    if (!st.split) return;
+    stopPlayback();
+    endSplit();
+    paintPlayState();
+  }
+
+  function nudge(d) {
+    if (!st.split) return;
+    st.split.at = Math.max(0.03, Math.min(0.97, st.split.at + d));
+    paintSplit();
+  }
+
+  function hear(side) {
+    if (!st.split) return;
+    const at = st.split.at;
+    if (side === 'l') play({ fromF: 0, toF: at });
+    else play({ fromF: at, toF: 1 });
+  }
+
+  async function confirmSplit() {
+    const s = seg();
+    if (!s || !st.split) return;
+    const at = st.split.at;
+    const atMs = msAt(s, at);
+    const t = Fmt.secs(at * drawnMs());
+    const n = idx() + 1;
+    stopPlayback();
+    endSplit();
+    paintPlayState();
     try {
       await Api.splitSegment(s.id, atMs);
       await afterBoundaryChange(s.id);
-      App.toast('Split at ' + Fmt.clock(atMs) + ' — this config now has ' + App.sentences.length + ' sentences.');
+      const inCh = App.sentencesOf(s.parentId).length;
+      App.toast(`Split sentence ${n} at ${t} → ${n} + ${n + 1}. Chapter now has ${inCh}.`);
     } catch (e) { App.toast('Could not split: ' + e.message, true); }
   }
 
@@ -755,8 +1073,7 @@ const Study = (() => {
   function jumpUnfinished() {
     const i = App.sentences.findIndex((s) => !s.done);
     if (i < 0) { App.toast('Every sentence in this config is done.'); return; }
-    go(i, false);
-    setState('jumped to the first unfinished sentence');
+    go(i, { autoplay: true });
   }
 
   // ── the ⋯ sheet (phone) ────────────────────────────────────────────────
@@ -765,13 +1082,16 @@ const Study = (() => {
     q('.js-scrim').classList.remove('on');
   }
 
-  // ── the phone's hidden navigation (task 6.1) ───────────────────────────
-  // Revealed by a short downward pull from the top edge, hidden again on the
-  // NEXT action — every bound control calls revealNav(false), and so does a
-  // press anywhere outside the navigation itself. There is deliberately no
-  // idle timer: "the next action" is an observable event, a stopwatch is not.
+  // ── the phone's hidden navigation (D14) ────────────────────────────────
+  // Revealed by tapping the grabber or pulling it down; hidden again after
+  // about 3 s or on the NEXT action — every dispatched action calls
+  // revealNav(false), and so does a press anywhere outside the nav.
+  const NAV_HIDE_MS = 3000;
+  let navTimer = 0;
   function revealNav(on) {
     const want = !!on;
+    clearTimeout(navTimer);
+    if (want) navTimer = setTimeout(() => revealNav(false), NAV_HIDE_MS);
     if (document.body.classList.contains('nav-open') === want) return;
     document.body.classList.toggle('nav-open', want);
     if (want) document.addEventListener('pointerdown', outsidePress, true);
@@ -795,47 +1115,104 @@ const Study = (() => {
     if (App.state.screen === 'study') render();
   }
 
+  let autoplayOnEnter = false;
+
   /** Called when the Study screen is shown. */
   async function enter() {
+    const auto = autoplayOnEnter;
+    autoplayOnEnter = false;
     adopt();
     render();
     const s = seg();
-    if (s) { await ensureChapter(s); render(); saveCursor(); }
+    if (!s) return;
+    const mine = ++st.gen;
+    await ensureChapter(s);
+    if (mine !== st.gen) return;
+    render();
+    saveCursor();
+    if (auto) autoplay();
   }
 
-  function leaveQuietly() { stopPlayback(); stopRecording(); closeSheet(); revealNav(false); }
+  /** Leaving Study: nothing keeps playing, recording or holding the mic. */
+  function leaveQuietly() {
+    stopPlayback();
+    stopRecording();
+    releaseStream(st.micStream);
+    if (st.split) endSplit();
+    st.gen++;
+    closeSheet();
+    revealNav(false);
+  }
 
+  /** Explore opens a sentence here — an operator-initiated move (D12). */
   function openAt(segId) {
     st.segId = segId;
+    autoplayOnEnter = true;
     App.show('study');
   }
 
-  // ── wiring ─────────────────────────────────────────────────────────────
-  // Every bound control also hides the phone's pulled-down navigation: that
-  // is the "auto-hide on the next action" of task 6.1.
-  function bind(sel, fn) {
-    qa(sel).forEach((b) => b.addEventListener('click', (e) => { revealNav(false); fn(e); }));
+  // ── action dispatch ────────────────────────────────────────────────────
+  // Every study action goes through run(): it hides the phone's pulled
+  // nav (the "next action"), consults the guard (audiobook mode, task 8),
+  // and keeps the primary and tray controls inert while splitting (D13).
+  let guard = null;
+  function setGuard(fn) { guard = typeof fn === 'function' ? fn : null; }
+  const INERT_WHILE_SPLITTING = new Set([
+    'play', 'pause', 'rec', 'cmp', 'done', 'prev', 'next', 'split', 'merge', 'tr', 'fl', 'jump', 'ab',
+  ]);
+  const ENDS_SPLIT = new Set(['tick', 'chprev', 'chnext', 'exit']);
+  function run(name, fn) {
+    return (e) => {
+      revealNav(false);
+      if (guard && guard(name, e) === true) return;
+      if (st.split) {
+        if (INERT_WHILE_SPLITTING.has(name)) return;
+        if (ENDS_SPLIT.has(name)) cancelSplit();
+      }
+      fn(e);
+    };
+  }
+  function bind(sel, name, fn) {
+    qa(sel).forEach((b) => b.addEventListener('click', run(name, fn)));
   }
 
+  const doneNext = () => go(idx() + 1, { markDone: true, autoplay: true });
+  const prev = () => go(idx() - 1, { autoplay: true });
+  const next = () => go(idx() + 1, { autoplay: true });
+  const exit = () => { closeSheet(); App.show('library'); };
+
   function init() {
-    bind('.js-play', togglePlay);
-    bind('.js-rec', startRecording);
-    bind('.js-cmp', compare);
-    bind('.js-done', () => go(idx() + 1, true));
-    bind('.js-prev', () => go(idx() - 1, false));
-    bind('.js-next', () => go(idx() + 1, false));
-    bind('.js-chprev', () => stepChapter(-1));
-    bind('.js-chnext', () => stepChapter(1));
-    bind('.js-contour-toggle', () => App.setContours(!App.contours));
-    bind('.js-split', () => { closeSheet(); splitHere(); });
-    bind('.js-merge', () => { closeSheet(); mergeNext(); });
-    bind('.js-tr', () => { closeSheet(); transcribe(); });
-    bind('.js-fl', () => { closeSheet(); formantLab(); });
-    bind('.js-jump', () => { closeSheet(); jumpUnfinished(); });
-    bind('.js-help', () => { closeSheet(); App.overlay(true); });
-    bind('.js-exit', () => App.show('library'));
-    bind('.js-close-tr', () => { q('.js-tr-panel').classList.add('hidden'); qa('.js-tr').forEach((b) => b.classList.remove('on')); });
-    bind('.js-close-fl', () => { q('.js-fl-panel').classList.add('hidden'); qa('.js-fl').forEach((b) => b.classList.remove('on')); });
+    bind('.js-play', 'play', togglePlay);
+    bind('.js-pause', 'pause', () => { if (st.player) togglePause(); });
+    bind('.js-rec', 'rec', startRecording);
+    bind('.js-cmp', 'cmp', compare);
+    bind('.js-done', 'done', doneNext);
+    bind('.js-prev', 'prev', () => { closeSheet(); prev(); });
+    bind('.js-next', 'next', next);
+    bind('.js-chprev', 'chprev', () => stepChapter(-1));
+    bind('.js-chnext', 'chnext', () => stepChapter(1));
+    bind('.js-contour-toggle', 'contour', () => App.setContours(!App.contours));
+    bind('.js-split', 'split', () => { closeSheet(); enterSplit(); });
+    bind('.js-merge', 'merge', () => { closeSheet(); mergeNext(); });
+    bind('.js-tr', 'tr', () => { closeSheet(); transcribe(); });
+    bind('.js-fl', 'fl', () => { closeSheet(); formantLab(); });
+    bind('.js-jump', 'jump', () => { closeSheet(); jumpUnfinished(); });
+    bind('.js-help', 'help', () => { closeSheet(); App.overlay(true); });
+    bind('.js-exit', 'exit', exit);
+    bind('.js-close-tr', 'panel', () => { q('.js-tr-panel').classList.add('hidden'); qa('.js-tr').forEach((b) => b.classList.remove('on')); });
+    bind('.js-close-fl', 'panel', () => { q('.js-fl-panel').classList.add('hidden'); qa('.js-fl').forEach((b) => b.classList.remove('on')); });
+    // the split bar's own controls are the ones that work while splitting
+    bind('.js-hear-l', 'hear', () => hear('l'));
+    bind('.js-hear-r', 'hear', () => hear('r'));
+    bind('.js-split-cancel', 'split-cancel', cancelSplit);
+    bind('.js-split-ok', 'split-ok', confirmSplit);
+    // the chip flips the "Play sentence when opened" setting right here
+    bind('.js-auto', 'autoplay-setting', () => {
+      App.setAutoplay(!App.autoplay);
+      paintAuto();
+      App.toast('Play sentence when opened: ' + (App.autoplay ? 'on' : 'off') + ' (a Settings preference)');
+    });
+    q('.js-save-error-x').addEventListener('click', () => q('.js-save-error').classList.add('hidden'));
 
     qa('.js-more').forEach((b) => b.addEventListener('click', () => {
       revealNav(false);
@@ -844,14 +1221,13 @@ const Study = (() => {
     }));
     q('.js-scrim').addEventListener('click', closeSheet);
 
-    // The pull-tab: a short downward drag, or a plain tap, reveals the nav.
+    // The grabber: a short downward drag, or a plain tap, reveals the nav.
     //
     // The move and the release are tracked on the WINDOW, not on the tab. A
-    // pull of the 16 px this gesture asks for leaves a 30 px-tall tab almost
+    // pull of the 16 px this gesture asks for leaves the grabber almost
     // immediately — a finger does, and so does an automated drag — and a
-    // listener bound to the tab alone simply stops hearing the gesture it is
-    // supposed to recognise. Confirmed by instrumenting the element: only
-    // the pointerdown ever arrived.
+    // listener bound to the grabber alone stops hearing the gesture it is
+    // supposed to recognise.
     const pull = q('.js-pull');
     if (pull) {
       let py = null;
@@ -860,8 +1236,8 @@ const Study = (() => {
         if (e.clientY - py > 16) { revealNav(true); endGesture(); }
       };
       const onUp = () => {
-        // a tap with no travel toggles, so the tab works for a thumb that
-        // does not drag and for the keyboard
+        // a tap with no travel toggles, so the grabber works for a thumb
+        // that does not drag and for the keyboard
         if (py !== null) revealNav(!document.body.classList.contains('nav-open'));
         endGesture();
       };
@@ -883,54 +1259,94 @@ const Study = (() => {
       });
     }
 
-    // clicking the sentence lane parks the playhead — that is what X splits at
+    // The sentence waveform: a press goes to the guard first ('wave' — the
+    // audiobook stop path); while splitting it places and drags the line.
+    // Outside split editing a press does nothing: there is no split line
+    // before Split is pressed (D13).
     const ww = q('.js-wavewrap');
-    ww.addEventListener('click', (e) => {
-      if (st.playing) return;
+    const placeFrom = (ev) => {
       const r = ww.getBoundingClientRect();
-      st.pos = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-      q('.js-playhead').style.left = (st.pos * 100).toFixed(2) + '%';
-      ww.classList.add('playing');
-      setState('playhead at ' + Math.round(st.pos * 100) + '% — X splits here');
+      if (!st.split || !r.width) return;
+      st.split.at = Math.max(0.03, Math.min(0.97, (ev.clientX - r.left) / r.width));
+      paintSplit();
+    };
+    ww.addEventListener('pointerdown', (e) => {
+      if (guard && guard('wave', e) === true) return;
+      if (!st.split) return;
+      e.preventDefault();
+      stopPlayback();
+      try { ww.setPointerCapture(e.pointerId); } catch (err) { /* synthetic */ }
+      placeFrom(e);
+      const mv = (ev) => placeFrom(ev);
+      const up = () => {
+        ww.removeEventListener('pointermove', mv);
+        ww.removeEventListener('pointerup', up);
+        ww.removeEventListener('pointercancel', up);
+      };
+      ww.addEventListener('pointermove', mv);
+      ww.addEventListener('pointerup', up);
+      ww.addEventListener('pointercancel', up);
     });
+    // phone: swipe the waveform for prev / next (not while splitting)
     let sx = null;
-    ww.addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; }, { passive: true });
+    ww.addEventListener('touchstart', (e) => { sx = st.split ? null : e.touches[0].clientX; }, { passive: true });
     ww.addEventListener('touchend', (e) => {
-      if (sx === null) return;
+      if (sx === null || st.split) { sx = null; return; }
       const dx = e.changedTouches[0].clientX - sx;
-      if (Math.abs(dx) > 48) go(idx() + (dx < 0 ? 1 : -1), false);
       sx = null;
+      if (Math.abs(dx) > 48) run(dx < 0 ? 'next' : 'prev', dx < 0 ? next : prev)();
     }, { passive: true });
+
+    paintAuto();
+    paintPlayState();
   }
 
   function key(k, ev) {
+    // While splitting only the split keys work; everything else is inert.
+    if (st.split) {
+      if (k === 'escape') { ev.preventDefault(); cancelSplit(); return; }
+      if (k === 'enter') { ev.preventDefault(); confirmSplit(); return; }
+      if (k === 'arrowleft' || k === 'arrowright') {
+        ev.preventDefault();
+        nudge((k === 'arrowleft' ? -1 : 1) * (ev.shiftKey ? 0.1 : 0.02));
+        return;
+      }
+      if (k === ' ') ev.preventDefault();
+      return;
+    }
     // Shift+←/→ step a CHAPTER; plain ←/→ still only move the sentence and
     // still never touch a done state (tasks 4.2 / 4.4).
     if (ev.shiftKey && (k === 'arrowleft' || k === 'arrowright')) {
       ev.preventDefault();
-      revealNav(false);
-      stepChapter(k === 'arrowleft' ? -1 : 1);
+      const d = k === 'arrowleft' ? -1 : 1;
+      run(d < 0 ? 'chprev' : 'chnext', () => stepChapter(d))();
       return;
     }
     switch (k) {
-      case ' ': ev.preventDefault(); if (st.recording) stopRecording(); else togglePlay(); break;
-      case 'r': ev.preventDefault(); startRecording(); break;
-      case 'c': compare(); break;
-      case 'enter': ev.preventDefault(); go(idx() + 1, true); break;
-      case 'arrowleft': ev.preventDefault(); go(idx() - 1, false); break;
-      case 'arrowright': ev.preventDefault(); go(idx() + 1, false); break;
-      case 'p': ev.preventDefault(); App.setContours(!App.contours); break;
-      case 'x': splitHere(); break;
-      case 'm': mergeNext(); break;
-      case 't': transcribe(); break;
-      case 'f': formantLab(); break;
-      case 'u': jumpUnfinished(); break;
+      case ' ':
+        ev.preventDefault();
+        run('play', () => { if (st.recording) stopRecording(); else togglePlay(); })();
+        break;
+      case 'k': ev.preventDefault(); run('pause', togglePause)(); break;
+      case 'r': ev.preventDefault(); run('rec', startRecording)(); break;
+      case 'c': run('cmp', compare)(); break;
+      case 'enter': ev.preventDefault(); run('done', doneNext)(); break;
+      case 'arrowleft': ev.preventDefault(); run('prev', prev)(); break;
+      case 'arrowright': ev.preventDefault(); run('next', next)(); break;
+      case 'p': ev.preventDefault(); run('contour', () => App.setContours(!App.contours))(); break;
+      case 'x': run('split', enterSplit)(); break;
+      case 'm': run('merge', mergeNext)(); break;
+      case 't': run('tr', transcribe)(); break;
+      case 'f': run('fl', formantLab)(); break;
+      case 'u': run('jump', jumpUnfinished)(); break;
+      // 'l' — audiobook listen / resume: wired by task 8 (run('ab', …)).
       case 'escape':
         if (document.body.classList.contains('nav-open')) { revealNav(false); return; }
         if (q('.js-sheet').classList.contains('open')) { closeSheet(); return; }
+        if (guard && guard('escape', ev) === true) return;
         if (!q('.js-tr-panel').classList.contains('hidden')
             || !q('.js-fl-panel').classList.contains('hidden')) { stopPlayback(); hidePanels(); return; }
-        stopPlayback(); stopRecording(); App.show('library');
+        run('exit', exit)();
         break;
       default: break;                       // there is no `S`: slow playback is gone
     }
@@ -951,5 +1367,8 @@ const Study = (() => {
     render();
   }
 
-  return { init, enter, adopt, leaveQuietly, openAt, key, render, retrim, paintContourState };
+  return {
+    init, enter, adopt, leaveQuietly, openAt, key, render, retrim, paintContourState, paintAuto,
+    setGuard,
+  };
 })();

@@ -14,13 +14,13 @@
 
 ## 2. Player model
 
-- [ ] 2.1 One shared player behaviour (play restarts, pause/resume, one player at a time, truthful playhead) used by Study, Prepare previews and Explore previews — verify A2.1–A2.4
-- [ ] 2.2 Explore expands load the chapter chunk; previews seek in it with a loading state; no per-sentence audio requests — verify A3.1–A3.3
+- [x] 2.1 One shared player behaviour (play restarts, pause/resume, one player at a time, truthful playhead) used by Study, Prepare previews and Explore previews — verify A2.1–A2.4
+- [x] 2.2 Explore expands load the chapter chunk; previews seek in it with a loading state; no per-sentence audio requests — verify A3.1–A3.3
 
 ## 3. Study loop hot path
 
-- [ ] 3.1 Release microphone tracks on stop/cancel/leave — verify A4.1
-- [ ] 3.2 Optimistic done-and-next with background write, reconcile, revert-and-error on failure — verify A5.1, A5.2
+- [x] 3.1 Release microphone tracks on stop/cancel/leave — verify A4.1
+- [x] 3.2 Optimistic done-and-next with background write, reconcile, revert-and-error on failure — verify A5.1, A5.2
 
 ## 4. Trim parity
 
@@ -37,11 +37,11 @@
 
 ## 7. Study screen (mockups/study.html)
 
-- [ ] 7.1 Pause pill placement desktop/phone, ↺ on Play while playing, hollow paused playhead, `K` — verify A2.3, A13.1
-- [ ] 7.2 Reversed split flow: split stops playback, line + shade + A/B, drag/tap/nudge, hear left/right, Confirm/Cancel, inert controls — verify A11.1–A11.4
-- [ ] 7.3 Autoplay on operator-initiated moves, ↻ chip and flash, honours the setting — verify A12.1–A12.3
-- [ ] 7.4 Compact phone header (grabber + two lines) and the extended ⋯ sheet — verify A14.1, A14.2
-- [ ] 7.5 Shortcut overlay lists `K`, `L` and the split-editing keys — verify A13.2
+- [x] 7.1 Pause pill placement desktop/phone, ↺ on Play while playing, hollow paused playhead, `K` — verify A2.3, A13.1
+- [x] 7.2 Reversed split flow: split stops playback, line + shade + A/B, drag/tap/nudge, hear left/right, Confirm/Cancel, inert controls — verify A11.1–A11.4
+- [x] 7.3 Autoplay on operator-initiated moves, ↻ chip and flash, honours the setting — verify A12.1–A12.3
+- [x] 7.4 Compact phone header (grabber + two lines) and the extended ⋯ sheet — verify A14.1, A14.2
+- [x] 7.5 Shortcut overlay lists `K`, `L` and the split-editing keys — verify A13.2
 
 ## 8. Audiobook mode
 
