@@ -4,7 +4,8 @@
 
 [idea] all services should get their vector icon graphic, simple, minimalistic, but sleek and modern
 [idea] stabbur should get its own app
-
+[ux] stabbur gets additional page for grouping multiple notes as similar, so that i can remove duplicates
+[ux] stabbur ideally i would get a large warning sign, if there is already a note with the same text (ignoring articles/å/particles)
 
 ## Triage & Planned Packages
 
