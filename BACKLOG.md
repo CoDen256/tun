@@ -1,8 +1,6 @@
 # System-Wide Master Backlog
 
 ## Quick Log (Manual Dump)
-[ux] builder "s" is replaced with space when i hover over any card to see its contents. 
-[ux] builder should have proper diff display between old content and new content of cards that update their content. it actually shows the old content i guess and i have no idea what have changed.
 
 ## Triage & Planned Packages
 
