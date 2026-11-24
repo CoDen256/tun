@@ -13,7 +13,7 @@ Batch opened 2026-11-24 from three triaged packages.
 |---|---|
 | smia provider data, PoS ownership & responses | pending |
 | Pronunciation, tonelag & minimal-pair exercise notes | pending |
-| Shadow playback, splitting & chapter reading | designing — `shadow/openspec/changes/shadow-playback-chapter-reading` (stage 1 captured; UI items pending mockups) |
+| Shadow playback, splitting & chapter reading | designed — `shadow/openspec/changes/shadow-playback-chapter-reading` |
 
 ## Packages
 
@@ -79,4 +79,15 @@ this will:automatically read sentence by sentence of the whole chapter, just as 
 
 ## Dropped / deferred
 
-(none)
+- *Shadow playback…* — "manage users in the settings, to allow deleting/adding renaming": **dropped**. The operator chose to make shadow single-user instead (ADR D168), so there are no profiles left to manage.
+- *Shadow playback…* — re-trimming sentences merged/split before the 2026-11-17 fix: **dropped**. Those rows are disposable; the operator re-analyses a book when it matters. Only parity for new edits is built.
+
+## Builder's judgment (tier-2, from design sessions)
+
+- *Shadow playback…*:
+  - how the old `settings.html` redirects to the in-app Settings screen;
+  - the PWA icon artwork;
+  - the wake-lock fallback when the API is unavailable;
+  - the boundary-crossing detection for continuous audiobook playback (within acceptance A10.4's 300 ms).
+
+  Everything visible is fixed by `mockups/`, to be implemented **1-1**.

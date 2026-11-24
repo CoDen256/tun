@@ -1,7 +1,10 @@
 # Design
 
-> Staged like the proposal. Stage 1 decisions are below. Stage 2 (UI items)
-> is appended when its mockups are accepted.
+> Staged like the proposal: stage 1 (D1–D8) covers the items without UI,
+> stage 2 (D9–D16) the UI items. **The mockups in `mockups/` are to be
+> implemented 1-1** (operator, 2026-11-24): layout, placement, labels, key
+> bindings and states as shown. The mockup-only chrome is excluded: the
+> dashed purple notes and the top switcher bar.
 
 ## Context
 
@@ -145,6 +148,164 @@ backfill of older rows.
 - This is operator plane only. The gateway configuration changes only if the
   manifest's MIME type needs it, and never on device-plane routes.
 
+### D9. Settings is a screen inside the app (`mockups/settings-prepare.html`, screen A)
+
+- ⚙ in the one nav opens a fifth screen, Settings, in the same page. The
+  old `settings.html` stops being a separate page and redirects to that
+  screen (tier-2 for the exact mechanism).
+- The nav's ◐ theme button is **removed**. Theme is chosen only in Settings.
+- Groups, exactly as in the mockup:
+  - **Appearance:** Theme as System / Light / Dark, tagged "this device
+    only", stored in the browser.
+  - **Playback:**
+    - Trim silence (default on);
+    - Play sentence when opened (default on);
+    - Trim in audiobook mode (default off).
+  - **Transcription:** the STT provider select with the smia reachability
+    hint. When smia is unreachable it shows the saved choice only.
+  - **Books:** a read-only overview, collapsed by default. The operator
+    chose to keep it.
+- Every change saves immediately, with a per-row "✓ saved". There is no Save
+  button and no browser dialog.
+- The Library loses the Trim silence card.
+
+### D10. Audiobook mode (`mockups/study.html`, item 3)
+
+This is client-side behaviour. Nothing new is stored except the cursor,
+which already exists.
+
+- **Start:** "▶▶ Listen" beside the chapter name (desktop top bar; phone
+  header line 2), or `L`. It reads the *current chapter* from the *current
+  sentence*.
+- **Untrimmed:** "Trim in audiobook mode" off, the default. The chapter
+  chunk plays **continuously** from the current sentence's start, original
+  pauses intact. The UI follows the playback position:
+  - the shown sentence, the counter, the waveform and the live playhead
+    advance as the position crosses each sentence boundary;
+  - the cursor is saved per sentence.
+- **Trimmed:** each sentence's speech window plays back to back.
+- **Nothing is marked done.** Doneness is never written by audiobook mode.
+- **While running:**
+  - the banner (desktop: full width under the top bar; phone: compact at the
+    top), showing the animated indicator, the chapter, the position, the
+    tempo tag and a big ■ Stop;
+  - on the phone, the four primary controls are replaced by "■ Stop
+    audiobook";
+  - a **screen wake lock** is held, shown on the phone as "☼ screen stays on".
+- **Stop paths:**
+  - banner Stop;
+  - Space;
+  - `Esc`;
+  - a tap or click on the sentence waveform;
+  - **any study action** (play, pause, record, compare, done-and-next,
+    navigation, split, merge, transcribe, Formant Lab, first unfinished).
+
+  A stop press **only stops**; it does not also perform the action. Stopping
+  lands on the sentence being heard, in the normal study loop (trimmed play,
+  etc.), and releases the wake lock.
+- **Resume:** the same button reads "▶▶ Resume from N+1" and continues from
+  the start of the **next** sentence. Navigating away (chapter step) clears
+  the resume point.
+- **Chapter end:** it stops with "End of chapter N" and a "next chapter ›"
+  offer. It never runs into the next chapter.
+- Autoplay (D12) does not apply inside audiobook mode.
+
+### D11. Pause placement
+
+- Pause is a small outlined pill "❚❚ pause K" directly after Play on
+  desktop, not one of the four primary controls.
+- On the phone it is a satellite pill above the Play column, so the four
+  equal circles are unchanged (the existing equal-controls requirement
+  holds).
+- It is disabled when nothing plays and reads "▶ resume" while paused. The
+  paused playhead shows a hollow cap.
+- Play's glyph reads ↺ while the sentence plays.
+
+### D12. Autoplay
+
+- With "Play sentence when opened" on, every operator-initiated move to a
+  sentence starts it playing at once:
+  - done-and-next;
+  - ←/→;
+  - chapter step;
+  - a strip tick;
+  - first unfinished;
+  - opening a sentence from Explore.
+- A "↻ autoplay" chip sits in the lanes header ("autoplay off", struck
+  through, when disabled) and flashes when it fires. The state line reads
+  "autoplay ▸ playing".
+- Autoplay obeys Trim silence like any play.
+
+### D13. Split, reversed
+
+- "✂ split…" (`X`; the phone's ⋯ sheet "Split…") **stops playback
+  immediately** and enters split editing:
+  - a red line on the sentence waveform, at the paused or playing position
+    if it was inside the sentence, else at the middle;
+  - the right part is shaded, the halves are labelled A / B, and the line
+    can be dragged or tapped; ←/→ nudge it (Shift for coarse steps);
+  - a split bar shows "splitting sentence N at t of d", with ▶ hear left,
+    ▶ hear right, Cancel (`Esc`) and ✂ Confirm split (`Enter`);
+  - the primary and secondary controls are dimmed and inert.
+- **No split line exists before Split is pressed.** The old "split at the
+  playhead" immediate action is gone.
+- The split position maps back to an absolute millisecond through the drawn
+  (possibly trimmed) window, clamped inside the stored span, as today.
+
+### D14. Compact phone header
+
+- At phone viewports the Study top is a grabber plus two lines:
+  - `✕` (exit to Library) · book name · `⋯` (the secondary-actions sheet);
+  - `‹ Chapter N ›` · `12 / 87` · `▶▶ Listen`.
+- Pulling the grabber down, or tapping it, reveals the nav, which hides
+  again after about 3 s or the next action.
+- The ⋯ sheet holds Split…, Merge with next, Transcribe, Formant Lab, First
+  unfinished, Previous sentence, Shortcuts, and Exit to library.
+- There is no progress strip on the phone (existing requirement).
+
+### D15. Chapter editing in Prepare (`mockups/settings-prepare.html`, screen B)
+
+- **Data model.** Chapters stay `kind='chapter'` rows of the config.
+  - **Start new chapter at sentence k:** shortens the chapter to end at
+    sentence k's start, inserts a new chapter row from there to the old
+    end, and re-parents sentences k… to it. Every later chapter's
+    `order_index` shifts.
+  - **Merge with next chapter:** extends the first chapter to the second's
+    end, re-parents the second's sentences, and deletes the second row.
+  - **Chapter title:** a new nullable `title` column on segments, used only
+    for chapters. On merge the first chapter's title wins, else the second's.
+- **No progress is touched.** Sentence spans are unchanged. Chapter chunks
+  are keyed by boundaries, so new chunks are cut, and background preparation
+  (audio-accuracy) covers them.
+- **UI, exactly as the mockup:**
+  - between two sentences of an open chapter, hover shows a dashed line and
+    "⤒ Start new chapter here";
+  - "⤒ Show chapter breaks" pins every break point (the touch path);
+  - an in-page confirm lists what stays, where the new chapter starts, the
+    renumbering, and "▶ hear the boundary";
+  - after confirming, the new header flashes and a toast offers **Undo**;
+  - each chapter header except the last has "⇣ Merge with next chapter",
+    with an in-page confirm;
+  - "✎ Title" edits inline. The number stays automatic; the title is shown
+    in Explore and in Study's chapter label;
+  - a sentence-level "⇣ Merge" on a chapter's last sentence explains that
+    the chapters must be merged first.
+- Chapter edits count as **manual edits of the active config**. The config
+  card shows "✎ N manual edits". The re-analyse warning names chapter
+  breaks, chapter merges and titles among what it discards. Other configs
+  are untouched.
+- **Undo** is the inverse operation (merge back / split back / restore
+  title), offered for the toast's lifetime.
+
+### D16. What the mockup does *not* decide (tier-2, builder's judgment)
+
+- the exact redirect mechanism from the old `settings.html`;
+- the PWA icon artwork;
+- the wake-lock fallback when the API is unavailable (state it in the
+  banner; never fail audiobook mode for it);
+- the precise boundary-crossing detection for continuous playback, provided
+  that acceptance A10's tolerance holds.
+
 ## Risks / Trade-offs
 
 - [The chapter chunk is larger than one sentence, so Explore uses more data
@@ -155,13 +316,20 @@ backfill of older rows.
 - [Basic auth inside a standalone PWA window may prompt once] → documented in
   OPERATOR-CHECKLIST. No code mitigation; the gateway auth (D160) is not
   altered.
+- [Continuous playback needs boundary tracking off one `<audio>` element,
+  and a background tab throttles rAF] → the chapter player already has a
+  `timeupdate` backstop (audio-accuracy). The sentence shown may lag the
+  audio by ≤ 250 ms in a hidden tab; the wake lock keeps the phone visible.
+- [Chapter edits change chunk keys, so the next entry to an edited chapter
+  re-cuts it] → the existing background preparation and the 503-preparing
+  retry cover it.
 - [More than one owner id in prod data] → the migration aborts loudly
   (D1). The operator resolves it by hand.
 
 ## Migration Plan
 
-1. The shadow migration adds the settings store and pins the owner id
-   (aborting on more than one).
+1. The shadow migration adds the settings store, adds the nullable chapter
+   `title` column, and pins the owner id (aborting on more than one).
 2. A background import copies the two phonexa settings once.
 3. Rollback: the previous image still works against the kept columns.
    Settings written after the cutover would be lost on rollback, which is

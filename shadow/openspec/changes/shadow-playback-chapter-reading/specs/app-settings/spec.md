@@ -48,3 +48,22 @@ The theme SHALL be a per-device preference and SHALL NOT be stored server-side.
 - **WHEN** the owner had chosen a non-default STT provider and trim OFF in
   phonexa before this change
 - **THEN** after the change shadow shows that provider and trim OFF
+
+### Requirement: Settings is a screen of the app
+shadow's single navigation SHALL offer a Settings screen (⚙) inside the same
+application, grouping: Appearance (theme: system, light or dark, per device);
+Playback (trim silence; play sentence when opened; trim in audiobook mode);
+Transcription (speech-to-text provider, with whether smia is reachable); and
+a read-only, collapsed-by-default Books overview. Each change SHALL be saved
+as it is made and acknowledged on its row; there SHALL be no save button.
+The navigation SHALL NOT carry a separate theme toggle, and the Library
+SHALL NOT carry the trim switch.
+
+#### Scenario: A change saves itself
+- **WHEN** a switch is flipped in Settings and the page is reloaded
+- **THEN** the switch shows the new state
+
+#### Scenario: Theme is chosen only in Settings
+- **WHEN** any screen is open
+- **THEN** the navigation shows no theme toggle, and Settings offers System,
+  Light and Dark

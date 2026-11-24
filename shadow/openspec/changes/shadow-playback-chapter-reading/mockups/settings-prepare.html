@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadow settings &amp; chapters</title>
+<style>
+/* ---------------------------------------------------------------
+   tokens — copied verbatim from shadow/css/studio.css
+   --------------------------------------------------------------- */
+:root {
+  --bg: #f6f6f4; --surface: #ffffff; --surface-2: #f0f0ed; --text: #15171a;
+  --muted: #6c7177; --faint: #9aa0a6; --line: #e2e2de; --line-strong: #cfcfca;
+  --accent: #0d7f72; --accent-ink: #ffffff; --accent-soft: rgba(13,127,114,.12);
+  --rec: #b4322e; --rec-soft: rgba(180,50,46,.12);
+  --wave: #9aa6ab; --wave-done: #c3c9cc;
+  --mock: #6d4bd8; --mock-soft: rgba(109,75,216,.10);
+  --radius: 14px; --radius-sm: 9px; --dur: 240ms; --ease: cubic-bezier(.2,.7,.3,1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0c0e; --surface: #141619; --surface-2: #1b1e22; --text: #e9ebee;
+    --muted: #9aa0a6; --faint: #6d7378; --line: #262a2f; --line-strong: #363b41;
+    --accent: #2fd4bd; --accent-ink: #06231f; --accent-soft: rgba(47,212,189,.14);
+    --rec: #ff6b63; --rec-soft: rgba(255,107,99,.14);
+    --wave: #4d555c; --wave-done: #343a40;
+    --mock: #a99bff; --mock-soft: rgba(169,155,255,.12);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0c0e; --surface: #141619; --surface-2: #1b1e22; --text: #e9ebee;
+  --muted: #9aa0a6; --faint: #6d7378; --line: #262a2f; --line-strong: #363b41;
+  --accent: #2fd4bd; --accent-ink: #06231f; --accent-soft: rgba(47,212,189,.14);
+  --rec: #ff6b63; --rec-soft: rgba(255,107,99,.14);
+  --wave: #4d555c; --wave-done: #343a40;
+  --mock: #a99bff; --mock-soft: rgba(169,155,255,.12);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px; line-height: 1.5; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+input[type=text] { font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: .35rem .6rem; max-width: 100%; min-width: 0; }
+.num { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.hidden { display: none !important; }
+.quiet { color: var(--muted); }
+
+/* ================= MOCKUP CHROME (not part of the product) ================= */
+.mockbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem;
+  padding: .55rem clamp(.75rem, 3vw, 1.5rem);
+  background: var(--mock-soft); border-bottom: 1px dashed var(--mock);
+  font-size: .82rem;
+}
+.mockbar .tag { font-size: .66rem; letter-spacing: .16em; text-transform: uppercase; color: var(--mock); font-weight: 600; }
+.mseg { display: inline-flex; border: 1px solid var(--mock); border-radius: 999px; overflow: hidden; }
+.mseg button { padding: .22rem .75rem; color: var(--mock); font-size: .8rem; white-space: nowrap; }
+.mseg button[aria-pressed="true"] { background: var(--mock); color: var(--bg); }
+.mockbar .sp { flex: 1 1 auto; }
+.mock-notes {
+  margin: .8rem auto 0; max-width: 1120px; width: calc(100% - 2rem);
+  border: 1px dashed var(--mock); border-radius: var(--radius-sm); background: var(--mock-soft);
+  font-size: .86rem;
+}
+.mock-notes summary { cursor: pointer; padding: .5rem .8rem; color: var(--mock); font-weight: 560; list-style: none; }
+.mock-notes summary::-webkit-details-marker { display: none; }
+.mock-notes summary::before { content: "▸ "; display: inline-block; transition: transform var(--dur) var(--ease); }
+.mock-notes[open] summary::before { transform: rotate(90deg); }
+.mock-notes .cols { display: grid; gap: .4rem 1.6rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); padding: 0 .9rem .8rem; }
+.mock-notes h4 { margin: .3rem 0 .2rem; font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--mock); }
+.mock-notes ul { margin: 0; padding-left: 1.1rem; }
+.mock-notes li { margin: .15rem 0; }
+.mock-notes .sim { color: var(--mock); text-decoration: underline; text-underline-offset: 2px; font-size: inherit; padding: 0; }
+.mnote {  /* in-page annotation, mockup only */
+  display: block; margin: .9rem 0; padding: .55rem .8rem; font-size: .82rem;
+  border: 1px dashed var(--mock); border-radius: var(--radius-sm); color: var(--mock); background: var(--mock-soft);
+}
+.opt {
+  font-style: normal; font-size: .6rem; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--mock); border: 1px dashed var(--mock); border-radius: 999px; padding: 0 .4rem; margin-left: .35rem; vertical-align: .1em;
+}
+
+.stagearea { padding: 0; }
+.stagearea.phone { display: flex; flex-direction: column; align-items: center; padding: 1.4rem 1rem 4rem; }
+.phone-note { text-align: center; color: var(--faint); font-size: .78rem; margin-bottom: .8rem; }
+.device { position: relative; }
+.stagearea.phone .device {
+  width: 390px; height: 844px; flex: 0 0 auto;
+  border: 10px solid var(--line-strong); border-radius: 42px; overflow: hidden;
+  background: var(--bg);
+  transform: translateZ(0); /* makes position:fixed children (toast) stay inside the frame */
+}
+.stagearea.phone .app { height: 100%; overflow-y: auto; overflow-x: hidden; }
+@media (max-width: 560px) {
+  .stagearea.phone { padding: 0; }
+  .stagearea.phone .device { width: 100%; height: 86vh; border-width: 0; border-radius: 0; }
+  .phone-note { display: none; }
+}
+
+/* ================= THE APP (studio.css language) ================= */
+.app { container-type: inline-size; container-name: app; background: var(--bg); min-height: 70vh; }
+
+.nav {
+  position: sticky; top: 0; z-index: 60;
+  display: flex; align-items: center; gap: clamp(.5rem, 2vw, 1.4rem);
+  padding: .5rem clamp(.75rem, 3vw, 1.5rem);
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.nav-brand { display: inline-flex; align-items: center; gap: .5rem; font-size: .98rem; font-weight: 600; letter-spacing: -0.01em; flex: 0 0 auto; }
+.nav-brand .mark { width: 9px; height: 9px; border-radius: 3px; background: var(--accent); }
+.nav-links { display: flex; gap: .15rem; overflow-x: auto; min-width: 0; scrollbar-width: none; }
+.nav-links button, .gear {
+  white-space: nowrap; padding: .42rem .85rem; border-radius: var(--radius-sm);
+  font-size: .9rem; color: var(--muted);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.nav-links button:hover, .gear:hover { color: var(--text); background: var(--surface-2); }
+.nav-links button[aria-selected="true"], .gear[aria-selected="true"] {
+  color: var(--text); font-weight: 560; background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--accent);
+}
+.nav .spacer { flex: 1 1 auto; }
+.gear { font-size: 1.05rem; padding: .3rem .65rem; flex: 0 0 auto; }
+
+.screen { display: none; }
+.screen.on { display: block; animation: fade var(--dur) var(--ease); }
+@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.wrap { max-width: 1120px; margin: 0 auto; padding: clamp(1.2rem, 4vw, 3rem) clamp(1rem, 4vw, 2rem) 6rem; }
+.wrap.narrow { max-width: 760px; }
+h1 { font-size: clamp(1.5rem, 3.4vw, 2.1rem); font-weight: 600; letter-spacing: -0.02em; margin: 0 0 .25rem; }
+.sub { color: var(--muted); font-size: .95rem; margin: 0 0 2rem; }
+.eyebrow { font-size: .72rem; text-transform: uppercase; letter-spacing: .16em; color: var(--faint); }
+.bar { height: 4px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width 300ms var(--ease); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.1rem 1.25rem; margin-bottom: .75rem; }
+.row-actions { display: flex; gap: .5rem; margin-top: .7rem; flex-wrap: wrap; align-items: center; }
+.mini {
+  font-size: .78rem; color: var(--muted); padding: .2rem .6rem; white-space: nowrap;
+  border: 1px solid var(--line); border-radius: 999px;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.mini:hover { color: var(--text); border-color: var(--line-strong); }
+.mini.go { color: var(--accent); border-color: var(--accent); }
+.mini[disabled] { opacity: .4; cursor: default; }
+.mini[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.chip { display: inline-flex; align-items: center; gap: .4rem; font-size: .76rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: .12rem .6rem; }
+.badge { font-size: .64rem; text-transform: uppercase; letter-spacing: .12em; color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: .1rem .5rem; }
+.danger { border: 1px solid var(--rec); color: var(--rec); border-radius: 999px; padding: .25rem .8rem; font-size: .82rem; }
+.warn { margin-top: .8rem; padding: .85rem 1rem; border-radius: var(--radius-sm); border: 1px solid var(--rec); background: var(--rec-soft); font-size: .88rem; }
+.warn .acts { display: flex; gap: .5rem; margin-top: .7rem; flex-wrap: wrap; }
+.toast {
+  position: fixed; z-index: 90; left: 50%; transform: translateX(-50%); bottom: 1.2rem;
+  max-width: min(92%, 560px); display: flex; gap: .8rem; align-items: center;
+  padding: .55rem .7rem .55rem 1rem; border-radius: 999px; font-size: .86rem;
+  background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 10px 28px rgba(0,0,0,.22);
+}
+.toast .mini { flex: 0 0 auto; }
+
+/* ---------------- library fragment ---------------- */
+.books { display: grid; gap: .75rem; }
+.book {
+  display: grid; gap: .9rem; align-items: center; grid-template-columns: 1fr auto;
+  padding: 1.15rem 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  text-align: left; width: 100%; transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.book:hover { border-color: var(--accent); transform: translateY(-1px); }
+.book-title { font-size: 1.08rem; font-weight: 580; letter-spacing: -0.01em; }
+.book-meta { color: var(--muted); font-size: .86rem; margin-top: .15rem; }
+.book-cursor { color: var(--accent); font-size: .86rem; margin-top: .55rem; }
+.book .bar { margin-top: .6rem; }
+.book-right { color: var(--faint); font-size: .85rem; text-align: right; white-space: nowrap; }
+.pct { font-size: 1.1rem; color: var(--text); font-weight: 560; }
+.drop { margin-top: 1.5rem; padding: 2.2rem 1.25rem; border: 1.5px dashed var(--line-strong); border-radius: var(--radius); text-align: center; color: var(--muted); width: 100%; }
+.drop b { display: block; font-weight: 560; color: var(--text); margin-bottom: .2rem; }
+.drop small { color: var(--faint); }
+
+/* ---------------- SCREEN A · settings ---------------- */
+.set-head { display: flex; align-items: baseline; gap: .8rem; flex-wrap: wrap; }
+.autosave { margin-left: auto; font-size: .8rem; color: var(--faint); display: inline-flex; align-items: center; gap: .35rem; }
+.autosave .d { width: 6px; height: 6px; border-radius: 99px; background: var(--accent); opacity: .5; }
+.group { margin-top: 1.9rem; }
+.group > .eyebrow { margin: 0 0 .55rem .2rem; display: block; }
+.list { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.srow {
+  display: flex; align-items: center; gap: .9rem 1.2rem; flex-wrap: wrap;
+  padding: .95rem 1.15rem; border-bottom: 1px solid var(--line);
+}
+.srow:last-child { border-bottom: 0; }
+button.srow { width: 100%; text-align: left; transition: background var(--dur) var(--ease); }
+button.srow:hover { background: var(--surface-2); }
+.srow .copy { flex: 1 1 240px; min-width: 0; }
+.srow .copy b { font-weight: 560; letter-spacing: -0.01em; }
+.srow .copy small { display: block; color: var(--muted); font-size: .84rem; margin-top: .12rem; }
+.srow .copy .echo { display: block; color: var(--faint); font-size: .78rem; margin-top: .3rem; }
+.saved {
+  font-size: .74rem; color: var(--accent); opacity: 0; transform: translateY(2px);
+  transition: opacity 200ms var(--ease), transform 200ms var(--ease); margin-left: .4rem; font-weight: 500; white-space: nowrap;
+}
+.saved.on { opacity: 1; transform: none; }
+.device-tag { font-size: .7rem; color: var(--faint); border: 1px solid var(--line); border-radius: 999px; padding: 0 .45rem; margin-left: .35rem; font-weight: 400; white-space: nowrap; }
+.switch {
+  flex: 0 0 auto; width: 46px; height: 27px; border-radius: 999px; position: relative;
+  background: var(--surface-2); border: 1px solid var(--line-strong);
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.switch::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 19px; height: 19px;
+  border-radius: 99px; background: var(--faint);
+  transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.switch[aria-checked="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(19px); background: var(--accent); }
+.seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; flex: 0 0 auto; }
+.seg button { padding: .3rem .85rem; border-radius: 999px; font-size: .84rem; color: var(--muted); transition: background var(--dur) var(--ease), color var(--dur) var(--ease); }
+.seg button:hover { color: var(--text); }
+.seg button[aria-checked="true"] { background: var(--surface); color: var(--text); font-weight: 560; box-shadow: 0 1px 3px rgba(0,0,0,.12), inset 0 0 0 1px var(--line); }
+.selwrap { position: relative; flex: 0 0 auto; }
+.selwrap select {
+  appearance: none; -webkit-appearance: none; font: inherit; font-size: .88rem; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  padding: .4rem 2rem .4rem .75rem; min-width: 190px; max-width: 100%; cursor: pointer;
+}
+.selwrap select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.selwrap::after { content: "▾"; position: absolute; right: .7rem; top: 50%; transform: translateY(-50%); color: var(--faint); pointer-events: none; font-size: .8rem; }
+.reach { display: inline-flex; align-items: center; gap: .35rem; font-size: .78rem; margin-top: .35rem; color: var(--muted); }
+.reach .d { width: 7px; height: 7px; border-radius: 99px; background: var(--accent); }
+.reach.bad { color: var(--rec); }
+.reach.bad .d { background: var(--rec); }
+.fold summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: .6rem; padding: .95rem 1.15rem; }
+.fold summary::-webkit-details-marker { display: none; }
+.fold .caret { color: var(--faint); transition: transform var(--dur) var(--ease); display: inline-block; }
+.fold[open] .caret { transform: rotate(90deg); }
+.fold summary .ct { margin-left: auto; color: var(--faint); font-size: .82rem; }
+.brow { display: grid; grid-template-columns: 1fr auto; gap: .2rem 1rem; align-items: center; padding: .75rem 1.15rem; border-top: 1px solid var(--line); }
+.brow .t { font-weight: 540; letter-spacing: -0.01em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brow .m { color: var(--muted); font-size: .8rem; }
+.brow .r { text-align: right; font-size: .85rem; white-space: nowrap; }
+.brow .bar { grid-column: 1 / -1; margin-top: .3rem; }
+.foot { margin-top: 2.2rem; color: var(--faint); font-size: .8rem; text-align: center; }
+
+/* ---------------- SCREEN B · prepare ---------------- */
+.carry { display: flex; align-items: flex-start; gap: .5rem; font-size: .83rem; color: var(--muted); border-left: 2px solid var(--accent); padding: .15rem .7rem; margin: 0 0 1rem; }
+.carry b { color: var(--text); font-weight: 540; }
+.cfg { display: flex; gap: .9rem; align-items: flex-start; flex-wrap: wrap; padding: .9rem 1rem; margin-bottom: .5rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.cfg.active { border-color: var(--accent); background: var(--accent-soft); }
+.cfg-main { flex: 1 1 260px; min-width: 0; }
+.cfg-name { font-weight: 560; letter-spacing: -0.01em; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.cfg-meta { color: var(--muted); font-size: .83rem; margin-top: .2rem; }
+.cfg-meta .done-n { color: var(--accent); }
+.cfg-meta .ed { color: var(--text); }
+.cfg-acts { display: flex; gap: .35rem; flex-wrap: wrap; margin-left: auto; }
+.cfg-extra { flex: 1 1 100%; }
+.prep-sec { margin-top: 1.6rem; }
+.sec-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.sec-head .mini { margin-left: auto; }
+.scope {
+  display: flex; gap: .55rem; align-items: flex-start; font-size: .82rem; color: var(--muted);
+  padding: .55rem .75rem; margin-bottom: .7rem; border-radius: var(--radius-sm); background: var(--surface-2);
+}
+.scope b { color: var(--text); font-weight: 540; }
+
+.chap { border-bottom: 1px solid var(--line); }
+.chap:last-child { border-bottom: 0; }
+.chap.flash > .chead { animation: flash 1.8s var(--ease); }
+@keyframes flash { 0%, 30% { background: var(--accent-soft); } 100% { background: transparent; } }
+.chead { display: flex; align-items: center; gap: .35rem .8rem; flex-wrap: wrap; padding: .7rem .2rem; border-radius: var(--radius-sm); }
+.ch-toggle { display: inline-flex; align-items: baseline; gap: .6rem; text-align: left; min-width: 0; flex: 1 1 200px; padding: .15rem 0; }
+.ch-toggle .caret { color: var(--faint); transition: transform var(--dur) var(--ease); display: inline-block; }
+.chap.open .ch-toggle .caret { transform: rotate(90deg); }
+.ch-toggle .nm { font-weight: 560; white-space: nowrap; }
+.ch-toggle .ttl { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-toggle .ttl::before { content: "· "; color: var(--faint); }
+.chead .st { color: var(--muted); font-size: .82rem; white-space: nowrap; }
+.ch-acts { display: flex; gap: .3rem; flex-wrap: wrap; }
+.ch-extra { padding: 0 .2rem .7rem; }
+.ch-extra:empty { display: none; }
+.confirm { padding: .85rem 1rem; border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent-soft); font-size: .86rem; }
+.confirm b.h { display: block; font-weight: 580; margin-bottom: .35rem; }
+.confirm ul { margin: .2rem 0 0; padding-left: 1.1rem; color: var(--muted); }
+.confirm ul b { color: var(--text); font-weight: 540; }
+.confirm .acts { display: flex; gap: .5rem; margin-top: .75rem; flex-wrap: wrap; }
+.confirm .btn-go { background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: .25rem .9rem; font-size: .82rem; font-weight: 560; }
+
+.prows { border-top: 1px solid var(--line); margin-bottom: .6rem; }
+.prow { display: flex; flex-wrap: wrap; gap: .45rem .7rem; align-items: center; padding: .5rem .2rem; border-bottom: 1px solid var(--line); font-size: .85rem; }
+.prows > .prow:last-child { border-bottom: 0; }
+.prow .pnum { color: var(--muted); min-width: 1.6em; font-variant-numeric: tabular-nums; }
+.prow .pw { position: relative; flex: 1 1 150px; min-width: 110px; }
+.prow .pw svg { display: block; width: 100%; height: 30px; }
+.ph { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); opacity: 0; left: 0; }
+.pw.playing .ph { opacity: 1; animation: sweep var(--pdur, 900ms) linear 1; }
+@keyframes sweep { from { left: 0; } to { left: calc(100% - 2px); } }
+.prow .ptime { color: var(--faint); font-size: .78rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.prow .pdone { color: var(--faint); opacity: .35; }
+.prow.done .pdone { color: var(--accent); opacity: 1; }
+.prow .pacts { display: flex; gap: .3rem; margin-left: auto; }
+.sprev { width: 30px; height: 30px; flex: 0 0 auto; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); font-size: .72rem; display: inline-flex; align-items: center; justify-content: center; }
+.sprev:hover { color: var(--accent); border-color: var(--accent); }
+.scrub { flex: 1 1 100%; padding: .7rem .8rem; margin: .2rem 0 .3rem; border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--surface-2); }
+.scrub .sw { position: relative; cursor: crosshair; }
+.scrub .sw svg { display: block; width: 100%; height: 64px; }
+.scrub .mark { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--rec); left: 50%; }
+.scrub .lbl { font-size: .78rem; color: var(--muted); margin-bottom: .4rem; }
+.wv rect { fill: var(--wave); }
+.prow.done .wv rect { fill: var(--wave-done); }
+
+/* the NEW affordance: a chapter break between two sentences */
+.gap { position: relative; height: 0; z-index: 3; }
+.gap .hit { position: absolute; left: 0; right: 0; top: -7px; height: 14px; cursor: pointer; }
+.gap .line { position: absolute; left: 0; right: 0; top: -1px; height: 0; border-top: 2px dashed var(--accent); opacity: 0; transition: opacity 150ms var(--ease); pointer-events: none; }
+.gap .gbtn {
+  position: absolute; left: 50%; top: 0; transform: translate(-50%, -50%) scale(.92);
+  font-size: .74rem; white-space: nowrap; padding: .14rem .7rem; border-radius: 999px;
+  background: var(--surface); color: var(--accent); border: 1px solid var(--accent);
+  box-shadow: 0 4px 14px rgba(0,0,0,.14); opacity: 0; pointer-events: none;
+  transition: opacity 150ms var(--ease), transform 150ms var(--ease);
+}
+@media (hover: hover) {
+  .gap:hover .line, .gap:focus-within .line { opacity: .8; }
+  .gap:hover .gbtn, .gap:focus-within .gbtn { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+}
+/* pinned mode (the toggle) — the touch path: every break point is a visible, tappable pill */
+.show-gaps .gap { height: 30px; border-bottom: 1px solid var(--line); }
+.show-gaps .gap .hit { display: none; }
+.show-gaps .gap .line { top: 50%; opacity: .35; border-top-width: 1px; }
+.show-gaps .gap .gbtn { top: 50%; opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); box-shadow: none; }
+.show-gaps .prow { border-bottom: 0; }
+.gap-confirm { padding: .5rem .2rem; border-bottom: 1px solid var(--line); }
+.newch-preview { border-top: 2px solid var(--accent); }
+
+.stub { padding: 4rem 1rem; text-align: center; color: var(--faint); }
+
+/* ================= phone layout (container query: works inside the 390 frame too) ================= */
+@container app (max-width: 620px) {
+  .nav { gap: .35rem; padding: .45rem .6rem; }
+  .nav-brand .word { display: none; }
+  .nav-links button { padding: .4rem .6rem; font-size: .86rem; }
+  .wrap { padding: 1.1rem .9rem 5rem; }
+  h1 { font-size: 1.45rem; }
+  .sub { margin-bottom: 1.3rem; font-size: .9rem; }
+  .srow { padding: .85rem .95rem; }
+  .srow .copy { flex-basis: 170px; }
+  .srow.stack .copy { flex-basis: 100%; }
+  .srow.stack .seg, .srow.stack .selwrap { width: 100%; }
+  .srow.stack .seg button { flex: 1 1 0; }
+  .srow.stack .selwrap select { width: 100%; }
+  .book { padding: 1rem; }
+  .cfg-acts { margin-left: 0; }
+  .chead .st { order: 3; flex-basis: 100%; padding-left: 1.4rem; }
+  .ch-acts { order: 4; padding-left: 1.4rem; }
+  .prow .pw { flex-basis: 120px; }
+  .prow .ptime { order: 5; }
+  .prow .pdone { order: 6; }
+  .prow .pacts { order: 7; }
+  .sec-head .mini { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+
+<!-- ================= mockup chrome ================= -->
+<div class="mockbar" role="toolbar" aria-label="mockup controls">
+  <span class="tag">Mockup</span>
+  <span class="mseg" id="mScreen">
+    <button type="button" data-s="settings" aria-pressed="true">A · Settings</button>
+    <button type="button" data-s="prepare" aria-pressed="false">B · Prepare chapters</button>
+  </span>
+  <span class="mseg" id="mDevice">
+    <button type="button" data-d="desktop" aria-pressed="true">Desktop</button>
+    <button type="button" data-d="phone" aria-pressed="false">Phone 390×844</button>
+  </span>
+  <span class="sp"></span>
+  <span class="mseg"><button type="button" id="mTheme" aria-pressed="false">◐ light / dark</button></span>
+</div>
+
+<details class="mock-notes" id="notes">
+  <summary>What's new here, and what to click</summary>
+  <div class="cols">
+    <div>
+      <h4>A · Settings</h4>
+      <ul>
+        <li><b>⚙ is now a screen inside the app</b>, next to Library / Explore / Study / Prepare — not the old settings.html page. Same nav, same look.</li>
+        <li><b>Single user</b>: no profile picker in the nav or anywhere, no user management.</li>
+        <li><b>No Save button.</b> Every change saves instantly; a small <span style="color:var(--accent)">✓ saved</span> appears on the row you changed.</li>
+        <li><b>Theme</b> System / Light / Dark — stored on this device only (it is what the old nav ◐ did; the nav ◐ is gone).</li>
+        <li><b>Trim silence</b> moved here from Library — still one switch for sentence and recording. Open <b>Library</b> in the nav to see it gone.</li>
+        <li>STT provider: <button type="button" class="sim" id="simSmia">simulate smia outage</button> to see the unreachable hint.</li>
+        <li><b>Books</b> overview is collapsed and read-only — keep it or drop it?</li>
+      </ul>
+    </div>
+    <div>
+      <h4>B · Prepare chapters</h4>
+      <ul>
+        <li>Chapter 2 is open. <b>Hover between two sentences</b> → <i>“⤒ Start new chapter here”</i>. On phone, use <b>⤒ Show chapter breaks</b> to pin every break point as a tappable pill.</li>
+        <li>Confirm in the page → the chapter divides in two, later chapters renumber, and a toast offers <b>Undo</b>.</li>
+        <li>Each chapter header: <b>⇣ Merge with next chapter</b> (in-page confirm; the last chapter has none).</li>
+        <li><b>✎ Title</b> <i class="opt">optional</i> names a chapter inline — accept or reject this one.</li>
+        <li>Edits belong to the <b>active config only</b>. Click <b>Make active</b> on “Tette pauser” to see its own, untouched chapters; <b>Adjust &amp; re-analyse</b> shows the warning that discards them.</li>
+      </ul>
+    </div>
+  </div>
+</details>
+
+<div class="stagearea" id="stagearea">
+  <div class="phone-note hidden" id="phoneNote">390 × 844 — the same screens, narrow layout</div>
+  <div class="device" id="device">
+    <div class="app" id="app">
+
+      <!-- =============== the ONE navigation =============== -->
+      <nav class="nav" aria-label="main">
+        <span class="nav-brand"><span class="mark"></span><span class="word">shadow</span></span>
+        <div class="nav-links" role="tablist">
+          <button type="button" role="tab" data-go="library" aria-selected="false">Library</button>
+          <button type="button" role="tab" data-go="explore" aria-selected="false">Explore</button>
+          <button type="button" role="tab" data-go="study" aria-selected="false">Study</button>
+          <button type="button" role="tab" data-go="prepare" aria-selected="false">Prepare</button>
+        </div>
+        <span class="spacer"></span>
+        <button class="gear" type="button" role="tab" data-go="settings" aria-selected="true" title="Settings" aria-label="Settings">⚙</button>
+      </nav>
+
+      <!-- =============== LIBRARY (fragment) =============== -->
+      <section class="screen" id="s-library">
+        <div class="wrap">
+          <h1>Lydbøker</h1>
+          <p class="sub">One stored file per book — mono Opus, split into ranges, never into clips.</p>
+          <div class="books" id="libBooks"></div>
+          <div class="drop"><b>Add audiobook</b><small>Drop an m4b / mp3 / flac / wav here, or click to choose.</small></div>
+          <span class="mnote">The “Settings · Trim silence” card that sat here is gone — it lives in ⚙ Settings → Playback now. Library is only books + upload.</span>
+        </div>
+      </section>
+
+      <section class="screen" id="s-explore"><div class="stub">Explore — unchanged, not part of this mockup.</div></section>
+      <section class="screen" id="s-study"><div class="stub">Study — unchanged, not part of this mockup.<br>(“Play sentence when opened” and “Trim in audiobook mode” in Settings govern it.)</div></section>
+
+      <!-- =============== SCREEN A · SETTINGS =============== -->
+      <section class="screen on" id="s-settings">
+        <div class="wrap narrow">
+          <div class="set-head">
+            <h1>Settings</h1>
+            <span class="autosave"><span class="d"></span>changes save as you make them</span>
+          </div>
+
+          <div class="group">
+            <span class="eyebrow">Appearance</span>
+            <div class="list">
+              <div class="srow stack">
+                <span class="copy"><b>Theme</b><span class="device-tag">this device only</span><span class="saved" data-saved="theme">✓ saved</span>
+                  <small>System follows your OS. Other devices keep their own choice.</small></span>
+                <span class="seg" role="radiogroup" aria-label="Theme" id="themeSeg">
+                  <button type="button" role="radio" data-v="system" aria-checked="true">System</button>
+                  <button type="button" role="radio" data-v="light" aria-checked="false">Light</button>
+                  <button type="button" role="radio" data-v="dark" aria-checked="false">Dark</button>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="group">
+            <span class="eyebrow">Playback</span>
+            <div class="list">
+              <button class="srow" type="button" data-sw="trim">
+                <span class="copy"><b>Trim silence</b><span class="saved" data-saved="trim">✓ saved</span>
+                  <small>Play only the spoken part of a sentence, and of your recordings. One switch — it governs both waveforms.</small>
+                  <span class="echo" data-echo="trim"></span></span>
+                <span class="switch" role="switch" aria-checked="true" aria-label="Trim silence"></span>
+              </button>
+              <button class="srow" type="button" data-sw="autoplay">
+                <span class="copy"><b>Play sentence when opened</b><span class="saved" data-saved="autoplay">✓ saved</span>
+                  <small>In normal study, moving to a sentence plays it once straight away. Audiobook mode is separate — it plays continuously anyway.</small>
+                  <span class="echo" data-echo="autoplay"></span></span>
+                <span class="switch" role="switch" aria-checked="true" aria-label="Play sentence when opened"></span>
+              </button>
+              <button class="srow" type="button" data-sw="abtrim">
+                <span class="copy"><b>Trim in audiobook mode</b><span class="saved" data-saved="abtrim">✓ saved</span>
+                  <small>While the chapter reads itself, sentence after sentence.</small>
+                  <span class="echo" data-echo="abtrim"></span></span>
+                <span class="switch" role="switch" aria-checked="false" aria-label="Trim in audiobook mode"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="group">
+            <span class="eyebrow">Transcription</span>
+            <div class="list">
+              <div class="srow stack">
+                <span class="copy"><b>Speech-to-text provider</b><span class="saved" data-saved="stt">✓ saved</span>
+                  <small>Used by 📝 Transcribe in Study. The list comes from smia.</small>
+                  <span class="reach" id="reach"><span class="d"></span><span id="reachTxt">smia reachable ✓ · 4 providers</span></span></span>
+                <span class="selwrap"><select id="sttSel" aria-label="Speech-to-text provider"></select></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="group">
+            <span class="eyebrow">Books <i class="opt">keep?</i></span>
+            <details class="list fold">
+              <summary><span class="caret">▸</span><b style="font-weight:560">Overview</b><span class="quiet" style="font-size:.84rem">read-only</span><span class="ct num">3 books</span></summary>
+              <div id="setBooks"></div>
+            </details>
+          </div>
+
+          <div class="foot">shadow · one user, no profiles — progress, split configs and these settings are simply yours.</div>
+        </div>
+      </section>
+
+      <!-- =============== SCREEN B · PREPARE =============== -->
+      <section class="screen" id="s-prepare">
+        <div class="wrap">
+          <div class="eyebrow">Kransen — Sigrid Undset</div>
+          <h1 style="font-size:1.45rem">Prepare / split</h1>
+          <p class="sub">Server-side silence analysis. Produces ranges only — no clips are cut or stored.</p>
+          <div class="carry"><span>↻</span><span><b>Progress carries across configs.</b> Done-ness is stored as completed
+            <b>time ranges on the book</b>; a sentence is done when its whole span is covered.</span></div>
+
+          <div id="cfgList"></div>
+          <div class="row-actions" style="margin-bottom:.4rem"><button class="mini go" type="button" id="newCfgBtn">+ New split config…</button></div>
+
+          <div class="prep-sec">
+            <div class="sec-head">
+              <span class="eyebrow">Chapters &amp; sentences in <span id="actName"></span></span>
+              <button class="mini" type="button" id="gapToggle" aria-pressed="false">⤒ Show chapter breaks</button>
+            </div>
+            <div class="scope">
+              <span>✎</span>
+              <span>Chapter breaks, chapter merges and titles are <b>manual edits of “<span class="actName2"></span>” only</b> — other configs keep their own chapters.
+              Re-analysing “<span class="actName2"></span>” rebuilds its chapters from silence and <b>discards them</b> (it warns first).
+              A chapter always starts on a sentence boundary.</span>
+            </div>
+            <div class="card" id="chapters" style="padding:.3rem 1rem"></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="toast hidden" id="toast" role="status" aria-live="polite"><span id="toastTxt"></span><button class="mini go hidden" type="button" id="toastUndo">Undo</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var root = document.documentElement;
+
+  /* ---------- helpers ---------- */
+  function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; var t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function clock(ms, dec) {
+    var s = ms / 1000, h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    var ss = dec ? sec.toFixed(1).padStart(4, '0') : String(Math.floor(sec)).padStart(2, '0');
+    return h ? h + ':' + String(m).padStart(2, '0') + ':' + ss : m + ':' + ss;
+  }
+  function secs(ms) { return (ms / 1000).toFixed(1) + ' s'; }
+  function esc(t) { return String(t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function wave(seed, n, h) {
+    var r = rng(seed), out = '<svg class="wv" viewBox="0 0 ' + n + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">';
+    for (var i = 0; i < n; i++) {
+      var env = Math.sin(Math.PI * (i + .5) / n) * .75 + .25;
+      var a = Math.max(.06, env * (.35 + r() * .65)) * h * .92;
+      out += '<rect x="' + (i + .18) + '" y="' + ((h - a) / 2).toFixed(2) + '" width=".64" height="' + a.toFixed(2) + '" rx=".3"/>';
+    }
+    return out + '</svg>';
+  }
+
+  /* ---------- toast ---------- */
+  var toastT = 0, undoFn = null;
+  function toast(msg, undo) {
+    $('#toastTxt').textContent = msg;
+    undoFn = undo || null;
+    $('#toastUndo').classList.toggle('hidden', !undo);
+    $('#toast').classList.remove('hidden');
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { $('#toast').classList.add('hidden'); }, undo ? 6000 : 2800);
+  }
+  $('#toastUndo').addEventListener('click', function () { if (undoFn) undoFn(); $('#toast').classList.add('hidden'); });
+
+  /* ---------- navigation ---------- */
+  var current = 'settings';
+  function go(name) {
+    current = name;
+    $$('.screen').forEach(function (s) { s.classList.toggle('on', s.id === 's-' + name); });
+    $$('[data-go]').forEach(function (b) { b.setAttribute('aria-selected', String(b.dataset.go === name)); });
+    $$('#mScreen button').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.s === name));
+    });
+    var app = $('#app');
+    if ($('#stagearea').classList.contains('phone')) app.scrollTop = 0; else window.scrollTo(0, 0);
+  }
+  $$('[data-go]').forEach(function (b) { b.addEventListener('click', function () { go(b.dataset.go); }); });
+  $$('#mScreen button').forEach(function (b) { b.addEventListener('click', function () { go(b.dataset.s); }); });
+
+  $$('#mDevice button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var phone = b.dataset.d === 'phone';
+      $$('#mDevice button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      $('#stagearea').classList.toggle('phone', phone);
+      $('#phoneNote').classList.toggle('hidden', !phone);
+    });
+  });
+
+  /* ---------- theme (mockup toggle + the settings segmented control stay in sync) ---------- */
+  var themePref = 'system';
+  function sysDark() { return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }
+  function applyTheme(pref, announce) {
+    themePref = pref;
+    if (pref === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', pref);
+    $$('#themeSeg button').forEach(function (b) { b.setAttribute('aria-checked', String(b.dataset.v === pref)); });
+    var dark = pref === 'dark' || (pref === 'system' && sysDark());
+    $('#mTheme').setAttribute('aria-pressed', String(dark));
+    if (announce) flashSaved('theme');
+  }
+  $$('#themeSeg button').forEach(function (b) { b.addEventListener('click', function () { applyTheme(b.dataset.v, true); }); });
+  $('#mTheme').addEventListener('click', function () {
+    var dark = themePref === 'dark' || (themePref === 'system' && sysDark());
+    applyTheme(dark ? 'light' : 'dark', false);
+  });
+
+  /* ================= SCREEN A ================= */
+  var savedT = {};
+  function flashSaved(key) {
+    var el = $('[data-saved="' + key + '"]');
+    if (!el) return;
+    el.classList.add('on');
+    clearTimeout(savedT[key]);
+    savedT[key] = setTimeout(function () { el.classList.remove('on'); }, 1600);
+  }
+  var echoes = {
+    trim: ['On — waveforms show the speech-only window.', 'Off — sentences and takes play with their full silence.'],
+    autoplay: ['On — ← / → / Done & next start the new sentence playing.', 'Off — a new sentence waits for ▶ / space.'],
+    abtrim: ['On — audiobook mode skips the pauses between sentences.', 'Off — natural tempo, every pause exactly as recorded.'],
+  };
+  function setEcho(row) {
+    var k = row.dataset.sw, on = $('.switch', row).getAttribute('aria-checked') === 'true';
+    $('[data-echo="' + k + '"]').textContent = echoes[k][on ? 0 : 1];
+  }
+  $$('[data-sw]').forEach(function (row) {
+    setEcho(row);
+    row.addEventListener('click', function () {
+      var sw = $('.switch', row);
+      sw.setAttribute('aria-checked', String(sw.getAttribute('aria-checked') !== 'true'));
+      setEcho(row); flashSaved(row.dataset.sw);
+    });
+  });
+
+  var providers = ['hf_whisper', 'openai_whisper', 'faster_whisper_local', 'nb_whisper_large'];
+  var sttValue = 'hf_whisper', smiaUp = true;
+  function renderStt() {
+    var list = smiaUp ? providers : [sttValue];
+    $('#sttSel').innerHTML = list.map(function (p) { return '<option value="' + esc(p) + '">' + esc(p) + '</option>'; }).join('');
+    $('#sttSel').value = sttValue;
+    $('#reach').classList.toggle('bad', !smiaUp);
+    $('#reachTxt').textContent = smiaUp ? 'smia reachable ✓ · ' + providers.length + ' providers'
+      : 'smia unreachable ⚠ — showing your saved choice only';
+  }
+  $('#sttSel').addEventListener('change', function () { sttValue = this.value; flashSaved('stt'); });
+  $('#simSmia').addEventListener('click', function () {
+    smiaUp = !smiaUp; renderStt();
+    this.textContent = smiaUp ? 'simulate smia outage' : 'bring smia back';
+    if (current !== 'settings') go('settings');
+  });
+  renderStt();
+
+  var books = [
+    { t: 'Kransen', a: 'Sigrid Undset', d: 42130000, done: 412, n: 1203, cur: 'Chapter 9 · sentence 14' },
+    { t: 'Sult', a: 'Knut Hamsun', d: 21933000, done: 58, n: 731, cur: 'Chapter 2 · sentence 3' },
+    { t: 'Naiv. Super.', a: 'Erlend Loe', d: 15120000, done: 0, n: 0, cur: '' },
+  ];
+  $('#setBooks').innerHTML = books.map(function (b) {
+    var p = b.n ? Math.round(100 * b.done / b.n) : 0;
+    return '<div class="brow"><span class="t">' + esc(b.t) + ' <span class="m">— ' + esc(b.a) + '</span></span>'
+      + '<span class="r num"><b style="font-weight:560">' + (b.n ? p + '%' : '—') + '</b></span>'
+      + '<span class="m num">' + clock(b.d) + ' · ' + (b.n ? b.done + ' / ' + b.n + ' sentences' : 'not split yet') + '</span>'
+      + '<span class="m"></span>'
+      + '<div class="bar"><i style="width:' + p + '%"></i></div></div>';
+  }).join('');
+  $('#libBooks').innerHTML = books.map(function (b) {
+    var p = b.n ? Math.round(100 * b.done / b.n) : 0;
+    return '<button class="book" type="button"><span style="min-width:0"><div class="book-title">' + esc(b.t) + '</div>'
+      + '<div class="book-meta num">' + esc(b.a) + ' · ' + clock(b.d) + (b.n ? ' · ' + b.n + ' sentences' : ' · not split yet') + '</div>'
+      + (b.cur ? '<div class="book-cursor">↳ resume at ' + b.cur + '</div>' : '')
+      + '<div class="bar"><i style="width:' + p + '%"></i></div></span>'
+      + '<span class="book-right"><span class="pct num">' + p + '%</span><br>done</span></button>';
+  }).join('');
+
+  /* ================= SCREEN B ================= */
+  var uid = 1;
+  function genChapters(seed, nCh, minS, maxS) {
+    var r = rng(seed), out = [];
+    for (var c = 0; c < nCh; c++) {
+      var k = minS + Math.floor(r() * (maxS - minS + 1)), sents = [];
+      for (var i = 0; i < k; i++) sents.push({ id: uid++, dur: 1400 + Math.floor(r() * 5200), done: c < 2 && (c === 0 || i < 4), w: Math.floor(r() * 1e6) });
+      out.push({ id: uid++, title: '', sents: sents });
+    }
+    return out;
+  }
+  var configs = [
+    { name: 'Standard', s: 400, c: 2500, active: true, seed: 11, nCh: 7, min: 5, max: 9, data: null, edits: 0 },
+    { name: 'Tette pauser', s: 260, c: 4000, active: false, seed: 29, nCh: 5, min: 8, max: 12, data: null, edits: 0 },
+  ];
+  configs.forEach(function (c) { c.data = genChapters(c.seed, c.nCh, c.min, c.max); });
+  configs[0].data[1].title = '';
+  var openCh = {}; openCh[configs[0].data[1].id] = true;
+  var pending = null;   // {kind:'gap', ch, at} | {kind:'mergech', ch} | {kind:'rename', ch}
+  var cfgExtra = null;  // {i, kind:'adjust'|'warn'}
+  var flashId = null, gapsPinned = false;
+
+  function act() { return configs.filter(function (c) { return c.active; })[0]; }
+  function snapshot(cfg) { return { data: JSON.parse(JSON.stringify(cfg.data)), edits: cfg.edits }; }
+  function restore(cfg, snap) { cfg.data = snap.data; cfg.edits = snap.edits; pending = null; render(); }
+  function chDur(ch) { return ch.sents.reduce(function (a, s) { return a + s.dur; }, 0) + Math.max(0, ch.sents.length - 1) * 400; }
+  function starts(cfg) {  // absolute start ms of every sentence, by id
+    var t = 31000, m = {};
+    cfg.data.forEach(function (ch) { ch.sents.forEach(function (s) { m[s.id] = t; t += s.dur + 400; }); t += 2600; });
+    return m;
+  }
+  function countSents(cfg) { return cfg.data.reduce(function (a, ch) { return a + ch.sents.length; }, 0); }
+  function countDone(cfg) { return cfg.data.reduce(function (a, ch) { return a + ch.sents.filter(function (s) { return s.done; }).length; }, 0); }
+  function chName(i, ch) { return 'Chapter ' + (i + 1) + (ch.title ? ' · ' + ch.title : ''); }
+
+  function renderConfigs() {
+    var box = $('#cfgList');
+    box.innerHTML = '';
+    configs.forEach(function (cfg, i) {
+      var el = document.createElement('div');
+      el.className = 'cfg' + (cfg.active ? ' active' : '');
+      var extra = '';
+      if (cfgExtra && cfgExtra.i === i) {
+        extra = '<div class="cfg-extra"><div class="card" style="margin:.7rem 0 0;border-style:dashed">'
+          + '<div class="row-actions" style="margin-top:0"><span class="quiet num" style="font-size:.84rem">Sentence silence <b>' + cfg.s + ' ms</b> · Chapter silence <b>' + cfg.c + ' ms</b> <span style="color:var(--faint)">(sliders as today)</span></span></div>'
+          + '<div class="row-actions"><button class="mini go" data-x="run" type="button">Re-analyse</button><button class="mini" data-x="no" type="button">Cancel</button></div>'
+          + (cfgExtra.kind === 'warn'
+            ? '<div class="warn"><b>Re-analysing rebuilds every boundary in “' + esc(cfg.name) + '” — any manual splits, merges, <u>chapter breaks, chapter merges and chapter titles</u> you made in THIS config are discarded'
+              + (cfg.edits ? ' (' + cfg.edits + ' edit' + (cfg.edits === 1 ? '' : 's') + ')' : '') + '.</b>'
+              + '<div class="quiet" style="margin-top:.3rem">Other configs are untouched, and your completed time ranges stay on the book.</div>'
+              + '<div class="acts"><button class="danger" data-x="confirm" type="button">Re-analyse anyway</button><button class="mini" data-x="no" type="button">Cancel</button></div></div>'
+            : '')
+          + '</div></div>';
+      }
+      el.innerHTML = '<div class="cfg-main"><div class="cfg-name"><span>' + esc(cfg.name) + '</span>' + (cfg.active ? '<span class="badge">active</span>' : '') + '</div>'
+        + '<div class="cfg-meta num">' + cfg.s + ' ms sentence · ' + cfg.c + ' ms chapter &nbsp;·&nbsp; ' + cfg.data.length + ' chapters · '
+        + countSents(cfg) + ' sentences &nbsp;·&nbsp; <span class="done-n">' + countDone(cfg) + ' done</span>'
+        + (cfg.edits ? ' &nbsp;·&nbsp; <span class="ed">✎ ' + cfg.edits + ' manual edit' + (cfg.edits === 1 ? '' : 's') + '</span>' : '') + '</div></div>'
+        + '<div class="cfg-acts">' + (cfg.active ? '' : '<button class="mini go" data-a="activate" type="button">Make active</button>')
+        + '<button class="mini" data-a="adjust" type="button">Adjust &amp; re-analyse</button><button class="mini" type="button">Rename</button>'
+        + '<button class="mini" type="button">Duplicate</button><button class="mini" type="button">Delete</button></div>' + extra;
+      el.addEventListener('click', function (e) {
+        var b = e.target.closest('button'); if (!b) return;
+        if (b.dataset.a === 'activate') { configs.forEach(function (c) { c.active = c === cfg; }); cfgExtra = null; pending = null; render(); toast('“' + cfg.name + '” is active — its own chapters, its own edits.'); }
+        else if (b.dataset.a === 'adjust') { cfgExtra = (cfgExtra && cfgExtra.i === i) ? null : { i: i, kind: 'adjust' }; render(); }
+        else if (b.dataset.x === 'run') { cfgExtra = { i: i, kind: 'warn' }; render(); }
+        else if (b.dataset.x === 'confirm') {
+          cfg.data = genChapters(cfg.seed, cfg.nCh, cfg.min, cfg.max); cfg.edits = 0; cfgExtra = null; pending = null;
+          openCh = {}; render(); toast('Re-analysed “' + cfg.name + '” — chapters rebuilt from silence, manual edits discarded.');
+        }
+        else if (b.dataset.x === 'no') { cfgExtra = null; render(); }
+      });
+      box.appendChild(el);
+    });
+    var a = act();
+    $('#actName').textContent = a.name;
+    $$('.actName2').forEach(function (n) { n.textContent = a.name; });
+  }
+
+  function gapHTML(ci, si) {
+    return '<div class="gap" data-ci="' + ci + '" data-si="' + si + '"><span class="hit" data-g="1"></span><span class="line"></span>'
+      + '<button class="gbtn" type="button" data-g="1">⤒ Start new chapter here</button></div>';
+  }
+
+  function renderChapters() {
+    var cfg = act(), st = starts(cfg), box = $('#chapters');
+    box.classList.toggle('show-gaps', gapsPinned);
+    var html = '';
+    cfg.data.forEach(function (ch, ci) {
+      var done = ch.sents.filter(function (s) { return s.done; }).length, isOpen = !!openCh[ch.id], last = ci === cfg.data.length - 1;
+      html += '<div class="chap' + (isOpen ? ' open' : '') + (flashId === ch.id ? ' flash' : '') + '" data-ci="' + ci + '">'
+        + '<div class="chead"><button class="ch-toggle" type="button" data-a="toggle" aria-expanded="' + isOpen + '"><span class="caret">▸</span>'
+        + '<span class="nm">Chapter ' + (ci + 1) + '</span>' + (ch.title ? '<span class="ttl">' + esc(ch.title) + '</span>' : '') + '</button>'
+        + '<span class="st num">' + ch.sents.length + ' sentences · ' + done + ' done · ' + clock(chDur(ch)) + '</span>'
+        + '<span class="ch-acts"><button class="mini" type="button" data-a="rename">✎ Title<i class="opt">optional</i></button>'
+        + (last ? '' : '<button class="mini" type="button" data-a="mergech">⇣ Merge with next chapter</button>') + '</span></div>';
+
+      var p = pending && pending.ch === ch.id ? pending : null;
+      html += '<div class="ch-extra">';
+      if (p && p.kind === 'rename') {
+        html += '<div class="confirm"><b class="h">Title for Chapter ' + (ci + 1) + '</b>'
+          + '<div class="row-actions" style="margin-top:.2rem"><input type="text" id="renameIn" placeholder="e.g. Første del" value="' + esc(ch.title) + '" style="flex:1 1 180px">'
+          + '<button class="btn-go" type="button" data-x="rn-ok">Save</button>' + (ch.title ? '<button class="mini" type="button" data-x="rn-clear">Remove title</button>' : '')
+          + '<button class="mini" type="button" data-x="cancel">Cancel</button></div>'
+          + '<div class="quiet" style="font-size:.78rem;margin-top:.45rem">The number stays automatic (“Chapter ' + (ci + 1) + '”) and renumbers with breaks; the title travels with the chapter. Shown in Study’s top bar and in Explore.</div></div>';
+      } else if (p && p.kind === 'mergech') {
+        var nx = cfg.data[ci + 1];
+        html += '<div class="confirm"><b class="h">Merge Chapter ' + (ci + 1) + ' with Chapter ' + (ci + 2) + '?</b><ul>'
+          + '<li>One chapter of <b>' + (ch.sents.length + nx.sents.length) + ' sentences</b> · ' + clock(chDur(ch) + chDur(nx) + 2600) + '</li>'
+          + (ci + 3 <= cfg.data.length ? '<li>Chapters ' + (ci + 3) + '–' + cfg.data.length + ' become ' + (ci + 2) + '–' + (cfg.data.length - 1) + '.</li>' : '')
+          + ((ch.title || nx.title) ? '<li>Keeps the title “' + esc(ch.title || nx.title) + '”.</li>' : '')
+          + '<li>Sentences and progress are untouched — only the chapter boundary goes.</li></ul>'
+          + '<div class="acts"><button class="btn-go" type="button" data-x="mc-ok">Merge chapters</button><button class="mini" type="button" data-x="cancel">Cancel</button></div></div>';
+      }
+      html += '</div>';
+
+      if (isOpen) {
+        html += '<div class="prows">';
+        ch.sents.forEach(function (s, si) {
+          if (si > 0) {
+            if (p && p.kind === 'gap' && p.at === si) {
+              var a = ch.sents.slice(0, si), b = ch.sents.slice(si);
+              var da = a.reduce(function (x, y) { return x + y.dur + 400; }, -400), db = b.reduce(function (x, y) { return x + y.dur + 400; }, -400);
+              html += '<div class="gap-confirm"><div class="confirm"><b class="h">Start a new chapter at sentence ' + (si + 1) + '?</b><ul>'
+                + '<li>Chapter ' + (ci + 1) + ' keeps sentences <b>1–' + si + '</b> · ' + clock(da) + '</li>'
+                + '<li>New <b>Chapter ' + (ci + 2) + '</b> starts at <b class="num">' + clock(st[s.id], true) + '</b> with ' + b.length + ' sentence' + (b.length === 1 ? '' : 's') + ' · ' + clock(db) + '</li>'
+                + (ci + 2 <= cfg.data.length ? '<li>Chapters ' + (ci + 2) + '–' + cfg.data.length + ' become ' + (ci + 3) + '–' + (cfg.data.length + 1) + '.</li>' : '')
+                + '</ul><div class="acts"><button class="btn-go" type="button" data-x="gap-ok">Start new chapter</button><button class="mini" type="button" data-x="cancel">Cancel</button>'
+                + '<button class="sprev" type="button" data-x="hear" title="hear the boundary: end of one, start of the next" style="width:auto;padding:0 .7rem;height:26px;border-radius:999px;font-size:.76rem">▶ hear the boundary</button></div></div></div>';
+            } else html += gapHTML(ci, si);
+          }
+          var startMs = st[s.id];
+          html += '<div class="prow' + (s.done ? ' done' : '') + '" data-ci="' + ci + '" data-si="' + si + '">'
+            + '<span class="pnum num">' + (si + 1) + '</span>'
+            + '<button class="sprev" type="button" data-a="play" title="play just this sentence">▶</button>'
+            + '<span class="pw" style="--pdur:' + s.dur + 'ms"><span class="ph"></span>' + wave(s.w, 48, 30) + '</span>'
+            + '<span class="ptime">' + clock(startMs, true) + ' → ' + clock(startMs + s.dur, true) + ' · ' + secs(s.dur) + '</span>'
+            + '<span class="pdone" title="covered by a completed time range">✓</span>'
+            + '<span class="pacts"><button class="mini" type="button" data-a="split">✂ Split</button><button class="mini" type="button" data-a="merge">⇣ Merge</button></span>'
+            + '</div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+    box.innerHTML = html;
+    flashId = null;
+    var ri = $('#renameIn');
+    if (ri) { ri.focus(); ri.select(); ri.addEventListener('keydown', function (e) { if (e.key === 'Enter') doRename(ri.value); if (e.key === 'Escape') { pending = null; render(); } }); }
+  }
+
+  function render() { renderConfigs(); renderChapters(); }
+
+  function edit(cfg, label, mutate) {
+    var snap = snapshot(cfg);
+    mutate();
+    cfg.edits++;
+    pending = null;
+    render();
+    toast(label, function () { restore(cfg, snap); toast('Undone.'); });
+  }
+  function doRename(val) {
+    var cfg = act(), ci = cfg.data.findIndex(function (c) { return c.id === pending.ch; }), ch = cfg.data[ci];
+    val = (val || '').trim();
+    edit(cfg, val ? 'Chapter ' + (ci + 1) + ' titled “' + val + '”.' : 'Title removed.', function () { ch.title = val; });
+  }
+
+  $('#chapters').addEventListener('click', function (e) {
+    var cfg = act();
+    var t = e.target.closest('[data-a],[data-x],[data-g]');
+    if (!t) return;
+    var chapEl = t.closest('.chap'), ci = chapEl ? +chapEl.dataset.ci : -1, ch = cfg.data[ci];
+
+    if (t.dataset.g) {   // a break point between two sentences
+      var g = t.closest('.gap');
+      pending = { kind: 'gap', ch: ch.id, at: +g.dataset.si };
+      renderChapters();
+      return;
+    }
+    var a = t.dataset.a, x = t.dataset.x;
+    if (a === 'toggle') { if (openCh[ch.id]) delete openCh[ch.id]; else openCh[ch.id] = true; renderChapters(); return; }
+    if (a === 'rename') { pending = (pending && pending.kind === 'rename' && pending.ch === ch.id) ? null : { kind: 'rename', ch: ch.id }; renderChapters(); return; }
+    if (a === 'mergech') { pending = (pending && pending.kind === 'mergech' && pending.ch === ch.id) ? null : { kind: 'mergech', ch: ch.id }; renderChapters(); return; }
+    if (x === 'cancel') { pending = null; renderChapters(); return; }
+    if (x === 'rn-ok') { doRename($('#renameIn').value); return; }
+    if (x === 'rn-clear') { doRename(''); return; }
+    if (x === 'hear') { t.textContent = '▶ …playing 2 s either side'; setTimeout(function () { t.textContent = '▶ hear the boundary'; }, 1600); return; }
+    if (x === 'gap-ok') {
+      var at = pending.at, n = cfg.data.length;
+      edit(cfg, 'Chapter ' + (ci + 1) + ' divided — Chapter ' + (ci + 2) + ' starts at its sentence ' + (at + 1) + '. ' + (n + 1) + ' chapters now.', function () {
+        var nc = { id: uid++, title: '', sents: ch.sents.slice(at) };
+        ch.sents = ch.sents.slice(0, at);
+        cfg.data.splice(ci + 1, 0, nc);
+        openCh[ch.id] = true; openCh[nc.id] = true; flashId = nc.id;
+      });
+      return;
+    }
+    if (x === 'mc-ok') {
+      edit(cfg, 'Chapters ' + (ci + 1) + ' and ' + (ci + 2) + ' merged. ' + (cfg.data.length - 1) + ' chapters now.', function () {
+        var nx = cfg.data[ci + 1];
+        ch.sents = ch.sents.concat(nx.sents);
+        if (!ch.title) ch.title = nx.title;
+        cfg.data.splice(ci + 1, 1);
+        openCh[ch.id] = true; flashId = ch.id;
+      });
+      return;
+    }
+    var row = t.closest('.prow'); if (!row) return;
+    var si = +row.dataset.si, s = ch.sents[si];
+    if (a === 'play') {
+      var pw = $('.pw', row); pw.classList.remove('playing'); void pw.offsetWidth; pw.classList.add('playing');
+      setTimeout(function () { pw.classList.remove('playing'); }, s.dur);
+      return;
+    }
+    if (a === 'merge') {
+      if (si === ch.sents.length - 1) { toast('Last sentence of this chapter — merge the chapters first.'); return; }
+      edit(cfg, 'Sentences ' + (si + 1) + ' and ' + (si + 2) + ' merged.', function () {
+        var nx = ch.sents[si + 1]; s.dur += 400 + nx.dur; s.done = s.done && nx.done; ch.sents.splice(si + 1, 1);
+      });
+      return;
+    }
+    if (a === 'split') {
+      var ex = $('.scrub', row);
+      if (ex) { ex.remove(); return; }
+      var sc = document.createElement('div');
+      sc.className = 'scrub';
+      sc.innerHTML = '<div class="lbl">Click the waveform to set the split point</div><div class="sw">' + wave(s.w, 120, 64) + '<span class="mark"></span></div>'
+        + '<div class="row-actions"><button class="mini go" data-y="ok" type="button">Split here</button><button class="mini" data-y="no" type="button">Cancel</button>'
+        + '<span class="quiet num" style="font-size:.8rem">at <span class="at">' + (s.dur / 2000).toFixed(2) + '</span> s into the sentence</span></div>';
+      row.appendChild(sc);
+      var frac = .5;
+      $('.sw', sc).addEventListener('click', function (ev) {
+        var r = this.getBoundingClientRect();
+        frac = Math.max(.05, Math.min(.95, (ev.clientX - r.left) / r.width));
+        $('.mark', sc).style.left = (frac * 100).toFixed(1) + '%';
+        $('.at', sc).textContent = (s.dur * frac / 1000).toFixed(2);
+      });
+      sc.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var b = ev.target.closest('[data-y]'); if (!b) return;
+        if (b.dataset.y === 'no') { sc.remove(); return; }
+        edit(cfg, 'Sentence ' + (si + 1) + ' split in two.', function () {
+          var d1 = Math.round(s.dur * frac);
+          ch.sents.splice(si + 1, 0, { id: uid++, dur: s.dur - d1, done: s.done, w: s.w + 7 });
+          s.dur = d1;
+        });
+      });
+    }
+  });
+
+  $('#gapToggle').addEventListener('click', function () {
+    gapsPinned = !gapsPinned;
+    this.setAttribute('aria-pressed', String(gapsPinned));
+    this.textContent = gapsPinned ? '⤒ Hide chapter breaks' : '⤒ Show chapter breaks';
+    renderChapters();
+  });
+  $('#newCfgBtn').addEventListener('click', function () { toast('New split config — unchanged from today (not part of this mockup).'); });
+
+  applyTheme('system', false);
+  render();
+  go('settings');
+  $('#notes').open = true;
+})();
+</script>
+</body>
+</html>

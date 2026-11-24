@@ -4,12 +4,11 @@ Package **"Shadow playback, splitting & chapter reading"** of batch
 `shadow-smia-pronunciation` (D161). The backlog items are listed verbatim in
 `batches/shadow-smia-pronunciation/manifest.md`.
 
-> **Capture state.** This proposal is written in stages as the design
-> session locks items in. Stage 1 (below) covers the items that need no
-> mockup. The UI items are added once their mockups are accepted: the
-> settings screen, audiobook mode, the Study split flow, chapter splitting
-> in Prepare, the compact phone header and autoplay. Until then the
-> **What Changes** list and the capabilities are incomplete on purpose.
+> **Capture state: complete.** Stage 1 (items without UI) was locked on
+> 2026-11-24, and stage 2 (UI items) was locked the same day after the
+> operator accepted both mockups in `mockups/`. The operator's instruction:
+> **"this should be implemented 1-1"**. The mockups are the visual contract
+> for layout, placement, labels and states, not inspiration.
 
 ## Why
 
@@ -55,31 +54,72 @@ Stage 1 (locked 2026-11-24):
 - **shadow is installable as a PWA.** It gets a web manifest and an icon,
   opens standalone, and has no offline mode.
 
-Stage 2 (pending mockups) covers:
+Stage 2 (locked 2026-11-24; the mockups are `mockups/settings-prepare.html`
+and `mockups/study.html`):
 
-- the redesigned settings screen
-- audiobook (chapter-reading) mode
-- the reversed split flow in Study
-- chapter split and merge in Prepare
-- autoplay on opening a sentence
-- the compact phone header
+- **Settings becomes a screen inside the app,** opened from ⚙ in the one
+  nav, replacing the old phonexa-styled `settings.html`. It has these
+  groups:
+  - Appearance: Theme as System / Light / Dark, this device only.
+  - Playback: Trim silence (moved from Library), Play sentence when opened,
+    and Trim in audiobook mode.
+  - Transcription: the STT provider, with a smia reachability hint.
+  - Books: a read-only overview, collapsed.
+
+  Changes save instantly with a per-row "✓ saved". The nav's ◐ theme button
+  is removed.
+- **Audiobook mode.**
+  - "▶▶ Listen" (`L`) beside the chapter name reads the current chapter
+    from the current sentence, without marking anything done.
+  - Untrimmed it plays continuously at natural tempo; with "trim in
+    audiobook mode" on, it plays the trimmed sentences back to back.
+  - A banner with a big Stop marks the running state, and a wake lock keeps
+    the phone's screen on.
+  - Stop, Space, a tap on the waveform or any study action stops it on the
+    current sentence. "▶▶ Resume from N+1" continues from the next sentence.
+  - It stops at the end of the chapter.
+- **Pause** (`K`) is a secondary pill beside Play.
+- **Split, reversed.** Split stops playback and only then shows a draggable
+  split line, with hear left / hear right and Confirm / Cancel.
+- **Autoplay.** Moving to a sentence plays it at once. A setting controls
+  this, with a "↻ autoplay" chip shown above the waveforms.
+- **The phone header is compacted** to a grabber and two lines:
+  - ✕ · book · ⋯
+  - ‹ chapter › · position · ▶▶ Listen
+- **Chapters can be customised in Prepare:**
+  - "⤒ Start new chapter here" between any two sentences;
+  - "⇣ Merge with next chapter" on each chapter header;
+  - an optional chapter title.
+
+  These edits are manual edits of the active split config.
 
 ## Capabilities
 
 ### New Capabilities
-- `app-settings`: shadow's own settings store and its single-owner model.
-  Where preferences live, and that no profile concept exists. Stage 2 adds
-  the settings screen itself.
+- `app-settings`: shadow's own settings store, its single-owner model and
+  the in-app Settings screen.
 - `installable-app`: shadow can be installed from the browser as a
   standalone app.
+- `audiobook-mode`: hands-free reading of a chapter, sentence by sentence,
+  with the ability to stop into the study loop and resume.
 
 ### Modified Capabilities
-- `study-loop`: pause added; the microphone is released after recording;
-  done-and-next advances without waiting on the server.
+- `study-loop`:
+  - pause added;
+  - the microphone is released after recording;
+  - done-and-next advances without waiting on the server;
+  - the split flow is reversed;
+  - autoplay on moving to a sentence;
+  - new bindings (`K`, `L`);
+  - the compact phone header.
+- `book-browsing`: the nav loses ◐ and gains the ⚙ Settings screen. Library
+  no longer holds the trim switch.
 - `book-browsing`: Explore previews play from the chapter chunk with a
   truthful live line and the shared play/pause model.
-- `split-configs`: the Prepare sentence preview follows the shared play/pause
-  model.
+- `split-configs`:
+  - the Prepare sentence preview follows the shared play/pause model;
+  - chapters can be split, merged and titled by hand;
+  - re-analysis discards those chapter edits too.
 - `silence-trimming`: a manually split or merged sentence's speech window
   equals what analysis would produce. The trim preference is stored by
   shadow, not phonexa.

@@ -1,7 +1,9 @@
 # Tasks
 
-> Stage 1 tasks. Stage 2 (UI items) are appended when their mockups are
-> accepted. Every task is verified against `acceptance.md`.
+> Every task is verified against `acceptance.md`. UI tasks implement
+> `mockups/` **1-1** (operator instruction). A reviewer compares the built
+> screens side by side with the mockup at desktop and at 390×844, in light
+> and dark.
 
 ## 1. Single owner and shadow-owned settings
 
@@ -27,6 +29,31 @@
 ## 5. Installable app
 
 - [ ] 5.1 Web manifest + icons, linked with credentials; scope/start at the shadow prefix; standalone — verify A7.1, A7.2
+
+## 6. Settings screen
+
+- [ ] 6.1 Settings as an in-app screen from ⚙ (mockups/settings-prepare.html screen A): Appearance/Playback/Transcription/Books groups, instant save with per-row ✓; old settings.html redirects to it — verify A8.1–A8.4
+- [ ] 6.2 Remove ◐ from the nav and the trim card from Library; theme System/Light/Dark per device — verify A8.5, A1.6
+
+## 7. Study screen (mockups/study.html)
+
+- [ ] 7.1 Pause pill placement desktop/phone, ↺ on Play while playing, hollow paused playhead, `K` — verify A2.3, A13.1
+- [ ] 7.2 Reversed split flow: split stops playback, line + shade + A/B, drag/tap/nudge, hear left/right, Confirm/Cancel, inert controls — verify A11.1–A11.4
+- [ ] 7.3 Autoplay on operator-initiated moves, ↻ chip and flash, honours the setting — verify A12.1–A12.3
+- [ ] 7.4 Compact phone header (grabber + two lines) and the extended ⋯ sheet — verify A14.1, A14.2
+- [ ] 7.5 Shortcut overlay lists `K`, `L` and the split-editing keys — verify A13.2
+
+## 8. Audiobook mode
+
+- [ ] 8.1 ▶▶ Listen / Resume control, `L`; continuous chapter playback when untrimmed, trimmed sentences back to back when trimmed; boundary tracking drives sentence/counter/waveform/playhead and cursor; never marks done — verify A10.1–A10.4
+- [ ] 8.2 Banner (desktop/phone), phone full-width stop, wake lock — verify A10.5, A10.6
+- [ ] 8.3 Stop paths (Stop, Space, Esc, waveform tap, any study action, stop-only press), resume from N+1, end-of-chapter stop — verify A10.7–A10.10
+
+## 9. Chapter editing in Prepare
+
+- [ ] 9.1 Migration: nullable `title` on segments; server operations: start chapter at sentence, merge with next chapter, set title — each a manual edit of its config, no span/progress change — verify A9.1, A9.2, A9.6
+- [ ] 9.2 Prepare UI per mockup screen B: hover break point, "Show chapter breaks", in-page confirms with ▶ hear the boundary, flash + Undo toast, Merge-with-next on headers, ✎ Title, last-sentence merge hint, edit count on config card, extended re-analyse warning — verify A9.3–A9.5, A9.7
+- [ ] 9.3 Chapter titles shown in Explore and in Study's chapter label — verify A9.8
 
 ## Workflow follow-up
 

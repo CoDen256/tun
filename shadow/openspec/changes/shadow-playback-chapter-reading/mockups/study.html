@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadow study listening</title>
+<style>
+/* ---------------- tokens: copied from shadow/css/studio.css ---------------- */
+:root {
+  --bg: #f6f6f4; --surface: #ffffff; --surface-2: #f0f0ed; --text: #15171a;
+  --muted: #6c7177; --faint: #9aa0a6; --line: #e2e2de; --line-strong: #cfcfca;
+  --accent: #0d7f72; --accent-ink: #ffffff; --accent-soft: rgba(13,127,114,.12);
+  --rec: #b4322e; --rec-soft: rgba(180,50,46,.12);
+  --ref: #0d7f72; --usr: #a65a06;
+  --ref-contour: #4f33e0; --usr-contour: #c2185b;
+  --wave: #9aa6ab; --wave-done: #c3c9cc;
+  --radius: 14px; --radius-sm: 9px; --dur: 240ms; --ease: cubic-bezier(.2,.7,.3,1);
+  --mark: #d97706;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0c0e; --surface: #141619; --surface-2: #1b1e22; --text: #e9ebee;
+    --muted: #9aa0a6; --faint: #6d7378; --line: #262a2f; --line-strong: #363b41;
+    --accent: #2fd4bd; --accent-ink: #06231f; --accent-soft: rgba(47,212,189,.14);
+    --rec: #ff6b63; --rec-soft: rgba(255,107,99,.14);
+    --ref: #2fd4bd; --usr: #f3b53f; --ref-contour: #a99bff; --usr-contour: #ff7aa8;
+    --wave: #4d555c; --wave-done: #343a40; --mark: #f3b53f;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0c0e; --surface: #141619; --surface-2: #1b1e22; --text: #e9ebee;
+  --muted: #9aa0a6; --faint: #6d7378; --line: #262a2f; --line-strong: #363b41;
+  --accent: #2fd4bd; --accent-ink: #06231f; --accent-soft: rgba(47,212,189,.14);
+  --rec: #ff6b63; --rec-soft: rgba(255,107,99,.14);
+  --ref: #2fd4bd; --usr: #f3b53f; --ref-contour: #a99bff; --usr-contour: #ff7aa8;
+  --wave: #4d555c; --wave-done: #343a40; --mark: #f3b53f;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px; line-height: 1.5; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+.num { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.quiet { color: var(--muted); }
+.eyebrow { font-size: .72rem; text-transform: uppercase; letter-spacing: .16em; color: var(--faint); }
+.hidden { display: none !important; }
+.kbd {
+  display: inline-block; min-width: 1.5em; text-align: center; padding: .05em .4em; margin-left: .45em;
+  font-size: .68em; line-height: 1.5; border: 1px solid var(--line-strong); border-radius: 5px;
+  color: var(--muted); background: var(--surface-2); font-variant-numeric: tabular-nums;
+}
+.bar { height: 4px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width 300ms var(--ease); }
+@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+
+/* ---------------- mockup chrome (NOT part of the app) ---------------- */
+.mk-bar {
+  position: sticky; top: 0; z-index: 100;
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  padding: .45rem clamp(.75rem, 3vw, 1.5rem);
+  background: var(--bg); border-bottom: 1px dashed var(--line-strong);
+  font-size: .8rem; color: var(--muted);
+}
+.mk-bar .ttl { font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+.mk-bar .sp { flex: 1 1 auto; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: var(--surface); }
+.seg button { padding: .22rem .7rem; border-radius: 999px; font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.ghost-btn {
+  padding: .3rem .7rem; border: 1px solid var(--line); border-radius: 999px;
+  font-size: .8rem; color: var(--muted); background: var(--surface);
+}
+.ghost-btn:hover { color: var(--text); border-color: var(--line-strong); }
+
+.area.phone-mode { display: flex; justify-content: center; padding: 1.4rem 1rem 5rem; }
+.device { position: relative; background: var(--bg); }
+.device.phone {
+  width: 390px; height: 844px; flex: 0 0 auto;
+  border: 10px solid var(--line-strong); border-radius: 42px; overflow: hidden;
+  display: flex; flex-direction: column; --laneh: 64px;
+}
+@media (max-width: 560px) {
+  .area.phone-mode { padding: 0; }
+  .device.phone { width: 100%; height: calc(100svh - 46px); border-width: 0; border-radius: 0; }
+}
+.device.phone .d-only { display: none !important; }
+.device.desk .p-only { display: none !important; }
+.hl [data-new] { outline: 2px dashed var(--mark); outline-offset: 3px; }
+
+/* ---------------- app nav (studio.css) ---------------- */
+.nav {
+  display: flex; flex-wrap: wrap; align-items: center; gap: clamp(.5rem, 2vw, 1.4rem);
+  padding: .5rem clamp(.75rem, 3vw, 1.5rem); background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.nav-brand { display: inline-flex; align-items: center; gap: .5rem; font-size: .98rem; font-weight: 600; letter-spacing: -0.01em; }
+.nav-brand .mark { width: 9px; height: 9px; border-radius: 3px; background: var(--accent); }
+.nav-links { display: flex; gap: .15rem; overflow-x: auto; max-width: 100%; }
+.nav-links button { white-space: nowrap; padding: .42rem .85rem; border-radius: var(--radius-sm); font-size: .9rem; color: var(--muted); }
+.nav-links button:hover { color: var(--text); background: var(--surface-2); }
+.nav-links button[aria-selected="true"] { color: var(--text); font-weight: 560; background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--accent); }
+.nav .spacer { flex: 1 1 auto; }
+
+/* ---------------- study (studio.css) ---------------- */
+.topbar {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  padding: .85rem clamp(1rem, 4vw, 2rem); border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.t-book { font-weight: 560; letter-spacing: -0.01em; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.t-ch { color: var(--muted); font-size: .9rem; white-space: nowrap; }
+.t-count { margin-left: auto; font-size: .95rem; color: var(--muted); }
+.t-count b { color: var(--text); font-weight: 600; }
+.t-progress { flex: 1 1 100%; }
+.t-ch-wrap { display: inline-flex; align-items: center; gap: .3rem; min-width: 0; }
+.ch-nav {
+  width: 26px; height: 26px; flex: 0 0 auto; border-radius: 99px; border: 1px solid var(--line); color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 1rem; line-height: 1;
+}
+.ch-nav:hover { color: var(--text); border-color: var(--accent); }
+.ch-nav[disabled] { opacity: .35; cursor: default; }
+
+.stage { max-width: 940px; margin: 0 auto; padding: clamp(1.2rem, 4vw, 2.4rem) clamp(1rem, 4vw, 2rem) 4rem; }
+
+.lanes { display: grid; gap: .55rem; }
+.lanes-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: .72rem; text-transform: uppercase; letter-spacing: .14em; color: var(--faint); }
+.lanes-head .sp { flex: 1 1 auto; }
+.lane-toggle {
+  display: inline-flex; align-items: center; gap: .35rem; font-size: .72rem; letter-spacing: .04em; text-transform: none;
+  color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: .12rem .6rem;
+}
+.lane-toggle.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.lane-head { display: flex; align-items: center; gap: .5rem; font-size: .76rem; color: var(--muted); margin-bottom: .22rem; min-height: 1.3rem; }
+.lane-head .nm { font-weight: 560; letter-spacing: -0.01em; }
+.lane-ref .lane-head .nm { color: var(--ref); }
+.lane-usr .lane-head .nm { color: var(--usr); }
+.trim { font-size: .64rem; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--line); border-radius: 999px; padding: 0 .45rem; white-space: nowrap; }
+.lane-head .live { margin-left: auto; display: none; align-items: center; gap: .4rem; color: var(--rec); }
+.lane-usr.recording .lane-head .live { display: inline-flex; }
+.wave-wrap { position: relative; border-radius: var(--radius-sm); overflow: hidden; background: var(--surface-2); min-height: var(--laneh, clamp(78px, 12vw, 108px)); }
+.wave-wrap svg { display: block; width: 100%; height: var(--laneh, clamp(78px, 12vw, 108px)); }
+.wave-wrap .played { position: absolute; inset: 0; pointer-events: none; clip-path: inset(0 100% 0 0); }
+.wave-wrap .contour-over { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity var(--dur) var(--ease); }
+.lanes.contours.cmp-shown .contour-over { opacity: 1; }
+.lanes.contours.cmp-shown .js-wave, .lanes.contours.cmp-shown .js-userwave { filter: blur(1.6px); opacity: .52; }
+.wave-wrap .playhead { position: absolute; top: 0; bottom: 0; width: 2px; left: 0; background: var(--accent); opacity: 0; border-radius: 2px; z-index: 2; }
+.lane-usr .wave-wrap .playhead { background: var(--usr); }
+.wave-wrap.playing .playhead, .wave-wrap.paused .playhead { opacity: 1; }
+/* NEW — a frozen playhead reads as frozen: a hollow cap marks it */
+.wave-wrap.paused .playhead::after {
+  content: ""; position: absolute; top: 4px; left: -4px; width: 10px; height: 10px; border-radius: 3px;
+  border: 2px solid var(--accent); background: var(--surface-2);
+}
+.js-userwave { height: 100%; transition: width 80ms linear; }
+.lane-empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: .35rem;
+  color: var(--faint); font-size: .85rem; text-align: center; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm);
+}
+.lane-usr.has-take .lane-empty, .lane-usr.recording .lane-empty { display: none; }
+.recdot { width: 9px; height: 9px; border-radius: 99px; background: var(--rec); animation: pulse 1.1s ease-in-out infinite; }
+.rectime { font-variant-numeric: tabular-nums; font-size: .82rem; }
+.sent-meta { display: flex; gap: 1.2rem; flex-wrap: wrap; justify-content: center; color: var(--muted); font-size: .85rem; margin-top: .8rem; }
+.sent-meta b { color: var(--text); font-weight: 560; }
+.sentbox { transition: opacity 160ms var(--ease), transform 160ms var(--ease); }
+.sentbox.swap { opacity: 0; transform: translateX(-10px); }
+
+.ticks { display: flex; gap: 3px; align-items: flex-end; justify-content: center; margin: 1.7rem 0 .55rem; flex-wrap: wrap; }
+.ticks button { width: 8px; height: 18px; border-radius: 2px; background: transparent; border: 1.5px solid var(--line-strong); padding: 0; }
+.ticks button:hover { border-color: var(--accent); }
+.ticks button.done { background: var(--text); border-color: var(--text); opacity: .68; }
+.ticks button.cur { background: var(--accent); border-color: var(--accent); opacity: 1; height: 27px; box-shadow: 0 0 0 3px var(--accent-soft); }
+.tick-legend { display: flex; gap: 1.1rem; justify-content: center; flex-wrap: wrap; color: var(--faint); font-size: .74rem; margin: 0 0 2rem; }
+.tick-legend span { display: inline-flex; align-items: center; gap: .4rem; }
+.tick-legend i { width: 9px; height: 15px; border-radius: 2px; display: inline-block; border: 1.5px solid var(--line-strong); }
+.tick-legend i.d { background: var(--text); border-color: var(--text); opacity: .68; }
+.tick-legend i.c { background: var(--accent); border-color: var(--accent); }
+
+.controls { display: flex; gap: .7rem; justify-content: center; align-items: center; flex-wrap: wrap; transition: opacity var(--dur) var(--ease); }
+.ctl {
+  display: inline-flex; align-items: center; gap: .15rem; padding: .85rem 1.4rem; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line); font-size: 1rem; font-weight: 540; letter-spacing: -0.01em;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease), transform 120ms var(--ease);
+}
+.ctl:hover { border-color: var(--line-strong); }
+.ctl:active { transform: scale(.97); }
+.ctl.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.ctl.primary .kbd { border-color: currentColor; color: currentColor; background: transparent; opacity: .75; }
+.ctl.rec.armed { background: var(--rec); color: #fff; border-color: transparent; }
+.ctl.rec.armed .kbd { border-color: currentColor; color: currentColor; background: transparent; }
+.ctl.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.ctl .gl { display: inline-flex; align-items: center; justify-content: center; min-width: 1em; }
+.ctl .lbl { margin-left: .35rem; }
+
+.controls-2 { display: flex; gap: .45rem; justify-content: center; flex-wrap: wrap; margin-top: 1.4rem; transition: opacity var(--dur) var(--ease); }
+.ctl-s {
+  display: inline-flex; align-items: center; gap: .1rem; padding: .4rem .75rem; border-radius: 999px; font-size: .84rem; color: var(--muted);
+  border: 1px solid transparent;
+}
+.ctl-s:hover { color: var(--text); border-color: var(--line); }
+.ctl-s.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+.panel { margin-top: 1.6rem; padding: 1.1rem 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); animation: fade var(--dur) var(--ease); }
+.panel-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .7rem; font-size: .74rem; text-transform: uppercase; letter-spacing: .14em; color: var(--faint); }
+.panel-head .x { margin-left: auto; color: var(--faint); font-size: 1rem; line-height: 1; }
+.provenance { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: .05rem .45rem; }
+.transcript { font-size: 1.12rem; line-height: 1.65; letter-spacing: -0.01em; }
+.ephemeral { margin-top: 1rem; font-size: .8rem; color: var(--faint); text-align: center; }
+.mini { font-size: .8rem; color: var(--muted); padding: .32rem .75rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); white-space: nowrap; }
+.mini:hover { color: var(--text); border-color: var(--line-strong); }
+.mini.go { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); font-weight: 560; }
+.mini.go .kbd { border-color: currentColor; color: currentColor; background: transparent; opacity: .75; }
+
+/* ================= NEW 1 — Pause, a secondary beside Play ================= */
+.pause-btn {
+  display: inline-flex; align-items: center; gap: .35rem; padding: .42rem .8rem; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted); font-size: .84rem; background: transparent;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), background var(--dur) var(--ease), opacity var(--dur) var(--ease);
+}
+.pause-btn .pg { font-size: .72rem; letter-spacing: -.05em; }
+.pause-btn:hover { color: var(--text); border-color: var(--line-strong); }
+.pause-btn[aria-disabled="true"] { opacity: .38; cursor: default; }
+.pause-btn.paused { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.pause-btn .kbd { margin-left: .2em; }
+.desk .pause-btn { margin: 0 -.25rem 0 -.35rem; }
+
+/* ================= NEW 5 — autoplay indicator ================= */
+.auto-chip {
+  display: inline-flex; align-items: center; gap: .3rem; font-size: .68rem; letter-spacing: .06em; text-transform: none;
+  color: var(--accent); border: 1px solid transparent; border-radius: 999px; padding: .08rem .5rem;
+}
+.auto-chip.off { color: var(--faint); text-decoration: line-through; }
+.auto-chip.flash { animation: flash 900ms var(--ease); }
+@keyframes flash { 0% { background: var(--accent); color: var(--accent-ink); } 100% { background: transparent; } }
+
+/* ================= NEW 3 — audiobook mode ================= */
+.ab-btn {
+  display: inline-flex; align-items: center; gap: .3rem; padding: .3rem .8rem; border-radius: 999px; white-space: nowrap;
+  font-size: .84rem; color: var(--accent); border: 1px solid var(--accent); background: transparent;
+  transition: background var(--dur) var(--ease);
+}
+.ab-btn:hover { background: var(--accent-soft); }
+.ab-btn.resume { background: var(--accent-soft); font-weight: 560; }
+.ab-btn .gl { letter-spacing: -.22em; margin-right: .25em; font-size: .78em; }
+.device.ab-on .ab-btn { display: none; }
+
+.ab-banner, .ab-end {
+  display: none; position: relative; align-items: center; gap: 1rem; flex-wrap: wrap;
+  padding: .9rem clamp(1rem, 4vw, 2rem) .9rem calc(clamp(1rem, 4vw, 2rem) + 4px);
+  background: linear-gradient(90deg, var(--accent-soft), transparent 85%), var(--surface);
+  border-bottom: 1px solid var(--accent); animation: fade var(--dur) var(--ease);
+}
+.ab-banner::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent); }
+.device.ab-on .ab-banner { display: flex; }
+.device.ab-end .ab-end { display: flex; background: var(--surface); border-bottom-color: var(--line-strong); }
+.eq { display: inline-flex; gap: 3px; align-items: flex-end; height: 24px; flex: 0 0 auto; }
+.eq i { width: 4px; height: 6px; background: var(--accent); border-radius: 2px; animation: eq 900ms ease-in-out infinite; }
+.eq i:nth-child(2) { animation-delay: -300ms; } .eq i:nth-child(3) { animation-delay: -600ms; } .eq i:nth-child(4) { animation-delay: -150ms; }
+@keyframes eq { 0%,100% { height: 5px; } 50% { height: 24px; } }
+.ab-gap .eq i { animation-play-state: paused; }
+.ab-copy { min-width: 0; flex: 1 1 260px; }
+.ab-copy b { font-weight: 600; letter-spacing: -0.01em; }
+.ab-copy small { display: block; color: var(--muted); font-size: .82rem; margin-top: .1rem; }
+.tempo-tag { display: inline-block; font-size: .7rem; letter-spacing: .06em; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 .5rem; margin-left: .3rem; white-space: nowrap; }
+.ab-stop {
+  margin-left: auto; display: inline-flex; align-items: center; gap: .55rem; padding: .8rem 1.6rem; border-radius: 999px;
+  background: var(--text); color: var(--bg); font-weight: 600; font-size: 1rem; white-space: nowrap;
+}
+.ab-stop .kbd { border-color: currentColor; color: currentColor; background: transparent; opacity: .7; }
+.ab-stop-big { display: none; }
+.device.ab-on .controls, .device.ab-on .controls-2 { opacity: .4; }
+.device.ab-on .lane-ref .wave-wrap { box-shadow: 0 0 0 2px var(--accent); cursor: pointer; }
+.wake { display: inline-flex; align-items: center; gap: .25rem; font-size: .7rem; color: var(--muted); white-space: nowrap; }
+
+/* ================= NEW 2 — split editing ================= */
+.split-line { display: none; position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--rec); z-index: 3; pointer-events: none; }
+.split-line::before { content: ""; position: absolute; top: 3px; left: -6px; width: 14px; height: 14px; border-radius: 99px; background: var(--rec); box-shadow: 0 0 0 3px var(--rec-soft); }
+.split-line::after { content: ""; position: absolute; bottom: 3px; left: -6px; width: 14px; height: 14px; border-radius: 99px; background: var(--rec); box-shadow: 0 0 0 3px var(--rec-soft); }
+.split-shade { display: none; position: absolute; top: 0; bottom: 0; right: 0; background: var(--rec-soft); pointer-events: none; }
+.split-ab { display: none; position: absolute; top: 4px; font-size: .64rem; letter-spacing: .1em; color: var(--muted); pointer-events: none; }
+.device.splitting .split-line, .device.splitting .split-shade, .device.splitting .split-ab { display: block; }
+.device.splitting .lane-ref .wave-wrap { cursor: ew-resize; box-shadow: inset 0 0 0 1.5px var(--rec); touch-action: none; }
+.device.splitting .controls, .device.splitting .controls-2 { opacity: .28; pointer-events: none; }
+.split-bar {
+  display: none; margin-top: .9rem; padding: .75rem .9rem; border: 1px solid var(--rec); border-radius: var(--radius-sm);
+  background: var(--surface); animation: fade var(--dur) var(--ease);
+}
+.device.splitting .split-bar { display: block; }
+.sb-top { display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap; font-size: .86rem; }
+.sb-top .eyebrow { color: var(--rec); }
+.sb-acts { display: flex; gap: .45rem; flex-wrap: wrap; margin-top: .6rem; align-items: center; }
+.sb-acts .sp { flex: 1 1 auto; }
+
+/* ---------------- shortcut overlay / toast ---------------- */
+.overlay { position: fixed; inset: 0; z-index: 120; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.sheet { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); max-width: 480px; width: 100%; max-height: 86vh; overflow-y: auto; padding: 1.4rem; }
+.sheet h3 { margin: 0 0 1rem; font-size: 1.05rem; font-weight: 580; }
+.klist { display: grid; gap: .45rem; }
+.klist div { display: flex; align-items: baseline; gap: .75rem; font-size: .9rem; }
+.klist span:first-child { color: var(--muted); flex: 1 1 auto; }
+.klist .new { color: var(--mark); font-size: .7rem; margin-left: .3rem; }
+.toast {
+  position: fixed; z-index: 110; left: 50%; transform: translateX(-50%); top: 3.4rem; max-width: min(92vw, 520px);
+  padding: .6rem 1rem; border-radius: 999px; font-size: .86rem; text-align: center;
+  background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 10px 28px rgba(0,0,0,.22);
+}
+
+/* ================= PHONE (scoped to the 390×844 frame) ================= */
+/* NEW 4 — the compacted top: two tight lines + a grabber */
+.m-head { background: var(--surface); border-bottom: 1px solid var(--line); padding: 0 .65rem .5rem; flex: 0 0 auto; }
+.m-grab { display: block; width: 100%; padding: .38rem 0 .3rem; touch-action: none; }
+.m-grab span { display: block; width: 40px; height: 4px; border-radius: 99px; background: var(--line-strong); margin: 0 auto; }
+.mh-row { display: flex; align-items: center; gap: .4rem; min-width: 0; }
+.mh-ic {
+  width: 32px; height: 32px; border-radius: 99px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--muted); border: 1px solid var(--line); font-size: .9rem; line-height: 1;
+}
+.mh-ic:hover { color: var(--text); border-color: var(--line-strong); }
+.mh-book { flex: 1 1 auto; min-width: 0; text-align: center; font-weight: 580; font-size: .9rem; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mh-row2 { margin-top: .35rem; padding-left: .1rem; }
+.mh-ch { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.mh-dot { color: var(--faint); margin: 0 .05rem; }
+.mh-count { font-size: .86rem; color: var(--muted); white-space: nowrap; }
+.mh-count b { color: var(--text); font-size: 1.02rem; font-weight: 600; }
+.mh-row2 .ab-btn { margin-left: auto; font-size: .74rem; padding: .2rem .6rem; }
+.device.phone .ch-nav { width: 24px; height: 24px; font-size: .9rem; }
+
+.m-nav {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 30; display: flex; align-items: center; gap: .3rem;
+  padding: .6rem .7rem; border-bottom: 1px solid var(--line); background: var(--surface); box-shadow: 0 8px 18px rgba(0,0,0,.18);
+  transform: translateY(-118%); transition: transform 260ms var(--ease);
+}
+.device.nav-open .m-nav { transform: none; }
+.m-nav button { white-space: nowrap; padding: .3rem .55rem; border-radius: 7px; font-size: .78rem; color: var(--muted); }
+.m-nav button[aria-selected="true"] { color: var(--accent); background: var(--accent-soft); font-weight: 560; }
+
+.device.phone .ab-banner, .device.phone .ab-end { padding: .5rem .75rem .5rem calc(.75rem + 4px); gap: .6rem; flex-wrap: nowrap; flex: 0 0 auto; }
+.device.phone .eq { height: 18px; }
+@keyframes eqs { 0%,100% { height: 4px; } 50% { height: 18px; } }
+.device.phone .eq i { animation-name: eqs; width: 3px; }
+.device.phone .ab-copy { flex: 1 1 auto; }
+.device.phone .ab-copy b { font-size: .86rem; }
+.device.phone .ab-copy small { font-size: .7rem; }
+.device.phone .ab-stop { padding: .4rem .8rem; font-size: .8rem; }
+.device.phone .ab-stop .kbd { display: none; }
+
+.device.phone .stage {
+  flex: 1 1 auto; min-height: 0; width: 100%; max-width: none; margin: 0; padding: .4rem 1rem 0;
+  display: flex; flex-direction: column; overflow-y: auto;
+}
+.device.phone .sentbox { margin: auto 0; }
+.device.phone .lanes-head { font-size: .62rem; letter-spacing: .1em; }
+.device.phone .lane-head .quiet { display: none; }
+.device.phone .sent-meta { margin-top: .5rem; gap: .9rem; font-size: .8rem; }
+.device.phone .panel { margin-top: .8rem; padding: .7rem .8rem; }
+.device.phone .transcript { font-size: 1rem; }
+.device.phone .split-bar { padding: .65rem .7rem; }
+.device.phone .split-bar .mini { padding: .45rem .7rem; }
+.device.phone .split-bar .kbd { display: none; }
+.device.phone .split-bar .sb-hint { flex-basis: 100%; }
+
+.ctl-zone { margin-top: 2rem; }
+.device.phone .ctl-zone {
+  position: sticky; bottom: 0; margin: .9rem -1rem 0; padding: .35rem .6rem 1.2rem;
+  background: var(--surface); border-top: 1px solid var(--line);
+}
+.device.phone .controls { position: relative; gap: .55rem; flex-wrap: nowrap; align-items: flex-start; padding-top: 2.1rem; }
+.device.phone .ctl { flex: 0 0 auto; width: 72px; height: 84px; flex-direction: column; justify-content: flex-start; gap: .3rem; padding: 0; background: none; border: 0; color: var(--text); }
+.device.phone .ctl .kbd { display: none; }
+.device.phone .ctl .gl { width: 58px; height: 58px; border-radius: 99px; font-size: 1.3rem; background: var(--surface); border: 1px solid var(--line); }
+.device.phone .ctl[data-act="play"] .gl { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.device.phone .ctl[data-act="rec"] .gl { color: var(--rec); }
+.device.phone .ctl[data-act="rec"].armed .gl { background: var(--rec); color: #fff; border-color: transparent; }
+.device.phone .ctl[data-act="cmp"] .gl { color: var(--accent); }
+.device.phone .ctl[data-act="cmp"].on .gl { background: var(--accent-soft); border-color: var(--accent); }
+.device.phone .ctl[data-act="done"] .gl { color: var(--accent); border-color: var(--accent); background: var(--surface); }
+.device.phone .ctl .lbl { margin-left: 0; font-size: .68rem; color: var(--muted); font-weight: 400; line-height: 1.15; text-align: center; }
+/* Pause: a small satellite pill sitting over the Play column, NOT a fifth circle */
+.device.phone .pause-btn { position: absolute; top: .25rem; left: calc(50% - 157px); padding: .2rem .65rem; font-size: .74rem; }
+.device.phone .pause-btn .kbd { display: none; }
+.device.phone.ab-on .controls { display: none; }
+.device.phone.ab-on .ab-stop-big {
+  display: flex; align-items: center; justify-content: center; gap: .6rem; width: 100%; height: 68px; margin-top: .6rem;
+  border-radius: 999px; background: var(--text); color: var(--bg); font-weight: 600; font-size: 1.08rem;
+}
+.ab-stop-hint { display: none; text-align: center; font-size: .7rem; color: var(--faint); margin-top: .45rem; }
+.device.phone.ab-on .ab-stop-hint { display: block; }
+
+.m-scrim { position: absolute; inset: 0; z-index: 40; background: rgba(0,0,0,.35); opacity: 0; pointer-events: none; transition: opacity 280ms var(--ease); }
+.m-scrim.on { opacity: 1; pointer-events: auto; }
+.m-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 41; background: var(--surface); border-top: 1px solid var(--line);
+  border-radius: 22px 22px 0 0; padding: 1rem 1.1rem 1.6rem; transform: translateY(102%); transition: transform 280ms var(--ease);
+  max-height: 76%; overflow-y: auto;
+}
+.m-sheet.open { transform: none; }
+.m-sheet .grab { width: 38px; height: 4px; border-radius: 99px; background: var(--line-strong); margin: 0 auto 1rem; }
+.m-sheet .item { display: flex; align-items: center; gap: .8rem; width: 100%; padding: .8rem .4rem; border-bottom: 1px solid var(--line); font-size: .96rem; text-align: left; }
+.m-sheet .item:last-of-type { border-bottom: 0; }
+.m-sheet .item .tag { margin-left: auto; font-size: .74rem; color: var(--faint); }
+
+/* ---------------- notes panel (mockup only) ---------------- */
+.notes {
+  position: fixed; right: 1rem; bottom: 1rem; z-index: 95; width: min(340px, calc(100vw - 2rem));
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius);
+  box-shadow: 0 10px 28px rgba(0,0,0,.18); font-size: .82rem;
+}
+.notes summary { padding: .5rem .85rem; cursor: pointer; list-style: none; display: flex; gap: .5rem; align-items: center; color: var(--muted); }
+.notes summary::-webkit-details-marker { display: none; }
+.notes summary b { color: var(--text); font-weight: 580; }
+.notes[open] summary { border-bottom: 1px solid var(--line); }
+.notes .nb { max-height: 62vh; overflow-y: auto; padding: .6rem .9rem .9rem; }
+.notes ol { margin: 0 0 .8rem; padding-left: 1.1rem; }
+.notes li { margin-bottom: .55rem; color: var(--muted); }
+.notes li b { color: var(--text); font-weight: 560; }
+.nrow { display: flex; align-items: center; gap: .6rem; padding: .35rem 0; }
+.nrow .copy { flex: 1 1 auto; }
+.switch { flex: 0 0 auto; width: 40px; height: 24px; border-radius: 999px; position: relative; background: var(--surface-2); border: 1px solid var(--line-strong); }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 99px; background: var(--faint); transition: transform var(--dur) var(--ease); }
+.switch[aria-checked="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(16px); background: var(--accent); }
+.notes .seg button { font-size: .74rem; padding: .18rem .55rem; }
+@media (max-width: 560px) { .notes { position: static; width: auto; margin: 1rem; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== mockup chrome ===== -->
+<div class="mk-bar">
+  <span class="ttl">shadow · Study — mockup</span>
+  <span class="seg" role="group" aria-label="layout">
+    <button type="button" data-mode="desk" aria-pressed="true">Desktop</button>
+    <button type="button" data-mode="phone" aria-pressed="false">Phone (390×844 frame)</button>
+  </span>
+  <span class="sp"></span>
+  <button class="ghost-btn" type="button" data-act="theme">◐ theme</button>
+</div>
+
+<div class="area" id="area">
+<div class="device desk" id="device">
+
+  <!-- desktop: the one app navigation -->
+  <nav class="nav d-only" aria-label="main">
+    <span class="nav-brand"><span class="mark"></span>shadow</span>
+    <div class="nav-links" role="tablist">
+      <button type="button" role="tab" aria-selected="false">Library</button>
+      <button type="button" role="tab" aria-selected="false">Explore</button>
+      <button type="button" role="tab" aria-selected="true">Study</button>
+      <button type="button" role="tab" aria-selected="false">Prepare</button>
+    </div>
+    <span class="spacer"></span>
+    <button class="ghost-btn" type="button" data-act="theme" title="light / dark">◐</button>
+  </nav>
+
+  <!-- phone: the nav is hidden while studying; the grabber pulls it down -->
+  <div class="m-nav p-only" role="tablist">
+    <button type="button" aria-selected="false">Library</button>
+    <button type="button" aria-selected="false">Explore</button>
+    <button type="button" aria-selected="true">Study</button>
+    <button type="button" aria-selected="false">Prepare</button>
+    <span style="flex:1"></span>
+    <button type="button" data-act="theme">◐</button>
+  </div>
+
+  <!-- desktop top bar -->
+  <div class="topbar d-only">
+    <span class="t-book">Kristin Lavransdatter · Kransen</span>
+    <span class="t-ch-wrap">
+      <button class="ch-nav" type="button" data-act="chprev" title="previous chapter (Shift+←)">‹</button>
+      <span class="t-ch js-chname">Chapter 4</span>
+      <button class="ch-nav" type="button" data-act="chnext" title="next chapter (Shift+→)">›</button>
+    </span>
+    <button class="ab-btn js-ab" type="button" data-act="ab" data-new title="read this chapter aloud, sentence after sentence (L)"></button>
+    <span class="t-count num">sentence <b class="js-idx">12</b> / <span class="js-total">87</span></span>
+    <button class="ctl-s" type="button" data-act="exit">✕ exit<span class="kbd">Esc</span></button>
+    <div class="t-progress bar"><i class="js-prog" style="width:0%"></i></div>
+  </div>
+
+  <!-- NEW 4 — phone top, compacted to two lines -->
+  <div class="m-head p-only" data-new>
+    <button class="m-grab" type="button" data-act="pull" aria-label="pull down for navigation"><span></span></button>
+    <div class="mh-row">
+      <button class="mh-ic" type="button" data-act="exit" aria-label="exit to library">✕</button>
+      <span class="mh-book">Kristin Lavransdatter · Kransen</span>
+      <button class="mh-ic" type="button" data-act="more" aria-label="more actions">⋯</button>
+    </div>
+    <div class="mh-row mh-row2">
+      <button class="ch-nav" type="button" data-act="chprev" aria-label="previous chapter">‹</button>
+      <span class="mh-ch js-chname">Chapter 4</span>
+      <button class="ch-nav" type="button" data-act="chnext" aria-label="next chapter">›</button>
+      <span class="mh-dot">·</span>
+      <span class="mh-count num"><b class="js-idx">12</b> / <span class="js-total">87</span></span>
+      <button class="ab-btn js-ab" type="button" data-act="ab" data-new></button>
+    </div>
+  </div>
+
+  <!-- NEW 3 — the audiobook banner -->
+  <div class="ab-banner" role="status" aria-live="polite">
+    <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <div class="ab-copy">
+      <b class="d-only">Audiobook mode — reading <span class="js-chname">Chapter 4</span> automatically</b>
+      <b class="p-only">Audiobook · <span class="js-chname">Chapter 4</span></b>
+      <small class="d-only">sentence <span class="js-idx">12</span> / <span class="js-total">87</span>
+        <span class="tempo-tag js-tempo">natural tempo (untrimmed)</span>
+        · Space, a tap on the waveform, or any study action also stops</small>
+      <small class="p-only"><span class="js-tempo-short">natural tempo</span> · <span class="wake">☼ screen stays on</span></small>
+    </div>
+    <button class="ab-stop" type="button" data-act="ab-stop">■ Stop<span class="kbd">space</span></button>
+  </div>
+  <div class="ab-end" role="status">
+    <span style="font-size:1.1rem">■</span>
+    <div class="ab-copy"><b>End of <span class="js-chname-end">chapter 4</span></b>
+      <small>The audiobook stopped at the last sentence. It never runs on into the next chapter.</small></div>
+    <button class="mini" type="button" data-act="chnext">next chapter ›</button>
+    <button class="mini" type="button" data-act="ab-end-x">✕</button>
+  </div>
+
+  <div class="stage">
+    <div class="sentbox js-sentbox">
+      <div class="lanes contours js-lanes">
+        <div class="lanes-head">
+          <span class="d-only">one time axis · two takes</span>
+          <span class="trim">silence trimmed</span>
+          <span class="auto-chip js-auto" data-new data-act="autoplay" title="autoplay — a setting; click to flip it here">↻ autoplay</span>
+          <span class="sp"></span>
+          <button class="lane-toggle on js-contour-toggle" type="button" data-act="contour" aria-pressed="true">∿ contour<span class="kbd d-only">P</span></button>
+        </div>
+
+        <div class="lane lane-ref">
+          <div class="lane-head"><span class="nm">The sentence</span><span class="quiet">audiobook</span></div>
+          <div class="wave-wrap js-wavewrap">
+            <div class="js-wave"></div>
+            <div class="played js-played"></div>
+            <svg class="contour-over js-contour-ref" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <div class="split-shade js-split-shade"></div>
+            <span class="split-ab js-split-a">A</span><span class="split-ab js-split-b">B</span>
+            <div class="split-line js-split-line"></div>
+            <div class="playhead js-playhead"></div>
+          </div>
+        </div>
+
+        <div class="lane lane-usr js-lane-usr">
+          <div class="lane-head">
+            <span class="nm">My take</span><span class="quiet">this session only</span>
+            <span class="live"><span class="recdot"></span><span class="rectime num js-rectime">0.0 s</span></span>
+          </div>
+          <div class="wave-wrap js-userwrap">
+            <div class="js-userwave"></div>
+            <svg class="contour-over js-contour-usr" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <div class="playhead js-userplayhead"></div>
+            <div class="lane-empty">press <span class="kbd">R</span> to record</div>
+          </div>
+        </div>
+      </div>
+      <div class="sent-meta num">
+        <span><b class="js-dur">–</b> long</span>
+        <span class="d-only">at <b class="js-at">–</b> in the book</span>
+        <span class="js-state">idle</span>
+      </div>
+    </div>
+
+    <!-- NEW 2 — split editing: appears ONLY after Split is pressed -->
+    <div class="split-bar" data-new>
+      <div class="sb-top">
+        <span class="eyebrow">splitting sentence <span class="js-idx">12</span></span>
+        <span class="num">at <b class="js-split-t">–</b> of <span class="js-split-d">–</span></span>
+        <span class="quiet sb-hint">drag or tap the red line · ←/→ nudges</span>
+      </div>
+      <div class="sb-acts">
+        <button class="mini" type="button" data-act="hear-l">▶ hear left</button>
+        <button class="mini" type="button" data-act="hear-r">▶ hear right</button>
+        <span class="sp"></span>
+        <button class="mini" type="button" data-act="split-cancel">Cancel<span class="kbd">Esc</span></button>
+        <button class="mini go" type="button" data-act="split-ok">✂ Confirm split<span class="kbd">↵</span></button>
+      </div>
+    </div>
+
+    <div class="panel hidden js-tr-panel">
+      <div class="panel-head"><span>Transcript</span><span class="provenance">smia</span>
+        <button class="x" type="button" data-act="tr-close">✕</button></div>
+      <div class="transcript js-tr-text"></div>
+    </div>
+
+    <div class="ticks js-ticks d-only" aria-label="sentences in this chapter"></div>
+    <div class="tick-legend d-only">
+      <span><i class="d"></i>done</span><span><i></i>not done</span><span><i class="c"></i>this sentence</span>
+    </div>
+
+    <div class="ctl-zone">
+      <div class="controls">
+        <button class="ctl primary" type="button" data-act="play"><span class="gl">▶</span><span class="lbl">Play</span><span class="kbd">space</span></button>
+        <button class="pause-btn" type="button" data-act="pause" data-new aria-disabled="true" title="pause / resume (K)"><span class="pg">❚❚</span><span class="pl">pause</span><span class="kbd">K</span></button>
+        <button class="ctl rec" type="button" data-act="rec"><span class="gl">●</span><span class="lbl">Record</span><span class="kbd">R</span></button>
+        <button class="ctl" type="button" data-act="cmp"><span class="gl">⇄</span><span class="lbl">Compare</span><span class="kbd">C</span></button>
+        <button class="ctl primary" type="button" data-act="done"><span class="gl">✓</span><span class="lbl">Done &amp; next</span><span class="kbd">↵</span></button>
+      </div>
+      <button class="ab-stop-big" type="button" data-act="ab-stop">■ Stop audiobook</button>
+      <div class="ab-stop-hint">or tap the waveform · any study action also stops</div>
+
+      <div class="controls-2 d-only">
+        <button class="ctl-s" type="button" data-act="prev">← prev<span class="kbd">←</span></button>
+        <button class="ctl-s" type="button" data-act="next">→ next<span class="kbd">→</span></button>
+        <button class="ctl-s" type="button" data-act="chprev">⟨ prev chapter<span class="kbd">⇧←</span></button>
+        <button class="ctl-s" type="button" data-act="chnext">⟩ next chapter<span class="kbd">⇧→</span></button>
+        <button class="ctl-s" type="button" data-act="split" data-new>✂ split…<span class="kbd">X</span></button>
+        <button class="ctl-s" type="button" data-act="merge">⇢⇠ merge with next<span class="kbd">M</span></button>
+        <button class="ctl-s" type="button" data-act="tr">📝 transcribe<span class="kbd">T</span></button>
+        <button class="ctl-s" type="button" data-act="fl">🔬 Formant Lab<span class="kbd">F</span></button>
+        <button class="ctl-s" type="button" data-act="jump">⤓ first unfinished<span class="kbd">U</span></button>
+        <button class="ctl-s on js-contour-toggle" type="button" data-act="contour">∿ pitch contour<span class="kbd">P</span></button>
+        <button class="ctl-s" type="button" data-act="help">? shortcuts<span class="kbd">?</span></button>
+      </div>
+      <div class="ephemeral d-only">Recordings are never uploaded. Closing this tab discards them.</div>
+    </div>
+  </div>
+
+  <!-- phone ⋯ sheet (trigger is in the top region) -->
+  <div class="m-scrim p-only js-scrim" data-act="sheet-close"></div>
+  <div class="m-sheet p-only js-sheet">
+    <div class="grab"></div>
+    <button class="item" type="button" data-act="split" data-new>✂ <span>Split…</span><span class="tag">stops playback, opens the split line</span></button>
+    <button class="item" type="button" data-act="merge">⇢⇠ <span>Merge with next</span><span class="tag">joins 2 → 1</span></button>
+    <button class="item" type="button" data-act="tr">📝 <span>Transcribe</span><span class="tag">smia</span></button>
+    <button class="item" type="button" data-act="fl">🔬 <span>Formant Lab</span><span class="tag">phonexa</span></button>
+    <button class="item" type="button" data-act="jump">⤓ <span>First unfinished</span></button>
+    <button class="item" type="button" data-act="prev">← <span>Previous sentence</span><span class="tag">or swipe</span></button>
+    <button class="item" type="button" data-act="help">? <span>Shortcuts</span></button>
+    <button class="item" type="button" data-act="exit">✕ <span>Exit to library</span></button>
+  </div>
+</div>
+</div>
+
+<div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
+<div class="overlay hidden" id="help" data-act="help-close">
+  <div class="sheet" onclick="event.stopPropagation()">
+    <h3>Study shortcuts</h3>
+    <div class="klist">
+      <div><span>Play — restarts from the start if playing</span><span class="kbd">space</span></div>
+      <div><span>Pause / resume<span class="new">NEW</span></span><span class="kbd">K</span></div>
+      <div><span>Record / stop</span><span class="kbd">R</span></div>
+      <div><span>Compare</span><span class="kbd">C</span></div>
+      <div><span>Done &amp; next (autoplays the next)</span><span class="kbd">↵</span></div>
+      <div><span>Previous / next sentence</span><span class="kbd">← →</span></div>
+      <div><span>Previous / next chapter</span><span class="kbd">⇧← ⇧→</span></div>
+      <div><span>Audiobook: listen / resume<span class="new">NEW</span></span><span class="kbd">L</span></div>
+      <div><span>Split… (stops, opens the split line)<span class="new">NEW FLOW</span></span><span class="kbd">X</span></div>
+      <div><span>While splitting: nudge · confirm · cancel</span><span class="kbd">← → ↵ Esc</span></div>
+      <div><span>Merge with next</span><span class="kbd">M</span></div>
+      <div><span>Transcribe · Formant Lab · first unfinished</span><span class="kbd">T F U</span></div>
+      <div><span>Pitch contours</span><span class="kbd">P</span></div>
+      <div><span>Stop audiobook / cancel split / leave</span><span class="kbd">Esc</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== notes (mockup only) ===== -->
+<details class="notes" id="notes">
+  <summary><b>What's new here</b> · 5 items · settings</summary>
+  <div class="nb">
+    <ol>
+      <li><b>Pause</b> — the small pill right of Play (phone: over the Play column). <span class="kbd">K</span>. Freezes the playhead mid-sentence; press again to resume. Play still <i>restarts</i> (its glyph turns ↺ while playing).</li>
+      <li><b>Split, reversed</b> — desktop tray “✂ split…” / phone ⋯ → Split…, or <span class="kbd">X</span>. Stops playback at once; a red line appears at the paused point (or the middle). Drag or tap to move it, hear left / right, Confirm <span class="kbd">↵</span> or Cancel <span class="kbd">Esc</span>. No line is ever shown before Split.</li>
+      <li><b>Audiobook</b> — “▶▶ Listen” beside the chapter name (it reads <i>this chapter</i>), <span class="kbd">L</span>. Banner + moving playhead, sentence by sentence. Stop: banner button, Space, tap the waveform, or any study action (that press only stops). Then “▶▶ Resume from N+1”. Use “jump to 84” below to see the chapter end.</li>
+      <li><b>Phone top</b> — switch to Phone: two lines — ✕ · book · ⋯, then ‹ chapter › · 12 / 87 · ▶▶ Listen. Tap the grabber (or drag it down) for the nav.</li>
+      <li><b>Autoplay</b> — “↻ autoplay” in the lane header. With it on, Done &amp; next / next / prev start the new sentence at once (the chip flashes).</li>
+    </ol>
+    <div class="nrow"><span class="copy">Autoplay on step <span class="quiet">(setting)</span></span><span class="switch" role="switch" aria-checked="true" data-act="autoplay" tabindex="0"></span></div>
+    <div class="nrow"><span class="copy">Audiobook tempo <span class="quiet">(setting)</span></span>
+      <span class="seg"><button type="button" data-tempo="natural" aria-pressed="true">natural</button><button type="button" data-tempo="trimmed" aria-pressed="false">trimmed</button></span></div>
+    <div class="nrow"><span class="copy">Outline the new elements</span><span class="switch" role="switch" aria-checked="false" data-act="hl" tabindex="0"></span></div>
+    <div class="nrow"><span class="copy">Demo helper</span><button class="mini" type="button" data-act="jump84">jump to sentence 84</button></div>
+  </div>
+</details>
+
+<script>
+(function () {
+  'use strict';
+  const $ = (s, r) => (r || document).querySelector(s);
+  const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+  const dev = $('#device'), area = $('#area');
+
+  /* ---------- fake book ---------- */
+  const CHS = [null, { total: 64 }, { total: 71 }, { total: 58 }, { total: 87 }, { total: 79 }, { total: 66 }];
+  const TEXTS = [
+    'Kristin satt lenge ved vinduet og så ut over bygda.',
+    'Det hadde snødd hele natten, og tunet lå hvitt og stille.',
+    'Far hennes kom inn med sne i skjegget.',
+    'Hun visste ikke hva hun skulle svare ham.',
+    'Elva gikk stri og grå under brua.',
+    'Om kvelden satt de ved ilden og fortalte.',
+    'Moren sa ingenting, men hun så på henne.',
+    'Det var tidlig vår, og lyset kom tilbake.'
+  ];
+  const S = {
+    ch: 4, idx: 12, done: new Set(),
+    settings: { autoplay: true, tempo: 'natural' },
+    contours: true, cmpShown: false, take: null, rec: null, split: null, pb: null,
+    ab: { running: false, resumeAt: null, end: false, gapT: null, gap: false }
+  };
+  for (let c = 1; c <= 3; c++) for (let i = 1; i <= CHS[c].total; i++) S.done.add(c + ':' + i);
+  for (let i = 1; i < 12; i++) S.done.add('4:' + i);
+
+  function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+  const cache = {};
+  function sent(ch, i) {
+    const k = ch + ':' + i;
+    if (cache[k]) return cache[k];
+    const r = rng(ch * 7919 + i * 104729 + 17);
+    const dur = +(1.6 + r() * 3.6).toFixed(1);
+    const words = 3 + Math.floor(r() * 7), lead = .04 + r() * .04, tail = .05 + r() * .05;
+    const vals = [];
+    for (let k2 = 0; k2 < 120; k2++) {
+      const t = k2 / 120; let a;
+      if (t > lead && t < 1 - tail) {
+        const u = (t - lead) / (1 - lead - tail), f = (u * words) % 1;
+        a = Math.pow(Math.sin(Math.PI * f), .6) * (.45 + .55 * r()) * (.6 + .4 * Math.sin(u * Math.PI));
+      } else a = .02 + r() * .03;
+      vals.push(a);
+    }
+    const contour = [], ctake = [];
+    let y = 55, y2 = 60;
+    for (let k2 = 0; k2 <= 40; k2++) {
+      y += (r() - .5) * 14; y = Math.max(22, Math.min(88, y)); contour.push(y);
+      y2 = y + (r() - .5) * 18 + 4; ctake.push(Math.max(18, Math.min(92, y2)));
+    }
+    return (cache[k] = { dur, vals, contour, ctake, text: TEXTS[(ch * 31 + i) % TEXTS.length] });
+  }
+  const cur = () => sent(S.ch, S.idx);
+  const total = () => CHS[S.ch].total;
+  const isPhone = () => dev.classList.contains('phone');
+
+  const VW = 600, VH = 110;
+  function barsSvg(src, fill, maxBars) {
+    const n = Math.max(8, Math.min(maxBars || 120, src.length));
+    let mx = 0; for (const v of src) if (v > mx) mx = v;
+    const norm = mx ? 1 / mx : 0, bw = VW / n * .62;
+    let o = '';
+    for (let i = 0; i < n; i++) {
+      const a = Math.floor(i * src.length / n), b = Math.floor((i + 1) * src.length / n);
+      let pk = 0; for (let k = a; k < Math.max(b, a + 1); k++) if ((src[k] || 0) > pk) pk = src[k];
+      const hh = Math.max(2, pk * norm * (VH - 12)), x = i * VW / n, yy = (VH - hh) / 2;
+      o += `<rect x="${x.toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${hh.toFixed(1)}" rx="${(bw / 2).toFixed(1)}" fill="${fill}"/>`;
+    }
+    return `<svg viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="none" aria-hidden="true">${o}</svg>`;
+  }
+  const line = (pts, color) => `<polyline fill="none" stroke="${color}" stroke-width="2.6" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="${pts.map((y, i) => (i * VW / (pts.length - 1)).toFixed(1) + ',' + y.toFixed(1)).join(' ')}"/>`;
+  const fmt = (s) => s.toFixed(1) + ' s';
+  function clock(sec) { const m = Math.floor(sec / 60), s = sec - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(1); }
+
+  /* ---------- toast ---------- */
+  let toastT = null;
+  function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.add('hidden'), 3200); }
+
+  /* ---------- rendering ---------- */
+  function renderSentence() {
+    const s = cur(), tot = total();
+    $$('.js-idx').forEach(e => e.textContent = S.idx);
+    $$('.js-total').forEach(e => e.textContent = tot);
+    $$('.js-chname').forEach(e => e.textContent = 'Chapter ' + S.ch);
+    $$('.js-chname-end').forEach(e => e.textContent = 'chapter ' + S.ch);
+    let d = 0; for (let i = 1; i <= tot; i++) if (S.done.has(S.ch + ':' + i)) d++;
+    $$('.js-prog').forEach(e => e.style.width = (d / tot * 100).toFixed(1) + '%');
+    $('.js-wave').innerHTML = barsSvg(s.vals, 'var(--wave)');
+    $('.js-played').innerHTML = barsSvg(s.vals, 'var(--ref)');
+    $('.js-played').style.clipPath = 'inset(0 100% 0 0)';
+    $('.js-dur').textContent = fmt(s.dur);
+    $('.js-at').textContent = clock((S.ch - 1) * 330 + S.idx * 3.9);
+    $('.js-contour-ref').innerHTML = line(s.contour, 'var(--ref-contour)');
+    $('.js-contour-usr').innerHTML = line(s.ctake, 'var(--usr-contour)');
+    $$('.ch-nav[data-act=chprev]').forEach(b => b.disabled = S.ch <= 1);
+    $$('.ch-nav[data-act=chnext]').forEach(b => b.disabled = S.ch >= CHS.length - 1);
+    let h = '';
+    for (let i = 1; i <= tot; i++) {
+      const c = (S.done.has(S.ch + ':' + i) ? 'done ' : '') + (i === S.idx ? 'cur' : '');
+      h += `<button type="button" class="${c}" data-act="tick" data-i="${i}" title="sentence ${i}"></button>`;
+    }
+    $('.js-ticks').innerHTML = h;
+    $('.js-tr-panel').classList.add('hidden');
+    renderTake();
+    renderUI();
+  }
+
+  function renderTake() {
+    const lane = $('.js-lane-usr'), uw = $('.js-userwave'), sd = cur().dur;
+    lane.classList.toggle('recording', !!S.rec);
+    lane.classList.toggle('has-take', !!S.take);
+    if (S.rec) {
+      uw.innerHTML = barsSvg(S.rec.vals.length ? S.rec.vals : [0], 'var(--rec)', 180);
+      uw.style.width = Math.min(100, (performance.now() - S.rec.t0) / 1000 / sd * 100) + '%';
+    } else if (S.take) {
+      uw.innerHTML = barsSvg(S.take.vals, 'var(--usr)', 180);
+      uw.style.width = Math.min(100, S.take.dur / sd * 100) + '%';
+    } else { uw.innerHTML = ''; uw.style.width = '100%'; }
+  }
+
+  function stateText() {
+    const p = S.pb;
+    if (S.ab.running) return S.ab.gap ? 'audiobook · next sentence…' : 'audiobook · playing';
+    if (S.split) return 'splitting — playback stopped';
+    if (S.rec) return 'recording';
+    if (p && p.paused) return 'paused at ' + fmt(p.pos * p.dur) + ' — K resumes, Space restarts';
+    if (p && p.auto) return 'autoplay ▸ playing';
+    if (p) return p.lane === 'usr' ? 'playing your take' : 'playing';
+    return 'idle';
+  }
+
+  function renderUI() {
+    const p = S.pb;
+    dev.classList.toggle('ab-on', S.ab.running);
+    dev.classList.toggle('ab-end', !!S.ab.end);
+    dev.classList.toggle('splitting', !!S.split);
+    $('.ab-banner').classList.toggle('ab-gap', S.ab.gap);
+
+    $$('[data-act=pause]').forEach(b => {
+      b.setAttribute('aria-disabled', p ? 'false' : 'true');
+      b.classList.toggle('paused', !!(p && p.paused));
+      $('.pg', b).textContent = p && p.paused ? '▶' : '❚❚';
+      $('.pl', b).textContent = p && p.paused ? 'resume' : 'pause';
+    });
+    $$('.ctl[data-act=play] .gl').forEach(g => g.textContent = (p && !p.paused && p.lane === 'ref' && !S.split) ? '↺' : '▶');
+    $$('[data-act=rec]').forEach(b => b.classList.toggle('armed', !!S.rec));
+    $$('.ctl[data-act=cmp]').forEach(b => b.classList.toggle('on', !!(p && p.cmp)));
+
+    ['ref', 'usr'].forEach(l => {
+      const w = l === 'ref' ? $('.js-wavewrap') : $('.js-userwrap');
+      w.classList.toggle('playing', !!(p && p.lane === l && !p.paused));
+      w.classList.toggle('paused', !!(p && p.lane === l && p.paused));
+    });
+
+    $$('.js-ab').forEach(b => {
+      const r = S.ab.resumeAt;
+      b.classList.toggle('resume', !!r);
+      b.innerHTML = '<span class="gl">▶▶</span>' + (r ? (isPhone() ? 'Resume · ' + r : 'Resume from ' + r) : 'Listen') + (isPhone() ? '' : '<span class="kbd">L</span>');
+    });
+
+    $$('.js-auto').forEach(c => { c.classList.toggle('off', !S.settings.autoplay); c.textContent = S.settings.autoplay ? '↻ autoplay' : 'autoplay off'; });
+    $$('[role=switch][data-act=autoplay]').forEach(s => s.setAttribute('aria-checked', String(S.settings.autoplay)));
+    const nat = S.settings.tempo === 'natural';
+    $$('.js-tempo').forEach(e => e.textContent = nat ? 'natural tempo (untrimmed)' : 'trimmed');
+    $$('.js-tempo-short').forEach(e => e.textContent = nat ? 'natural tempo (untrimmed)' : 'trimmed');
+    $$('[data-tempo]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tempo === S.settings.tempo)));
+
+    $$('.js-contour-toggle').forEach(b => { b.classList.toggle('on', S.contours); b.setAttribute('aria-pressed', String(S.contours)); });
+    $('.js-lanes').classList.toggle('contours', S.contours);
+    $('.js-lanes').classList.toggle('cmp-shown', S.cmpShown);
+
+    if (S.split) {
+      const at = S.split.at, dur = cur().dur;
+      $('.js-split-line').style.left = (at * 100) + '%';
+      $('.js-split-shade').style.left = (at * 100) + '%';
+      $('.js-split-a').style.left = 'calc(' + (at * 50) + '% - 4px)';
+      $('.js-split-b').style.left = 'calc(' + (50 + at * 50) + '% - 4px)';
+      $('.js-split-t').textContent = fmt(at * dur);
+      $('.js-split-d').textContent = fmt(dur);
+    }
+    $('.js-state').textContent = stateText();
+  }
+
+  function setHead(lane, pos) {
+    if (lane === 'ref') {
+      $('.js-playhead').style.left = (pos * 100) + '%';
+      $('.js-played').style.clipPath = 'inset(0 ' + (100 - pos * 100) + '% 0 0)';
+    } else {
+      const w = S.take ? Math.min(1, S.take.dur / cur().dur) : 1;
+      $('.js-userplayhead').style.left = (pos * w * 100) + '%';
+    }
+  }
+
+  /* ---------- playback (simulated, real time) ---------- */
+  function startPB(lane, from, to, onEnd, extra) {
+    stopPB();
+    const dur = lane === 'ref' ? cur().dur : S.take.dur;
+    const p = Object.assign({ lane, from, to, pos: from, dur, paused: false, onEnd, last: performance.now() }, extra || {});
+    S.pb = p; setHead(lane, from);
+    const tick = (now) => {
+      if (S.pb !== p) return;
+      const dt = (now - p.last) / 1000; p.last = now;
+      if (!p.paused) {
+        p.pos += dt / p.dur;
+        if (p.pos >= p.to) {
+          p.pos = p.to; setHead(lane, p.pos); S.pb = null; renderUI();
+          if (onEnd) onEnd();
+          return;
+        }
+        setHead(lane, p.pos);
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    renderUI();
+  }
+  function stopPB() { S.pb = null; $('.js-played').style.clipPath = 'inset(0 100% 0 0)'; renderUI(); }
+  function play() {
+    if (S.rec) stopRec();
+    startPB('ref', 0, 1);          /* restarts if already playing, and if paused */
+  }
+  function pause() {
+    const p = S.pb;
+    if (!p) { toast('Nothing is playing — K pauses a sentence mid-way.'); return; }
+    p.paused = !p.paused; p.last = performance.now();
+    renderUI();
+  }
+
+  /* ---------- recording ---------- */
+  function toggleRec() {
+    if (S.rec) { stopRec(); return; }
+    stopPB(); S.take = null; S.cmpShown = false;
+    const r = rng(Date.now() & 0xffff);
+    S.rec = { vals: [], t0: performance.now() };
+    S.rec.iv = setInterval(() => {
+      const t = S.rec.vals.length;
+      S.rec.vals.push(.15 + Math.abs(Math.sin(t / 3.2)) * (.4 + .6 * r()));
+      $('.js-rectime').textContent = fmt((performance.now() - S.rec.t0) / 1000);
+      renderTake();
+    }, 50);
+    renderTake(); renderUI();
+  }
+  function stopRec() {
+    if (!S.rec) return;
+    clearInterval(S.rec.iv);
+    const dur = (performance.now() - S.rec.t0) / 1000;
+    if (S.rec.vals.length > 4) S.take = { vals: S.rec.vals, dur };
+    S.rec = null; renderTake(); renderUI();
+  }
+  function compare() {
+    if (S.rec) stopRec();
+    if (!S.take) { toast('Record a take first (R), then Compare.'); return; }
+    S.cmpShown = true;
+    startPB('ref', 0, 1, () => startPB('usr', 0, 1, null, { cmp: true }), { cmp: true });
+  }
+
+  /* ---------- navigation ---------- */
+  function goTo(i, opts) {
+    opts = opts || {};
+    i = Math.max(1, Math.min(total(), i));
+    stopPB(); if (S.rec) stopRec(); S.take = null; S.cmpShown = false;
+    if (S.split && !opts.keepSplit) S.split = null;
+    const box = $('.js-sentbox');
+    box.classList.add('swap');
+    setTimeout(() => {
+      S.idx = i; renderSentence(); box.classList.remove('swap');
+      if (opts.then) { opts.then(); return; }
+      if (opts.auto && S.settings.autoplay) {
+        $$('.js-auto').forEach(c => { c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); });
+        startPB('ref', 0, 1, null, { auto: true });
+      }
+    }, 150);
+  }
+  function chapter(delta) {
+    const n = S.ch + delta;
+    if (n < 1 || n >= CHS.length) return;
+    S.ch = n; S.ab.resumeAt = null;
+    goTo(1, { auto: true });
+  }
+  function done() {
+    S.done.add(S.ch + ':' + S.idx);
+    if (S.idx >= total()) { renderSentence(); toast('Chapter ' + S.ch + ' is done. ⇧→ for the next chapter.'); return; }
+    goTo(S.idx + 1, { auto: true });
+  }
+  function firstUnfinished() {
+    for (let i = 1; i <= total(); i++) if (!S.done.has(S.ch + ':' + i)) { goTo(i, { auto: true }); return; }
+    toast('Everything in this chapter is done.');
+  }
+
+  /* ---------- NEW 2: split, reversed ---------- */
+  function enterSplit() {
+    if (S.rec) stopRec();
+    const p = S.pb;
+    let at = (p && p.lane === 'ref' && p.pos > .04 && p.pos < .96) ? p.pos : .5;
+    stopPB();
+    S.split = { at };
+    renderUI();
+  }
+  function cancelSplit() { if (!S.split) return; S.split = null; stopPB(); renderUI(); }
+  function confirmSplit() {
+    const t = S.split.at * cur().dur;
+    CHS[S.ch].total++;
+    S.split = null; stopPB();
+    toast('Split sentence ' + S.idx + ' at ' + fmt(t) + ' → ' + S.idx + ' + ' + (S.idx + 1) + '. Chapter now has ' + total() + '.');
+    renderSentence();
+  }
+  function nudge(d) { S.split.at = Math.max(.03, Math.min(.97, S.split.at + d)); renderUI(); }
+
+  /* ---------- NEW 3: audiobook mode ---------- */
+  function startAB(from) {
+    if (S.rec) stopRec();
+    S.split = null; closeSheet();
+    S.ab.running = true; S.ab.resumeAt = null; S.ab.end = false; S.ab.gap = false;
+    if (from !== S.idx) goTo(from, { then: abPlay }); else { renderUI(); abPlay(); }
+  }
+  function abPlay() {
+    if (!S.ab.running) return;
+    S.ab.gap = false;
+    startPB('ref', 0, 1, () => {
+      if (!S.ab.running) return;
+      if (S.idx >= total()) { endAB(); return; }
+      S.ab.gap = true; renderUI();
+      S.ab.gapT = setTimeout(() => {
+        if (!S.ab.running) return;
+        goTo(S.idx + 1, { then: abPlay });
+      }, S.settings.tempo === 'natural' ? 700 : 120);
+    });
+  }
+  function stopAB() {
+    if (!S.ab.running) return;
+    S.ab.running = false; S.ab.gap = false; clearTimeout(S.ab.gapT); stopPB();
+    S.ab.resumeAt = S.idx < total() ? S.idx + 1 : null;
+    renderUI();
+    toast('Audiobook stopped — studying sentence ' + S.idx + '.' + (S.ab.resumeAt ? ' ▶▶ Resume continues from ' + S.ab.resumeAt + '.' : ''));
+  }
+  function endAB() {
+    S.ab.running = false; S.ab.gap = false; S.ab.resumeAt = null; S.ab.end = true;
+    renderUI();
+  }
+
+  /* ---------- phone chrome ---------- */
+  let navT = null;
+  function nav(on) {
+    dev.classList.toggle('nav-open', on);
+    clearTimeout(navT);
+    if (on) navT = setTimeout(() => dev.classList.remove('nav-open'), 3200);
+  }
+  function openSheet() { $('.js-sheet').classList.add('open'); $('.js-scrim').classList.add('on'); }
+  function closeSheet() { $('.js-sheet').classList.remove('open'); $('.js-scrim').classList.remove('on'); }
+
+  /* ---------- actions ---------- */
+  const STOPPERS = new Set(['play', 'pause', 'rec', 'cmp', 'done', 'prev', 'next', 'chprev', 'chnext', 'split', 'merge', 'tr', 'fl', 'jump', 'exit', 'tick', 'jump84']);
+  function act(a, el) {
+    if (S.ab.running && STOPPERS.has(a)) { closeSheet(); stopAB(); return; }
+    if (S.ab.end && a !== 'theme') { S.ab.end = false; renderUI(); }
+    if (a !== 'pull' && a !== 'theme') nav(false);
+    switch (a) {
+      case 'play': play(); break;
+      case 'pause': pause(); break;
+      case 'rec': toggleRec(); break;
+      case 'cmp': compare(); break;
+      case 'done': done(); break;
+      case 'prev': goTo(S.idx - 1, { auto: true }); break;
+      case 'next': goTo(S.idx + 1, { auto: true }); break;
+      case 'tick': goTo(+el.dataset.i, { auto: true }); break;
+      case 'chprev': chapter(-1); break;
+      case 'chnext': chapter(1); break;
+      case 'split': closeSheet(); enterSplit(); break;
+      case 'split-ok': confirmSplit(); break;
+      case 'split-cancel': cancelSplit(); break;
+      case 'hear-l': startPB('ref', 0, S.split.at); break;
+      case 'hear-r': startPB('ref', S.split.at, 1); break;
+      case 'merge': closeSheet(); CHS[S.ch].total--; toast('Merged ' + S.idx + ' + ' + (S.idx + 1) + ' → one sentence. Chapter now has ' + total() + '.'); renderSentence(); break;
+      case 'tr': closeSheet(); $('.js-tr-text').textContent = cur().text; $('.js-tr-panel').classList.remove('hidden'); break;
+      case 'tr-close': $('.js-tr-panel').classList.add('hidden'); break;
+      case 'fl': closeSheet(); toast('Sent the book audio of sentence ' + S.idx + ' to Formant Lab (phonexa).'); break;
+      case 'jump': closeSheet(); firstUnfinished(); break;
+      case 'jump84': S.ab.resumeAt = null; goTo(Math.min(84, total()), {}); break;
+      case 'contour': S.contours = !S.contours; renderUI(); break;
+      case 'autoplay': S.settings.autoplay = !S.settings.autoplay; renderUI(); toast('Autoplay on step: ' + (S.settings.autoplay ? 'on' : 'off') + ' (a Settings preference)'); break;
+      case 'hl': { const on = !area.classList.contains('hl'); area.classList.toggle('hl', on); el.setAttribute('aria-checked', String(on)); break; }
+      case 'ab': if (S.ab.running) stopAB(); else startAB(S.ab.resumeAt || S.idx); break;
+      case 'ab-stop': stopAB(); break;
+      case 'ab-end-x': break;
+      case 'help': closeSheet(); $('#help').classList.remove('hidden'); break;
+      case 'help-close': $('#help').classList.add('hidden'); break;
+      case 'more': openSheet(); break;
+      case 'sheet-close': closeSheet(); break;
+      case 'pull': if (el && el.dataset.dragged) { delete el.dataset.dragged; break; } nav(!dev.classList.contains('nav-open')); break;
+      case 'exit': closeSheet(); toast('✕ → back to the Library (not part of this mockup).'); break;
+      case 'theme': {
+        const r = document.documentElement;
+        const dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+        r.dataset.theme = dark ? 'light' : 'dark'; break;
+      }
+    }
+  }
+
+  document.addEventListener('click', (e) => {
+    const m = e.target.closest('[data-mode]');
+    if (m) { setMode(m.dataset.mode); return; }
+    const t = e.target.closest('[data-tempo]');
+    if (t) { S.settings.tempo = t.dataset.tempo; renderUI(); return; }
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    act(b.dataset.act, b);
+  });
+
+  /* waveform: stops the audiobook; places/drags the split line */
+  const ww = $('.js-wavewrap');
+  function placeFrom(ev) { const r = ww.getBoundingClientRect(); S.split.at = Math.max(.03, Math.min(.97, (ev.clientX - r.left) / r.width)); renderUI(); }
+  ww.addEventListener('pointerdown', (e) => {
+    if (S.ab.running) { stopAB(); return; }
+    if (!S.split) return;
+    stopPB(); ww.setPointerCapture(e.pointerId); placeFrom(e);
+    const mv = (ev) => placeFrom(ev);
+    const up = () => { ww.removeEventListener('pointermove', mv); ww.removeEventListener('pointerup', up); };
+    ww.addEventListener('pointermove', mv); ww.addEventListener('pointerup', up);
+  });
+  /* phone: swipe the waveform for prev / next (as today) */
+  let sx = null;
+  ww.addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; }, { passive: true });
+  ww.addEventListener('touchend', (e) => {
+    if (sx === null || S.split || S.ab.running) { sx = null; return; }
+    const dx = e.changedTouches[0].clientX - sx;
+    if (Math.abs(dx) > 48) act(dx < 0 ? 'next' : 'prev');
+    sx = null;
+  }, { passive: true });
+  /* grabber: a short downward drag reveals the nav */
+  const grab = $('.m-grab'); let gy = null;
+  grab.addEventListener('pointerdown', (e) => { gy = e.clientY; });
+  window.addEventListener('pointerup', (e) => { if (gy !== null && e.clientY - gy > 18) { nav(true); grab.dataset.dragged = '1'; } gy = null; });
+
+  /* keyboard */
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (!$('#help').classList.contains('hidden')) { if (k === 'escape' || k === '?') $('#help').classList.add('hidden'); return; }
+    if (S.split) {
+      if (k === 'escape') { e.preventDefault(); cancelSplit(); return; }
+      if (k === 'enter') { e.preventDefault(); confirmSplit(); return; }
+      if (k === 'arrowleft' || k === 'arrowright') { e.preventDefault(); nudge((k === 'arrowleft' ? -1 : 1) * (e.shiftKey ? .1 : .02)); return; }
+    }
+    if (e.shiftKey && (k === 'arrowleft' || k === 'arrowright')) { e.preventDefault(); act(k === 'arrowleft' ? 'chprev' : 'chnext'); return; }
+    switch (k) {
+      case ' ': e.preventDefault(); if (S.ab.running) stopAB(); else if (S.rec) stopRec(); else act('play'); break;
+      case 'k': e.preventDefault(); act('pause'); break;
+      case 'r': act('rec'); break;
+      case 'c': act('cmp'); break;
+      case 'enter': e.preventDefault(); act('done'); break;
+      case 'arrowleft': e.preventDefault(); act('prev'); break;
+      case 'arrowright': e.preventDefault(); act('next'); break;
+      case 'x': act('split'); break;
+      case 'm': act('merge'); break;
+      case 't': act('tr'); break;
+      case 'f': act('fl'); break;
+      case 'u': act('jump'); break;
+      case 'p': act('contour'); break;
+      case 'l': act('ab'); break;
+      case '?': act('help'); break;
+      case 'escape':
+        if ($('.js-sheet').classList.contains('open')) { closeSheet(); return; }
+        if (S.ab.running) { stopAB(); return; }
+        act('exit'); break;
+    }
+  });
+
+  function setMode(m) {
+    dev.classList.toggle('desk', m === 'desk');
+    dev.classList.toggle('phone', m === 'phone');
+    area.classList.toggle('phone-mode', m === 'phone');
+    $$('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
+    closeSheet(); nav(false); renderUI();
+  }
+
+  renderSentence();
+})();
+</script>
+</body>
+</html>

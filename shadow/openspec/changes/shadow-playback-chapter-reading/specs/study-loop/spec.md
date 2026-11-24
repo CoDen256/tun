@@ -48,3 +48,60 @@ not done and a visible error SHALL say so.
 #### Scenario: A failed save is not hidden
 - **WHEN** the progress write fails
 - **THEN** an error is shown and the previous sentence reads as not done
+
+### Requirement: Split is chosen on a line shown only after Split is pressed
+Invoking split in Study SHALL stop playback at once and show a split line on
+the sentence's waveform — at the playing or paused position when inside the
+sentence, otherwise at the middle — that can be dragged, tapped or nudged
+with the arrow keys, together with controls to hear the left part, hear the
+right part, confirm (Enter) and cancel (Escape). No split line SHALL be
+shown before split is invoked, and no split SHALL happen without
+confirmation. While splitting, the other study controls SHALL be inert.
+
+#### Scenario: Split stops and waits
+- **WHEN** split is invoked while the sentence plays
+- **THEN** playback stops, a split line appears, and the sentence count is
+  unchanged until confirm
+
+#### Scenario: Cancel leaves the sentence whole
+- **WHEN** a split line is moved and cancel is invoked
+- **THEN** no split occurred and the line disappears
+
+### Requirement: Moving to a sentence can play it at once
+When the "play sentence when opened" setting is on, every operator-initiated
+move to a sentence — done-and-next, next/previous, chapter step, choosing a
+sentence from the progress strip or from Explore, and jump to first
+unfinished — SHALL start that sentence playing without a further action, and
+Study SHALL indicate that autoplay is active. When the setting is off, a
+moved-to sentence SHALL stay silent until play is pressed. Audiobook mode is
+not governed by this setting.
+
+#### Scenario: Autoplay on
+- **WHEN** the setting is on and done-and-next is invoked
+- **THEN** the next sentence starts playing without pressing play
+
+#### Scenario: Autoplay off
+- **WHEN** the setting is off and next is invoked
+- **THEN** the next sentence is shown and nothing plays
+
+### Requirement: The phone's study header is two compact lines
+At phone viewports the top of Study SHALL consist of a pull grabber and at
+most two lines: an exit control, the book name and the secondary-actions
+trigger on one; the chapter with previous/next chapter controls, the
+sentence position and the audiobook control on the other. Pulling or tapping
+the grabber SHALL reveal the navigation.
+
+#### Scenario: Compact header
+- **WHEN** Study is shown at a 390×844 viewport
+- **THEN** exit, book name, more, chapter navigation, position and the
+  audiobook control are all visible within the top two lines
+
+### Requirement: New study bindings
+In addition to the existing bindings, Study SHALL bind pause/resume to `K`
+and start/resume audiobook mode to `L`; while splitting, `←`/`→` nudge the
+split line, `Enter` confirms and `Escape` cancels. The shortcut overlay
+SHALL list them.
+
+#### Scenario: Keys reach the new actions
+- **WHEN** `K` is pressed during playback and `L` is pressed when idle
+- **THEN** playback pauses, and later audiobook mode starts

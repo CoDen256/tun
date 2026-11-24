@@ -18,3 +18,11 @@ the actual playback position.
 #### Scenario: The live line follows the sound
 - **WHEN** a preview is paused halfway
 - **THEN** its progress indication stops at about half and stays there
+
+### Requirement: Chapter titles are shown where chapters are named
+A chapter that has a title SHALL be shown with its automatic number and its
+title in Explore and in Study's chapter label.
+
+#### Scenario: A titled chapter
+- **WHEN** chapter 3 is given the title "Første del" in Prepare
+- **THEN** Explore and Study show "Chapter 3 · Første del"
