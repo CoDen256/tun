@@ -9,6 +9,10 @@ Dev compose (`cd smia && docker compose up`), smia UI manual try-it
    `context: "ei avis"`, audio plays.
 2. Text `bokhandel` → ≥ 1 candidate with `context: "bok + handel"`.
 3. Text `hallo` → ≥ 1 candidate with `context: "Hallo!"`.
+   *(Build note 2026-11-24: the Oslo re-crawl added a verbatim `hallo`
+   entry, so `hallo` is now a tier-1 hit with no `context` (criterion 6).
+   Check with `hallo.` instead — observed: 3 candidates, one with
+   `context: "Hallo!"`. Tester re-check PASS.)*
 4. Text `en bil` and text `å stille` → candidates (if `bil` / `stille` are
    stored), each with `context` naming the stored word.
    *(Build note 2026-11-23: the corpus also stores `en bil` verbatim, so

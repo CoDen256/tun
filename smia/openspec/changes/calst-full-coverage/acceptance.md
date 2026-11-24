@@ -20,6 +20,9 @@ terminal. Run order: crawl → extract → download → truncate → import.
    `calst_manifest.json` no longer lists any of them under `skipped`.
 4. **Small pools cost one request.** For an exercise whose pool is below the
    cap (e.g. 937, 19 words on 2026-11-23), the report shows `samples 1`.
+   *(Build note 2026-11-24: 937's real pool is 100 — the 19 came from a
+   single draw. Checked instead on all 102 exercises with pool < 20:
+   every one shows `samples 1`. PASS.)*
 5. **Empty parse fails loudly.** Running the crawler's parser over a
    fixture 200 body that holds no word list makes the run exit non-zero, and
    the failure list names that exercise id.
