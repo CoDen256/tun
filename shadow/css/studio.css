@@ -92,7 +92,7 @@ input[type=text] { font: inherit; color: var(--text); background: var(--surface-
 /* ---------------- product navigation (part of the design) ------- */
 .nav {
   position: sticky; top: 0; z-index: 60;
-  display: flex; flex-wrap: wrap; align-items: center;
+  display: flex; align-items: center;
   gap: clamp(.5rem, 2vw, 1.4rem);
   padding: .5rem clamp(.75rem, 3vw, 1.5rem);
   background: var(--surface);
@@ -101,10 +101,11 @@ input[type=text] { font: inherit; color: var(--text); background: var(--surface-
 }
 .nav-brand {
   display: inline-flex; align-items: center; gap: .5rem;
-  font-size: .98rem; font-weight: 600; letter-spacing: -0.01em;
+  font-size: .98rem; font-weight: 600; letter-spacing: -0.01em; flex: 0 0 auto;
 }
 .nav-brand .mark { width: 9px; height: 9px; border-radius: 3px; background: var(--accent); }
-.nav-links { display: flex; gap: .15rem; overflow-x: auto; max-width: 100%; }
+.nav-links { display: flex; gap: .15rem; overflow-x: auto; min-width: 0; scrollbar-width: none; }
+.nav-links::-webkit-scrollbar { display: none; }
 .nav-links button {
   white-space: nowrap;
   padding: .42rem .85rem; border-radius: var(--radius-sm);
@@ -1015,6 +1016,8 @@ button.srow:hover { background: var(--surface-2); }
 .wake.off { color: var(--rec); }
 
 @media (max-width: 620px) {
+  .nav { gap: .35rem; padding: .45rem .6rem; }
+  .nav-brand .word { display: none; }
   .nav-links button { padding: .4rem .6rem; font-size: .86rem; }
   .srow { padding: .85rem .95rem; }
   .srow .copy { flex-basis: 170px; }

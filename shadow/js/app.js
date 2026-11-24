@@ -294,11 +294,14 @@ const App = (() => {
 
     await Library.refresh();
 
+    // read #settings BEFORE opening the book: openBook shows Study, which
+    // drops the fragment, and a reload of Settings must land on Settings
+    const wantSettings = location.hash === '#settings';
     const wanted = parseInt(new URLSearchParams(location.search).get('mediaId'), 10);
     if (wanted) {
       try { await openBook(wanted, 'study'); } catch (err) { toast('Could not open that book: ' + err.message, true); }
     }
-    if (location.hash === '#settings') show('settings');
+    if (wantSettings) show('settings');
   }
 
   return {

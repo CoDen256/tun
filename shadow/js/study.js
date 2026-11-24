@@ -588,6 +588,10 @@ const Study = (() => {
       onEnd: (reason) => {
         if (st.player !== h) return;
         st.player = null; st.lane = null; st.auto = false;
+        // natural end or superseded: the mockup's stopPB() clears the played
+        // overlay and the playhead (only pause leaves them frozen)
+        st.pos = 0;
+        setRefHead(0);
         paintPlayState();
         if (reason === 'end' && o.after) o.after();
       },
