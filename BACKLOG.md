@@ -2,6 +2,10 @@
 
 ## Quick Log (Manual Dump)
 
+[idea] all services should get their vector icon graphic, simple, minimalistic, but sleek and modern
+[idea] stabbur should get its own app
+
+
 ## Triage & Planned Packages
 
 > Last triaged 2026-11-24.
