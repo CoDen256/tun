@@ -24,12 +24,13 @@
 // Split is reversed (D13): X / "Split…" stops playback and only THEN shows a
 // red line to place; nothing is split without Confirm.
 //
-// AUDIOBOOK HOOKS (task 8, D10): every study action is dispatched through
+// AUDIOBOOK MODE (task 8, D10): every study action is dispatched through
 // run(name, fn); `setGuard(fn)` installs ONE interceptor that sees the
 // action name first and swallows it by returning true — that is how "any
-// study action only stops audiobook mode" plugs in. Names: play pause rec
-// cmp done prev next tick chprev chnext split merge tr fl jump exit contour
-// help wave (a press on the sentence waveform) ab (L / ▶▶ Listen).
+// study action only stops audiobook mode" plugs in (abGuard below). Names:
+// play pause rec cmp done prev next tick chprev chnext split merge tr fl
+// jump exit contour help wave (a press on the sentence waveform) escape ab
+// (L / ▶▶ Listen) ab-stop ab-end-x.
 //
 // Slow playback (0.7×) and its `S` binding are GONE, deliberately.
 
@@ -277,6 +278,7 @@ const Study = (() => {
       paintTake();
       paintChapterNav();
       paintPlayState();
+      paintAB();
       return;
     }
     const gi = idx();
@@ -284,7 +286,8 @@ const Study = (() => {
     const ci = App.chapterIndexOf(s.parentId);
     qa('.js-idx').forEach((e) => { e.textContent = gi + 1; });
     qa('.js-total').forEach((e) => { e.textContent = Fmt.int(total); });
-    qa('.js-chname').forEach((e) => { e.textContent = ci >= 0 ? `Chapter ${ci + 1}` : ''; });
+    // "Chapter N · Title" when the chapter has a title (D15, task 9.3)
+    qa('.js-chname').forEach((e) => { e.textContent = App.chapterLabel(chapterOf(s), ci); });
     paintProgress();
     qa('.js-dur').forEach((e) => { e.textContent = Fmt.secs(s.durationMs); });
     qa('.js-at').forEach((e) => { e.textContent = Fmt.clock(s.startMs); });
@@ -298,10 +301,12 @@ const Study = (() => {
     st.note = s.done ? 'done' : 'idle';
     paintSplit();
     paintPlayState();
+    paintAB();
   }
 
   // ── the play state: pause pill, ↺, playhead caps, the state line ───────
   function stateText() {
+    if (ab.running) return ab.gap ? 'audiobook · next sentence…' : 'audiobook · playing';
     if (st.split) return 'splitting — playback stopped';
     if (st.recording) return 'recording';
     const h = st.player;
@@ -511,6 +516,8 @@ const Study = (() => {
     }
     const kids = App.sentencesOf(target.id);
     if (!kids.length) { App.toast('That chapter has no sentences in this split config.'); return; }
+    ab.resumeId = null;                   // a chapter step clears the resume offer (D10)
+    ab.endCh = null;
     go(App.globalIndexOf(kids[0].id), { autoplay: true });
   }
 
@@ -891,6 +898,9 @@ const Study = (() => {
     return providerCache;
   }
 
+  /** Settings changed the provider: the next transcription re-reads it. */
+  function forgetProvider() { providerCache = null; }
+
   async function transcribe() {
     const s = seg();
     if (!s) return;
@@ -1135,6 +1145,8 @@ const Study = (() => {
 
   /** Leaving Study: nothing keeps playing, recording or holding the mic. */
   function leaveQuietly() {
+    stopAB(false);
+    ab.endCh = null;
     stopPlayback();
     stopRecording();
     releaseStream(st.micStream);
@@ -1149,6 +1161,268 @@ const Study = (() => {
     st.segId = segId;
     autoplayOnEnter = true;
     App.show('study');
+  }
+
+  // ── audiobook mode (D10, task 8) ───────────────────────────────────────
+  // ▶▶ Listen (L) reads the CURRENT chapter from the CURRENT sentence on.
+  //
+  //   untrimmed ("Trim in audiobook mode" off, the default): ONE continuous
+  //     Player range from the sentence's stored start to the end of the
+  //     chapter's last sentence — the recording's own pauses, no added gap.
+  //     The UI follows the element's real position: onFrame fires per
+  //     animation frame while the tab is visible (well inside A10.4's 300 ms)
+  //     and on timeupdate (~4/s) when it is not; each boundary crossing moves
+  //     the shown sentence, counter, waveform, ticks and playhead and saves
+  //     the cursor.
+  //   trimmed: each sentence's speech window, back to back — the next one is
+  //     started from the previous one's natural end.
+  //
+  // It never marks anything done and never autoplays (no go() is involved).
+  // Any study action, Space, Esc, or a press on the waveform only STOPS it
+  // (abGuard), landing on the sentence being heard; the button then offers
+  // "Resume from N+1". It stops at the end of the chapter and offers the
+  // next one, never playing into it. A screen wake lock is held while it
+  // runs; without the API it says so in the banner and runs anyway (D16).
+  const ab = {
+    running: false,
+    trimmed: false,      // the tempo of THIS run, read from the setting at start
+    list: [],            // the chapter's sentences
+    offs: [], ends: [],  // their stored spans, chunk-relative ms
+    i: 0,                // the sentence being heard
+    gap: false,          // between two sentences (natural tempo)
+    resumeId: null,      // after a stop: the sentence Resume starts at
+    endCh: null,         // after the chapter ran out: its index, for the bar
+    wake: null, wakeOk: true,
+    stoppedAt: 0,
+  };
+
+  function paintAB() {
+    root.classList.toggle('ab-on', ab.running);
+    root.classList.toggle('ab-end', !ab.running && ab.endCh != null);
+    const banner = q('.js-ab-banner');
+    if (banner) banner.classList.toggle('ab-gap', ab.running && ab.gap);
+    // the resume offer only makes sense inside the chapter it was made in
+    const s = seg();
+    const r = ab.resumeId ? byId(ab.resumeId) : null;
+    if (!r || !s || r.parentId !== s.parentId) ab.resumeId = null;
+    const n = ab.resumeId ? App.globalIndexOf(ab.resumeId) + 1 : 0;
+    qa('.js-ab').forEach((b) => {
+      const phone = b.dataset.form === 'phone';
+      b.classList.toggle('resume', !!n);
+      b.innerHTML = '<span class="gl">▶▶</span>'
+        + (n ? (phone ? 'Resume · ' + n : 'Resume from ' + n) : 'Listen')
+        + (phone ? '' : '<span class="kbd">L</span>');
+      b.title = n ? 'continue reading from sentence ' + n + ' (L)' : 'read this chapter aloud, sentence after sentence (L)';
+      b.setAttribute('aria-label', n ? 'resume reading from sentence ' + n : 'listen: read this chapter aloud');
+    });
+    const trimmed = ab.running ? ab.trimmed : App.abTrim;
+    const tempo = trimmed ? 'trimmed' : 'natural tempo (untrimmed)';
+    qa('.js-tempo, .js-tempo-short').forEach((e) => { e.textContent = tempo; });
+    qa('.js-wake').forEach((e) => {
+      e.classList.toggle('off', !ab.wakeOk);
+      e.textContent = ab.wakeOk ? '☼ screen stays on' : '☼ no wake lock — the screen may dim';
+    });
+    if (ab.endCh != null) {
+      const ch = App.chapters[ab.endCh];
+      qa('.js-chname-end').forEach((e) => { e.textContent = App.chapterLabel(ch, ab.endCh).replace(/^Chapter/, 'chapter'); });
+      qa('.js-ab-endnext').forEach((b) => { b.disabled = ab.endCh >= App.chapters.length - 1; });
+    }
+  }
+
+  // ── the screen wake lock ──
+  async function wakeOn() {
+    if (!navigator.wakeLock || !navigator.wakeLock.request) { ab.wakeOk = false; paintAB(); return; }
+    try {
+      const lock = await navigator.wakeLock.request('screen');
+      if (!ab.running) { lock.release().catch(() => {}); return; }
+      ab.wake = lock;
+      ab.wakeOk = true;
+      lock.addEventListener('release', () => { if (ab.wake === lock) ab.wake = null; });
+    } catch (e) { ab.wakeOk = false; }
+    paintAB();
+  }
+  function wakeOff() {
+    const w = ab.wake;
+    ab.wake = null;
+    if (w) w.release().catch(() => {});
+  }
+  // the browser drops the lock whenever the page is hidden; take it back
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && ab.running && !ab.wake) wakeOn();
+  });
+
+  /** Show sentence k of the run without touching playback. */
+  function abShow(k) {
+    ab.i = k;
+    ab.gap = false;
+    st.segId = ab.list[k].id;
+    st.gen++;                              // stale any analysis of the last one
+    st.pos = 0;
+    hidePanels();
+    clearContours();
+    render();
+    saveCursor();
+  }
+
+  function abPlayhead(chunkMs) {
+    const s = seg();
+    if (!s) return;
+    const w = window_(s);
+    st.pos = Math.max(0, Math.min(1, (chunkMs - w.from) / Math.max(1, w.to - w.from)));
+    q('.js-playhead').style.left = (st.pos * 100).toFixed(2) + '%';
+  }
+
+  function abHandlers(onEndNatural) {
+    let h = null;
+    const handlers = {
+      owner: 'audiobook',
+      onState: () => { if (st.player === h) paintPlayState(); },
+      onError: (e) => App.toast('Playback failed: ' + (e.message || e), true),
+      onEnd: (reason) => {
+        if (st.player !== h) return;
+        st.player = null; st.lane = null;
+        if (!ab.running) { paintPlayState(); return; }
+        if (reason === 'end') { onEndNatural(); return; }
+        stopAB(false);                     // stopped from elsewhere, or failed
+      },
+    };
+    return { handlers, bindHandle(x) { h = x; } };
+  }
+
+  function abStartHandle(hd) {
+    st.player = hd; st.lane = 'ref'; st.auto = false; st.label = '';
+    paintPlayState();
+  }
+
+  function abContinuous() {
+    const entry = st.entry;
+    const from = ab.offs[ab.i];
+    const to = ab.ends[ab.list.length - 1];
+    const x = abHandlers(abEnd);
+    x.handlers.onFrame = (f, ms) => {
+      if (!ab.running || st.player !== hd) return;
+      let k = ab.i;
+      while (k + 1 < ab.list.length && ab.offs[k + 1] <= ms) k++;
+      if (k !== ab.i) abShow(k);
+      const gap = ms >= ab.ends[ab.i] && ab.i + 1 < ab.list.length;
+      if (gap !== ab.gap) { ab.gap = gap; paintAB(); paintStateLine(); }
+      abPlayhead(ms);
+    };
+    const hd = Player.chapter(entry, from, to, x.handlers);
+    x.bindHandle(hd);
+    abStartHandle(hd);
+  }
+
+  function abTrimmedFrom(k) {
+    const s = ab.list[k];
+    const w = spanOf(s, true);
+    const x = abHandlers(() => {
+      if (k + 1 < ab.list.length) { abShow(k + 1); abTrimmedFrom(k + 1); } else abEnd();
+    });
+    x.handlers.onFrame = (f, ms) => { if (ab.running && st.player === hd) abPlayhead(ms); };
+    const hd = Player.chapter(st.entry, w.from, w.to, x.handlers);
+    x.bindHandle(hd);
+    abStartHandle(hd);
+  }
+
+  async function startAB(fromId) {
+    if (ab.running) return;
+    const target = byId(fromId) || seg();
+    if (!target) return;
+    if (st.recording) stopRecording();
+    stopPlayback();
+    closeSheet();
+    ab.endCh = null;
+    ab.resumeId = null;
+    if (target.id !== st.segId) {          // Resume: move there, no autoplay
+      st.segId = target.id;
+      st.gen++;
+      st.pos = 0;
+      hidePanels();
+      clearContours();
+      render();
+    }
+    const mine = st.gen;
+    await ensureChapter(target);
+    if (mine !== st.gen || st.segId !== target.id || App.state.screen !== 'study') return;
+    if (!st.entry) {
+      App.toast(App.book && App.book.audioState === 'ready'
+        ? 'This chapter’s audio has not loaded yet.' : 'This book has no stored audio.');
+      return;
+    }
+    const ch = chapterOf(target);
+    ab.list = App.sentencesOf(target.parentId);
+    ab.i = Math.max(0, ab.list.findIndex((x) => x.id === target.id));
+    ab.offs = ab.list.map((x) => Player.offsetOf(st.entry, ch, x));
+    ab.ends = ab.list.map((x, k) => ab.offs[k] + x.durationMs);
+    ab.trimmed = !!App.abTrim;
+    ab.gap = false;
+    ab.running = true;
+    hidePanels();
+    paintAB();
+    saveCursor();
+    wakeOn();
+    if (ab.trimmed) abTrimmedFrom(ab.i); else abContinuous();
+  }
+
+  /** Stop on the sentence being heard; offer to resume from the next one. */
+  function stopAB(announce) {
+    if (!ab.running) return;
+    ab.running = false;
+    ab.gap = false;
+    ab.stoppedAt = Date.now();
+    wakeOff();
+    stopPlayback();
+    const s = seg();
+    const kids = s ? App.sentencesOf(s.parentId) : [];
+    const k = s ? kids.findIndex((x) => x.id === s.id) : -1;
+    ab.resumeId = k >= 0 && k + 1 < kids.length ? kids[k + 1].id : null;
+    setState(s && s.done ? 'done' : 'idle');
+    paintAB();
+    if (announce !== false && s) {
+      const n = App.globalIndexOf(s.id) + 1;
+      App.toast('Audiobook stopped — studying sentence ' + n + '.'
+        + (ab.resumeId ? ' ▶▶ Resume continues from ' + (n + 1) + '.' : ''));
+    }
+  }
+
+  /** The chapter ran out: stop, say so, offer the next — never play it. */
+  function abEnd() {
+    // the last crossing can fall between two frames of a short tail
+    if (ab.list.length && ab.i !== ab.list.length - 1) abShow(ab.list.length - 1);
+    ab.running = false;
+    ab.gap = false;
+    wakeOff();
+    if (st.player) stopPlayback();
+    ab.resumeId = null;
+    const s = seg();
+    ab.endCh = s ? App.chapterIndexOf(s.parentId) : null;
+    q('.js-playhead').style.left = '0%';
+    setState(s && s.done ? 'done' : 'idle');
+    paintPlayState();
+    paintAB();
+  }
+
+  function toggleAB() {
+    if (ab.running) { stopAB(); return; }
+    startAB(ab.resumeId || st.segId);
+  }
+
+  // What does NOT stop it: the ab controls themselves, and preferences that
+  // are not study actions (contours, the shortcut sheet, the autoplay chip,
+  // closing a panel).
+  const AB_PASS = new Set(['ab', 'ab-stop', 'ab-end-x', 'contour', 'help', 'autoplay-setting', 'panel']);
+  function abGuard(name, e) {
+    if (!ab.running) {
+      // any action dismisses the end-of-chapter bar (its own ✕ included)
+      if (ab.endCh != null && name !== 'ab-end-x') { ab.endCh = null; paintAB(); }
+      return false;
+    }
+    if (AB_PASS.has(name)) return false;
+    if (e && e.preventDefault && name === 'wave') e.preventDefault();
+    closeSheet();
+    stopAB();
+    return true;                           // the press only stops
   }
 
   // ── action dispatch ────────────────────────────────────────────────────
@@ -1208,11 +1482,17 @@ const Study = (() => {
     bind('.js-split-ok', 'split-ok', confirmSplit);
     // the chip flips the "Play sentence when opened" setting right here
     bind('.js-auto', 'autoplay-setting', () => {
-      App.setAutoplay(!App.autoplay);
+      App.setAutoplay(!App.autoplay).catch(() => { /* App toasted it */ });
       paintAuto();
       App.toast('Play sentence when opened: ' + (App.autoplay ? 'on' : 'off') + ' (a Settings preference)');
     });
     q('.js-save-error-x').addEventListener('click', () => q('.js-save-error').classList.add('hidden'));
+    // audiobook mode (D10)
+    setGuard(abGuard);
+    bind('.js-ab', 'ab', toggleAB);
+    bind('.js-ab-stop', 'ab-stop', () => stopAB());
+    bind('.js-ab-endnext', 'chnext', () => stepChapter(1));
+    bind('.js-ab-endx', 'ab-end-x', () => { ab.endCh = null; paintAB(); });
 
     qa('.js-more').forEach((b) => b.addEventListener('click', () => {
       revealNav(false);
@@ -1289,7 +1569,10 @@ const Study = (() => {
     });
     // phone: swipe the waveform for prev / next (not while splitting)
     let sx = null;
-    ww.addEventListener('touchstart', (e) => { sx = st.split ? null : e.touches[0].clientX; }, { passive: true });
+    // (not right after the same touch stopped audiobook mode, either)
+    ww.addEventListener('touchstart', (e) => {
+      sx = (st.split || ab.running || Date.now() - ab.stoppedAt < 500) ? null : e.touches[0].clientX;
+    }, { passive: true });
     ww.addEventListener('touchend', (e) => {
       if (sx === null || st.split) { sx = null; return; }
       const dx = e.changedTouches[0].clientX - sx;
@@ -1299,6 +1582,7 @@ const Study = (() => {
 
     paintAuto();
     paintPlayState();
+    paintAB();
   }
 
   function key(k, ev) {
@@ -1339,7 +1623,7 @@ const Study = (() => {
       case 't': run('tr', transcribe)(); break;
       case 'f': run('fl', formantLab)(); break;
       case 'u': run('jump', jumpUnfinished)(); break;
-      // 'l' — audiobook listen / resume: wired by task 8 (run('ab', …)).
+      case 'l': ev.preventDefault(); run('ab', toggleAB)(); break;
       case 'escape':
         if (document.body.classList.contains('nav-open')) { revealNav(false); return; }
         if (q('.js-sheet').classList.contains('open')) { closeSheet(); return; }
@@ -1369,6 +1653,6 @@ const Study = (() => {
 
   return {
     init, enter, adopt, leaveQuietly, openAt, key, render, retrim, paintContourState, paintAuto,
-    setGuard,
+    setGuard, forgetProvider,
   };
 })();

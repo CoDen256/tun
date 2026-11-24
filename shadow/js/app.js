@@ -1,8 +1,8 @@
 // app.js — the shell: one navigation, one open book, one keyboard.
 //
-// Four screens (Library · Explore · Study · Prepare) live under the single
-// nav at the top and nowhere else — no screen renders a second tab row
-// (task 8.1). Explore, Study and Prepare all read the SAME loaded book and
+// Five screens (Library · Explore · Study · Prepare, and ⚙ Settings, D9)
+// live under the single nav at the top and nowhere else — no screen renders
+// a second tab row (task 8.1). Explore, Study and Prepare all read the SAME loaded book and
 // the SAME active split config, so switching between them never refetches
 // and never disagrees.
 //
@@ -18,7 +18,10 @@ const App = (() => {
     explore: document.getElementById('s-explore'),
     study: document.getElementById('s-study'),
     prepare: document.getElementById('s-prepare'),
+    settings: document.getElementById('s-settings'),
   };
+  // screens that need no open book
+  const BOOKLESS = new Set(['library', 'settings']);
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const state = {
@@ -38,6 +41,9 @@ const App = (() => {
     // "Play sentence when opened" (D12), default ON. Stored under
     // `shadowAutoplay` {on} in the same store, loaded with the trim switch.
     autoplay: true,
+    // "Trim in audiobook mode" (D10), default OFF: natural tempo. Stored
+    // under `shadowAudiobookTrim` {on}.
+    abTrim: false,
     // `P`'s state. It must survive moving between sentences (task 3.5), so
     // it lives here and not in Study's per-sentence state; localStorage
     // carries it across reloads too.
@@ -46,43 +52,57 @@ const App = (() => {
 
   // ── toast, standing in for the alerts this page may not use ────────────
   let toastTimer = 0;
-  function toast(msg, bad) {
+  /** opts.undo — a function: the toast then carries an Undo button for its
+      lifetime (6 s), D15. The button runs it once and closes the toast. */
+  function toast(msg, bad, opts) {
     const el = document.getElementById('toast');
-    el.textContent = msg;
+    const undo = opts && typeof opts.undo === 'function' ? opts.undo : null;
+    el.textContent = '';
+    const txt = document.createElement('span');
+    txt.textContent = msg;
+    el.appendChild(txt);
+    if (undo) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mini go';
+      b.textContent = 'Undo';
+      b.addEventListener('click', () => { el.classList.add('hidden'); clearTimeout(toastTimer); undo(); }, { once: true });
+      el.appendChild(b);
+    }
     el.classList.toggle('bad', !!bad);
+    el.classList.toggle('has-undo', !!undo);
     el.classList.remove('hidden');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.add('hidden'), bad ? 7000 : 3500);
+    toastTimer = setTimeout(() => el.classList.add('hidden'), undo ? 6000 : (bad ? 7000 : 3500));
   }
 
-  // ── the trim preference ────────────────────────────────────────────────
+  // ── the playback preferences (shadow's own store, D168) ───────────────
+  // Each setter changes the state at once, repaints what depends on it and
+  // persists in the background; it RETURNS the save so the Settings screen
+  // can say "✓ saved" on its row only once the server has it.
   const TRIM_KEY = 'shadowTrimSilence';
+  const AUTOPLAY_KEY = 'shadowAutoplay';
+  const AB_TRIM_KEY = 'shadowAudiobookTrim';
 
-  function paintTrim() {
-    const sw = document.getElementById('trimSwitch');
-    if (sw) sw.setAttribute('aria-checked', String(state.trim));
-    const echo = document.getElementById('trimEcho');
-    if (echo) {
-      echo.textContent = state.trim
-        ? 'On — waveforms show the speech-only window.'
-        : 'Off — waveforms and playback cover the full untrimmed span, silence included.';
-    }
+  function persist(key, value, what) {
+    return Api.putSetting(key, value).catch((e) => {
+      toast('Could not save the ' + what + ' setting: ' + e.message, true);
+      throw e;
+    });
   }
 
   /** Change it, repaint the lanes, and persist. Doneness is NOT touched by
       this: progress is always computed from the full stored span. */
   function setTrim(on) {
     state.trim = !!on;
-    paintTrim();
     // retrim(), not render(): the lanes are being rewindowed, and a contour
     // drawn over the old window describes a duration that is about to stop
     // being on screen.
     if (typeof Study !== 'undefined' && state.screen === 'study') Study.retrim();
-    Api.putSetting(TRIM_KEY, { on: state.trim })
-      .catch((e) => toast('Could not save the trim setting: ' + e.message, true));
+    return persist(TRIM_KEY, { on: state.trim }, 'trim');
   }
 
-  async function loadTrim() {
+  async function loadSettings() {
     try {
       const all = await Api.getSettings();
       const stored = all && all[TRIM_KEY];
@@ -90,17 +110,52 @@ const App = (() => {
       state.trim = !(stored && stored.on === false);
       const auto = all && all[AUTOPLAY_KEY];
       state.autoplay = !(auto && auto.on === false);
-    } catch (e) { state.trim = true; state.autoplay = true; }
-    paintTrim();
+      // absent → the default, which is OFF (natural tempo)
+      const ab = all && all[AB_TRIM_KEY];
+      state.abTrim = !!(ab && ab.on === true);
+    } catch (e) { state.trim = true; state.autoplay = true; state.abTrim = false; }
   }
 
   // ── autoplay: "Play sentence when opened" (D12) ───────────────────────
-  const AUTOPLAY_KEY = 'shadowAutoplay';
   function setAutoplay(on) {
     state.autoplay = !!on;
     if (typeof Study !== 'undefined') Study.paintAuto();
-    Api.putSetting(AUTOPLAY_KEY, { on: state.autoplay })
-      .catch((e) => toast('Could not save the autoplay setting: ' + e.message, true));
+    return persist(AUTOPLAY_KEY, { on: state.autoplay }, 'autoplay');
+  }
+
+  // ── "Trim in audiobook mode" (D10) — read when a run starts ───────────
+  function setAbTrim(on) {
+    state.abTrim = !!on;
+    return persist(AB_TRIM_KEY, { on: state.abTrim }, 'audiobook trim');
+  }
+
+  // ── theme: a per-DEVICE preference (D168), never stored server-side ───
+  // 'system' is the absence of the attribute, so the media query decides.
+  const THEME_KEY = 'shadow.theme';
+  function storedTheme() {
+    try {
+      const v = localStorage.getItem(THEME_KEY);
+      return v === 'light' || v === 'dark' ? v : 'system';
+    } catch (e) { return 'system'; }
+  }
+  function applyTheme(pref) {
+    const r = document.documentElement;
+    if (pref === 'light' || pref === 'dark') r.setAttribute('data-theme', pref);
+    else r.removeAttribute('data-theme');
+  }
+  function setTheme(pref) {
+    const p = pref === 'light' || pref === 'dark' ? pref : 'system';
+    applyTheme(p);
+    try {
+      if (p === 'system') localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, p);
+    } catch (e) { /* private mode: it still applies for this page */ }
+    return p;
+  }
+
+  /** "Chapter N", or "Chapter N · Title" when the chapter has one (D15). */
+  function chapterLabel(ch, ci) {
+    if (ci == null || ci < 0) return '';
+    return 'Chapter ' + (ci + 1) + (ch && ch.title ? ' · ' + ch.title : '');
   }
 
   function setContours(on) {
@@ -112,12 +167,12 @@ const App = (() => {
   // ── navigation ─────────────────────────────────────────────────────────
   function show(name) {
     if (!screens[name]) return;
-    if (name !== 'library' && !state.book) {
+    if (!BOOKLESS.has(name) && !state.book) {
       toast('Open a book from the Library first.');
       name = 'library';
     }
     Object.keys(screens).forEach((k) => screens[k].classList.toggle('on', k === name));
-    document.querySelectorAll('#navLinks button').forEach((b) => {
+    document.querySelectorAll('.nav [data-go]').forEach((b) => {
       b.setAttribute('aria-selected', String(b.dataset.go === name));
     });
     state.screen = name;
@@ -131,6 +186,13 @@ const App = (() => {
     if (name === 'explore') Explore.render();
     if (name === 'study') Study.enter();
     if (name === 'prepare') Prepare.render();
+    if (name === 'settings') Settings.render();
+    // #settings is where the old settings.html lands, and a reload of the
+    // Settings screen stays on it; every other screen drops the fragment.
+    const want = name === 'settings' ? '#settings' : '';
+    if (location.hash !== want) {
+      try { history.replaceState(null, '', location.pathname + location.search + want); } catch (e) { /* file:// */ }
+    }
     if (name !== 'study') Study.leaveQuietly();
     window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
   }
@@ -182,25 +244,14 @@ const App = (() => {
 
   // ── boot ───────────────────────────────────────────────────────────────
   async function boot() {
-    // theme: the media query is the default, the stored choice wins both ways
-    const stored = localStorage.getItem('shadow.theme');
-    if (stored) document.documentElement.setAttribute('data-theme', stored);
-    document.getElementById('themeBtn').addEventListener('click', () => {
-      const r = document.documentElement;
-      let cur = r.getAttribute('data-theme');
-      if (!cur) cur = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      const next = cur === 'dark' ? 'light' : 'dark';
-      r.setAttribute('data-theme', next);
-      localStorage.setItem('shadow.theme', next);
-    });
+    // theme: System (no attribute — the media query decides), Light or
+    // Dark, chosen in Settings and stored on this device only
+    applyTheme(storedTheme());
 
     document.addEventListener('click', (e) => {
       const t = e.target.closest && e.target.closest('[data-go]');
       if (t) { e.preventDefault(); show(t.dataset.go); }
     });
-
-    const trimRow = document.getElementById('trimRow');
-    if (trimRow) trimRow.addEventListener('click', () => setTrim(!state.trim));
 
     document.getElementById('koverClose').addEventListener('click', () => overlay(false));
     kover.addEventListener('click', (e) => { if (e.target === kover) overlay(false); });
@@ -219,12 +270,13 @@ const App = (() => {
     });
 
     // No profile picker (D168): shadow is single-user.
-    await loadTrim();
+    await loadSettings();
 
     Library.init();
     Explore.init();
     Study.init();
     Prepare.init();
+    Settings.init();
 
     await Library.refresh();
 
@@ -232,13 +284,16 @@ const App = (() => {
     if (wanted) {
       try { await openBook(wanted, 'study'); } catch (err) { toast('Could not open that book: ' + err.message, true); }
     }
+    if (location.hash === '#settings') show('settings');
   }
 
   return {
     state, show, toast, openBook, refreshBook, overlay, boot, reduced,
-    chapterIndexOf, globalIndexOf, setTrim, setContours, setAutoplay,
+    chapterIndexOf, globalIndexOf, setTrim, setContours, setAutoplay, setAbTrim,
+    setTheme, storedTheme, chapterLabel,
     get trim() { return state.trim; },
     get autoplay() { return state.autoplay; },
+    get abTrim() { return state.abTrim; },
     get contours() { return state.contours; },
     get userId() { return state.userId; },
     get book() { return state.book; },

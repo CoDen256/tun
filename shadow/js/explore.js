@@ -164,7 +164,8 @@ const Explore = (() => {
       toggle.className = 'exch-toggle';
       toggle.innerHTML = '<span class="caret">▸</span><span class="exch-name"></span>'
         + `<span class="exch-meta num">${Fmt.clock(ch.endMs - ch.startMs)}</span>`;
-      toggle.querySelector('.exch-name').textContent = `Chapter ${ci + 1}`;
+      // "Chapter N · Title" when titled (D15, task 9.3)
+      toggle.querySelector('.exch-name').textContent = App.chapterLabel(ch, ci);
       toggle.addEventListener('click', () => {
         if (openChapters.has(ch.id)) openChapters.delete(ch.id); else openChapters.add(ch.id);
         render();

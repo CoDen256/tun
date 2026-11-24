@@ -28,7 +28,9 @@ WHAT MOVED AND WHY EACH PIECE IS HERE
   vowel chart, which was half the point of the split.
 * the shadowing pages — shadow.html and settings.html. settings.html is
   entirely shadowing: a transcription-provider form and a shadowing-progress
-  list, nothing about vowels.
+  list, nothing about vowels. (CORRECTION, 2026-11-24, D9 of
+  shadow-playback-chapter-reading: settings.html is now only a relative
+  redirect to shadow.html#settings — Settings is a screen of the app.)
 
 WHAT SHADOW NEEDS FROM PHONEXA — see phonexa_client.py's docstring for the
 whole finding. Short version: NOT audio storage — but note that the

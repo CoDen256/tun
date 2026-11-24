@@ -7,6 +7,15 @@
 // already ticked. The one-line explainer at the top of the screen says so.
 //
 // Every destructive action confirms in-page. There is no confirm() here.
+//
+// Chapter editing (D15, mockups/settings-prepare.html screen B): inside an
+// open chapter, the seam between two sentences offers "⤒ Start new chapter
+// here" on hover (or pinned, for touch, by "⤒ Show chapter breaks"); each
+// chapter header but the last offers "⇣ Merge with next chapter"; "✎ Title"
+// names a chapter inline. Each confirms in the page, and the toast after it
+// offers Undo — the inverse server call, flagged `undo` so the config's
+// manual-edit count goes back down. These are edits of the ACTIVE config
+// only; sentence spans and progress never change.
 
 const Prepare = (() => {
   'use strict';
@@ -20,8 +29,25 @@ const Prepare = (() => {
 
   const openChapters = new Set();
   let poll = 0;
+  // the one in-page chapter confirm open: {kind:'gap', ch, sid} |
+  // {kind:'mergech', ch} | {kind:'rename', ch}
+  let pending = null;
+  let gapsPinned = false;
+  let flashId = null;
+  let busy = false;
 
-  function reset() { openChapters.clear(); }
+  function reset() { openChapters.clear(); pending = null; }
+
+  function esc(t) {
+    return String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  /** m:ss.s — the confirm names the new chapter's start to a tenth. */
+  function clockDec(ms) {
+    const t = Math.max(0, ms || 0) / 1000;
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+    const ss = sec.toFixed(1).padStart(4, '0');
+    return h ? h + ':' + String(m).padStart(2, '0') + ':' + ss : m + ':' + ss;
+  }
 
   function activeConfig() {
     const book = App.book;
@@ -55,7 +81,11 @@ const Prepare = (() => {
         + '</div>'
         + `<div class="cfg-meta num">${cfg.sentenceSilenceMs} ms sentence · ${cfg.chapterSilenceMs} ms chapter`
         + ` &nbsp;·&nbsp; ${cfg.chapterCount} chapters · ${Fmt.int(cfg.sentenceCount)} sentences`
-        + ` &nbsp;·&nbsp; <span class="done-n">${Fmt.int(cfg.doneCount)} done</span></div>`
+        + ` &nbsp;·&nbsp; <span class="done-n">${Fmt.int(cfg.doneCount)} done</span>`
+        + (cfg.manualEditCount
+          ? ` &nbsp;·&nbsp; <span class="ed">✎ ${cfg.manualEditCount} manual edit${cfg.manualEditCount === 1 ? '' : 's'}</span>`
+          : '')
+        + '</div>'
         + (cfg.analysisError ? `<div class="quiet" style="font-size:.8rem">${cfg.analysisError}</div>` : '');
       main.querySelector('.nm').textContent = cfg.name;
 
@@ -143,10 +173,11 @@ const Prepare = (() => {
             + '</div>'
             + '<div class="row-actions"><button class="mini go" data-x="run" type="button">Re-analyse</button>'
             + '<button class="mini" data-x="no" type="button">Cancel</button></div>'
-            + `<div class="warn hidden"><b>Re-analysing rebuilds every boundary in “${cfg.name}” — any manual `
-            + 'splits and merges you made in THIS config are discarded.</b>'
+            + `<div class="warn hidden"><b>Re-analysing rebuilds every boundary in “${esc(cfg.name)}” — any manual `
+            + 'splits, merges, <u>chapter breaks, chapter merges and chapter titles</u> you made in THIS config are discarded'
+            + (cfg.manualEditCount ? ` (${cfg.manualEditCount} edit${cfg.manualEditCount === 1 ? '' : 's'})` : '') + '.</b>'
             + '<div class="quiet" style="margin-top:.3rem">Other configs are untouched, and your completed time ranges '
-            + 'stay on the book — the new boundaries inherit them straight away.</div>'
+            + 'stay on the book.</div>'
             + '<div class="acts"><button class="danger" data-x="confirm" type="button">Re-analyse anyway</button>'
             + '<button class="mini" data-x="no" type="button">Cancel</button></div></div></div>';
           const i1 = extra.querySelector('.i1'), i2 = extra.querySelector('.i2');
@@ -179,6 +210,7 @@ const Prepare = (() => {
 
     const act = activeConfig();
     activeNameEl.textContent = act ? act.name : '—';
+    document.querySelectorAll('#s-prepare .js-actname2').forEach((e) => { e.textContent = act ? act.name : '—'; });
   }
 
   // ── the sentence rows ──────────────────────────────────────────────────
@@ -188,11 +220,13 @@ const Prepare = (() => {
     return Wave.svg(entry.peaks, from, from + s.durationMs, 46);
   }
 
-  function renderRows(body, chapter) {
+  function renderRows(body, chapter, ci) {
     const entry = ChapterAudio.peek(chapter.id);
     const kids = App.sentencesOf(chapter.id);
     body.innerHTML = '';
     kids.forEach((s, ri) => {
+      // the seam BEFORE this sentence: a possible chapter break (D15)
+      if (ri > 0) body.appendChild(gapEl(chapter, ci, kids, ri));
       const el = document.createElement('div');
       el.className = 'prow' + (s.done ? ' done' : '');
       el.innerHTML =
@@ -239,7 +273,13 @@ const Prepare = (() => {
         if (!b) return;
         if (b.dataset.a === 'merge') {
           const next = kids[ri + 1];
-          if (!next) { App.toast('Nothing after this one in this chapter.'); return; }
+          if (!next) {
+            // a sentence merge never crosses a chapter boundary (D15)
+            App.toast(ci < App.chapters.length - 1
+              ? 'Last sentence of this chapter — merge the chapters first.'
+              : 'Last sentence of the book — there is nothing after it to merge.');
+            return;
+          }
           try { await Api.mergeSegments(s.id, next.id); await afterEdit(chapter.id); }
           catch (err) { App.toast('Could not merge: ' + err.message, true); }
           return;
@@ -293,40 +333,239 @@ const Prepare = (() => {
     Explore.render();
   }
 
+  // ── chapter editing (D15) ───────────────────────────────────────────────
+  /** The seam before sentence `ri`: hover/pinned "⤒ Start new chapter here",
+      or, once pressed, the in-page confirm. */
+  function gapEl(ch, ci, kids, ri) {
+    const s = kids[ri];
+    const wrap = document.createElement('div');
+    if (pending && pending.kind === 'gap' && pending.ch === ch.id && pending.sid === s.id) {
+      const n = App.chapters.length;
+      const left = kids.length - ri;
+      wrap.className = 'gap-confirm';
+      wrap.innerHTML = '<div class="confirm"><b class="h">Start a new chapter at sentence ' + (ri + 1) + '?</b><ul>'
+        + '<li>Chapter ' + (ci + 1) + ' keeps sentences <b>1–' + ri + '</b> · ' + Fmt.clock(s.startMs - ch.startMs) + '</li>'
+        + '<li>New <b>Chapter ' + (ci + 2) + '</b> starts at <b class="num">' + clockDec(s.startMs) + '</b> with '
+        + left + ' sentence' + (left === 1 ? '' : 's') + ' · ' + Fmt.clock(ch.endMs - s.startMs) + '</li>'
+        + (ci + 2 <= n ? '<li>Chapters ' + (ci + 2) + '–' + n + ' become ' + (ci + 3) + '–' + (n + 1) + '.</li>' : '')
+        + '</ul><div class="acts"><button class="btn-go" type="button" data-x="gap-ok">Start new chapter</button>'
+        + '<button class="mini" type="button" data-x="cancel">Cancel</button>'
+        + '<button class="sprev hear" type="button" data-x="hear" title="hear the boundary: end of one, start of the next">▶ hear the boundary</button>'
+        + '</div></div>';
+      wrap.addEventListener('click', (e) => {
+        const t = e.target.closest('[data-x]');
+        if (!t) return;
+        if (t.dataset.x === 'cancel') { pending = null; renderChapters(); return; }
+        if (t.dataset.x === 'hear') { hearBoundary(ch, s, t); return; }
+        if (t.dataset.x === 'gap-ok') doBreak(ch, ci, s, ri, t);
+      });
+      return wrap;
+    }
+    wrap.className = 'gap';
+    wrap.innerHTML = '<span class="hit" data-g="1"></span><span class="line"></span>'
+      + '<button class="gbtn" type="button" data-g="1">⤒ Start new chapter here</button>';
+    wrap.addEventListener('click', (e) => {
+      if (!e.target.closest('[data-g]')) return;
+      pending = { kind: 'gap', ch: ch.id, sid: s.id };
+      renderChapters();
+    });
+    return wrap;
+  }
+
+  /** ~2 s either side of the seam, through the shared player. */
+  function hearBoundary(ch, s, btn) {
+    const go = (entry) => {
+      const off = Player.offsetOf(entry, ch, s);
+      btn.textContent = '▶ …playing 2 s either side';
+      Player.chapter(entry, Math.max(0, off - 2000), off + 2000, {
+        owner: 'boundary:' + s.id,
+        onEnd: () => { btn.textContent = '▶ hear the boundary'; },
+        onError: (e) => App.toast('Playback failed: ' + (e.message || e), true),
+      });
+    };
+    if (App.book.audioState !== 'ready') { App.toast('This book has no stored audio.'); return; }
+    const ready = ChapterAudio.peek(ch.id);
+    if (ready) { go(ready); return; }
+    btn.textContent = '▶ loading…';
+    ChapterAudio.ensure(ch.id, App.userId).then(go).catch((e) => {
+      btn.textContent = '▶ hear the boundary';
+      App.toast('Chapter audio unavailable: ' + e.message, true);
+    });
+  }
+
+  /** Run one chapter edit; boundary edits invalidate the cached chunks
+      (they are keyed by boundaries), a title does not. */
+  async function chapterEdit(btn, call, boundaries) {
+    if (busy) return null;
+    busy = true;
+    if (btn) btn.disabled = true;
+    try {
+      const res = await call();
+      pending = null;
+      if (boundaries) { Player.stopAll(); ChapterAudio.clear(); }
+      await App.refreshBook();
+      render();
+      Study.adopt();
+      Explore.render();
+      if (boundaries) loadOpenChapters();
+      return res;
+    } catch (e) {
+      App.toast(e.message, true);
+      if (btn) btn.disabled = false;
+      return null;
+    } finally { busy = false; }
+  }
+
+  function loadOpenChapters() {
+    if (!App.book || App.book.audioState !== 'ready') return;
+    App.chapters.filter((c) => openChapters.has(c.id) && !ChapterAudio.peek(c.id)).forEach((c) => {
+      ChapterAudio.ensure(c.id, App.userId).then(() => { if (App.state.screen === 'prepare') renderChapters(); })
+        .catch(() => { /* the rows say "no waveform"; ▶ will retry */ });
+    });
+  }
+
+  function undone(res) { if (res) App.toast('Undone.'); }
+
+  async function doBreak(ch, ci, s, ri, btn) {
+    const n = App.chapters.length;
+    const res = await chapterEdit(btn, () => Api.breakChapter(ch.id, { sentenceId: s.id }), true);
+    if (!res) return;
+    openChapters.add(ch.id);
+    openChapters.add(res.second.id);
+    flashId = res.second.id;
+    renderChapters();
+    App.toast(`Chapter ${ci + 1} divided — Chapter ${ci + 2} starts at its sentence ${ri + 1}. ${n + 1} chapters now.`, false, {
+      undo: async () => {
+        const r = await chapterEdit(null, () => Api.mergeChapterNext(ch.id, { undo: true }), true);
+        undone(r);
+      },
+    });
+  }
+
+  async function doMergeChapters(ch, ci, btn) {
+    const n = App.chapters.length;
+    const res = await chapterEdit(btn, () => Api.mergeChapterNext(ch.id), true);
+    if (!res) return;
+    openChapters.add(res.merged.id);
+    flashId = res.merged.id;
+    renderChapters();
+    const back = res.boundarySentenceId;
+    App.toast(`Chapters ${ci + 1} and ${ci + 2} merged. ${n - 1} chapters now.`, false, back ? {
+      undo: async () => {
+        const r = await chapterEdit(null, () => Api.breakChapter(res.merged.id, {
+          sentenceId: back, firstTitle: res.firstTitle, title: res.secondTitle, undo: true,
+        }), true);
+        undone(r);
+      },
+    } : null);
+  }
+
+  async function doTitle(ch, ci, raw, btn) {
+    const val = (raw || '').trim();
+    if (val === (ch.title || '')) { pending = null; renderChapters(); return; }
+    const res = await chapterEdit(btn, () => Api.setChapterTitle(ch.id, val || null), false);
+    if (!res) return;
+    const prev = res.previousTitle == null ? null : res.previousTitle;
+    App.toast(val ? `Chapter ${ci + 1} titled “${val}”.` : 'Title removed.', false, {
+      undo: async () => {
+        const r = await chapterEdit(null, () => Api.setChapterTitle(ch.id, prev, true), false);
+        undone(r);
+      },
+    });
+  }
+
   function renderChapters() {
     chBox.innerHTML = '';
+    chBox.classList.toggle('show-gaps', gapsPinned);
+    const n = App.chapters.length;
     App.chapters.forEach((ch, ci) => {
       const kids = App.sentencesOf(ch.id);
       const done = kids.filter((s) => s.done).length;
       const isOpen = openChapters.has(ch.id);
+      const last = ci === n - 1;
 
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'chapter-row';
-      row.setAttribute('aria-expanded', String(isOpen));
-      row.innerHTML = '<span class="caret">▸</span><span class="nm"></span>'
-        + `<span class="st num">${kids.length} sentences · ${done} done · ${Fmt.clock(ch.endMs - ch.startMs)}</span>`;
-      row.querySelector('.nm').textContent = `Chapter ${ci + 1}`;
+      const chap = document.createElement('div');
+      chap.className = 'chap' + (isOpen ? ' open' : '') + (flashId === ch.id ? ' flash' : '');
+      chap.innerHTML = '<div class="chead">'
+        + `<button class="ch-toggle" type="button" data-a="toggle" aria-expanded="${isOpen}"><span class="caret">▸</span>`
+        + `<span class="nm">Chapter ${ci + 1}</span>${ch.title ? '<span class="ttl">' + esc(ch.title) + '</span>' : ''}</button>`
+        + `<span class="st num">${kids.length} sentences · ${done} done · ${Fmt.clock(ch.endMs - ch.startMs)}</span>`
+        + '<span class="ch-acts"><button class="mini" type="button" data-a="rename">✎ Title</button>'
+        + (last ? '' : '<button class="mini" type="button" data-a="mergech">⇣ Merge with next chapter</button>')
+        + '</span></div><div class="ch-extra"></div>';
 
-      const body = document.createElement('div');
-      body.className = 'prows' + (isOpen ? '' : ' hidden');
+      const extra = chap.querySelector('.ch-extra');
+      const p = pending && pending.ch === ch.id ? pending : null;
+      if (p && p.kind === 'rename') {
+        extra.innerHTML = '<div class="confirm"><b class="h">Title for Chapter ' + (ci + 1) + '</b>'
+          + '<div class="row-actions" style="margin-top:.2rem"><input type="text" class="js-title-in" placeholder="e.g. Første del" style="flex:1 1 180px">'
+          + '<button class="btn-go" type="button" data-x="rn-ok">Save</button>'
+          + (ch.title ? '<button class="mini" type="button" data-x="rn-clear">Remove title</button>' : '')
+          + '<button class="mini" type="button" data-x="cancel">Cancel</button></div>'
+          + '<div class="quiet" style="font-size:.78rem;margin-top:.45rem">The number stays automatic (“Chapter ' + (ci + 1)
+          + '”) and renumbers with breaks; the title travels with the chapter. Shown in Study’s top bar and in Explore.</div></div>';
+      } else if (p && p.kind === 'mergech' && !last) {
+        const nx = App.chapters[ci + 1];
+        const total = kids.length + App.sentencesOf(nx.id).length;
+        const keep = ch.title || nx.title;
+        extra.innerHTML = '<div class="confirm"><b class="h">Merge Chapter ' + (ci + 1) + ' with Chapter ' + (ci + 2) + '?</b><ul>'
+          + '<li>One chapter of <b>' + total + ' sentences</b> · ' + Fmt.clock(nx.endMs - ch.startMs) + '</li>'
+          + (ci + 3 <= n ? '<li>Chapters ' + (ci + 3) + '–' + n + ' become ' + (ci + 2) + '–' + (n - 1) + '.</li>' : '')
+          + (keep ? '<li>Keeps the title “' + esc(keep) + '”.</li>' : '')
+          + '<li>Sentences and progress are untouched — only the chapter boundary goes.</li></ul>'
+          + '<div class="acts"><button class="btn-go" type="button" data-x="mc-ok">Merge chapters</button>'
+          + '<button class="mini" type="button" data-x="cancel">Cancel</button></div></div>';
+      }
 
-      row.addEventListener('click', async () => {
-        if (openChapters.has(ch.id)) { openChapters.delete(ch.id); render(); return; }
-        openChapters.add(ch.id);
-        render();
-        if (App.book.audioState === 'ready' && !ChapterAudio.peek(ch.id)) {
-          try { await ChapterAudio.ensure(ch.id, App.userId); render(); }
-          catch (e) { App.toast('Chapter audio unavailable: ' + e.message, true); }
+      chap.querySelector('.chead').addEventListener('click', async (e) => {
+        const t = e.target.closest('[data-a]');
+        if (!t) return;
+        const a = t.dataset.a;
+        if (a === 'toggle') {
+          if (openChapters.has(ch.id)) { openChapters.delete(ch.id); renderChapters(); return; }
+          openChapters.add(ch.id);
+          renderChapters();
+          if (App.book.audioState === 'ready' && !ChapterAudio.peek(ch.id)) {
+            try { await ChapterAudio.ensure(ch.id, App.userId); renderChapters(); }
+            catch (err) { App.toast('Chapter audio unavailable: ' + err.message, true); }
+          }
+          return;
         }
+        const same = pending && pending.kind === a && pending.ch === ch.id;
+        pending = same ? null : { kind: a, ch: ch.id };
+        renderChapters();
       });
+      extra.addEventListener('click', (e) => {
+        const t = e.target.closest('[data-x]');
+        if (!t) return;
+        const x = t.dataset.x;
+        if (x === 'cancel') { pending = null; renderChapters(); return; }
+        if (x === 'rn-ok') { doTitle(ch, ci, extra.querySelector('.js-title-in').value, t); return; }
+        if (x === 'rn-clear') { doTitle(ch, ci, '', t); return; }
+        if (x === 'mc-ok') doMergeChapters(ch, ci, t);
+      });
+      chBox.appendChild(chap);
 
-      if (isOpen) renderRows(body, ch);
+      const inp = extra.querySelector('.js-title-in');
+      if (inp) {
+        inp.value = ch.title || '';
+        inp.focus();
+        inp.select();
+        inp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); doTitle(ch, ci, inp.value, extra.querySelector('[data-x="rn-ok"]')); }
+          if (e.key === 'Escape') { e.preventDefault(); pending = null; renderChapters(); }
+        });
+      }
 
-      chBox.appendChild(row);
-      chBox.appendChild(body);
+      if (isOpen) {
+        const body = document.createElement('div');
+        body.className = 'prows';
+        renderRows(body, ch, ci);
+        chap.appendChild(body);
+      }
     });
-    if (!App.chapters.length) chBox.innerHTML = '<div class="empty">No boundaries yet — create a split config and analyse.</div>';
+    flashId = null;
+    if (!n) chBox.innerHTML = '<div class="empty">No boundaries yet — create a split config and analyse.</div>';
   }
 
   function render() {
@@ -345,6 +584,13 @@ const Prepare = (() => {
   }
 
   function init() {
+    const gt = document.getElementById('gapToggle');
+    gt.addEventListener('click', () => {
+      gapsPinned = !gapsPinned;
+      gt.setAttribute('aria-pressed', String(gapsPinned));
+      gt.textContent = gapsPinned ? '⤒ Hide chapter breaks' : '⤒ Show chapter breaks';
+      renderChapters();
+    });
     const upd = () => {
       document.getElementById('p1').textContent = r1.value;
       document.getElementById('p2').textContent = r2.value;

@@ -1,92 +1,142 @@
-// ─── Settings page ───────────────────────────────────────────────────────
-// Transcription provider (smia STT, used by Shadowing) and a read-only
-// Shadowing progress overview.
+// settings.js — the Settings screen (D9, mockups/settings-prepare.html A).
 //
-// D168: no profiles and no picker any more, and /api/v1/settings is
-// shadow's OWN store (appsettings.py), no longer a proxy to phonexa — so
-// saving works with phonexa down. (This page is replaced by the in-app
-// Settings screen later in shadow-playback-chapter-reading, task 6.1.)
+// A fifth screen of the one page, opened from ⚙ in the nav. It replaces the
+// separate settings.html page, which now only redirects here.
+//
+//   Appearance    theme System / Light / Dark — THIS DEVICE ONLY (browser
+//                 storage); System is the absence of a choice.
+//   Playback      trim silence · play sentence when opened · trim in
+//                 audiobook mode — shadow's own settings store (D168).
+//   Transcription the STT provider; the list comes from smia, and when smia
+//                 cannot be reached only the saved choice is offered.
+//   Books         a read-only overview, collapsed by default.
+//
+// Every change saves the moment it is made and acknowledges on its own row
+// ("✓ saved"). There is no Save button and no browser dialog.
 
-const DEFAULT_TRANSCRIBE_PROVIDER = 'hf_whisper';
+const Settings = (() => {
+  'use strict';
 
-// The stored value's shape is now {provider}. A pre-smia value ({backend, url,
-// hfToken, hfModel}) has no provider → default; the rest is ignored and is
-// dropped for good the next time the form is saved (save writes a fresh object).
-async function loadTranscribeSettings() {
-  const res = await fetch(`${API_BASE}/api/v1/settings`);
-  const all = res.ok ? await res.json() : {};
-  const stored = all.transcribeBackend || {};
-  return { provider: (typeof stored.provider === 'string' && stored.provider) || DEFAULT_TRANSCRIBE_PROVIDER };
-}
+  const root = document.getElementById('s-settings');
+  const q = (s) => root.querySelector(s);
+  const qa = (s) => Array.prototype.slice.call(root.querySelectorAll(s));
 
-// Providers come from smia (via shadow's /transcribe/providers), so a new
-// smia provider shows up here with no shadow change. If smia can't be
-// reached, still show the saved choice so the form stays usable.
-async function renderTranscribeForm() {
-  const cfg = await loadTranscribeSettings();
-  const select = document.getElementById('providerSelect');
-  const note = document.getElementById('providerNote');
-  let providers = [];
-  note.textContent = '';
-  try {
-    const r = await fetch(API_BASE + '/transcribe/providers', { signal: AbortSignal.timeout(6000) });
-    const data = await r.json().catch(() => ({}));
-    if (r.ok) providers = data.providers || [];
-    else note.textContent = `⚠ ${data.error || 'HTTP ' + r.status}`;
-  } catch (e) {
-    note.textContent = '⚠ smia not reachable — showing your saved choice only';
+  const DEFAULT_PROVIDER = 'hf_whisper';
+  let provider = DEFAULT_PROVIDER;
+
+  function esc(t) {
+    return String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
-  if (!providers.includes(cfg.provider)) providers = [cfg.provider, ...providers];
-  select.innerHTML = providers.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
-  select.value = cfg.provider;
-}
 
-async function saveTranscribeForm() {
-  const value = { provider: document.getElementById('providerSelect').value || DEFAULT_TRANSCRIBE_PROVIDER };
-  const status = document.getElementById('transcribeSaveStatus');
-  status.textContent = 'Saving…';
-  try {
-    const res = await fetch(`${API_BASE}/api/v1/settings/transcribeBackend`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value }),
+  // ── "✓ saved", on the row that changed ────────────────────────────────
+  const savedT = {};
+  function flashSaved(key) {
+    const el = q('[data-saved="' + key + '"]');
+    if (!el) return;
+    el.classList.add('on');
+    clearTimeout(savedT[key]);
+    savedT[key] = setTimeout(() => el.classList.remove('on'), 1600);
+  }
+
+  // ── Appearance ─────────────────────────────────────────────────────────
+  function paintTheme(pref) {
+    qa('#themeSeg button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === pref)));
+  }
+
+  // ── Playback ───────────────────────────────────────────────────────────
+  const ECHO = {
+    trim: ['On — waveforms show the speech-only window.', 'Off — sentences and takes play with their full silence.'],
+    autoplay: ['On — ← / → / Done & next start the new sentence playing.', 'Off — a new sentence waits for ▶ / space.'],
+    abtrim: ['On — audiobook mode skips the pauses between sentences.', 'Off — natural tempo, every pause exactly as recorded.'],
+  };
+  const VALUE = { trim: () => App.trim, autoplay: () => App.autoplay, abtrim: () => App.abTrim };
+  const SETTER = { trim: (v) => App.setTrim(v), autoplay: (v) => App.setAutoplay(v), abtrim: (v) => App.setAbTrim(v) };
+
+  function paintSwitches() {
+    qa('[data-sw]').forEach((row) => {
+      const k = row.dataset.sw, on = !!VALUE[k]();
+      row.querySelector('.switch').setAttribute('aria-checked', String(on));
+      q('[data-echo="' + k + '"]').textContent = ECHO[k][on ? 0 : 1];
     });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    status.textContent = '✓ Saved';
-    setTimeout(() => { status.textContent = ''; }, 2000);
-  } catch (e) {
-    status.textContent = 'Failed to save: ' + e.message;
   }
-}
 
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-function secToClock(sec) {
-  sec = Math.max(0, sec);
-  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60);
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
-}
+  // ── Transcription ──────────────────────────────────────────────────────
+  async function renderStt() {
+    const sel = q('#sttSel'), reach = q('#reach'), txt = q('#reachTxt');
+    reach.classList.remove('bad');
+    reach.classList.add('wait');
+    txt.textContent = 'asking smia…';
+    try {
+      const all = await Api.getSettings();
+      const stored = (all && all.transcribeBackend) || {};
+      provider = (typeof stored.provider === 'string' && stored.provider) || DEFAULT_PROVIDER;
+    } catch (e) { /* keep what we had */ }
+    let list = null;
+    try {
+      const r = await fetch(API_BASE + '/transcribe/providers', { signal: AbortSignal.timeout(6000) });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok && Array.isArray(data.providers)) list = data.providers;
+    } catch (e) { list = null; }
+    reach.classList.remove('wait');
+    if (list) {
+      const n = list.length;
+      if (!list.includes(provider)) list = [provider].concat(list);
+      txt.textContent = 'smia reachable ✓ · ' + n + ' provider' + (n === 1 ? '' : 's');
+    } else {
+      // smia down: the saved choice is all there is to show
+      list = [provider];
+      reach.classList.add('bad');
+      txt.textContent = 'smia unreachable ⚠ — showing your saved choice only';
+    }
+    sel.innerHTML = list.map((p) => '<option value="' + esc(p) + '">' + esc(p) + '</option>').join('');
+    sel.value = provider;
+  }
 
-async function renderShadowingProgress() {
-  const el = document.getElementById('shadowingProgressList');
-  const media = await fetch(`${API_BASE}/api/v1/shadowing/media`).then(r => r.ok ? r.json() : []).catch(() => []);
-  if (!media.length) { el.innerHTML = '<div class="cache-empty">No Shadowing uploads yet</div>'; return; }
-  el.innerHTML = media.map(m => {
-    const pct = m.sentenceCount ? Math.round(100 * m.doneCount / m.sentenceCount) : 0;
-    const progressText = m.sentenceCount
-      ? `${m.doneCount}/${m.sentenceCount} sentences done (${pct}%) · ${m.chapterCount} chapter${m.chapterCount === 1 ? '' : 's'}`
-      : 'Not split yet';
-    return `
-      <div class="cache-item">
-        <span class="cache-name">${escapeHtml(m.originalFilename || '(unnamed)')}</span>
-        <span class="cache-n">${secToClock((m.durationMs || 0) / 1000)} · ${progressText}</span>
-        <a class="sent-btn" href="shadow.html?mediaId=${m.id}">▶ Open in Shadowing</a>
-      </div>`;
-  }).join('');
-}
+  // ── Books (read-only) ──────────────────────────────────────────────────
+  async function renderBooks() {
+    let books = App.state.books || [];
+    try { books = await Api.listMedia(); } catch (e) { /* the Library's copy will do */ }
+    q('#setBooksCt').textContent = books.length + ' book' + (books.length === 1 ? '' : 's');
+    q('#setBooks').innerHTML = books.map((b) => {
+      const n = b.sentenceCount || 0, done = b.doneCount || 0;
+      const p = n ? Math.round((100 * done) / n) : 0;
+      return '<div class="brow"><span class="t">' + esc(b.title || b.originalFilename || '(unnamed)') + '</span>'
+        + '<span class="r num"><b style="font-weight:560">' + (n ? p + '%' : '—') + '</b></span>'
+        + '<span class="m num">' + Fmt.clock(b.durationMs) + ' · '
+        + (n ? Fmt.int(done) + ' / ' + Fmt.int(n) + ' sentences' : 'not split yet') + '</span>'
+        + '<span class="m"></span>'
+        + '<div class="bar"><i style="width:' + p + '%"></i></div></div>';
+    }).join('') || '<div class="brow"><span class="m">No books yet.</span></div>';
+  }
 
-document.addEventListener('DOMContentLoaded', async () => {
-  document.getElementById('saveTranscribeBtn').addEventListener('click', saveTranscribeForm);
+  function render() {
+    paintTheme(App.storedTheme());
+    paintSwitches();
+    renderStt();
+    renderBooks();
+  }
 
-  await renderTranscribeForm();
-  await renderShadowingProgress();
-});
+  function init() {
+    qa('#themeSeg button').forEach((b) => b.addEventListener('click', () => {
+      paintTheme(App.setTheme(b.dataset.v));
+      flashSaved('theme');
+    }));
+    qa('[data-sw]').forEach((row) => row.addEventListener('click', () => {
+      const k = row.dataset.sw;
+      const save = SETTER[k](!VALUE[k]());
+      paintSwitches();
+      save.then(() => flashSaved(k)).catch(() => { /* App toasted it */ });
+    }));
+    q('#sttSel').addEventListener('change', (e) => {
+      const p = e.target.value || DEFAULT_PROVIDER;
+      Api.putSetting('transcribeBackend', { provider: p }).then(() => {
+        provider = p;
+        if (typeof Study !== 'undefined' && Study.forgetProvider) Study.forgetProvider();
+        flashSaved('stt');
+      }).catch((err) => App.toast('Could not save the provider: ' + err.message, true));
+    });
+    paintSwitches();
+  }
+
+  return { init, render };
+})();

@@ -32,8 +32,8 @@
 
 ## 6. Settings screen
 
-- [ ] 6.1 Settings as an in-app screen from ⚙ (mockups/settings-prepare.html screen A): Appearance/Playback/Transcription/Books groups, instant save with per-row ✓; old settings.html redirects to it — verify A8.1–A8.4
-- [ ] 6.2 Remove ◐ from the nav and the trim card from Library; theme System/Light/Dark per device — verify A8.5, A1.6
+- [x] 6.1 Settings as an in-app screen from ⚙ (mockups/settings-prepare.html screen A): Appearance/Playback/Transcription/Books groups, instant save with per-row ✓; old settings.html redirects to it — verify A8.1–A8.4
+- [x] 6.2 Remove ◐ from the nav and the trim card from Library; theme System/Light/Dark per device — verify A8.5, A1.6
 
 ## 7. Study screen (mockups/study.html)
 
@@ -45,15 +45,15 @@
 
 ## 8. Audiobook mode
 
-- [ ] 8.1 ▶▶ Listen / Resume control, `L`; continuous chapter playback when untrimmed, trimmed sentences back to back when trimmed; boundary tracking drives sentence/counter/waveform/playhead and cursor; never marks done — verify A10.1–A10.4
-- [ ] 8.2 Banner (desktop/phone), phone full-width stop, wake lock — verify A10.5, A10.6
-- [ ] 8.3 Stop paths (Stop, Space, Esc, waveform tap, any study action, stop-only press), resume from N+1, end-of-chapter stop — verify A10.7–A10.10
+- [x] 8.1 ▶▶ Listen / Resume control, `L`; continuous chapter playback when untrimmed, trimmed sentences back to back when trimmed; boundary tracking drives sentence/counter/waveform/playhead and cursor; never marks done — verify A10.1–A10.4
+- [x] 8.2 Banner (desktop/phone), phone full-width stop, wake lock — verify A10.5, A10.6
+- [x] 8.3 Stop paths (Stop, Space, Esc, waveform tap, any study action, stop-only press), resume from N+1, end-of-chapter stop — verify A10.7–A10.10
 
 ## 9. Chapter editing in Prepare
 
 - [x] 9.1 Migration: nullable `title` on segments; server operations: start chapter at sentence, merge with next chapter, set title — each a manual edit of its config, no span/progress change — verify A9.1, A9.2, A9.6
-- [ ] 9.2 Prepare UI per mockup screen B: hover break point, "Show chapter breaks", in-page confirms with ▶ hear the boundary, flash + Undo toast, Merge-with-next on headers, ✎ Title, last-sentence merge hint, edit count on config card, extended re-analyse warning — verify A9.3–A9.5, A9.7
-- [ ] 9.3 Chapter titles shown in Explore and in Study's chapter label — verify A9.8
+- [x] 9.2 Prepare UI per mockup screen B: hover break point, "Show chapter breaks", in-page confirms with ▶ hear the boundary, flash + Undo toast, Merge-with-next on headers, ✎ Title, last-sentence merge hint, edit count on config card, extended re-analyse warning — verify A9.3–A9.5, A9.7
+- [x] 9.3 Chapter titles shown in Explore and in Study's chapter label — verify A9.8
 
 ## Workflow follow-up
 

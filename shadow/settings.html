@@ -4,60 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Settings — shadow</title>
-  <link rel="stylesheet" href="css/index.css">
-  <link rel="stylesheet" href="css/shadow.css">
-  <link rel="stylesheet" href="css/settings.css">
+  <!-- Settings is a screen of the app now (D9). This page only forwards to
+       it, so phonexa's "⚙ Settings" links and old bookmarks keep working.
+       The target is RELATIVE: behind the gateway this page is
+       /shadow/settings.html and lands on /shadow/shadow.html#settings;
+       standalone it is /settings.html → /shadow.html#settings. -->
+  <meta http-equiv="refresh" content="0; url=shadow.html#settings">
+  <script>location.replace('shadow.html#settings');</script>
 </head>
 <body>
-
-<header>
-  <h1>Settings</h1>
-  <p>Transcription and Shadowing progress</p>
-  <a href="__PHONEXA_PREFIX__/index.html" class="editor-link">← Vowel Chart</a>
-  <a href="shadow.html" class="editor-link">🗣 Shadowing</a>
-</header>
-
-<div class="shadow-wrap">
-
-  <div class="settings-section">
-    <div class="settings-section-title">Transcription backend</div>
-    <div class="settings-form">
-      <label class="settings-row">
-        Provider
-        <select id="providerSelect"></select>
-      </label>
-      <div id="providerNote" class="settings-note" style="font-size:.7rem;color:var(--muted)"></div>
-      <div class="settings-actions">
-        <button class="sent-btn primary" id="saveTranscribeBtn" type="button">Save</button>
-        <span id="transcribeSaveStatus" class="settings-save-status"></span>
-      </div>
-    </div>
-  </div>
-
-  <div class="settings-section">
-    <div class="settings-section-title">Shadowing progress</div>
-    <div class="cache-list" id="shadowingProgressList"></div>
-  </div>
-
-</div>
-
-<!-- Two prefixes, injected by app.py's _serve_page.
-     SHADOW_PREFIX  — where THIS service is mounted (X-Forwarded-Prefix,
-                      '/shadow' behind the gateway, empty standalone). Every
-                      data call goes here: API_BASE.
-     PHONEXA_PREFIX — where phonexa is mounted IN THE BROWSER. Used only for
-                      links a human follows (Vowel Chart, Edit languages, the
-                      Formant Lab handoff). Data never goes here: shadow's
-                      backend proxies profiles/settings/Praat itself, so an
-                      XHR never has to cross the gateway's per-prefix auth
-                      boundary. See phonexa_client.py.
-     Must precede every js/ tag: API_BASE is read at load time. -->
-<script>
-  window.SHADOW_PREFIX = "__SHADOW_PREFIX__";
-  window.PHONEXA_PREFIX = "__PHONEXA_PREFIX__";
-  var API_BASE = window.SHADOW_PREFIX || '';
-  var PHONEXA_BASE = window.PHONEXA_PREFIX || '';
-</script>
-<script src="js/settings.js"></script>
+  <p><a href="shadow.html#settings">Settings moved into the app — open it here.</a></p>
 </body>
 </html>

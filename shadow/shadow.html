@@ -4,9 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>shadow — studying mode</title>
-  <!-- studio.css is the whole look of this page (the accepted mockup).
-       css/index.css and css/shadow.css are NOT loaded here any more: they
-       belong to settings.html, which still uses them. -->
+  <!-- studio.css is the whole look of this page (the accepted mockup). The
+       old settings.html stylesheets are gone with that page (D9). -->
   <link rel="stylesheet" href="css/studio.css">
   <!-- Installable app (task 5.1). The manifest is served by app.py with
        start_url/scope at this page's own prefix; crossorigin=use-credentials
@@ -17,6 +16,8 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0b0c0e" media="(prefers-color-scheme: dark)">
+  <!-- the per-device theme (D9), applied before first paint; app.js owns it after -->
+  <script>try { var t = localStorage.getItem('shadow.theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
 </head>
 <body>
 
@@ -31,10 +32,9 @@
     <button type="button" role="tab" data-go="prepare" aria-selected="false">Prepare</button>
   </div>
   <span class="spacer"></span>
-  <span class="nav-aside">
-    <button class="ghost-btn" id="themeBtn" type="button" title="light / dark">◐</button>
-    <a class="ghost-btn" href="settings.html">⚙</a>
-  </span>
+  <!-- Settings is the fifth screen of this page (D9); the ◐ theme toggle
+       that sat here is gone — the theme is chosen in Settings only. -->
+  <button class="gear" type="button" role="tab" data-go="settings" aria-selected="false" title="Settings" aria-label="Settings">⚙</button>
 </nav>
 
 <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
@@ -70,23 +70,6 @@
       </div>
     </div>
 
-    <!-- The ONE trim switch (task 2.5). It lives here, on the application's
-         settings surface, and deliberately NOT in the Study control row nor
-         in the phone's ⋯ sheet: it is a preference, not a per-sentence
-         action, and criterion 16 requires exactly one such control. -->
-    <div class="prep-sec">
-      <div class="eyebrow" style="margin-bottom:.5rem">Settings</div>
-      <div class="card">
-        <button class="setrow" id="trimRow" type="button">
-          <span class="copy">
-            <b>Trim silence</b>
-            <small>Play only the spoken part of a sentence, and of your recordings. One switch — it governs both waveforms.</small>
-          </span>
-          <span class="switch" id="trimSwitch" role="switch" aria-checked="true" aria-label="Trim silence"></span>
-        </button>
-        <div class="quiet" style="font-size:.82rem;margin-top:.5rem" id="trimEcho">On — waveforms show the speech-only window.</div>
-      </div>
-    </div>
   </div>
 </section>
 
@@ -129,9 +112,8 @@
       <span class="t-ch js-chname"></span>
       <button class="ch-nav js-chnext" type="button" title="next chapter (Shift+→)" aria-label="next chapter">›</button>
     </span>
-    <!-- AUDIOBOOK SLOT (D10, task 8.1): "▶▶ Listen" lives here. Rendered
-         hidden until audiobook mode is wired; un-hide and bind .js-ab. -->
-    <button class="ab-btn js-ab" type="button" hidden title="read this chapter aloud, sentence after sentence (L)"><span class="gl">▶▶</span>Listen<span class="kbd">L</span></button>
+    <!-- audiobook mode (D10): "▶▶ Listen" / "▶▶ Resume from N", L -->
+    <button class="ab-btn js-ab" type="button" data-form="desk" title="read this chapter aloud, sentence after sentence (L)"><span class="gl">▶▶</span>Listen<span class="kbd">L</span></button>
     <span class="t-count num">sentence <b class="js-idx">–</b> / <span class="js-total">–</span></span>
     <button class="ctl-s js-exit" type="button">✕ exit<span class="kbd">Esc</span></button>
     <div class="t-progress bar"><i id="stProg" style="width:0%"></i></div>
@@ -152,9 +134,31 @@
       <button class="ch-nav js-chnext" type="button" aria-label="next chapter">›</button>
       <span class="mh-dot">·</span>
       <span class="mh-count num"><b class="js-idx">–</b> / <span class="js-total">–</span></span>
-      <!-- AUDIOBOOK SLOT (D10/D14): "▶▶ Listen" sits at the end of line 2. -->
-      <button class="ab-btn js-ab" type="button" hidden aria-label="listen: read this chapter aloud"><span class="gl">▶▶</span>Listen</button>
+      <!-- audiobook mode (D10/D14): "▶▶ Listen" sits at the end of line 2 -->
+      <button class="ab-btn js-ab" type="button" data-form="phone" aria-label="listen: read this chapter aloud"><span class="gl">▶▶</span>Listen</button>
     </div>
+  </div>
+
+  <!-- audiobook mode (D10): the banner while it runs — desktop full width
+       under the top bar, phone compact at the top -->
+  <div class="ab-banner js-ab-banner" role="status" aria-live="polite">
+    <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <div class="ab-copy">
+      <b class="d-only">Audiobook mode — reading <span class="js-chname"></span> automatically</b>
+      <b class="p-only">Audiobook · <span class="js-chname"></span></b>
+      <small class="d-only">sentence <span class="js-idx">–</span> / <span class="js-total">–</span>
+        <span class="tempo-tag js-tempo">natural tempo (untrimmed)</span>
+        · Space, a tap on the waveform, or any study action also stops</small>
+      <small class="p-only"><span class="js-tempo-short">natural tempo</span> · <span class="wake js-wake">☼ screen stays on</span></small>
+    </div>
+    <button class="ab-stop js-ab-stop" type="button">■ Stop<span class="kbd">space</span></button>
+  </div>
+  <div class="ab-end js-ab-end" role="status">
+    <span style="font-size:1.1rem">■</span>
+    <div class="ab-copy"><b>End of <span class="js-chname-end">chapter</span></b>
+      <small>The audiobook stopped at the last sentence. It never runs on into the next chapter.</small></div>
+    <button class="mini js-ab-endnext" type="button">next chapter ›</button>
+    <button class="mini js-ab-endx" type="button" aria-label="dismiss">✕</button>
   </div>
 
   <div class="stage">
@@ -261,6 +265,11 @@
         <button class="ctl js-cmp" type="button"><span class="gl">⇄</span><span class="lbl">Compare</span><span class="kbd">C</span></button>
         <button class="ctl primary js-done" type="button"><span class="gl">✓</span><span class="lbl">Done &amp; next</span><span class="kbd">↵</span></button>
       </div>
+      <!-- phone, while audiobook mode runs: the four primaries give way to one stop (D10) -->
+      <div class="ab-stop-zone">
+        <button class="ab-stop-big js-ab-stop" type="button">■ Stop audiobook</button>
+        <div class="ab-stop-hint">or tap the waveform · any study action also stops</div>
+      </div>
 
       <div class="controls-2">
         <button class="ctl-s js-prev" type="button">← prev<span class="kbd">←</span></button>
@@ -333,11 +342,94 @@
     </div>
 
     <div class="prep-sec">
-      <div class="eyebrow" style="margin-bottom:.5rem">Sentences in <span id="activeCfgName">—</span></div>
-      <div class="card" id="prepChapters"></div>
+      <div class="sec-head">
+        <span class="eyebrow">Chapters &amp; sentences in <span id="activeCfgName">—</span></span>
+        <button class="mini" type="button" id="gapToggle" aria-pressed="false">⤒ Show chapter breaks</button>
+      </div>
+      <div class="scope">
+        <span>✎</span>
+        <span>Chapter breaks, chapter merges and titles are <b>manual edits of “<span class="js-actname2"></span>” only</b> — other configs keep their own chapters.
+        Re-analysing “<span class="js-actname2"></span>” rebuilds its chapters from silence and <b>discards them</b> (it warns first).
+        A chapter always starts on a sentence boundary.</span>
+      </div>
+      <div class="card" id="prepChapters" style="padding:.3rem 1rem"></div>
       <p class="quiet" style="font-size:.84rem">A chapter's audio is fetched once when you open it
       here, then every row's waveform and ▶ comes out of that one chunk.</p>
     </div>
+  </div>
+</section>
+
+<!-- =============== 5. SETTINGS (D9, mockups/settings-prepare.html screen A) ===============
+     A screen of this page, opened from ⚙ in the one nav. Every change saves
+     as it is made and says so on its own row; there is no Save button and
+     no browser dialog. The old settings.html redirects here. -->
+<section class="screen" id="s-settings">
+  <div class="wrap narrow">
+    <div class="set-head">
+      <h1>Settings</h1>
+      <span class="autosave"><span class="d"></span>changes save as you make them</span>
+    </div>
+
+    <div class="group">
+      <span class="eyebrow">Appearance</span>
+      <div class="list">
+        <div class="srow stack">
+          <span class="copy"><b>Theme</b><span class="device-tag">this device only</span><span class="saved" data-saved="theme">✓ saved</span>
+            <small>System follows your OS. Other devices keep their own choice.</small></span>
+          <span class="seg" role="radiogroup" aria-label="Theme" id="themeSeg">
+            <button type="button" role="radio" data-v="system" aria-checked="true">System</button>
+            <button type="button" role="radio" data-v="light" aria-checked="false">Light</button>
+            <button type="button" role="radio" data-v="dark" aria-checked="false">Dark</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <span class="eyebrow">Playback</span>
+      <div class="list">
+        <button class="srow" type="button" data-sw="trim">
+          <span class="copy"><b>Trim silence</b><span class="saved" data-saved="trim">✓ saved</span>
+            <small>Play only the spoken part of a sentence, and of your recordings. One switch — it governs both waveforms.</small>
+            <span class="echo" data-echo="trim"></span></span>
+          <span class="switch" role="switch" aria-checked="true" aria-label="Trim silence"></span>
+        </button>
+        <button class="srow" type="button" data-sw="autoplay">
+          <span class="copy"><b>Play sentence when opened</b><span class="saved" data-saved="autoplay">✓ saved</span>
+            <small>In normal study, moving to a sentence plays it once straight away. Audiobook mode is separate — it plays continuously anyway.</small>
+            <span class="echo" data-echo="autoplay"></span></span>
+          <span class="switch" role="switch" aria-checked="true" aria-label="Play sentence when opened"></span>
+        </button>
+        <button class="srow" type="button" data-sw="abtrim">
+          <span class="copy"><b>Trim in audiobook mode</b><span class="saved" data-saved="abtrim">✓ saved</span>
+            <small>While the chapter reads itself, sentence after sentence.</small>
+            <span class="echo" data-echo="abtrim"></span></span>
+          <span class="switch" role="switch" aria-checked="false" aria-label="Trim in audiobook mode"></span>
+        </button>
+      </div>
+    </div>
+
+    <div class="group">
+      <span class="eyebrow">Transcription</span>
+      <div class="list">
+        <div class="srow stack">
+          <span class="copy"><b>Speech-to-text provider</b><span class="saved" data-saved="stt">✓ saved</span>
+            <small>Used by 📝 Transcribe in Study. The list comes from smia.</small>
+            <span class="reach" id="reach"><span class="d"></span><span id="reachTxt">asking smia…</span></span></span>
+          <span class="selwrap"><select id="sttSel" aria-label="Speech-to-text provider"></select></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <span class="eyebrow">Books</span>
+      <details class="list fold" id="setBooksFold">
+        <summary><span class="caret">▸</span><b style="font-weight:560">Overview</b><span class="quiet" style="font-size:.84rem">read-only</span><span class="ct num" id="setBooksCt"></span></summary>
+        <div id="setBooks"></div>
+      </details>
+    </div>
+
+    <div class="foot">shadow · one user, no profiles — progress, split configs and these settings are simply yours.</div>
   </div>
 </section>
 
@@ -388,6 +480,7 @@
 <script src="js/explore.js"></script>
 <script src="js/study.js"></script>
 <script src="js/prepare.js"></script>
+<script src="js/settings.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
