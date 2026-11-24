@@ -96,19 +96,26 @@ checkout at `/work` instead, so the scripts can write there.
 
 ```bash
 docker compose run -d --name calst-crawl --no-deps -v "$PWD/smia":/work -w /work smia-backend python -m scripts.crawl_calst
-docker logs -f calst-crawl          # progress; Ctrl-C only stops watching
-docker wait calst-crawl             # prints the exit code once finished
-docker logs calst-crawl 2>/dev/null | tail -30   # the coverage report
-docker rm calst-crawl
+```
+
+No `--rm`, so the stopped container keeps its exit code and logs until you
+remove it. Come back whenever you like:
+
+```bash
+docker ps -a --filter name=calst-crawl                      # "Up …" while running, "Exited (N) …" when done
+docker logs -f calst-crawl                                  # optional: live progress; Ctrl-C only stops watching
+docker inspect calst-crawl --format '{{.State.ExitCode}}'   # the exit code, after it stopped
+docker logs calst-crawl 2>&1 | tail -40                     # the coverage report is at the end
 ```
 
 What the exit code means:
 
 | exit | meaning | what to do |
 |---|---|---|
-| **0** | Every (exercise, dialect) is saturated. | Go on to 4b. |
-| **1** | The report lists failed or unsaturated pairs. | Re-run the same command. It resumes and retries only those pairs. |
-| **3** | Aborted after 10 consecutive request failures; CALST is throttling or down. | Wait, then re-run. |
+| **0** | Every (exercise, dialect) is saturated. | `docker rm calst-crawl`, then go on to 4b. |
+| **1** | The report lists failed or unsaturated pairs. | `docker start calst-crawl` re-runs the same crawl. It resumes from the cache and retries only those pairs. |
+| **3** | Aborted after 10 consecutive request failures; CALST is throttling or down. | Wait a while, then `docker start calst-crawl`. |
+| **137** (or another kill code) | The container was stopped, e.g. the VPS rebooted. It does not restart by itself. | `docker start calst-crawl`. It resumes from the cache. |
 
 - Under Trondheim and Tromsø some exercises have words without recordings.
   That is CALST's data, not a failure.
