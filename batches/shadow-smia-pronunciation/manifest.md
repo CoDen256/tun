@@ -13,7 +13,7 @@ Batch opened 2026-11-24 from three triaged packages.
 |---|---|
 | smia provider data, PoS ownership & responses | pending |
 | Pronunciation, tonelag & minimal-pair exercise notes | pending |
-| Shadow playback, splitting & chapter reading | designed — `shadow/openspec/changes/shadow-playback-chapter-reading` |
+| Shadow playback, splitting & chapter reading | building — `shadow/openspec/changes/shadow-playback-chapter-reading` |
 
 ## Packages
 
