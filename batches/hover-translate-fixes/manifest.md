@@ -26,7 +26,7 @@ do not send it immediately to stabbur, let me review it. This, if possible shoul
 
 | Package | Status | Change(s) |
 |---------|--------|-----------|
-| Hover translate fixes | building | `hover-translate/openspec/changes/capture-and-tooltip-ux` |
+| Hover translate fixes | BLOCKED(claude-in-chrome unavailable this session — implemented + reviewed, not live-verified) | `hover-translate/openspec/changes/capture-and-tooltip-ux` |
 
 Designed 2026-11-24. **No items dropped or deferred** — all nine were settled.
 Nothing in the package touches `stabbur`: every endpoint and field it needs
