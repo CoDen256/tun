@@ -24,6 +24,58 @@ do not send it immediately to stabbur, let me review it. This, if possible shoul
 
 ## Status
 
-| Package | Status |
-|---------|--------|
-| Hover translate fixes | pending |
+| Package | Status | Change(s) |
+|---------|--------|-----------|
+| Hover translate fixes | designed | `hover-translate/openspec/changes/capture-and-tooltip-ux` |
+
+Designed 2026-11-24. **No items dropped or deferred** — all nine were settled.
+Nothing in the package touches `stabbur`: every endpoint and field it needs
+already exists, so despite the triage listing `stabbur` as a touched project,
+the change is entirely within `hover-translate`.
+
+### Build prompt
+
+    /tun-build batch hover-translate-fixes, package Hover translate fixes
+
+No dependency direction — this is the batch's only package, so nothing must
+build before it.
+
+### Settled against the backlog text
+
+Two items were decided differently from how they were written, both on
+operator direction during design:
+
+- *"some indicator that the audio is being recorded"* grew into the pill being
+  the **primary recording control**: `Alt+Shift+R` now toggles the pill's
+  visibility rather than starting a recording, and the pill itself starts,
+  stops, collapses and closes (design D6, D11). This is the largest
+  implementation item in the package.
+- *"there is no way to check orphan audios at all"* rests on a false premise.
+  A standalone recording already creates a draft note carrying its audio
+  (`stabbur/routes/captures.py:105-119`); the real defect was the
+  `"(audio capture)"` placeholder title. The operator chose to keep that
+  placeholder as the blank-send fallback and add an optional note form in
+  front of it, which is why no stabbur change is needed (design D8).
+
+### Deferred to the builder's judgement (tier 2)
+
+Recorded in full as T1–T7 in the change's `design.md`; each needs one line in
+`DECISIONS-MADE.md`:
+
+| | |
+|---|---|
+| T1 | how the band-and-chip block is shared between `extension/` and `popup/` |
+| T2 | the pill's persistence store for per-tab visibility and per-origin position |
+| T3 | whether cross-tab recording state is polled or pushed |
+| T4 | waveform rendering and resolution in a 380–550px column |
+| T5 | the inline popup's isolation mechanism from host-page CSS |
+| T6 | whether a `"none"` note-type chip exists in the audio form |
+| T7 | the inline popup's light/dark rule |
+
+### Raised to Quick Log, not fixed here
+
+- YouTube captures set `cueStartMs` and `cueEndMs` to the same value
+  (`captureService.ts:50-53`), so every video capture's cue range is
+  zero-length.
+- `captureService` sends no `type`, so every capture defaults to `word`
+  server-side regardless of content.
