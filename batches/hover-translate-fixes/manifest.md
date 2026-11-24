@@ -26,7 +26,7 @@ do not send it immediately to stabbur, let me review it. This, if possible shoul
 
 | Package | Status | Change(s) |
 |---------|--------|-----------|
-| Hover translate fixes | designed | `hover-translate/openspec/changes/capture-and-tooltip-ux` |
+| Hover translate fixes | building | `hover-translate/openspec/changes/capture-and-tooltip-ux` |
 
 Designed 2026-11-24. **No items dropped or deferred** — all nine were settled.
 Nothing in the package touches `stabbur`: every endpoint and field it needs
