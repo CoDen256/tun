@@ -90,16 +90,27 @@ const App = (() => {
       throw e;
     });
   }
+  /** A failed save puts the previous value back and repaints — unless a
+      later change has already replaced the one that failed. */
+  function revertOnFail(save, field, was, repaint) {
+    const now = state[field];
+    return save.catch((e) => {
+      if (state[field] === now) { state[field] = was; if (repaint) repaint(); }
+      throw e;
+    });
+  }
 
   /** Change it, repaint the lanes, and persist. Doneness is NOT touched by
       this: progress is always computed from the full stored span. */
   function setTrim(on) {
+    const was = state.trim;
     state.trim = !!on;
     // retrim(), not render(): the lanes are being rewindowed, and a contour
     // drawn over the old window describes a duration that is about to stop
     // being on screen.
-    if (typeof Study !== 'undefined' && state.screen === 'study') Study.retrim();
-    return persist(TRIM_KEY, { on: state.trim }, 'trim');
+    const repaint = () => { if (typeof Study !== 'undefined' && state.screen === 'study') Study.retrim(); };
+    repaint();
+    return revertOnFail(persist(TRIM_KEY, { on: state.trim }, 'trim'), 'trim', was, repaint);
   }
 
   async function loadSettings() {
@@ -118,15 +129,18 @@ const App = (() => {
 
   // ── autoplay: "Play sentence when opened" (D12) ───────────────────────
   function setAutoplay(on) {
+    const was = state.autoplay;
     state.autoplay = !!on;
-    if (typeof Study !== 'undefined') Study.paintAuto();
-    return persist(AUTOPLAY_KEY, { on: state.autoplay }, 'autoplay');
+    const repaint = () => { if (typeof Study !== 'undefined') Study.paintAuto(); };
+    repaint();
+    return revertOnFail(persist(AUTOPLAY_KEY, { on: state.autoplay }, 'autoplay'), 'autoplay', was, repaint);
   }
 
   // ── "Trim in audiobook mode" (D10) — read when a run starts ───────────
   function setAbTrim(on) {
+    const was = state.abTrim;
     state.abTrim = !!on;
-    return persist(AB_TRIM_KEY, { on: state.abTrim }, 'audiobook trim');
+    return revertOnFail(persist(AB_TRIM_KEY, { on: state.abTrim }, 'audiobook trim'), 'abTrim', was, null);
   }
 
   // ── theme: a per-DEVICE preference (D168), never stored server-side ───

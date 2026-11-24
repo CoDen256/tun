@@ -158,6 +158,7 @@ const Study = (() => {
   function paintWave() {
     const s = seg();
     const host = q('.js-wave');
+    q('.js-played').innerHTML = '';
     if (!s) { host.innerHTML = ''; return; }
     if (st.loading) { host.innerHTML = Wave.placeholder('fetching this chapter’s audio…'); return; }
     const e = st.entry;
@@ -169,8 +170,18 @@ const Study = (() => {
       return;
     }
     const w = window_(s);
-    host.innerHTML = Wave.svg(e.peaks, w.from, w.to, 180, null, 'var(--ref)');
+    host.innerHTML = Wave.svg(e.peaks, w.from, w.to, 180, null, 'var(--wave)');
+    // the same bars in the sentence colour, revealed up to the playhead
+    q('.js-played').innerHTML = Wave.svg(e.peaks, w.from, w.to, 180, null, 'var(--ref)');
+    setRefHead(st.player && st.lane === 'ref' ? st.pos : 0);
     paintTrimChip(s);
+  }
+
+  /** The ref playhead and the played part of the sentence wave, together. */
+  function setRefHead(pos) {
+    const p = Math.max(0, Math.min(1, pos || 0)) * 100;
+    q('.js-playhead').style.left = p.toFixed(2) + '%';
+    q('.js-played').style.clipPath = 'inset(0 ' + (100 - p).toFixed(2) + '% 0 0)';
   }
 
   function paintTrimChip(s) {
@@ -273,6 +284,7 @@ const Study = (() => {
       qa('.js-idx').forEach((e) => { e.textContent = '–'; });
       qa('.js-total').forEach((e) => { e.textContent = '–'; });
       qa('.js-chname').forEach((e) => { e.textContent = ''; });
+      q('.js-played').innerHTML = '';
       q('.js-wave').innerHTML = Wave.placeholder('this split config has no sentences yet — run an analysis in Prepare');
       q('.js-ticks').innerHTML = '';
       paintTake();
@@ -381,7 +393,7 @@ const Study = (() => {
     clearTimeout(st.cmpTimer);
     if (st.player) st.player.stop();       // its onEnd clears st.player
     st.player = null; st.lane = null; st.auto = false;
-    q('.js-playhead').style.left = '0%';
+    setRefHead(0);
     q('.js-userplayhead').style.left = '0%';
     paintPlayState();
   }
@@ -464,6 +476,8 @@ const Study = (() => {
   function markDoneOptimistic(s) {
     const id = s.id, was = !!s.done;
     const bookId = App.book.id;
+    const bookName = App.book.title || App.book.originalFilename || '(unnamed)';
+    const n = App.globalIndexOf(id) + 1;
     s.done = true;
     pendingSaves.set(id, (pendingSaves.get(id) || 0) + 1);
     const seq = ++saveSeq;
@@ -486,7 +500,16 @@ const Study = (() => {
       repaintDoneness();
     }).catch((e) => {
       settle(id);
-      if (!App.book || App.book.id !== bookId) return;
+      if (!App.book || App.book.id !== bookId) {
+        // another book is open now: nothing here to revert, but the loss
+        // must still be said, naming the book it belongs to (D6)
+        const msg = `Not saved — sentence ${n} of “${bookName}” is still NOT done (${e.message || e}). `
+          + 'Open that book and press ↵ on it again.';
+        q('.js-save-error-text').textContent = msg;
+        q('.js-save-error').classList.remove('hidden');
+        App.toast(msg, true);
+        return;
+      }
       const x = byId(id);
       if (x) x.done = was;
       showSaveError(x || s, e);
@@ -550,7 +573,6 @@ const Study = (() => {
     }
     if (st.recording) stopRecording();
     stopPlayback();
-    const ph = q('.js-playhead');
     const w = window_(s);
     const span = Math.max(1, w.to - w.from);
     const fromF = o.fromF || 0, toF = o.toF == null ? 1 : o.toF;
@@ -560,7 +582,7 @@ const Study = (() => {
       onFrame: (f, ms) => {
         if (st.player !== h) return;
         st.pos = Math.max(0, Math.min(1, (ms - w.from) / span));
-        ph.style.left = (st.pos * 100).toFixed(2) + '%';
+        setRefHead(st.pos);
       },
       onState: () => { if (st.player === h) paintPlayState(); },
       onEnd: (reason) => {
@@ -573,7 +595,7 @@ const Study = (() => {
     });
     st.player = h; st.lane = 'ref'; st.auto = !!o.auto; st.label = o.label || '';
     st.pos = fromF;
-    ph.style.left = (fromF * 100).toFixed(2) + '%';
+    setRefHead(fromF);
     paintPlayState();
   }
 
@@ -1185,6 +1207,8 @@ const Study = (() => {
   // runs; without the API it says so in the banner and runs anyway (D16).
   const ab = {
     running: false,
+    starting: false,     // startAB is awaiting the chapter chunk
+    run: 0,              // bumped per start/stop: stale handles and wake locks check it
     trimmed: false,      // the tempo of THIS run, read from the setting at start
     list: [],            // the chapter's sentences
     offs: [], ends: [],  // their stored spans, chunk-relative ms
@@ -1232,9 +1256,11 @@ const Study = (() => {
   // ── the screen wake lock ──
   async function wakeOn() {
     if (!navigator.wakeLock || !navigator.wakeLock.request) { ab.wakeOk = false; paintAB(); return; }
+    const run = ab.run;
     try {
       const lock = await navigator.wakeLock.request('screen');
-      if (!ab.running) { lock.release().catch(() => {}); return; }
+      // the run that asked is gone, or another request already holds one
+      if (!ab.running || run !== ab.run || ab.wake) { lock.release().catch(() => {}); return; }
       ab.wake = lock;
       ab.wakeOk = true;
       lock.addEventListener('release', () => { if (ab.wake === lock) ab.wake = null; });
@@ -1269,17 +1295,18 @@ const Study = (() => {
     if (!s) return;
     const w = window_(s);
     st.pos = Math.max(0, Math.min(1, (chunkMs - w.from) / Math.max(1, w.to - w.from)));
-    q('.js-playhead').style.left = (st.pos * 100).toFixed(2) + '%';
+    setRefHead(st.pos);
   }
 
   function abHandlers(onEndNatural) {
     let h = null;
+    const run = ab.run;
     const handlers = {
       owner: 'audiobook',
       onState: () => { if (st.player === h) paintPlayState(); },
       onError: (e) => App.toast('Playback failed: ' + (e.message || e), true),
       onEnd: (reason) => {
-        if (st.player !== h) return;
+        if (st.player !== h || run !== ab.run) return;   // a stale run's handle
         st.player = null; st.lane = null;
         if (!ab.running) { paintPlayState(); return; }
         if (reason === 'end') { onEndNatural(); return; }
@@ -1326,9 +1353,14 @@ const Study = (() => {
   }
 
   async function startAB(fromId) {
-    if (ab.running) return;
+    if (ab.running || ab.starting) return;   // a second L / Listen while loading
     const target = byId(fromId) || seg();
     if (!target) return;
+    ab.starting = true;
+    try { await startABLoaded(target); } finally { ab.starting = false; }
+  }
+
+  async function startABLoaded(target) {
     if (st.recording) stopRecording();
     stopPlayback();
     closeSheet();
@@ -1357,6 +1389,7 @@ const Study = (() => {
     ab.ends = ab.list.map((x, k) => ab.offs[k] + x.durationMs);
     ab.trimmed = !!App.abTrim;
     ab.gap = false;
+    ab.run++;
     ab.running = true;
     hidePanels();
     paintAB();
@@ -1369,6 +1402,7 @@ const Study = (() => {
   function stopAB(announce) {
     if (!ab.running) return;
     ab.running = false;
+    ab.run++;
     ab.gap = false;
     ab.stoppedAt = Date.now();
     wakeOff();
@@ -1391,13 +1425,14 @@ const Study = (() => {
     // the last crossing can fall between two frames of a short tail
     if (ab.list.length && ab.i !== ab.list.length - 1) abShow(ab.list.length - 1);
     ab.running = false;
+    ab.run++;
     ab.gap = false;
     wakeOff();
     if (st.player) stopPlayback();
     ab.resumeId = null;
     const s = seg();
     ab.endCh = s ? App.chapterIndexOf(s.parentId) : null;
-    q('.js-playhead').style.left = '0%';
+    setRefHead(0);
     setState(s && s.done ? 'done' : 'idle');
     paintPlayState();
     paintAB();

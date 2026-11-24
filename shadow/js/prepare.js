@@ -220,6 +220,11 @@ const Prepare = (() => {
     return Wave.svg(entry.peaks, from, from + s.durationMs, 46);
   }
 
+  // segId -> the CURRENT row's preview adapter. Rows are rebuilt by every
+  // render (chapter toggle, chunk loaded, edits), so the Player talks to the
+  // map, never to one render's nodes — as Explore does.
+  const rowUis = new Map();
+
   function renderRows(body, chapter, ci) {
     const entry = ChapterAudio.peek(chapter.id);
     const kids = App.sentencesOf(chapter.id);
@@ -245,7 +250,7 @@ const Prepare = (() => {
       const ph = el.querySelector('.ph');
       const prevBtn = el.querySelector('.sprev');
       const pauseBtn = el.querySelector('.spause');
-      const ui = {
+      rowUis.set(s.id, {
         onState(x) {
           el.classList.toggle('loading', x === 'loading');
           el.classList.toggle('playing', x === 'playing' || x === 'paused');
@@ -256,9 +261,16 @@ const Prepare = (() => {
           if (x === 'stopped') ph.style.left = '0%';
         },
         onFrame(f) { ph.style.left = 'calc(' + (f * 100).toFixed(2) + '% - ' + (f * 2).toFixed(2) + 'px)'; },
+      });
+      const ui = {
+        onState: (x) => { const u = rowUis.get(s.id); if (u) u.onState(x); },
+        onFrame: (f) => { const u = rowUis.get(s.id); if (u) u.onFrame(f); },
       };
       const live = Player.owned('preview:' + s.id);
-      if (live) ui.onState(live.paused ? 'paused' : 'playing');
+      if (live) {
+        ui.onState(live.paused ? 'paused' : 'playing');
+        if (live.fraction) ui.onFrame(live.fraction());
+      }
       prevBtn.addEventListener('click', () => {
         if (App.book.audioState !== 'ready') { App.toast('This book has no stored audio.'); return; }
         Player.preview(chapter, s, ui);

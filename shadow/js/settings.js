@@ -125,7 +125,8 @@ const Settings = (() => {
       const k = row.dataset.sw;
       const save = SETTER[k](!VALUE[k]());
       paintSwitches();
-      save.then(() => flashSaved(k)).catch(() => { /* App toasted it */ });
+      // on failure App toasted it and put the old value back: show that
+      save.then(() => flashSaved(k)).catch(() => paintSwitches());
     }));
     q('#sttSel').addEventListener('change', (e) => {
       const p = e.target.value || DEFAULT_PROVIDER;
