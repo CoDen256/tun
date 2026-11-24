@@ -41,8 +41,10 @@ from __future__ import annotations
 import datetime
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     ForeignKey,
     Index,
     Integer,
@@ -51,6 +53,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -184,6 +187,10 @@ class ShadowingSegment(Base):
     speech_start_ms: Mapped[int | None] = mapped_column(Integer)
     speech_end_ms: Mapped[int | None] = mapped_column(Integer)
     text: Mapped[str | None] = mapped_column(Text)  # transcript
+    # A chapter's optional title (shadow-playback-chapter-reading D15).
+    # Chapters only; always NULL on a sentence. The chapter NUMBER stays
+    # automatic (its order_index) — this is the words after it.
+    title: Mapped[str | None] = mapped_column(Text)
     # Frozen legacy column — see the class docstring. Not read, not written.
     done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
@@ -224,6 +231,11 @@ class ShadowingSplitConfig(Base):
     # 'idle' | 'running' | 'failed' — the Library/Prepare "analysing…" state.
     analysis_state: Mapped[str] = mapped_column(Text, nullable=False, default='idle')
     analysis_error: Mapped[str | None] = mapped_column(Text)
+    # Hand edits since the last analysis: sentence split/merge and chapter
+    # break/merge/title. What Prepare's "✎ N manual edits" shows and what a
+    # re-analysis discards (it resets this to 0 with the rows it rebuilds).
+    manual_edit_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0,
+                                                   server_default='0')
     created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -317,4 +329,32 @@ class ShadowingUpload(Base):
     error: Mapped[str | None] = mapped_column(Text)
     media_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class ShadowOwner(Base):
+    """The ONE owner id (D168), pinned once by migration e5b9c2d47a10 from
+    the data's single distinct `user_id`. Exactly one row (id = 1). Every
+    request uses this id server-side; a client-sent `userId` is ignored.
+    Nothing writes this table after the migration."""
+    __tablename__ = "shadow_owner"
+    __table_args__ = (CheckConstraint("id = 1", name="shadow_owner_single_row"),)
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    pinned_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
+
+
+class ShadowSetting(Base):
+    """One preference of the owner, key -> JSON value (D168, D165).
+
+    In shadow's own database so `shadow.sql` dumps it. A key with no row
+    means "not stored yet": the default applies and the one-time import from
+    phonexa may still fill it (appsettings.py). Once a row exists phonexa is
+    never consulted for that key again. The theme is NOT here — it is per
+    device."""
+    __tablename__ = "shadow_settings"
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

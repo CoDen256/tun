@@ -14,6 +14,10 @@ id when phonexa cannot be reached — losing a validation is the degradation
 we accept; refusing the write would be the cascade that split exists to
 prevent.
 
+CORRECTION, 2026-11-24 (D168): there is no profile check any more. shadow
+is single-user; every request uses the owner id pinned by migration
+e5b9c2d47a10 (appsettings.owner_id) and ignores a client `userId`.
+
 CORRECTION, 2026-11-15 (shadow-studying-mode). THIS FILE USED TO SAY "Audio
 is NEVER stored or decoded here", and described segmentation as running in
 the browser. Both claims are now false and are corrected rather than
@@ -67,8 +71,8 @@ import uuid
 from flask import Blueprint, jsonify, request, send_file
 
 import audio
-import phonexa_client
 import progress
+from appsettings import owner_id
 from db.models import (
     ShadowingCursor,
     ShadowingMedia,
@@ -126,15 +130,11 @@ def _inflight_analyses() -> set[int]:
 # ── helpers ─────────────────────────────────────────────────────────────
 
 def _require_user_id():
-    """userId from the query string or the JSON body; None when absent."""
-    user_id = request.args.get('userId', type=int)
-    if user_id is None:
-        body = request.get_json(silent=True) or {}
-        try:
-            user_id = int(body.get('userId'))
-        except (TypeError, ValueError):
-            user_id = None
-    return user_id
+    """The pinned owner id (D168). A `userId` in the query string or body —
+    which an old tab still sends — is IGNORED: shadow is single-user, and
+    honouring a client id is how two profiles' data would diverge again.
+    Kept under its old name so every call site reads the same."""
+    return owner_id()
 
 
 def _ranges_for(db, media_id: int, user_id: int) -> list[tuple[int, int]]:
@@ -170,6 +170,8 @@ def _segment_json(s: ShadowingSegment, ranges) -> dict:
         'configId': s.config_id, 'orderIndex': s.order_index,
         'startMs': s.start_ms, 'endMs': s.end_ms, 'durationMs': s.end_ms - s.start_ms,
         'text': s.text,
+        # A chapter's optional title (D15); always null on a sentence.
+        'title': s.title,
         # WHERE SPEECH IS inside the span above — for PLAYBACK AND DRAWING
         # ONLY (shadow-studying-refinements §2). Always present and always
         # inside [startMs, endMs); equal to them when no window was computed,
@@ -193,6 +195,9 @@ def _config_json(c: ShadowingSplitConfig, ranges=()) -> dict:
         'sentenceSilenceMs': c.sentence_silence_ms, 'chapterSilenceMs': c.chapter_silence_ms,
         'isActive': c.is_active,
         'analysisState': c.analysis_state, 'analysisError': c.analysis_error,
+        # Hand edits since the last analysis — sentence split/merge, chapter
+        # break/merge/title. Re-analysis discards them and resets this.
+        'manualEditCount': c.manual_edit_count or 0,
         'chapterCount': sum(1 for s in c.segments if s.kind == 'chapter'),
         'sentenceCount': len(sentences),
         'doneCount': sum(1 for s in sentences if progress.covers(ranges, s.start_ms, s.end_ms)),
@@ -521,7 +526,8 @@ start_upload_janitor = start_janitor
 
 @shadowing_bp.route('/api/v1/shadowing/uploads', methods=['POST'])
 def start_upload():
-    """Begin (or RESUME) an upload. Body: {userId, filename, sizeBytes}.
+    """Begin (or RESUME) an upload. Body: {filename, sizeBytes}; a `userId`
+    is ignored (D168 — the owner is pinned).
 
     Resume is keyed on (userId, fingerprint) where the fingerprint is
     derived server-side from the filename and the byte size, so offering
@@ -536,17 +542,15 @@ def start_upload():
         size_bytes = int(data.get('sizeBytes'))
     except (TypeError, ValueError):
         size_bytes = 0
-    if user_id is None or not filename or size_bytes <= 0:
-        return jsonify({'error': 'userId, filename and sizeBytes are required'}), 400
+    if not filename or size_bytes <= 0:
+        return jsonify({'error': 'filename and sizeBytes are required'}), 400
 
     fingerprint = f'{filename}:{size_bytes}'
     sweep_uploads()  # task 1.5 — an upload is exactly when the disk is about
                      # to be used; the janitor thread covers the rest of the time
 
     with get_sessionmaker()() as db:
-        if phonexa_client.verify_user(user_id) is False:
-            return jsonify({'error': 'no such user'}), 404
-
+        # No phonexa round trip any more (D168): the owner is pinned here.
         existing = (db.query(ShadowingMedia)
                     .filter_by(user_id=user_id, fingerprint=fingerprint).first())
         if existing is not None and existing.audio_state == 'ready':
@@ -826,10 +830,8 @@ def abandon_upload(upload_id):
 
 @shadowing_bp.route('/api/v1/shadowing/media')
 def list_shadowing_media():
-    user_id = request.args.get('userId', type=int)
-    if user_id is None:
-        return jsonify({'error': 'userId query param is required'}), 400
     with get_sessionmaker()() as db:
+        user_id = owner_id(db)   # any client userId is ignored (D168)
         media = (db.query(ShadowingMedia).filter_by(user_id=user_id)
                  .order_by(ShadowingMedia.created_at.desc()).all())
         return jsonify([
@@ -844,7 +846,7 @@ def get_shadowing_media(media_id):
         media = db.get(ShadowingMedia, media_id)
         if media is None:
             return _not_found()
-        user_id = request.args.get('userId', type=int) or media.user_id
+        user_id = owner_id(db)
         return jsonify(_media_detail_json(media, _ranges_for(db, media_id, user_id),
                                           _cursor_ms(db, media_id, user_id)))
 
@@ -859,7 +861,7 @@ def patch_shadowing_media(media_id):
         if 'title' in data:
             media.title = (data['title'] or '').strip() or None
         db.commit()
-        user_id = request.args.get('userId', type=int) or media.user_id
+        user_id = owner_id(db)
         return jsonify(_media_json(media, _ranges_for(db, media_id, user_id),
                                    _cursor_ms(db, media_id, user_id)))
 
@@ -907,7 +909,7 @@ def list_configs(media_id):
         media = db.get(ShadowingMedia, media_id)
         if media is None:
             return _not_found()
-        user_id = request.args.get('userId', type=int) or media.user_id
+        user_id = owner_id(db)
         ranges = _ranges_for(db, media_id, user_id)
         return jsonify([_config_json(c, ranges) for c in media.configs])
 
@@ -943,7 +945,7 @@ def create_config(media_id):
             _activate(db, media_id, config_id)
             db.commit()
         should_analyze = bool(data.get('analyze'))
-        out = _config_json(config, _ranges_for(db, media_id, media.user_id))
+        out = _config_json(config, _ranges_for(db, media_id, owner_id(db)))
     if should_analyze:
         _start_analysis(config_id)
         out['analysisState'] = 'running'
@@ -988,7 +990,7 @@ def get_config(config_id):
         config = db.get(ShadowingSplitConfig, config_id)
         if config is None:
             return _not_found()
-        user_id = request.args.get('userId', type=int) or config.media.user_id
+        user_id = owner_id(db)
         ranges = _ranges_for(db, config.media_id, user_id)
         out = _config_json(config, ranges)
         out['segments'] = [_segment_json(s, ranges)
@@ -1014,7 +1016,7 @@ def patch_config(config_id):
             _activate(db, config.media_id, config_id)
         db.commit()
         db.refresh(config)
-        return jsonify(_config_json(config, _ranges_for(db, config.media_id, config.media.user_id)))
+        return jsonify(_config_json(config, _ranges_for(db, config.media_id, owner_id(db))))
 
 
 @shadowing_bp.route('/api/v1/shadowing/configs/<int:config_id>/duplicate', methods=['POST'])
@@ -1043,7 +1045,10 @@ def duplicate_config(config_id):
         copy = ShadowingSplitConfig(
             media_id=src.media_id, name=(data.get('name') or f'{src.name} (copy)').strip(),
             sentence_silence_ms=src.sentence_silence_ms,
-            chapter_silence_ms=src.chapter_silence_ms, is_active=False)
+            chapter_silence_ms=src.chapter_silence_ms, is_active=False,
+            # The copy carries the source's hand edits in its rows, so it
+            # carries their count too.
+            manual_edit_count=src.manual_edit_count or 0)
         db.add(copy)
         db.flush()
         id_map: dict[int, int] = {}
@@ -1052,13 +1057,14 @@ def duplicate_config(config_id):
                 media_id=s.media_id, config_id=copy.id, kind=s.kind,
                 parent_segment_id=id_map.get(s.parent_segment_id),
                 order_index=s.order_index, start_ms=s.start_ms, end_ms=s.end_ms, text=s.text,
+                title=s.title,
                 speech_start_ms=s.speech_start_ms, speech_end_ms=s.speech_end_ms)
             db.add(row)
             db.flush()
             id_map[s.id] = row.id
         db.commit()
         db.refresh(copy)
-        return jsonify(_config_json(copy, _ranges_for(db, copy.media_id, copy.media.user_id))), 201
+        return jsonify(_config_json(copy, _ranges_for(db, copy.media_id, owner_id(db)))), 201
 
 
 @shadowing_bp.route('/api/v1/shadowing/configs/<int:config_id>', methods=['DELETE'])
@@ -1182,6 +1188,9 @@ def _analysis_job(config_id: int) -> None:
                     speech_start_ms=speech_start, speech_end_ms=speech_end))
             config.analysis_state = 'idle'
             config.analysis_error = None
+            # Every hand edit — sentence split/merge, chapter break/merge,
+            # chapter titles — went with the rows deleted above.
+            config.manual_edit_count = 0
             db.commit()
         # This config's chapter rows are gone, so their chunks are keyed on
         # segment ids that no longer exist. Only those are dropped: the book
@@ -1344,7 +1353,7 @@ def chapter_manifest(segment_id):
         chapter = db.get(ShadowingSegment, segment_id)
         if chapter is None or chapter.kind != 'chapter':
             return _not_found()
-        user_id = request.args.get('userId', type=int) or chapter.media.user_id
+        user_id = owner_id(db)
         ranges = _ranges_for(db, chapter.media_id, user_id)
         sentences = sorted(
             [s for s in chapter.config.segments
@@ -1352,6 +1361,7 @@ def chapter_manifest(segment_id):
             key=lambda s: s.start_ms)
         return jsonify({
             'chapterId': chapter.id, 'mediaId': chapter.media_id, 'configId': chapter.config_id,
+            'title': chapter.title, 'orderIndex': chapter.order_index,
             'startMs': chapter.start_ms, 'endMs': chapter.end_ms,
             'durationMs': chapter.end_ms - chapter.start_ms,
             'chunkUrl': f'/api/v1/shadowing/chapters/{chapter.id}/chunk',
@@ -1492,7 +1502,7 @@ def get_progress(media_id):
         media = db.get(ShadowingMedia, media_id)
         if media is None:
             return _not_found()
-        user_id = request.args.get('userId', type=int) or media.user_id
+        user_id = owner_id(db)
         ranges = _ranges_for(db, media_id, user_id)
         return jsonify({
             'mediaId': media_id, 'userId': user_id,
@@ -1520,7 +1530,7 @@ def post_progress(media_id):
         media = db.get(ShadowingMedia, media_id)
         if media is None:
             return _not_found()
-        user_id = _require_user_id() or media.user_id
+        user_id = owner_id(db)
 
         def spans_from_ids(ids):
             if not ids:
@@ -1560,7 +1570,7 @@ def put_cursor(media_id):
         media = db.get(ShadowingMedia, media_id)
         if media is None:
             return _not_found()
-        user_id = _require_user_id() or media.user_id
+        user_id = owner_id(db)
         position_ms = data.get('positionMs')
         if position_ms is None and data.get('segmentId') is not None:
             seg = db.get(ShadowingSegment, int(data['segmentId']))
@@ -1600,7 +1610,7 @@ def patch_shadowing_segment(segment_id):
             seg.text = data['text']
         db.commit()
         db.refresh(seg)
-        return jsonify(_segment_json(seg, _ranges_for(db, seg.media_id, seg.media.user_id)))
+        return jsonify(_segment_json(seg, _ranges_for(db, seg.media_id, owner_id(db))))
 
 
 @shadowing_bp.route('/api/v1/shadowing/segments/<int:segment_id>/split', methods=['POST'])
@@ -1668,6 +1678,7 @@ def split_shadowing_segment(segment_id):
         if seg.kind == 'sentence':
             seg.speech_start_ms, seg.speech_end_ms = first_window
             new_seg.speech_start_ms, new_seg.speech_end_ms = second_window
+        _count_edit(seg.config, data.get('undo'))
         db.commit()
         db.refresh(seg)
         db.refresh(new_seg)
@@ -1676,9 +1687,20 @@ def split_shadowing_segment(segment_id):
             # The new half has a new id and no chunk yet, and every other
             # chapter of every config over this book is untouched.
             audio.drop_chunks_for(seg.media_id, [seg.id])
-        ranges = _ranges_for(db, seg.media_id, seg.media.user_id)
+        ranges = _ranges_for(db, seg.media_id, owner_id(db))
         return jsonify({'first': _segment_json(seg, ranges),
                         'second': _segment_json(new_seg, ranges)})
+
+
+def _count_edit(config: ShadowingSplitConfig, undo=False) -> None:
+    """One more (or, for an Undo, one fewer) hand edit of this config.
+
+    Undo is the INVERSE operation (D15) — a break undone by a merge, a merge
+    by a break — so the client passes `undo: true` on it and the count
+    returns to what it was rather than reading 2 after a break and its undo.
+    """
+    current = config.manual_edit_count or 0
+    config.manual_edit_count = max(0, current - 1) if undo else current + 1
 
 
 def _renumber_children(db, parent: ShadowingSegment) -> int:
@@ -1716,6 +1738,12 @@ def merge_shadowing_segments():
         return jsonify({'error': 'segmentIdA and segmentIdB are required'}), 400
 
     def _pair_error(a, b):
+        if (a.config_id == b.config_id and a.kind == b.kind == 'sentence'
+                and a.parent_segment_id != b.parent_segment_id):
+            # The two sentences either side of a chapter boundary. Prepare
+            # shows this in-page (A9.7): a sentence never straddles chapters.
+            return ('these sentences are in different chapters — '
+                    'merge the chapters first')
         if a.config_id != b.config_id or a.kind != b.kind \
                 or a.parent_segment_id != b.parent_segment_id:
             return ('segments must be the same kind and same parent '
@@ -1759,6 +1787,7 @@ def merge_shadowing_segments():
 
         first.end_ms = second.end_ms
         first.text = ' '.join(t for t in [first.text, second.text] if t) or None
+        _count_edit(first.config, data.get('undo'))
         if first.kind == 'sentence':
             first.speech_start_ms, first.speech_end_ms = merged_window
         db.query(ShadowingSegment).filter_by(parent_segment_id=second.id).update(
@@ -1789,4 +1818,219 @@ def merge_shadowing_segments():
             # moved and second is gone. Other configs over this book keep
             # their chunks (each worth ~20-30 s of encoding).
             audio.drop_chunks_for(first.media_id, merged_ids)
-        return jsonify(_segment_json(first, _ranges_for(db, first.media_id, first.media.user_id)))
+        return jsonify(_segment_json(first, _ranges_for(db, first.media_id, owner_id(db))))
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Chapter editing (shadow-playback-chapter-reading D15, task 9.1)
+#
+# Three operations on ONE config's chapter rows: start a new chapter at a
+# sentence, merge a chapter with the next one, and set/clear a title. Each is
+# a manual edit of that config (`manual_edit_count`), and a re-analysis
+# discards them with every other row it rebuilds.
+#
+# WHAT NONE OF THEM TOUCHES, and why that is safe by construction: no
+# sentence's start_ms/end_ms (or speech window) is read for anything but
+# finding the boundary, and none is written; progress lives on the book as
+# time ranges, not in a config, so it is not even loaded. A chapter boundary
+# always lands on a sentence's start, so no sentence ever straddles two
+# chapters (which is what the manifest's chunk-relative offsets rely on).
+#
+# Chunks: a chapter's chunk is keyed by its id AND its boundaries, so an
+# edited chapter simply addresses a new file. The superseded files are
+# dropped for disk, and a superseding pre-cut warms the new keys in the
+# background exactly as after an analysis; a request that arrives first
+# takes the existing 503-preparing path.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _chapters_of(db, config_id: int) -> list[ShadowingSegment]:
+    return (db.query(ShadowingSegment)
+            .filter_by(config_id=config_id, kind='chapter')
+            .order_by(ShadowingSegment.order_index, ShadowingSegment.start_ms).all())
+
+
+def _sentences_of(db, chapter: ShadowingSegment) -> list[ShadowingSegment]:
+    return (db.query(ShadowingSegment)
+            .filter_by(config_id=chapter.config_id, kind='sentence',
+                       parent_segment_id=chapter.id)
+            .order_by(ShadowingSegment.start_ms, ShadowingSegment.id).all())
+
+
+def _renumber_chapters(db, config_id: int) -> None:
+    for index, ch in enumerate(sorted(_chapters_of(db, config_id),
+                                      key=lambda c: (c.start_ms, c.id))):
+        if ch.order_index != index:
+            ch.order_index = index
+
+
+def _clean_title(raw) -> str | None:
+    if raw is None:
+        return None
+    return str(raw).strip()[:200] or None
+
+
+def _chapter_edit_response(db, config: ShadowingSplitConfig, **extra):
+    ranges = _ranges_for(db, config.media_id, owner_id(db))
+    out = {'config': _config_json(config, ranges),
+           'chapters': [_segment_json(c, ranges) for c in _chapters_of(db, config.id)]}
+    out.update(extra)
+    return out
+
+
+@shadowing_bp.route('/api/v1/shadowing/chapters/<int:chapter_id>/break', methods=['POST'])
+def break_chapter(chapter_id):
+    """Start a new chapter at sentence `sentenceId` of this chapter.
+
+    Body: {sentenceId, title?, firstTitle?, undo?}
+      * the chapter is shortened to end at that sentence's START; a new
+        chapter row runs from there to the old end and adopts that sentence
+        and every later one; later chapters' order_index shift by +1;
+      * `title` — the NEW chapter's title (default none); `firstTitle`, when
+        the key is present, sets the shortened chapter's. Both exist so the
+        UNDO of a merge is this one call: break at the merge's
+        `boundarySentenceId` with the titles the merge reported;
+      * `undo: true` counts it as undoing an edit (see _count_edit).
+
+    The sentence must not be the chapter's first (that would be an empty
+    chapter). Answers {config, chapters, first, second}.
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        sentence_id = int(data.get('sentenceId'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'sentenceId is required'}), 400
+    with get_sessionmaker()() as db:
+        chapter = db.get(ShadowingSegment, chapter_id)
+        if chapter is None or chapter.kind != 'chapter':
+            return _not_found()
+        sentence = db.get(ShadowingSegment, sentence_id)
+        if sentence is None or sentence.kind != 'sentence' \
+                or sentence.parent_segment_id != chapter.id:
+            return jsonify({'error': 'that sentence is not in this chapter'}), 400
+        sentences = _sentences_of(db, chapter)
+        moving = [s for s in sentences if s.start_ms >= sentence.start_ms]
+        staying = [s for s in sentences if s.start_ms < sentence.start_ms]
+        if not staying:
+            return jsonify({'error': 'a chapter cannot start at its own first sentence — '
+                                     'pick a later sentence'}), 400
+        boundary = sentence.start_ms
+        if not (chapter.start_ms < boundary < chapter.end_ms):
+            return jsonify({'error': 'that sentence does not start inside this chapter'}), 400
+        config = chapter.config
+        old_id = chapter.id
+
+        for later in db.query(ShadowingSegment).filter(
+                ShadowingSegment.config_id == chapter.config_id,
+                ShadowingSegment.kind == 'chapter',
+                ShadowingSegment.order_index > chapter.order_index).all():
+            later.order_index += 1
+        new_chapter = ShadowingSegment(
+            media_id=chapter.media_id, config_id=chapter.config_id, kind='chapter',
+            parent_segment_id=None, order_index=chapter.order_index + 1,
+            start_ms=boundary, end_ms=chapter.end_ms,
+            title=_clean_title(data.get('title')))
+        chapter.end_ms = boundary
+        if 'firstTitle' in data:
+            chapter.title = _clean_title(data.get('firstTitle'))
+        db.add(new_chapter)
+        db.flush()
+        for s in moving:
+            s.parent_segment_id = new_chapter.id
+        db.flush()
+        _renumber_children(db, chapter)
+        _renumber_children(db, new_chapter)
+        _renumber_chapters(db, config.id)
+        _count_edit(config, data.get('undo'))
+        db.commit()
+        db.refresh(config)
+        ranges = _ranges_for(db, config.media_id, owner_id(db))
+        out = _chapter_edit_response(db, config,
+                                     first=_segment_json(chapter, ranges),
+                                     second=_segment_json(new_chapter, ranges))
+        media_id, config_id = config.media_id, config.id
+    audio.drop_chunks_for(media_id, [old_id])
+    _start_prechunk(config_id, supersede=True)
+    return jsonify(out)
+
+
+@shadowing_bp.route('/api/v1/shadowing/chapters/<int:chapter_id>/merge-next', methods=['POST'])
+def merge_chapter_with_next(chapter_id):
+    """Merge this chapter with the one after it. Body: {undo?}.
+
+    The first chapter extends to the second's end and adopts its sentences;
+    the second row is deleted; later chapters shift by -1. The FIRST
+    chapter's title wins, else the second's. 400 on the last chapter.
+
+    Answers {config, chapters, merged, removedChapterId, boundarySentenceId,
+    firstTitle, secondTitle} — the last three are what an Undo needs:
+    POST .../chapters/<merged.id>/break {sentenceId: boundarySentenceId,
+    firstTitle, title: secondTitle, undo: true}.
+    """
+    data = request.get_json(silent=True) or {}
+    with get_sessionmaker()() as db:
+        first = db.get(ShadowingSegment, chapter_id)
+        if first is None or first.kind != 'chapter':
+            return _not_found()
+        chapters = _chapters_of(db, first.config_id)
+        idx = next(i for i, c in enumerate(chapters) if c.id == first.id)
+        if idx + 1 >= len(chapters):
+            return jsonify({'error': 'this is the last chapter — there is no next one '
+                                     'to merge with'}), 400
+        second = chapters[idx + 1]
+        config = first.config
+        second_sentences = _sentences_of(db, second)
+        boundary_sentence_id = second_sentences[0].id if second_sentences else None
+        first_title, second_title = first.title, second.title
+        removed_id = second.id
+
+        first.end_ms = second.end_ms
+        first.title = first.title or second.title
+        for s in second_sentences:
+            s.parent_segment_id = first.id
+        db.flush()
+        db.delete(second)
+        db.flush()
+        _renumber_children(db, first)
+        _renumber_chapters(db, config.id)
+        _count_edit(config, data.get('undo'))
+        db.commit()
+        db.refresh(config)
+        ranges = _ranges_for(db, config.media_id, owner_id(db))
+        out = _chapter_edit_response(db, config,
+                                     merged=_segment_json(first, ranges),
+                                     removedChapterId=removed_id,
+                                     boundarySentenceId=boundary_sentence_id,
+                                     firstTitle=first_title, secondTitle=second_title)
+        media_id, config_id = config.media_id, config.id
+    audio.drop_chunks_for(media_id, [chapter_id, removed_id])
+    _start_prechunk(config_id, supersede=True)
+    return jsonify(out)
+
+
+@shadowing_bp.route('/api/v1/shadowing/chapters/<int:chapter_id>', methods=['PATCH'])
+def patch_chapter(chapter_id):
+    """Set or clear a chapter's title. Body: {title: str|null, undo?}.
+
+    Empty or whitespace clears it. Boundaries, chunks and progress are not
+    touched — a title is not part of a chunk's key. Answers
+    {config, chapters, chapter, previousTitle} (previousTitle is the Undo).
+    """
+    data = request.get_json(silent=True) or {}
+    if 'title' not in data:
+        return jsonify({'error': 'title is required (null clears it)'}), 400
+    with get_sessionmaker()() as db:
+        chapter = db.get(ShadowingSegment, chapter_id)
+        if chapter is None or chapter.kind != 'chapter':
+            return _not_found()
+        previous = chapter.title
+        title = _clean_title(data.get('title'))
+        config = chapter.config
+        if title != previous:
+            chapter.title = title
+            _count_edit(config, data.get('undo'))
+        db.commit()
+        db.refresh(config)
+        ranges = _ranges_for(db, config.media_id, owner_id(db))
+        return jsonify(_chapter_edit_response(db, config,
+                                              chapter=_segment_json(chapter, ranges),
+                                              previousTitle=previous))

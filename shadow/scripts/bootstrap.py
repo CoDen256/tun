@@ -12,19 +12,16 @@ nothing else's. phonexa owns `phonexa`'s. The two databases are disjoint and
 so are the two alembic histories — no service migrates another's, which is
 the rule that keeps two processes off one migration table.
 
-THE GUARD. `protect=("/api/v1/shadowing/",)` and nothing more. Everything
+THE GUARD. `protect=("/api/v1/shadowing/", "/api/v1/settings")` and nothing more. Everything
 else in this process is deliberately database-free and must survive a
 cluster outage:
 
   /transcribe, /transcribe/providers   smia proxy, no row
   /api/v1/youtube-extract              yt-dlp, no row
   /analyze-praat                       phonexa proxy, no row
-  /api/v1/users, /api/v1/settings      phonexa proxy — PHONEXA's database,
-                                       not shadow's; guarding them here would
-                                       report shadow's outage for phonexa's
-                                       data and is exactly the kind of
-                                       mis-attributed cascade this change
-                                       exists to remove
+  (/api/v1/users and /api/v1/settings were listed here as phonexa
+   proxies. Since D168 /users is gone and /settings is shadow's OWN
+   table, so it IS guarded now — see `protect` below.)
   the pages, js/ and css/              files on disk
 
 That is the `protect` form rather than the `exempt` form for phonexa's
@@ -43,6 +40,7 @@ from pyservice.migrate import upgrade_head
 
 from app import app  # the Flask app, routes already registered
 from db.session import get_engine
+from appsettings import start_import_thread
 from shadowing import start_janitor
 
 
@@ -59,7 +57,7 @@ def main() -> None:
     register_db_guard(
         app,
         boot,
-        protect=("/api/v1/shadowing/",),
+        protect=("/api/v1/shadowing/", "/api/v1/settings"),
         db_errors=(OperationalError,),
     )
 
@@ -75,6 +73,12 @@ def main() -> None:
     # here and not in `prepare`: recovery must not be able to delay the
     # port binding (D157).
     start_janitor()
+
+    # The one-time, best-effort import of the owner's two settings from
+    # phonexa (D168). A daemon thread for D157's reason: it waits for the
+    # schema and for phonexa without ever touching the port binding, and
+    # stops for good once phonexa has answered once.
+    start_import_thread()
 
     print("shadow — HTTP :5051", flush=True)
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"

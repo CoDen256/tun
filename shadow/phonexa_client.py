@@ -12,7 +12,13 @@ audio tree holds VOWEL SAMPLES, which shadow never writes and never reads.
 So there is no storage call to make and no volume to decline to mount:
 shadow mounts no volume at all, which satisfies the rule trivially.
 
-The coupling that IS real, and is what this module implements:
+CORRECTION, 2026-11-24 (shadow-playback-chapter-reading, D168): the
+users and settings rows below are HISTORY. shadow is single-user and owns
+its settings (appsettings.py). What is left here is /analyze-praat, and a
+single settings READ used once by the background import. The text below is
+kept as the record of what the coupling was.
+
+The coupling that WAS real, and is what this module implemented:
 
   users     phonexa owns the `users` table. The profile picker on shadow's
             pages lists and creates profiles.                [degrades: see below]
@@ -115,56 +121,24 @@ def _post(path: str, timeout: int = PHONEXA_TIMEOUT_SEC, **kwargs):
         raise PhonexaUnavailable(str(exc)) from exc
 
 
-def _put(path: str, **kwargs):
-    try:
-        return requests.put(
-            base_url() + path, timeout=PHONEXA_TIMEOUT_SEC,
-            headers=_headers(kwargs.pop("headers", None)), **kwargs
-        )
-    except requests.RequestException as exc:
-        raise PhonexaUnavailable(str(exc)) from exc
+# ── Profiles: GONE (shadow-playback-chapter-reading, D168) ───────────
+#
+# list_users / create_user / verify_user lived here. shadow is single-user
+# now: the owner id is pinned in shadow's own database (appsettings.py) and
+# shadow never lists, creates or verifies phonexa users.
 
 
-# ── Profiles ────────────────────────────────────────────────────────────
-
-def list_users():
-    resp = _get("/api/v1/users")
-    if not resp.ok:
-        raise PhonexaUnavailable(f"HTTP {resp.status_code}")
-    return resp.json()
-
-
-def create_user(name: str):
-    resp = _post("/api/v1/users", json={"name": name})
-    return resp
-
-
-def verify_user(user_id: int) -> bool | None:
-    """True/False if phonexa answered, None if it could not be asked.
-
-    None is NOT False. The caller must treat "could not ask" as "accept the
-    id" — the FK that used to make this check free is gone by design (D42),
-    and refusing writes because the *other* service is down is exactly the
-    cascade this whole change exists to prevent.
-    """
-    try:
-        users = list_users()
-    except PhonexaUnavailable:
-        return None
-    return any(u.get("id") == user_id for u in users)
-
-
-# ── Settings (phonexa owns the table; 'transcribeBackend' is ours) ──────
+# ── Settings: read ONCE, for the one-time import (appsettings.py) ───────
+#
+# shadow owns its settings now. This read is the only remaining settings
+# call: the background import of the owner's `transcribeBackend` and
+# `shadowTrimSilence`, which stops for good the first time phonexa answers.
 
 def get_settings(user_id: int):
     resp = _get("/api/v1/settings", params={"userId": user_id})
     if not resp.ok:
         raise PhonexaUnavailable(f"HTTP {resp.status_code}")
     return resp.json()
-
-
-def put_setting(user_id: int, key: str, body: dict):
-    return _put(f"/api/v1/settings/{key}", params={"userId": user_id}, json=body)
 
 
 # ── Praat analysis (the vowel domain keeps parselmouth) ────────────────

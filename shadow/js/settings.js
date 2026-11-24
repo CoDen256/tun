@@ -1,14 +1,11 @@
 // ─── Settings page ───────────────────────────────────────────────────────
-// Per-profile config: transcription provider (smia STT, used by Shadowing) and a
-// read-only Shadowing progress overview. Profile switching itself is
-// js/user.js's shared picker, mounted in this page's header like everywhere
-// else — switching profiles here just re-renders this page's two sections.
+// Transcription provider (smia STT, used by Shadowing) and a read-only
+// Shadowing progress overview.
 //
-// This page moved from phonexa to shadow with the zone-isolation split, and
-// it moved WHOLE: both of its sections are shadowing concerns and neither
-// mentions vowels. The profile picker and the `settings` rows it reads still
-// belong to phonexa — shadow's backend proxies /api/v1/users and
-// /api/v1/settings there, so every fetch below is still API_BASE.
+// D168: no profiles and no picker any more, and /api/v1/settings is
+// shadow's OWN store (appsettings.py), no longer a proxy to phonexa — so
+// saving works with phonexa down. (This page is replaced by the in-app
+// Settings screen later in shadow-playback-chapter-reading, task 6.1.)
 
 const DEFAULT_TRANSCRIBE_PROVIDER = 'hf_whisper';
 
@@ -16,8 +13,7 @@ const DEFAULT_TRANSCRIBE_PROVIDER = 'hf_whisper';
 // hfToken, hfModel}) has no provider → default; the rest is ignored and is
 // dropped for good the next time the form is saved (save writes a fresh object).
 async function loadTranscribeSettings() {
-  const userId = await UserLib.getCurrentUserId();
-  const res = await fetch(`${API_BASE}/api/v1/settings?userId=${userId}`);
+  const res = await fetch(`${API_BASE}/api/v1/settings`);
   const all = res.ok ? await res.json() : {};
   const stored = all.transcribeBackend || {};
   return { provider: (typeof stored.provider === 'string' && stored.provider) || DEFAULT_TRANSCRIBE_PROVIDER };
@@ -47,11 +43,10 @@ async function renderTranscribeForm() {
 
 async function saveTranscribeForm() {
   const value = { provider: document.getElementById('providerSelect').value || DEFAULT_TRANSCRIBE_PROVIDER };
-  const userId = await UserLib.getCurrentUserId();
   const status = document.getElementById('transcribeSaveStatus');
   status.textContent = 'Saving…';
   try {
-    const res = await fetch(`${API_BASE}/api/v1/settings/transcribeBackend?userId=${userId}`, {
+    const res = await fetch(`${API_BASE}/api/v1/settings/transcribeBackend`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value }),
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -73,8 +68,7 @@ function secToClock(sec) {
 
 async function renderShadowingProgress() {
   const el = document.getElementById('shadowingProgressList');
-  const userId = await UserLib.getCurrentUserId();
-  const media = await fetch(`${API_BASE}/api/v1/shadowing/media?userId=${userId}`).then(r => r.ok ? r.json() : []).catch(() => []);
+  const media = await fetch(`${API_BASE}/api/v1/shadowing/media`).then(r => r.ok ? r.json() : []).catch(() => []);
   if (!media.length) { el.innerHTML = '<div class="cache-empty">No Shadowing uploads yet</div>'; return; }
   el.innerHTML = media.map(m => {
     const pct = m.sentenceCount ? Math.round(100 * m.doneCount / m.sentenceCount) : 0;
@@ -91,12 +85,6 @@ async function renderShadowingProgress() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await UserLib.mountPicker('userPicker');
-  window.addEventListener('phonexa:user-changed', () => {
-    renderTranscribeForm();
-    renderShadowingProgress();
-  });
-
   document.getElementById('saveTranscribeBtn').addEventListener('click', saveTranscribeForm);
 
   await renderTranscribeForm();

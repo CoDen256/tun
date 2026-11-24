@@ -292,7 +292,7 @@ const Study = (() => {
       try {
         // The FULL stored span, always: trimming is a playback attribute and
         // must never reach progress.
-        await Api.postProgress(App.book.id, { userId: App.userId, doneSegmentIds: [s.id] });
+        await Api.postProgress(App.book.id, { doneSegmentIds: [s.id] });
         await App.refreshBook();
       } catch (e) { App.toast('Could not save: ' + e.message, true); }
     }
@@ -336,7 +336,7 @@ const Study = (() => {
     if (!s || !App.book) return;
     clearTimeout(cursorTimer);
     cursorTimer = setTimeout(() => {
-      Api.putCursor(App.book.id, { userId: App.userId, positionMs: s.startMs })
+      Api.putCursor(App.book.id, { positionMs: s.startMs })
         .catch(() => { /* the cursor is a convenience, not a transaction */ });
     }, 250);
   }
@@ -623,7 +623,7 @@ const Study = (() => {
   async function provider() {
     if (providerCache) return providerCache;
     try {
-      const all = await fetch(`${API_BASE}/api/v1/settings?userId=${App.userId}`).then((r) => r.json());
+      const all = await Api.getSettings();
       const stored = all.transcribeBackend || {};
       providerCache = (typeof stored.provider === 'string' && stored.provider) || 'hf_whisper';
     } catch (e) { providerCache = 'hf_whisper'; }

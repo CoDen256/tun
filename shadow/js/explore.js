@@ -84,7 +84,6 @@ const Explore = (() => {
     const ids = Array.from(sel);
     try {
       await Api.postProgress(App.book.id, {
-        userId: App.userId,
         [done ? 'doneSegmentIds' : 'notDoneSegmentIds']: ids,
       });
       await App.refreshBook();

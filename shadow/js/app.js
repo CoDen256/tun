@@ -22,6 +22,8 @@ const App = (() => {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const state = {
+    // Always null since D168: the server uses its pinned owner id. Kept so
+    // `App.userId` callers keep working until they are tidied away.
     userId: null,
     books: [],
     book: null,          // the loaded detail, or null
@@ -29,9 +31,9 @@ const App = (() => {
     chapters: [],
     byChapter: new Map(),// chapterId -> sentences
     screen: 'library',
-    // ONE preference, default ON, governing BOTH lanes (task 2.5). It is
-    // persisted through the existing settings proxy under `shadowTrimSilence`
-    // — this change needed no new endpoint.
+    // ONE preference, default ON, governing BOTH lanes (task 2.5). Stored
+    // under `shadowTrimSilence` in shadow's OWN settings store (D168) — it
+    // used to be proxied to phonexa.
     trim: true,
     // `P`'s state. It must survive moving between sentences (task 3.5), so
     // it lives here and not in Study's per-sentence state; localStorage
@@ -73,18 +75,13 @@ const App = (() => {
     // drawn over the old window describes a duration that is about to stop
     // being on screen.
     if (typeof Study !== 'undefined' && state.screen === 'study') Study.retrim();
-    if (state.userId == null) return;
-    fetch(`${API_BASE}/api/v1/settings/${TRIM_KEY}?userId=${state.userId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value: { on: state.trim } }),
-    }).catch(() => { /* a preference is not a transaction */ });
+    Api.putSetting(TRIM_KEY, { on: state.trim })
+      .catch((e) => toast('Could not save the trim setting: ' + e.message, true));
   }
 
   async function loadTrim() {
     try {
-      const all = await fetch(`${API_BASE}/api/v1/settings?userId=${state.userId}`)
-        .then((r) => (r.ok ? r.json() : {}));
+      const all = await Api.getSettings();
       const stored = all && all[TRIM_KEY];
       // absent → the default, which is ON
       state.trim = !(stored && stored.on === false);
@@ -207,17 +204,8 @@ const App = (() => {
       else if (k === 'escape') show('library');
     });
 
-    await UserLib.mountPicker('userPicker');
-    state.userId = await UserLib.getCurrentUserId();
+    // No profile picker (D168): shadow is single-user.
     await loadTrim();
-    window.addEventListener('phonexa:user-changed', async (e) => {
-      state.userId = (e.detail && e.detail.userId) || await UserLib.getCurrentUserId();
-      await loadTrim();
-      state.book = null;
-      ChapterAudio.clear();
-      await Library.refresh();
-      show('library');
-    });
 
     Library.init();
     Explore.init();

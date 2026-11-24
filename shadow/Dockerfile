@@ -35,7 +35,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Backend
-COPY shadow/app.py shadow/shadowing.py shadow/phonexa_client.py shadow/audio.py shadow/progress.py ./
+COPY shadow/app.py shadow/shadowing.py shadow/phonexa_client.py shadow/audio.py shadow/progress.py shadow/appsettings.py ./
 COPY shadow/db/ ./db/
 COPY shadow/alembic.ini .
 COPY shadow/alembic/ ./alembic/

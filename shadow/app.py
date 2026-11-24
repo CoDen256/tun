@@ -38,6 +38,10 @@ keeps ONE mono Opus master per book in its own volume (audio.py,
 shadowing.py). What shadow still needs from phonexa is profiles, settings
 and /analyze-praat, proxied server-side so the browser only ever talks to
 /shadow/*.
+(CORRECTION, 2026-11-24, D168: profiles and settings are no longer
+needed from phonexa — shadow is single-user and keeps its settings in its
+own database, appsettings.py. /analyze-praat and the Formant Lab handoff
+remain.)
 
 SERVE-BEFORE-MIGRATE. This module defines the app and nothing else; the
 container runs it through scripts/bootstrap.py, which binds the port first
@@ -74,6 +78,7 @@ from pyservice.auth import register_auth
 from pyservice.prefix import forwarded_prefix, render_page, safe_page_path
 
 import phonexa_client
+from appsettings import settings_bp
 from shadowing import shadowing_bp
 
 app = Flask(__name__)
@@ -113,6 +118,7 @@ CORS(app)
 # probe and nothing else does.
 register_auth(app)
 app.register_blueprint(shadowing_bp)
+app.register_blueprint(settings_bp)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -258,7 +264,8 @@ def http_transcribe_providers():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# phonexa proxies — profiles, settings and Praat analysis.
+# phonexa proxies — Praat analysis only. (Profiles and settings were
+# proxied here too until D168; shadow owns its settings now.)
 #
 # Server-side, never from the browser: /shadow/* and /phonexa/* are two
 # different basic_auth scopes at the gateway, and internal service-to-service
@@ -278,49 +285,10 @@ def _relay(resp):
         return jsonify({'error': 'phonexa returned an unreadable response'}), 502
 
 
-@app.route('/api/v1/users')
-def list_users():
-    try:
-        return jsonify(phonexa_client.list_users())
-    except phonexa_client.PhonexaUnavailable as exc:
-        # An empty list would read as "no profiles yet" and make js/user.js
-        # auto-create a duplicate 'default' in phonexa the moment it came
-        # back. 503 instead: the picker keeps the id it already has.
-        return _phonexa_down(exc)
-
-
-@app.route('/api/v1/users', methods=['POST'])
-def create_user():
-    data = request.get_json(silent=True) or {}
-    try:
-        return _relay(phonexa_client.create_user((data.get('name') or '').strip()))
-    except phonexa_client.PhonexaUnavailable as exc:
-        return _phonexa_down(exc)
-
-
-@app.route('/api/v1/settings')
-def list_settings():
-    user_id = request.args.get('userId', type=int)
-    if user_id is None:
-        return jsonify({'error': 'userId query param is required'}), 400
-    try:
-        return jsonify(phonexa_client.get_settings(user_id))
-    except phonexa_client.PhonexaUnavailable as exc:
-        return _phonexa_down(exc)
-
-
-@app.route('/api/v1/settings/<key>', methods=['PUT'])
-def put_setting(key):
-    user_id = request.args.get('userId', type=int)
-    if user_id is None:
-        return jsonify({'error': 'userId query param is required'}), 400
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict) or 'value' not in body:
-        return jsonify({'error': 'body must be {"value": ...}'}), 400
-    try:
-        return _relay(phonexa_client.put_setting(user_id, key, body))
-    except phonexa_client.PhonexaUnavailable as exc:
-        return _phonexa_down(exc)
+# /api/v1/users and /api/v1/settings USED TO BE proxied to phonexa here.
+# Both are gone (shadow-playback-chapter-reading, D168): there are no
+# profiles, and settings are shadow's own — see appsettings.py, whose
+# blueprint now answers /api/v1/settings from shadow's database.
 
 
 @app.route('/analyze-praat', methods=['POST'])
