@@ -13,7 +13,7 @@ Batch opened 2026-11-24 from three triaged packages.
 |---|---|
 | smia provider data, PoS ownership & responses | pending |
 | Pronunciation, tonelag & minimal-pair exercise notes | pending |
-| Shadow playback, splitting & chapter reading | building — `shadow/openspec/changes/shadow-playback-chapter-reading`; implemented + reviewed + review fixes (0d64e20a); server-observable criteria PASS (A1.2–1.5, A6.1, A7.1 manifest, A7.3, A9.1–9.4/9.6–9.8 server halves); **UI criteria NOT RUN — awaiting a connected Chrome** (dev gateway :8080, operator/testoperator) |
+| Shadow playback, splitting & chapter reading | archived — `shadow/openspec/changes/archive/2026-11-24-shadow-playback-chapter-reading` (agent-verified; operator acceptance pending, see OPERATOR-CHECKLIST.md) |
 
 ## Packages
 
