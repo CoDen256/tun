@@ -12,10 +12,10 @@
 
 ## 2. Data
 
-- [ ] 2.1 Run the crawl (exit 0, or every remaining failure explained in DECISIONS-MADE.md); commit `calst_manifest.json` + cache
-- [ ] 2.2 `extract` → `download` → commit new mp3s + `manifest.jsonl` (2-take cap and Slow exclusion unchanged)
-- [ ] 2.3 Truncate `pygmalion_audio` in dev, run `python -m scripts.import_pygmalion`, verify per acceptance.md
+- [x] 2.1 Run the crawl (exit 0, or every remaining failure explained in DECISIONS-MADE.md); commit `calst_manifest.json` + cache — Oslo only (operator decision); exit 0, 354/354 saturated, c5a46246
+- [x] 2.2 `extract` → `download` → commit new mp3s + `manifest.jsonl` (2-take cap and Slow exclusion unchanged) — 1,454 new rows, 7040e400 (after the take-renumbering fix c69fc600)
+- [x] 2.3 Truncate `pygmalion_audio` in dev, run `python -m scripts.import_pygmalion`, verify per acceptance.md — 7,160 imported, tester PASS
 
 ## 3. Handoff
 
-- [ ] 3.1 OPERATOR-CHECKLIST: deploy = pull, rebuild, truncate `pygmalion_audio`, run the import
+- [x] 3.1 OPERATOR-CHECKLIST: deploy = pull, rebuild, truncate `pygmalion_audio`, run the import

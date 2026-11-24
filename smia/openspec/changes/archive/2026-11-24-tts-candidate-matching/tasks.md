@@ -16,4 +16,4 @@
 ## 3. Docs + handoff
 
 - [x] 3.1 Update `smia/CLAUDE.md` (pygmalion now sets `context` on fuzzy candidates) and `docs/06-smia.md` provider notes
-- [ ] 3.2 OPERATOR-CHECKLIST: purge `lookup_cache` rows for (tts, pygmalion) and (tts, dictcc_api); re-import pygmalion (shared with calst-full-coverage)
+- [x] 3.2 OPERATOR-CHECKLIST: purge `lookup_cache` rows for (tts, pygmalion) and (tts, dictcc_api); re-import pygmalion (shared with calst-full-coverage)
