@@ -51,7 +51,11 @@ function deckTitleOf(deckMeta, deckCode) {
 // readouts and the drawer can therefore never describe different numbers.
 export function buildStripModel({ forecast, shipOrders, deckMeta = new Map() }) {
   const changedByCard = new Map();
-  for (const u of forecast.wouldUpdate || []) changedByCard.set(u.cardId, u.changedFaces || []);
+  const diffByCard = new Map();
+  for (const u of forecast.wouldUpdate || []) {
+    changedByCard.set(u.cardId, u.changedFaces || []);
+    if (u.diff) diffByCard.set(u.cardId, u.diff);
+  }
 
   const decks = [];
   for (const d of [...forecast.byDeck].sort((a, b) => a.deckCode.localeCompare(b.deckCode))) {
@@ -84,6 +88,7 @@ export function buildStripModel({ forecast, shipOrders, deckMeta = new Map() }) 
         shippedAt: o.shippedAt ? new Date(o.shippedAt).toISOString() : null,
         changed: !!faces,
         faces,
+        diff: diffByCard.get(o.cardId) || null,
       });
     }
 
@@ -114,6 +119,7 @@ export function buildStripModel({ forecast, shipOrders, deckMeta = new Map() }) 
         newKind: o.newKind,
         changed: !!faces,
         faces,
+        diff: diffByCard.get(o.cardId) || null,
       });
     });
 
@@ -161,6 +167,7 @@ export function buildStripModel({ forecast, shipOrders, deckMeta = new Map() }) 
             newKind: c.isNew ? "queued" : null,
             changed: !!changedByCard.get(c.cardId),
             faces: changedByCard.get(c.cardId) || null,
+            diff: diffByCard.get(c.cardId) || null,
           });
         }
         // The tier's distance IS these cells — one per new card still to
@@ -532,6 +539,13 @@ export const SHIP_STRIPS_STYLE = `
 .kin-row.dead { cursor: default; opacity: .75; }
 .changed-note { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.55; color: var(--text); margin-bottom: 14px; }
 .changed-note b { color: var(--accent-text); }
+.diff-block { margin-bottom: 14px; }
+.diff-title { font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); margin-bottom: 6px; }
+.diff-title span { text-transform: none; font-weight: 400; margin-left: 8px; }
+.face-diff h4 { font-size: 11px; color: var(--text-faint); margin: 8px 0 3px; }
+.face-diff pre { margin: 0; padding: 8px 10px; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 6px; font-family: var(--mono); font-size: 11.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.diff-block del { background: #e5484d33; color: var(--err, #e5484d); text-decoration: line-through; }
+.diff-block ins { background: #30a46c33; color: var(--ok, #30a46c); text-decoration: none; }
 .drawer .cp-root { padding: 0; }
 /* The drawer wants the CARD, not the Cards page's scratch editor and
    class/symbol catalogues that ride along in the same component. */
@@ -609,11 +623,48 @@ export const SHIP_STRIPS_CLIENT = `
   // a word boundary where one is near the limit, so the preview does not end
   // mid-word for the sake of three characters.
   function trunc(s, n) {
-    var t = String(s).replace(/\s+/g, ' ').trim();
+    var t = String(s).replace(/\\s+/g, ' ').trim();
     if (t.length <= n) return t;
     var cut = t.slice(0, n);
     var sp = cut.lastIndexOf(' ');
     return (sp > n - 15 ? cut.slice(0, sp) : cut) + '…';
+  }
+  // Word-level diff (LCS) over tags/words/whitespace tokens of the raw
+  // card HTML, so a changed class or a single word shows up exactly.
+  function diffHtml(a, b) {
+    var ta = String(a == null ? '' : a).match(/<[^>]*>|\\s+|[^<\\s]+/g) || [];
+    var tb = String(b == null ? '' : b).match(/<[^>]*>|\\s+|[^<\\s]+/g) || [];
+    var n = ta.length, m = tb.length;
+    if (n * m > 4000000) return '<del>' + esc(a) + '</del><ins>' + esc(b) + '</ins>';
+    var L = [];
+    for (var i = 0; i <= n; i++) { L.push(new Array(m + 1).fill(0)); }
+    for (i = n - 1; i >= 0; i--) for (var j = m - 1; j >= 0; j--)
+      L[i][j] = ta[i] === tb[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    var out = '', i2 = 0, j2 = 0, delBuf = '', insBuf = '';
+    function flush() {
+      if (delBuf) out += '<del>' + esc(delBuf) + '</del>';
+      if (insBuf) out += '<ins>' + esc(insBuf) + '</ins>';
+      delBuf = ''; insBuf = '';
+    }
+    while (i2 < n && j2 < m) {
+      if (ta[i2] === tb[j2]) { flush(); out += esc(ta[i2]); i2++; j2++; }
+      else if (L[i2 + 1][j2] >= L[i2][j2 + 1]) delBuf += ta[i2++];
+      else insBuf += tb[j2++];
+    }
+    while (i2 < n) delBuf += ta[i2++];
+    while (j2 < m) insBuf += tb[j2++];
+    flush();
+    return out;
+  }
+  function diffBlock(diff) {
+    if (!diff) return '';
+    var html = '';
+    Object.keys(diff).forEach(function (face) {
+      var d = diff[face];
+      html += '<div class="face-diff"><h4>' + esc(face) + ' face</h4>' +
+        '<pre>' + diffHtml(d.before, d.after) + '</pre></div>';
+    });
+    return '<div class="diff-block"><h4 class="diff-title">What changes <span><del>removed</del> <ins>added</ins></span></h4>' + html + '</div>';
   }
   function faceList(f) {
     if (f.length === 1) return f[0];
@@ -768,8 +819,8 @@ export const SHIP_STRIPS_CLIENT = `
       : '<div class="kin-row dead"><span class="lbl">kin</span><span>no card in this slot — nothing to pair with</span></div>';
 
     var changed = u.changed && u.faces && u.faces.length
-      ? '<div class="changed-note"><b>' + esc(faceList(u.faces)) + ' rewritten.</b> The preview below shows the ' +
-        '<b>NEW content this publish will write</b>, not what is currently on the device.</div>'
+      ? '<div class="changed-note"><b>' + esc(faceList(u.faces)) + ' rewritten.</b> The ' +
+        'diff below shows what this publish changes; the card preview underneath is the <b>currently stored</b> content.</div>' + diffBlock(u.diff)
       : '';
 
     dwBody.innerHTML = facts + kinRow + changed +

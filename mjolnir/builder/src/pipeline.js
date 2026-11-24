@@ -538,7 +538,8 @@ export async function runForecast(
     const entry = cardIdByNoteId.get(note.id);
     if (!entry) continue;
     const content = project(note, { grammarRuleLookup: ruleLookup });
-    const faces = changedFaces(existingContent.get(entry.cardId), content);
+    const before = existingContent.get(entry.cardId) || null;
+    const faces = changedFaces(before, content);
     if (faces.length > 0) {
       wouldUpdate.push({
         cardId: entry.cardId,
@@ -546,6 +547,7 @@ export async function runForecast(
         noteId: note.id,
         noteText: note.text,
         changedFaces: faces,
+        diff: Object.fromEntries(faces.map((f) => [f, { before: before ? before[f] ?? null : null, after: content[f] ?? null }])),
       });
     }
   }
