@@ -80,7 +80,7 @@ TIMEOUT = 30
 RETRY_TIMEOUT = 90
 PACE = (0.5, 1.0)  # seconds between network requests (start to start, at least)
 BACKOFF_429 = (5, 4, 300)  # first wait (s), attempts, max wait (s) — doubled each time
-ABORT_AFTER = 10  # consecutive failed requests that abort the whole run
+ABORT_AFTER = 50  # consecutive failed requests that abort the whole run
 
 
 class CrawlAborted(RuntimeError):
