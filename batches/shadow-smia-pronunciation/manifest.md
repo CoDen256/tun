@@ -13,18 +13,29 @@ Batch opened 2026-11-24 from three triaged packages.
 |---|---|
 | smia provider data, PoS ownership & responses | pending |
 | Pronunciation, tonelag & minimal-pair exercise notes | pending |
+| stabbur ui  | pending |
 | Shadow playback, splitting & chapter reading | archived — `shadow/openspec/changes/archive/2026-11-24-shadow-playback-chapter-reading` (agent-verified; operator acceptance pending, see OPERATOR-CHECKLIST.md) |
 
 ## Packages
 
+### stabbur ui
+[ux] stabbur gets additional page for grouping multiple notes as similar, so that i can remove duplicates
+[ux] stabbur ideally i would get a large warning sign, if there is already a note with the same text (ignoring articles/å/particles)
+
+
+
 ### smia provider data, PoS ownership & responses
 
 projects: smia, stabbur
-[bug] make stabbur not solve most of the problems of particular smia providers, and move the logic to smia
-EXAMPLES:
-[bug]
-IPA:
-[bug] ipa should be merged on smia side, all the " " automatic joining should be done on smia side, if the providers don't support whole phrase.
+[rehaul] make stabbur not solve most of the problems of particular smia providers, and move the logic to smia and make stabbur just the pure ui client of smia, reducing the logic it takes to properly fill the tokens:
+1. EXAMPLES:
+
+2. IPA:
+ - ipa should be merged on smia side, all the " " automatic joining should be done on smia side, if the providers don't support whole phrase, unify it
+ - this should be done unified, so that different providers support it just fine
+ - ideally we would strip all the // and [] stuff
+ - also unify the tonelag marker and stress markers, so that its always the same symbol and properly defines where the stress is " and ' is nice, but should be ubiquitous in all providers
+ - also let's provide the type of ipa, phonetic or phonemic, providers differ on it
 TRANSLATIONS
 [ux] smia translations dictcc should merge same text(translations) entries by joining context with "/" but verify that the stabbur can properly parse the PoS with such merge
 TTS
