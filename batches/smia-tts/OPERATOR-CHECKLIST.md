@@ -196,8 +196,14 @@ When it finishes, `docker rm pygmalion-dl`.
 docker compose run --rm --no-deps -v "$PWD/smia":/work smia-backend chown -R "$(id -u):$(id -g)" /work/providers
 ```
 
-**4d. Import into the live database.** Repeat step 2. The import count will
-be higher than 7160 now.
+**4d. Import into the live database.** Repeat step 2, with a different
+expected count. Extract on the VPS (2026-11-26) wrote 54,180 manifest rows of
+which 20,829 are surplus, so a complete download imports **about 33,350**
+(54,180 − 20,829 surplus − 1 permanently-failing `trettiende`), minus any
+further file the server refuses. `skipped` in the summary is that count of
+refused files, and it should stay in single digits; if it is in the hundreds,
+the download did not finish — re-run it rather than importing a partial
+corpus.
 
 ```bash
 docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d smia' <<'SQL'
