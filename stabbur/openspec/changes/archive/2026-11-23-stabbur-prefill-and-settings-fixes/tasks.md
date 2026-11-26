@@ -40,7 +40,7 @@ must turn green. The design decisions are in `design.md`.
 
 - [x] 2.1 Reproduce or trace the intermittent 500 (D2) *before* changing the
   walk. Record the cause and the fix in one line in
-  `batches/stabbur-fixes/DECISIONS-MADE.md`.
+  `../../../../../batches/archive/stabbur-fixes`.
 - [x] 2.2 `ui/ui.js`: each prefill step resolves as soon as the provider it
   will use has answered (strict operator order, D1). It no longer waits on
   `ensureKind` for every enabled provider. Lookups are still fired in

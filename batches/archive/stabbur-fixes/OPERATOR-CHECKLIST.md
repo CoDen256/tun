@@ -10,7 +10,7 @@ confirm yourself.
 
 Standard pull / build / restart, with one thing that is **not** optional:
 **`smia-backend` must be rebuilt, not just restarted.** The image gained a
-new module (`smia/example_text.py`) and the Dockerfile's COPY list changed;
+new module (`../../../smia/example_text.py`) and the Dockerfile's COPY list changed;
 a container started from the old image crash-loops on
 `ModuleNotFoundError: No module named 'example_text'` and every enrichment
 call then fails.

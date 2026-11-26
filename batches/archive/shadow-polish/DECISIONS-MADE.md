@@ -1,6 +1,6 @@
 # Tier-2 decisions — shadow-polish
 
-One line per decision (see `docs/15-agentic-workflow.md`).
+One line per decision (see `../../../docs/15-agentic-workflow.md`).
 
 - [Shadow studying refinements] chose a coarse container seek to 500 ms before the target plus a fine output seek and `-t` over a plain output-only seek — because output-only seeking decodes from byte zero, which is minutes into a 12-hour book, while this pays one pad's worth of decode and still starts at the millisecond; `-t` over `-to` because `-to` is read against a timeline the coarse seek has already moved.
 - [Shadow studying refinements] chose a cut-version tag in the chunk filename plus a janitor sweep over a migration or a one-shot boot purge — because the cache is pure derivation, the tag makes an old chunk unaddressable the instant the code changes (correctness without remembering to invalidate), and the sweep only reclaims disk.

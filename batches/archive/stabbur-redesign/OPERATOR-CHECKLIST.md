@@ -1,8 +1,8 @@
 # stabbur-redesign
 
 ## Stabbur editor redesign
-- `stabbur/openspec/changes/archive/2026-11-21-stabbur-editor-redesign`
-- `mjolnir/openspec/changes/archive/2026-11-21-projector-examples-column`
+- `../../../stabbur/openspec/changes/archive/2026-11-21-stabbur-editor-redesign`
+- `../../../mjolnir/openspec/changes/archive/2026-11-21-projector-examples-column`
 
 This touches stabbur (UI rewrite, schema and data migration) and the
 mjolnir builder (the projector reads `examples`). The device plane, the APK,

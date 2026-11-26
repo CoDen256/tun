@@ -1,7 +1,7 @@
 # full-sweep
 
 ## Assembly tab usability
-`mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability`
+`../../../mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability`
 
 No schema migration, no data migration. Deploy is a normal pull + rebuild +
 restart of `mjolnir-hub` only — `mjolnir-builder`, `mjolnir-sync`, device
@@ -42,7 +42,7 @@ plane and the APK are all untouched.
   centring bug caught in the first test pass and fixed before archive.
 
 ## Calst/pygmalion audio consolidation
-`smia/openspec/changes/archive/2026-11-15-calst-audio-union`
+`../../../smia/openspec/changes/archive/2026-11-15-calst-audio-union`
 
 No schema migration. One **required one-time data migration**: the
 `pygmalion_audio` table must be rebuilt from the new manifest, or deployed
@@ -50,7 +50,7 @@ Oslo recordings stay capped at the old 180-word corpus.
 
 ### Deploy
 - `git pull`, `docker compose build smia-backend && docker compose up -d smia-backend`
-  (pulls in the ~7,572 newly committed mp3s under `smia/providers/pygmalion/audio/Oslo/`
+  (pulls in the ~7,572 newly committed mp3s under `../../../smia/providers/pygmalion/audio/Oslo`
   and the updated `manifest.jsonl` — no env var changes, no new secrets).
 - **Required migration step** — truncate and re-import so the curated table
   reflects the new corpus (old Slow rows and any >2-take words must drop out):
@@ -66,7 +66,7 @@ Oslo recordings stay capped at the old 180-word corpus.
 ### Data / storage verification
 - `GET /providers` (operator-plane, bearer `INTERNAL_TOKEN` or via the gateway)
   should report `tts.pygmalion` at 5,791.
-- `smia/providers/pygmalion/audio/manifest.jsonl` is the durable record of
+- `../../../smia/providers/pygmalion/audio/manifest.jsonl` is the durable record of
   what was deliberately excluded: any row with `"surplus": true` (Slow
   recordings, or a word/dialect's 3rd+ Normal take) was archived to disk but
   never imported — this is normal, not a bug.
@@ -197,7 +197,7 @@ back; the split and progress reattach.
 
 ### Out of scope, needs your decision
 
-Commit `8c337e78` touches **`postgres/`** — shared infrastructure this
+Commit `8c337e78` touches **`../../../postgres`** — shared infrastructure this
 package does not own. See the final report; it was not designed, not covered
 by any acceptance criterion, and not verified by this package's tester.
 
@@ -295,7 +295,7 @@ copied, and the source note is untouched.
 ### Known gaps
 
 - **Phone portrait is NOT in this batch.** It was designed and then
-  deliberately deferred; the settled design is in the root `BACKLOG.md`.
+  deliberately deferred; the settled design is in the root `../../../BACKLOG.md`.
 - A short, very common word can still produce a long audio list (`do` has
   ~50 dict.cc entries). The human-only filter cut this a lot, but there is
   no cap — tell me if it is still unwieldy.
@@ -406,7 +406,7 @@ reports nothing, that is the expected state.
   `b41aa964`, which are your own commits, not this batch.
 
 ## Card preview redo
-`mjolnir/openspec/changes/archive/2026-11-20-card-preview-popup`
+`../../../mjolnir/openspec/changes/archive/2026-11-20-card-preview-popup`
 
 This REDOES the card preview from the earlier `assembly-tab-usability`
 build, after you rejected that version's result against the real app —
@@ -523,8 +523,8 @@ untested, 0 FAIL**. Archived ≠ accepted — the untested ones are below, for y
 
 Standard pull / build / restart, with three things that are NOT standard:
 
-1. **`backup` moved out of the root `compose.yaml`** into its own
-   `backup/compose.yaml`, which the root now `include:`s. The
+1. **`backup` moved out of the root `../../../compose.yaml`** into its own
+   `../../../backup/compose.yaml`, which the root now `include:`s. The
    `backup-repo-clone` volume keeps its explicit `name: tun_backup-repo-clone`,
    so your existing clone is reused. After the first `docker compose up`,
    confirm there is **no second clone volume**:

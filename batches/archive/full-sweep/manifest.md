@@ -41,11 +41,11 @@ All other packages are parallel-safe.
 | package | status |
 |---|---|
 | Builder UI rehaul & data versioning | archived — mjolnir: `2026-11-19-flush-record-atomicity`, `2026-11-19-builder-ship-strips` |
-| Assembly tab usability | archived — `mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` (item 3 redone by "Card preview redo") |
-| Card preview redo | archived — `mjolnir/openspec/changes/archive/2026-11-20-card-preview-popup` |
+| Assembly tab usability | archived — `../../../mjolnir/openspec/changes/archive/2026-11-15-assembly-tab-usability` (item 3 redone by "Card preview redo") |
+| Card preview redo | archived — `../../../mjolnir/openspec/changes/archive/2026-11-20-card-preview-popup` |
 | Device sync & userdata storage | archived 2026-11-22 — root: `2026-11-22-backup-console`, `2026-11-22-userdata-git-history`, `2026-11-22-ota-pull-tracking` |
 | Stabbur merging & dict.cc translations | archived — smia `2026-11-18-dictcc-parsing-fixes`; stabbur `2026-11-18-stabbur-merge-fixes`, `2026-11-18-stabbur-triage-queues` |
-| Shadow studying mode | archived — `shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode` |
+| Shadow studying mode | archived — `../../../shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode` |
 | Calst/pygmalion audio consolidation | archived (smia: `2026-11-15-calst-audio-union`) |
 
 ## Packages
@@ -225,7 +225,7 @@ built in this order: `backup-console` → `userdata-git-history`;
 **The third item was added to this package on 2026-11-20**, at the operator's
 request, because the userdata fix already opens the backup service and giving
 that service a UI is where the export, the run history and the git-backed
-timeline all become visible. Moved verbatim out of the root `BACKLOG.md`.
+timeline all become visible. Moved verbatim out of the root `../../../BACKLOG.md`.
 
 **The 2026-11-15 design was DISCARDED and redone from scratch** on the
 operator's instruction. The two changes it produced — `ota-pull-tracking` and
@@ -281,7 +281,7 @@ is unreachable). A builder must not "simplify" this back to one tier.
   **verified import path is a precondition**, not a follow-up.
 - The existing 106 MB of repo history is **left alone**; growth stops, the past
   stays. No rewrite, no fresh repo.
-- `backup/compose.yaml` is created and both services move into it, ending
+- `../../../backup/compose.yaml` is created and both services move into it, ending
   `backup` being the one project that cannot run standalone.
 - Backup interval stays **24h**; it is now a knob in the UI rather than a deploy.
 - `/mjolnir/ota` (Logic bundles) gets **no** pull columns — a pull is recorded
@@ -311,7 +311,7 @@ Accepted mockups, both after operator click-through:
   pass; the Sync surface took one iteration, replacing daily-only with the
   two-tier timeline after the reversal above.
 
-Nothing here touches the device plane: no change under `mjolnir/sync/`,
+Nothing here touches the device plane: no change under `../../../mjolnir/sync`,
 `mjolnir/patches/` or the APK, and all three changes carry acceptance criteria
 diffing real device-facing responses byte for byte.
 
@@ -323,7 +323,7 @@ Deferred to the builder's judgement (tier 2, not guesses):
 - the `ota_pulls` dedup key's exact columns, provided re-ingesting the same log
   inserts nothing twice
 - the retention sweep's trigger point inside hub
-- how `bin/_check_backup_sources.py` spells the new "covered by the backup
+- how `../../../bin/_check_backup_sources.py` spells the new "covered by the backup
   repo's own export" category, provided it still reports a genuinely sourceless
   exclusion
 - the shape of the internal endpoint backup-console exposes for the archived
@@ -403,7 +403,7 @@ accepted on the first pass with one scope change — portrait removed.
 (`[ux] convenient phone portrait display for stabbur`). It was designed in
 full and then deliberately taken out of the package so the operator can do
 it later; the fourth change that would have carried it was never created.
-What was settled is recorded verbatim in the root `BACKLOG.md` so it need
+What was settled is recorded verbatim in the root `../../../BACKLOG.md` so it need
 not be re-derived, and `stabbur-triage-queues` task 8.1 forbids any
 responsive work, with acceptance criterion 55 failing a diff that contains
 it.
@@ -423,7 +423,7 @@ Deferred to the builder's judgement (tier 2, not guesses):
 
 ### Shadow studying mode
 projects: shadow
-status: archived 2026-11-16 — `shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode`
+status: archived 2026-11-16 — `../../../shadow/openspec/changes/archive/2026-11-16-shadow-studying-mode`
 
 [OVERHAUL] shadow shadowing should support studying mode where i just press 3 buttons (one makes the audio play, the second compares, the third marks as completed and goes to the next one) RETHINK THE DESIGN
 
@@ -467,7 +467,7 @@ Prepare rebuilt around named split configs with per-sentence audio preview
 tab row removed, and the phone's `⋯` trigger moved to the top.
 
 Nothing here touches the device plane, and no other project is modified —
-notably `backup/` is untouched, because the audio volume is deliberately
+notably `../../../backup` is untouched, because the audio volume is deliberately
 **not** added to the backup set. That is the same failure this batch's
 `userdata-history-offload` package exists to undo.
 
@@ -504,13 +504,13 @@ progress-display details.
   operator 2026-11-16, out of the "Stabbur merging & dict.cc translations"
   package, AFTER it was fully designed. Not a drop: the operator wants it,
   later, by themselves. The settled design is recorded verbatim in the root
-  `BACKLOG.md`; the mockup's "Portrait" blocks show the treatment;
+  `../../../BACKLOG.md`; the mockup's "Portrait" blocks show the treatment;
   `stabbur-triage-queues` task 8.1 and acceptance criterion 55 forbid any
   responsive work landing in this package by accident.
 
 ## Out-of-package changes that rode along
 
-- **`8c337e78` — `postgres/compose.yaml` + `postgres/init/bootstrap.sh`**,
+- **`8c337e78` — `../../../postgres/compose.yaml` + `postgres/init/bootstrap.sh`**,
   committed during the Shadow studying mode build. It fixes a real
   socket-vs-TCP race in `postgres-init` (the health check probed the UNIX
   socket while `bootstrap.sh` connects over TCP, so a probe landing while

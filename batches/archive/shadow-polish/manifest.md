@@ -13,13 +13,13 @@ Single package. Nothing to order.
 
 | package | status |
 |---|---|
-| Shadow studying refinements | archived — `shadow/openspec/changes/archive/2026-11-18-shadow-studying-refinements` |
+| Shadow studying refinements | archived — `../../../shadow/openspec/changes/archive/2026-11-18-shadow-studying-refinements` |
 
 ## Packages
 
 ### Shadow studying refinements
 projects: shadow
-status: archived 2026-11-18 — `shadow/openspec/changes/archive/2026-11-18-shadow-studying-refinements`
+status: archived 2026-11-18 — `../../../shadow/openspec/changes/archive/2026-11-18-shadow-studying-refinements`
 
 Operator findings, verbatim:
 
@@ -51,7 +51,7 @@ Operator findings, verbatim:
 > size as others. put done and next as a separate button along the other ones
 
 **Two of the reported bugs have ONE root cause, found by reading during
-design.** `shadow/audio.py` cuts with `-ss`/`-to` *before* `-i` plus
+design.** `../../../shadow/audio.py` cuts with `-ss`/`-to` *before* `-i` plus
 `-c copy` — input seeking on a stream copy, which lands on the enclosing Ogg
 page boundary rather than the requested millisecond. That is why Explore's
 preview bleeds the previous sentence (it plays a server cut) while Prepare
