@@ -127,14 +127,13 @@ What the exit code means:
 | **1** | The report lists failed or unsaturated pairs. | `docker start calst-crawl` re-runs the same crawl. It resumes from the cache and retries only those pairs. |
 | **3** | Aborted after 50 consecutive request failures; CALST is throttling or down. | Wait a while, then `docker start calst-crawl`. |
 
+| **137** (or another kill code) | The container was stopped, e.g. the VPS rebooted. It does not restart by itself. | `docker start calst-crawl`. It resumes from the cache. |
+
 `empty` in the report is not a problem: that dialect has no recordings for
 that exercise, which is true of every pronunciation-contrast exercise outside
 Oslo (293 pairs). Add `--retry-empty` only if you suspect CALST was having a
-bad day when it said so.
-| **137** (or another kill code) | The container was stopped, e.g. the VPS rebooted. It does not restart by itself. | `docker start calst-crawl`. It resumes from the cache. |
-
-- Under Trondheim and Tromsø some exercises have words without recordings.
-  That is CALST's data, not a failure.
+bad day when it said so. Some exercises also return words with no recordings
+under Trondheim and Tromsø — also CALST's data, not a failure.
 
 **4b. Extract and download — NOT DONE YET.** As of 2026-11-26 the crawl data
 is committed but no audio has been fetched: `providers/pygmalion/audio/` is
@@ -153,12 +152,39 @@ That is 6× the ~52 MB the design signed off on, so decide first whether all
 eight dialects' audio belongs in git. Nothing else is blocked on it: the
 database is unaffected either way, since the backup no longer dumps smia.
 
-Extract is offline. The download is about one file per second, and the number
-of new files is printed by extract.
+Run them as two steps, not one: extract is offline and takes seconds, and its
+numbers are what you decide the 11-hour download on. Pull first, so the VPS
+has the corrected manifest and the crawler fix, and check you have ~1 GB free
+(`df -h .`) for the audio plus its git objects.
 
 ```bash
-docker compose run --rm --no-deps -v "$PWD/smia":/work -w /work smia-backend sh -c 'pip install -q rich==13.9.4 && python -m scripts.fetch_pygmalion_audio extract && python -m scripts.fetch_pygmalion_audio download'
+git pull
 ```
+
+**Extract** (offline, seconds, prints the per-dialect table and the counts):
+
+```bash
+docker compose run --rm --no-deps -v "$PWD/smia":/work -w /work smia-backend sh -c 'pip install -q rich==13.9.4 && python -m scripts.fetch_pygmalion_audio extract'
+```
+
+**Download** (detached — it runs for 10–12 h and must not die with your SSH
+session):
+
+```bash
+docker compose run -d --name pygmalion-dl --no-deps -v "$PWD/smia":/work -w /work smia-backend sh -c 'pip install -q rich==13.9.4 && python -m scripts.fetch_pygmalion_audio download'
+```
+
+Check on it whenever you like, the same way as the crawl:
+
+```bash
+docker ps -a --filter name=pygmalion-dl                      # "Up …" or "Exited (N) …"
+docker logs --tail 20 pygmalion-dl                           # progress, one line per file
+docker inspect pygmalion-dl --format '{{.State.ExitCode}}'   # after it stopped
+```
+
+It is resumable: a row already `ok` is never re-fetched, so after a crash, a
+reboot or a stop, `docker start pygmalion-dl` picks up where it left off.
+When it finishes, `docker rm pygmalion-dl`.
 
 - Existing manifest rows are never renumbered (fixed in this build).
 - New dialects land in their own folders: `Bergen/`, `Tromsoe/`, …
