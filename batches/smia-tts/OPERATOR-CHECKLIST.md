@@ -92,7 +92,18 @@ the repository root.
 The backend mounts `providers/` read-only. These one-off containers mount the
 checkout at `/work` instead, so the scripts can write there.
 
-**4a. Crawl** (detached):
+**4a. Crawl — ALREADY DONE (2026-11-26), skip to 4b.** You ran it, and the
+result is committed: 2,832 (exercise, dialect) pairs, 0 failures, exit 0,
+53,695 sound URLs. Nothing here needs running again; a re-run would replay
+the whole thing from the cache with no network calls.
+
+*(Your run reported 295 problems. 293 were CALST serving an empty word list
+for a pronunciation-contrast exercise a dialect has no recordings of — data,
+not a failure — and 2 were exercise 938 stopping 5 samples short of the old
+cap. Both are fixed in the crawler, the manifest was re-run clean, and no
+audio was ever missing. Commits `0ac6674b2`, `bafd60ba6`.)*
+
+The command, for reference or a future re-crawl (detached):
 
 ```bash
 docker compose run -d --name calst-crawl --no-deps -v "$PWD/smia":/work -w /work smia-backend python -m scripts.crawl_calst
@@ -112,16 +123,38 @@ What the exit code means:
 
 | exit | meaning | what to do |
 |---|---|---|
-| **0** | Every (exercise, dialect) is saturated. | `docker rm calst-crawl`, then go on to 4b. |
+| **0** | Every pair is `saturated` or `empty`. | `docker rm calst-crawl`, then go on to 4b. |
 | **1** | The report lists failed or unsaturated pairs. | `docker start calst-crawl` re-runs the same crawl. It resumes from the cache and retries only those pairs. |
-| **3** | Aborted after 10 consecutive request failures; CALST is throttling or down. | Wait a while, then `docker start calst-crawl`. |
+| **3** | Aborted after 50 consecutive request failures; CALST is throttling or down. | Wait a while, then `docker start calst-crawl`. |
+
+`empty` in the report is not a problem: that dialect has no recordings for
+that exercise, which is true of every pronunciation-contrast exercise outside
+Oslo (293 pairs). Add `--retry-empty` only if you suspect CALST was having a
+bad day when it said so.
 | **137** (or another kill code) | The container was stopped, e.g. the VPS rebooted. It does not restart by itself. | `docker start calst-crawl`. It resumes from the cache. |
 
 - Under Trondheim and Tromsø some exercises have words without recordings.
   That is CALST's data, not a failure.
 
-**4b. Extract and download.** Extract is offline. The download is about one
-file per second, and the number of new files is printed by extract.
+**4b. Extract and download — NOT DONE YET.** As of 2026-11-26 the crawl data
+is committed but no audio has been fetched: `providers/pygmalion/audio/` is
+still the Oslo-only 10,203 rows, and there is no `Tromsoe/` directory. Measured
+locally against the committed crawl:
+
+| | |
+|---|---|
+| New manifest rows | 43,977 |
+| Of those, importable (not surplus) | 26,190 |
+| Files to download | ~44,000, about one per second → **10–12 h** |
+| Audio added to git | **~300 MB** (Oslo's 10,006 files are 69 MiB) |
+| Words covered after import | 4,665, up from 4,543 |
+
+That is 6× the ~52 MB the design signed off on, so decide first whether all
+eight dialects' audio belongs in git. Nothing else is blocked on it: the
+database is unaffected either way, since the backup no longer dumps smia.
+
+Extract is offline. The download is about one file per second, and the number
+of new files is printed by extract.
 
 ```bash
 docker compose run --rm --no-deps -v "$PWD/smia":/work -w /work smia-backend sh -c 'pip install -q rich==13.9.4 && python -m scripts.fetch_pygmalion_audio extract && python -m scripts.fetch_pygmalion_audio download'
