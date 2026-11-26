@@ -15,6 +15,7 @@ The card is just a number, not its contents.
 We could mint every C31000...C31999 card beforehand, without any content, define the order. When building just iterate over each ocuurance stop where we can't create any occurence anymore, since the content was not yet filled and that's it.
 But is it worth it? is it just trying to make everything perfect? 
 [bug] fix filmot youtube clip parsing shadow/phonexa lab works somehow?, why not filmot?, btw shadow yt-dlp not working currently, but it did work properly before.
+[idea] add additional home video library parsing of subtitles like jellyfin
 
 
 

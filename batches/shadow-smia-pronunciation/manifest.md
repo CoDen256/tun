@@ -18,6 +18,10 @@ Batch opened 2026-11-24 from three triaged packages.
 
 ## Packages
 
+
+### CALST copy
+[idea] copy calst exercises, just better ui, navigation, every manifest is there. A new completly project
+
 ### stabbur ui
 [ux] stabbur gets additional page for grouping multiple notes as similar, so that i can remove duplicates
 [ux] stabbur ideally i would get a large warning sign, if there is already a note with the same text (ignoring articles/å/particles)
