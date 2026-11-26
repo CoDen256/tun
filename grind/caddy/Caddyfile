@@ -860,6 +860,25 @@
 		reverse_proxy adminer:8080
 	}
 
+	# ---- the marks ------------------------------------------------------
+	# libs/icons/<name>.svg, mounted read-only (see grind/compose.yaml) and
+	# served off disk. It exists for ONE consumer: caddy/status/index.html,
+	# which is rendered by this gateway when a zone is down and so cannot ask
+	# that zone for its own mark. Serving the file instead of inlining it is
+	# what keeps the marks in exactly one place; the status page's hand-copied
+	# palette is a copy because a stylesheet is a second request that can
+	# fail, and this is not — if the gateway cannot serve this file it is not
+	# serving the status page either.
+	#
+	# Gated like every other operator path. Nothing in the device plane
+	# reaches this block: /ota/*, /blob/*, /audio-manifest/* and
+	# /mjolnir/userdata/* are all matched and answered far above it.
+	handle_path /icon/* {
+		import operator_gate
+		root * /etc/caddy/icons
+		file_server
+	}
+
 	# The catch-all. DELIBERATELY NOT GATED, and that is a decision rather
 	# than an omission: it serves one hard-coded word and reaches no service,
 	# no file and no database, so there is nothing here for a credential to

@@ -26,6 +26,8 @@
 // /app, precisely so that one relative specifier resolves identically in the
 // repo and in the container.
 
+import { iconLink } from "./icons.js";
+
 const STYLE = `
 :root {
   --bg: #14171c; --bg-elevated: #1b1f26; --bg-sunken: #0f1216;
@@ -346,12 +348,18 @@ export function renderZoneNav(activeZone) {
 // the zone switcher above it is the same in every process. Shape kept
 // identical to the renderShell each service already called, so this is a
 // drop-in for both: { title, activeHref, body }, plus the two new fields.
-export function renderShell({ title, activeHref, body, brand, rail, activeZone }) {
+//
+// `icon` names a mark in libs/icons/ (see icons.js). It is a name and not
+// markup so that the only thing a caller can get wrong is the name, which
+// throws at boot. Left out, the page simply has no icon and the browser asks
+// for /favicon.ico as it always did — no service is required to have a mark.
+export function renderShell({ title, activeHref, body, brand, rail, activeZone, icon }) {
   return `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <title>${escapeHtml(title)}</title>
+${icon ? iconLink(icon) : ""}
 <style>${STYLE}</style>
 </head>
 <body>

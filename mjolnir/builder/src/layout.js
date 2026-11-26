@@ -26,6 +26,7 @@ export function renderShell({ title, activeHref, body }) {
     body,
     brand: "mjølnir · builder",
     activeZone: "/builder",
+    icon: "mjolnir-builder",
     rail: (href) => renderRail(NAV, href),
   });
 }

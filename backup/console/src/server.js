@@ -219,6 +219,7 @@ export function createServer() {
             brand: "tun · backup",
             activeZone: `${PREFIX}/`,
             activeHref: "#health",
+            icon: "backup",
             rail,
             // THE STYLE AND THE SCRIPT LIVE OUTSIDE THE SWAPPED REGION, and
             // that is load-bearing rather than tidiness. `renderShell` nests

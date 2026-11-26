@@ -22,10 +22,18 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 import zipfile
 from pathlib import Path
 
 from flask import Flask, Response, abort, jsonify, render_template, request
+
+# This tool is run by hand from its own directory (`python web.py`), not by the
+# container that puts /libs on PYTHONPATH, so it puts the repository's libs/ on
+# the path itself. One line, for one import: the stabbur mark, which lives in
+# libs/icons/ with the rest of the family and is not copied in here.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "libs"))
+from pyservice.icon import register_icon  # noqa: E402
 
 import ingest as ingest_stage
 import review as review_stage
@@ -163,6 +171,7 @@ def create_app(conn: sqlite3.Connection) -> Flask:
         template_folder=str(Path(__file__).resolve().parent / "templates"),
         static_folder=str(Path(__file__).resolve().parent / "static"),
     )
+    register_icon(app, "stabbur")
     archives = _ArchiveCache()
     skipped: set[str] = set()
 

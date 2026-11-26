@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="hover-translate">
+  <title>hover-translate</title>
+  <!-- A pointer arriving at the end of a word, and the shorter line below it
+       that appears when it does. The one gesture the extension IS: hover,
+       and the translation comes back.
+
+       hover-translate is an external client of the ecosystem (D154) and ships
+       from its own repository; its mark lives here with its siblings because
+       this repository is the ecosystem's design layer, and its PNGs are
+       rendered from this file into the submodule. -->
+  <defs>
+    <linearGradient id="hover-translate-g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8FD63A"/>
+      <stop offset="1" stop-color="#2E8C12"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="32" fill="url(#hover-translate-g)"/>
+  <rect x="12" y="15" width="32" height="5.5" rx="2.75" fill="#fff"/>
+  <rect x="12" y="25" width="20" height="5.5" rx="2.75" fill="#fff"/>
+  <rect x="12" y="35" width="14" height="5.5" rx="2.75" fill="#fff" opacity="0.55"/>
+  <path d="M34 26V46.4L39 41.8 42.4 48.8 46 47.1 42.6 40.4 48.4 39.8Z" fill="#fff"/>
+</svg>

@@ -64,6 +64,18 @@ const NAV = [
   },
 ];
 
+// Hub serves two different things and the tab should say which. The Device
+// group is the console for mjolnir-sync — a separate process on the device
+// plane (D158) that serves JSON to the handset and no page of its own, so its
+// mark would otherwise have nowhere to appear. Everything else gets the
+// hammer. One operator with eight tabs open can tell the sync pages from the
+// build pages without reading any of them.
+function iconFor(activeHref) {
+  return activeHref && activeHref.startsWith("/mjolnir/device")
+    ? "mjolnir-sync"
+    : "mjolnir-hub";
+}
+
 export function renderShell({ title, activeHref, body }) {
   return renderSharedShell({
     title,
@@ -71,6 +83,7 @@ export function renderShell({ title, activeHref, body }) {
     body,
     brand: "mjølnir · hub",
     activeZone: "/mjolnir",
+    icon: iconFor(activeHref),
     rail: (href) => renderRail(NAV, href),
   });
 }

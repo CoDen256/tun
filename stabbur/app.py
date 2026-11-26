@@ -14,6 +14,7 @@ import os
 from flask import Flask
 from flask_cors import CORS
 from pyservice.auth import register_auth
+from pyservice.icon import register_icon
 from pyservice.prefix import forwarded_prefix, render_page
 
 from routes.blobs import register_blob_routes
@@ -58,6 +59,10 @@ app = Flask(__name__, static_folder="ui", static_url_path="/static")
 CORS(app)
 app.json.ensure_ascii = False  # Norwegian characters as literal UTF-8, not \uXXXX escapes
 register_auth(app)
+
+# The tab icon: libs/icons/stabbur.svg, served at this service's own
+# /icon.svg (libs/pyservice/icon.py). The <head> link is in the page.
+register_icon(app, "stabbur")
 register_blob_routes(app)
 register_notes_routes(app)
 register_capture_routes(app)

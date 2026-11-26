@@ -77,6 +77,7 @@ from flask import (
 )
 from flask_cors import CORS
 from pyservice.auth import register_auth
+from pyservice.icon import register_icon
 from pyservice.prefix import forwarded_prefix, render_page, safe_page_path
 
 import phonexa_client
@@ -119,6 +120,10 @@ CORS(app)
 # INTERNAL_TOKEN`; otherwise 401. `/_health` stays open for the container
 # probe and nothing else does.
 register_auth(app)
+
+# The tab icon: libs/icons/shadow.svg, served at this service's own
+# /icon.svg (libs/pyservice/icon.py). The <head> link is in the page.
+register_icon(app, "shadow")
 app.register_blueprint(shadowing_bp)
 app.register_blueprint(settings_bp)
 

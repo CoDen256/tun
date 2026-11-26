@@ -76,6 +76,7 @@ services:
       - ./entrypoint.sh:/grind-entrypoint.sh:ro
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/status:/etc/caddy/status:ro
+      - ../libs/icons:/etc/caddy/icons:ro         # the marks, for the status page's tab
       - ../mjolnir/data:/srv:ro                   # served read-only; publishing writes from the host
       - caddy_data:/data                 # TLS certs — LOSING THIS MEANS RE-ISSUING CERTS
       - caddy_config:/config

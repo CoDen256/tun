@@ -7,6 +7,7 @@ import { getSchedule, setSchedule } from "./schedulerConfig.js";
 import { jobLogLines, makeDbLogger } from "./jobLogs.js";
 import { getActiveMeta } from "./logicBundle.js";
 import { renderShell, escapeHtml } from "./layout.js";
+import { iconLink } from "../../../libs/jsservice/icons.js";
 import { requireAuth } from "../../../libs/jsservice/auth.js";
 import { shipOrderForDeck } from "./cardFlow.js";
 import { getAll as getAllCardContent } from "./cardContent.js";
@@ -346,7 +347,7 @@ export function createServer(pool, config, boot) {
           res.writeHead(503, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(payload) });
           return res.end(payload);
         }
-        const html = `<!doctype html><meta charset="utf-8"><title>builder — database unavailable</title>
+        const html = `<!doctype html><meta charset="utf-8"><title>builder — database unavailable</title>${iconLink("mjolnir-builder")}
           <body style="font-family:system-ui;background:#14171c;color:#e8e6e1;padding:3rem">
           <h2>Database unavailable</h2>
           <p>The builder console needs the database, which is not reachable right

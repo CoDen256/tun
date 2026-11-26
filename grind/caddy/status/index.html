@@ -36,25 +36,33 @@
        both UIs to the prefix root, so match and href are the same string for
        every zone again. Same list, same order, as ZONES in
        libs/jsservice/layout.js. */ -}}
+{{- /* `icon` is a file in libs/icons/, which the gateway mounts read-only at
+       /etc/caddy/icons and serves under /icon/ (see the Caddyfile's `handle
+       /icon/*`). It is a NAME, not markup: the mark is never copied into this
+       file, so it cannot drift from the one every zone's own tab uses. The
+       tab of a dead zone therefore still carries that zone's mark, which is
+       the one thing an operator with eight tabs open needs to see.
+       `adminer` has none — it is third-party and has no mark in the family. */ -}}
 {{- $zones := list
-      (dict "match" "/mjolnir"  "href" "/mjolnir"    "label" "workbench" "desc" "cards, decks, OTA publish history, bundle workbench")
-      (dict "match" "/builder"  "href" "/builder"    "label" "builder"   "desc" "build forecast, schedule, run log")
-      (dict "match" "/stabbur"  "href" "/stabbur/"   "label" "stabbur"   "desc" "captures, notes, enrichment, triage")
-      (dict "match" "/smia"     "href" "/smia/"      "label" "smia"      "desc" "inflect, ipa, tts, stt, translate")
-      (dict "match" "/phonexa"  "href" "/phonexa/"   "label" "phonexa"   "desc" "vowels, consonants, formants, live speech")
-      (dict "match" "/shadow"   "href" "/shadow/"    "label" "shadow"    "desc" "shadowing: media, segments, transcription")
-      (dict "match" "/backup"   "href" "/backup/"    "label" "backup"    "desc" "backup runs, logs, schedule, restore")
-      (dict "match" "/adminer"  "href" "/adminer"    "label" "adminer"   "desc" "the shared Postgres cluster")
+      (dict "match" "/mjolnir"  "href" "/mjolnir"    "label" "workbench" "icon" "mjolnir-hub"     "desc" "cards, decks, OTA publish history, bundle workbench")
+      (dict "match" "/builder"  "href" "/builder"    "label" "builder"   "icon" "mjolnir-builder" "desc" "build forecast, schedule, run log")
+      (dict "match" "/stabbur"  "href" "/stabbur/"   "label" "stabbur"   "icon" "stabbur"         "desc" "captures, notes, enrichment, triage")
+      (dict "match" "/smia"     "href" "/smia/"      "label" "smia"      "icon" "smia"            "desc" "inflect, ipa, tts, stt, translate")
+      (dict "match" "/phonexa"  "href" "/phonexa/"   "label" "phonexa"   "icon" "phonexa"         "desc" "vowels, consonants, formants, live speech")
+      (dict "match" "/shadow"   "href" "/shadow/"    "label" "shadow"    "icon" "shadow"          "desc" "shadowing: media, segments, transcription")
+      (dict "match" "/backup"   "href" "/backup/"    "label" "backup"    "icon" "backup"          "desc" "backup runs, logs, schedule, restore")
+      (dict "match" "/adminer"  "href" "/adminer"    "label" "adminer"   "icon" ""                "desc" "the shared Postgres cluster")
 -}}
-{{- $hit := dict "label" "" "href" "" "desc" "" -}}
+{{- $hit := dict "label" "" "href" "" "desc" "" "icon" "" -}}
 {{- range $z := $zones -}}
-  {{- if hasPrefix $z.match $path -}}{{- $_ := set $hit "label" $z.label -}}{{- $_ := set $hit "href" $z.href -}}{{- $_ := set $hit "desc" $z.desc -}}{{- end -}}
+  {{- if hasPrefix $z.match $path -}}{{- $_ := set $hit "label" $z.label -}}{{- $_ := set $hit "href" $z.href -}}{{- $_ := set $hit "desc" $z.desc -}}{{- $_ := set $hit "icon" $z.icon -}}{{- end -}}
 {{- end -}}
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{if $hit.label}}{{$hit.label}} is not responding{{else}}zone unavailable{{end}} · tun</title>
+{{if $hit.icon}}<link rel="icon" type="image/svg+xml" href="/icon/{{$hit.icon}}.svg">{{end}}
 <style>
 /* A hand-copied subset of libs/jsservice/layout.js's palette and type scale.
    It has to be copied: inlining is the point — a <link> to a stylesheet is a

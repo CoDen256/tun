@@ -36,6 +36,7 @@ import {
 import { listDecks, updateDeckDescription } from "./decks.js";
 import { renderShell, escapeHtml } from "./layout.js";
 import { requireAuth } from "../../../libs/jsservice/auth.js";
+import { iconSvg } from "../../../libs/jsservice/icons.js";
 import { slugify } from "./slug.js";
 import {
   getOrCreate,
@@ -1157,6 +1158,20 @@ export function createServer(pool, config, boot) {
           status: boot ? boot.status() : "ready",
           db: ready,
         });
+      }
+
+      // The mark, as a file. Hub's own pages inline it (renderShell), but the
+      // embedded workbench is a separately-built static page that cannot be
+      // rewritten per request, so it links `../icon.svg` and lands here.
+      if (req.method === "GET" && url.pathname === "/mjolnir/icon.svg") {
+        const svg = iconSvg("mjolnir-hub");
+        res.writeHead(200, {
+          "Content-Type": "image/svg+xml",
+          "Content-Length": Buffer.byteLength(svg),
+          // A day: the mark changes on a deploy, never on a request.
+          "Cache-Control": "public, max-age=86400",
+        });
+        return res.end(svg);
       }
 
       // The embedded workbench's routes and static assets live under one

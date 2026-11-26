@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="mjølnir sync">
+  <title>mjølnir sync</title>
+  <!-- Two arrows round one device: the userdata sync plane. -->
+  <defs>
+    <linearGradient id="sync-g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4FE0F0"/>
+      <stop offset="1" stop-color="#0A9CC0"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="32" fill="url(#sync-g)"/>
+  <g fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round">
+    <path d="M18.85 27.21A14 14 0 0 1 45.79 29.57"/>
+    <path d="M45.15 36.79A14 14 0 0 1 18.21 34.43"/>
+  </g>
+  <path d="M46.92 35.97 50.71 28.7 40.87 30.44Z" fill="#fff"/>
+  <path d="M17.08 28.03 13.29 35.3 23.13 33.56Z" fill="#fff"/>
+  <rect x="26.5" y="26.5" width="11" height="11" rx="3.2" fill="#fff"/>
+</svg>

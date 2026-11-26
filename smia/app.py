@@ -17,6 +17,7 @@ import os
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from pyservice.auth import register_auth
+from pyservice.icon import register_icon
 from pyservice.prefix import forwarded_prefix, render_page
 
 import audio_cache
@@ -58,6 +59,10 @@ app = Flask(__name__, static_folder="ui", static_url_path="/static")
 CORS(app)
 app.json.ensure_ascii = False  # IPA/Norwegian characters as literal UTF-8, not \uXXXX escapes
 register_auth(app)
+
+# The tab icon: libs/icons/smia.svg, served at this service's own
+# /icon.svg (libs/pyservice/icon.py). The <head> link is in the page.
+register_icon(app, "smia")
 
 import adapters  # noqa: F401,E402  (imported for registration side-effects only)
 from routes.generic import register_lookup_routes  # noqa: E402

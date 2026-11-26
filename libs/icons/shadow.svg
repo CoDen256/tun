@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="shadow">
+  <title>shadow</title>
+  <!-- A waveform above the line and its quieter echo below it: you speak
+       after the speaker. That is shadowing. -->
+  <defs>
+    <linearGradient id="shadow-g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#A98CFF"/>
+      <stop offset="1" stop-color="#5B2FE0"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="32" fill="url(#shadow-g)"/>
+  <g fill="#fff">
+    <rect x="12.5" y="21" width="6" height="14" rx="3"/>
+    <rect x="23.5" y="11" width="6" height="24" rx="3"/>
+    <rect x="34.5" y="18" width="6" height="17" rx="3"/>
+    <rect x="45.5" y="24" width="6" height="11" rx="3"/>
+  </g>
+  <g fill="#fff" opacity="0.5">
+    <rect x="12.5" y="37" width="6" height="8" rx="3"/>
+    <rect x="23.5" y="37" width="6" height="15" rx="3"/>
+    <rect x="34.5" y="37" width="6" height="11" rx="3"/>
+    <rect x="45.5" y="37" width="6" height="6" rx="3"/>
+  </g>
+</svg>
