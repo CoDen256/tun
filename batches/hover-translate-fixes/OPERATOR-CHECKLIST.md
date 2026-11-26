@@ -78,6 +78,6 @@ automation in this session, for environment reasons, not product reasons:
 
 Please run these live: open the popup, configure Settings with a real
 backend host + operator token, then work through
-`hover-translate/extension/openspec/changes/capture-and-tooltip-ux/acceptance.md`'s
+`hover-translate/openspec/changes/capture-and-tooltip-ux/acceptance.md`'s
 N, C, and remaining A/T criteria with a real `Alt+Shift+C` / `Alt+Shift+R`
 keypress and a real right-click.
