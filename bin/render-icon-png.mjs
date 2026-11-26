@@ -69,19 +69,24 @@ function parse(svg, source) {
   // one level of state is enough.
   const shapes = [];
   const body = svg.replace(/<defs>[\s\S]*?<\/defs>/, "").replace(/<!--[\s\S]*?-->/g, "");
-  let group = { fill: undefined, opacity: 1 };
+  let group = { fill: undefined, opacity: 1, rotate: null };
   for (const m of body.matchAll(/<(g|\/g|circle|rect|path|title|\/?svg)\b([^>]*)>/g)) {
     const [, name, rest] = m;
     if (name === "g") {
       const a = attrs(`<x${rest}>`);
-      if (a.transform) throw new Error(`${source}: transforms are not supported — flatten the mark or teach this script about them`);
-      group = { fill: a.fill, opacity: Number(a.opacity ?? 1) };
-    } else if (name === "/g") group = { fill: undefined, opacity: 1 };
+      group = { fill: a.fill, opacity: Number(a.opacity ?? 1), rotate: rotation(a.transform, source) };
+    } else if (name === "/g") group = { fill: undefined, opacity: 1, rotate: null };
     else if (name === "circle" || name === "rect" || name === "path") {
       const a = attrs(`<x${rest}>`);
-      if (a.transform) throw new Error(`${source}: transforms are not supported — flatten the mark or teach this script about them`);
       if (a.stroke) throw new Error(`${source}: strokes are not supported — this renderer fills only`);
-      const shape = { kind: name, a: { ...a, fill: a.fill ?? group.fill }, opacity: group.opacity * Number(a.opacity ?? 1) };
+      const own = rotation(a.transform, source);
+      if (own && group.rotate) throw new Error(`${source}: a rotation inside a rotated group — one level only`);
+      const shape = {
+        kind: name,
+        a: { ...a, fill: a.fill ?? group.fill },
+        opacity: group.opacity * Number(a.opacity ?? 1),
+        rotate: own ?? group.rotate,
+      };
       if (name === "path") shape.points = polygon(a.d, source);
       shapes.push(shape);
     } else if (name !== "title" && name !== "svg" && name !== "/svg") {
@@ -89,6 +94,18 @@ function parse(svg, source) {
     }
   }
   return { vbW, vbH, gradients, shapes, source };
+}
+
+/** `transform="rotate(a cx cy)"`, the only transform any mark uses (stabbur's
+ *  two fanned cards). Returned pre-inverted — the renderer samples a point and
+ *  asks which part of the UNROTATED shape it lands on, so it needs the angle
+ *  the other way round. `rotate(a)` about the origin is accepted too. */
+function rotation(transform, source) {
+  if (!transform) return null;
+  const m = transform.trim().match(/^rotate\(\s*(-?[\d.]+)(?:[\s,]+(-?[\d.]+)[\s,]+(-?[\d.]+))?\s*\)$/);
+  if (!m) throw new Error(`${source}: transform '${transform}' is not supported (rotate only)`);
+  const rad = (-Number(m[1]) * Math.PI) / 180;
+  return { cos: Math.cos(rad), sin: Math.sin(rad), cx: Number(m[2] ?? 0), cy: Number(m[3] ?? 0) };
 }
 
 /** A closed straight-edged path to a point list. M/L/H/V/Z only, absolute or
@@ -141,6 +158,16 @@ function insidePolygon(pts, x, y) {
 /** Paint colour for a shape at a point, or null where the shape is absent. */
 function fillAt(shape, x, y, grads, vbW, vbH, source) {
   const { kind, a } = shape;
+  // A rotated shape is tested in its own unrotated frame, and the gradient is
+  // then read at the ROTATED point — which is what SVG does: the paint is in
+  // user space, the geometry is not.
+  let gx = x, gy = y;
+  if (shape.rotate) {
+    const { cos, sin, cx, cy } = shape.rotate;
+    const dx = x - cx, dy = y - cy;
+    x = cx + dx * cos - dy * sin;
+    y = cy + dx * sin + dy * cos;
+  }
   if (kind === "circle") {
     const dx = x - Number(a.cx), dy = y - Number(a.cy);
     if (dx * dx + dy * dy > Number(a.r) ** 2) return null;
@@ -168,7 +195,7 @@ function fillAt(shape, x, y, grads, vbW, vbH, source) {
   const g = grads[ref[1]];
   const ax = g.x1 * vbW, ay = g.y1 * vbH;
   const vx = g.x2 * vbW - ax, vy = g.y2 * vbH - ay;
-  const t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy)));
+  const t = Math.min(1, Math.max(0, ((gx - ax) * vx + (gy - ay) * vy) / (vx * vx + vy * vy)));
   return g.from.map((c, i) => Math.round(c + (g.to[i] - c) * t));
 }
 
@@ -206,7 +233,7 @@ function render(doc, size, { maskable = false } = {}) {
             }
             const col =
               i === 0 && maskable
-                ? fillAt({ ...shape, a: { ...shape.a, r: "1e9" } }, qx, qy, gradients, vbW, vbH, source)
+                ? fillAt({ ...shape, rotate: null, a: { ...shape.a, r: "1e9" } }, qx, qy, gradients, vbW, vbH, source)
                 : fillAt(shape, qx, qy, gradients, vbW, vbH, source);
             if (!col) continue;
             const op = shape.opacity;

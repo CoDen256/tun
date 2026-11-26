@@ -4,7 +4,22 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>stabbur</title>
+  <!-- Installable app, the same shape shadow uses. The manifest is served by
+       app.py with start_url/scope at this page's own prefix;
+       crossorigin=use-credentials because the gateway's operator basic_auth
+       covers /stabbur/ and Chrome fetches a manifest WITHOUT credentials
+       otherwise. No service worker — stabbur is useless without its database,
+       so an offline shell would be a lie.
+       The SVG is the mark (libs/icons/stabbur.svg at this service's own
+       /icon.svg); the PNGs are rendered FROM it by bin/render-icon-png.mjs
+       for the two consumers that cannot take a vector, the install prompt and
+       iOS's apple-touch-icon. -->
   <link rel="icon" type="image/svg+xml" href="__STABBUR_PREFIX__/icon.svg">
+  <link rel="manifest" href="__STABBUR_PREFIX__/manifest.webmanifest" crossorigin="use-credentials">
+  <link rel="icon" type="image/png" sizes="192x192" href="__STABBUR_PREFIX__/static/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="__STABBUR_PREFIX__/static/icons/icon-192.png">
+  <meta name="theme-color" content="#fbfbfc" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1013" media="(prefers-color-scheme: dark)">
   <script>
     // Appearance before first paint (stabbur-editor-redesign D12). The server
     // substitutes the stored theme + value colour into the JSON.parse below

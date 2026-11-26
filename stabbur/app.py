@@ -82,6 +82,54 @@ def ui_index():
     )
 
 
+# ── The PWA manifest (the same shape shadow uses, shadow/app.py) ──────
+#
+# A route rather than a static file for two reasons: start_url and scope must
+# be stabbur's prefix AS SERVED (X-Forwarded-Prefix — '/stabbur' behind the
+# gateway, '' on a published port), which is the same substitution ui_index
+# makes; and the MIME type must be application/manifest+json, which this sets
+# itself instead of trusting the platform's mimetypes table. No service worker
+# and no offline mode — stabbur is useless without its database, so an offline
+# shell would be a lie.
+#
+# It sits behind the same operator gate as every page, and the <link> asks for
+# it with credentials: Chrome fetches a manifest WITHOUT them otherwise, and
+# the gateway's basic_auth covers /stabbur/.
+#
+# The icons are under ui/, which Flask serves at /static — the same directory
+# the Dockerfile already COPYs, so nothing new has to ship.
+
+STABBUR_THEME = "#fbfbfc"       # --bg (light) in ui/ui.css
+STABBUR_BACKGROUND = "#fbfbfc"  # --bg (light) in ui/ui.css
+
+
+@app.route("/manifest.webmanifest", methods=["GET"])
+def web_manifest():
+    base = forwarded_prefix() + "/"
+    body = {
+        "name": "stabbur",
+        "short_name": "stabbur",
+        "description": "Captures, notes and triage for Norwegian learning content.",
+        "id": base,
+        "start_url": base,
+        "scope": base,
+        "display": "standalone",
+        "theme_color": STABBUR_THEME,
+        "background_color": STABBUR_BACKGROUND,
+        "icons": [
+            {"src": base + "static/icons/icon-192.png", "sizes": "192x192",
+             "type": "image/png", "purpose": "any"},
+            {"src": base + "static/icons/icon-512.png", "sizes": "512x512",
+             "type": "image/png", "purpose": "any"},
+            {"src": base + "static/icons/icon-maskable-512.png", "sizes": "512x512",
+             "type": "image/png", "purpose": "maskable"},
+        ],
+    }
+    resp = app.response_class(json.dumps(body), mimetype="application/manifest+json")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 def _appearance_json() -> str:
     """stabbur-editor-redesign D12: the theme and value colour, substituted
     into index.html so the very first frame is drawn in them — on any device,
