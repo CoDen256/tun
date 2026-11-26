@@ -28,9 +28,15 @@ calst-full-coverage (2026-11-23):
   or MAX_SAMPLES is hit (-> `unsaturated`, a failure).
 * Every `Calst.<Name> = [ ... ]` array that carries word lists is parsed
   (incl. `Calst.WordList`, also in the `Calst.WordList = Calst.WordList = [`
-  form). A 200 that yields no word is a FAILURE, never an empty success.
-  Only a successful sample is cached; a cached failing entry is ignored and
-  re-requested, so a re-run never replays a failure.
+  form). A 200 whose shape holds NO word list at all is a FAILURE, never an
+  empty success. Only a sample that holds a word list is cached; a cached
+  failing entry is ignored and re-requested, so a re-run never replays a
+  failure.
+* A 200 carrying a well-formed but EMPTY word list is `empty`, not failed
+  (2026-11-26: every pronunciation-contrast exercise outside Oslo, 293 of
+  them). The dialect simply has no recordings for that exercise; one sample
+  settles it, it is cached like any answer, and it does not fail the run.
+  `--retry-empty` re-asks for those, in case an emptiness was transient.
 * Every Norwegian `L2_Dialect` offered in the settings page's `l2d` selector
   is crawled; the dialect travels in the cookie.
 * A failure is isolated to its (exercise, dialect); timeouts are retried once
@@ -75,7 +81,7 @@ OSLO = 1
 RESPONSE_CAP = 20  # a first response with fewer words than this is the whole pool
 MISS_EPSILON = 0.001  # tolerated chance that one still-unseen word survives K zero-gain draws
 K_MIN = 2
-MAX_SAMPLES = 300
+MAX_SAMPLES = 500
 TIMEOUT = 30
 RETRY_TIMEOUT = 90
 PACE = (0.5, 1.0)  # seconds between network requests (start to start, at least)
@@ -114,8 +120,11 @@ def cache_key(method: str, path: str, data: dict | None,
 
 
 class Client:
-    def __init__(self, cache_dir: Path = CACHE_DIR) -> None:
+    def __init__(self, cache_dir: Path = CACHE_DIR, retry_empty: bool = False) -> None:
         self.cache_dir = cache_dir
+        # Ask CALST again for samples cached as an empty word list, in case an
+        # emptiness was the server's bad day rather than the dialect's truth.
+        self.retry_empty = retry_empty
         self.s = requests.Session()
         self.s.headers.update({"User-Agent": UA})
         self.last = 0.0
@@ -158,7 +167,7 @@ class Client:
         cf = self.cache_dir / f"{cache_key(method, path, data, dialect, sample)}.json.gz"
         if cf.exists():
             rec = json.loads(gzip.decompress(cf.read_bytes()))
-            if accept(rec):
+            if accept(rec) and not (self.retry_empty and is_empty_sample(rec)):
                 return rec
 
         url = urljoin(BASE, path)
@@ -343,7 +352,14 @@ def iter_wordlists(obj):
 def parse_words(body: str) -> tuple[list[dict], list[str], list[str]]:
     """(word entries, variables that held word lists, parse errors) from every
     `Calst.<Name> = [ ... ]` array in the body. A word entry is any wordList
-    element with a non-empty `text`."""
+    element with a non-empty `text`.
+
+    A variable is recorded when its array carries a `wordList` AT ALL, even an
+    empty one. CALST answers an exercise a dialect has no recordings for with a
+    well-formed `Calst.VocabExerciseData = [{wordList:[],…}]` (every
+    pronunciation-contrast exercise outside Oslo, 2026-11-26 crawl: 293 of
+    them), and that is DATA — an empty pool — not a parse failure. No words AND
+    no variable is the real failure: a body whose shape we cannot read."""
     words, variables, errors = [], [], []
     for m in _ARRAY_ASSIGN.finditer(body):
         lit = _array_at(body, m.end() - 1)
@@ -356,18 +372,35 @@ def parse_words(body: str) -> tuple[list[dict], list[str], list[str]]:
             if "wordList" in lit:  # only a word-list-shaped array matters
                 errors.append(f"{m[1]}: {e} :: {lit[:120]}")
             continue
-        got = [w for wl in iter_wordlists(value) for w in wl
-               if isinstance(w, dict) and w.get("text")]
-        if got:
-            words.extend(got)
+        wordlists = list(iter_wordlists(value))
+        if wordlists:
+            words.extend(w for wl in wordlists for w in wl
+                         if isinstance(w, dict) and w.get("text"))
             if m[1] not in variables:
                 variables.append(m[1])
     return words, variables, errors
 
 
 def is_good_sample(rec: dict) -> bool:
-    """A Details response worth caching: HTTP 200 with at least one word."""
-    return rec["status"] == 200 and bool(parse_words(rec["body"] or "")[0])
+    """A Details response worth caching: HTTP 200 whose body holds a word list.
+
+    An EMPTY word list counts: it is this dialect's real answer for that
+    exercise, so caching it keeps a re-run free instead of re-requesting every
+    empty pair. `--retry-empty` ignores those cache entries when the emptiness
+    itself is in doubt."""
+    if rec["status"] != 200:
+        return False
+    words, variables, _ = parse_words(rec["body"] or "")
+    return bool(words or variables)
+
+
+def is_empty_sample(rec: dict) -> bool:
+    """A 200 whose word list is present but holds no word — the answer CALST
+    gives for a dialect that has no recordings of an exercise."""
+    if rec.get("status") != 200:
+        return False
+    words, variables, _ = parse_words(rec.get("body") or "")
+    return bool(variables) and not words
 
 
 def _word_key(w: dict) -> str:
@@ -411,15 +444,21 @@ def sample_exercise(c, ex: dict, dialect: int, max_samples: int = MAX_SAMPLES) -
             error = f"sample {i}: HTTP {rec['status']} type {TYPE} location {rec.get('location')}"
             break
         words, vars_, errors = parse_words(rec["body"])
+        for v in vars_:
+            if v not in variables:
+                variables.append(v)
         if not words:
+            if vars_:
+                # A well-formed but EMPTY wordList: this dialect has no
+                # recordings for this exercise. Data, not a failure — one
+                # sample settles it and nothing is retried.
+                status = "empty"
+                break
             status = "failed"
             head = " ".join((rec["body"] or "")[:300].split())
             error = (f"sample {i}: HTTP 200 but no word list parsed, type {TYPE}"
                      f"{'; ' + '; '.join(errors) if errors else ''}; body: {head}")
             break
-        for v in vars_:
-            if v not in variables:
-                variables.append(v)
         distinct = {_word_key(w) for w in words}
         draw = max(draw, len(distinct))
         gain = 0
@@ -550,11 +589,14 @@ def coverage_report(rows: list[tuple[dict, dict, dict]], dialects: list[dict],
          "title": title_of(ex), "dialect_id": d["dialect_id"], "dialect": d["name"],
          "status": r["status"], "pool_size": r["pool_size"], "samples": r["samples"],
          "error": r.get("error")}
-        for ex, d, r in rows if r["status"] != "saturated"
+        for ex, d, r in rows if r["status"] not in ("saturated", "empty")
     ]
     counts = {s: sum(1 for *_, r in rows if r["status"] == s)
-              for s in ("saturated", "unsaturated", "failed")}
+              for s in ("saturated", "empty", "unsaturated", "failed")}
     p(f"totals: {len(rows)} (exercise, dialect) — " + ", ".join(f"{k} {v}" for k, v in counts.items()))
+    if counts["empty"]:
+        p(f"  ({counts['empty']} empty = CALST served a word list with no words: that dialect "
+          f"has no recordings for that exercise. Not a failure; --retry-empty re-asks.)")
     p(f"failures: {len(failures)}")
     for f in failures:
         p(f"  ! ex {f['exercise_id']} wrid {f['wrid']} {f['dialect']} [{f['status']}] "
@@ -650,6 +692,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--limit", type=int, help="only the first N exercises")
     ap.add_argument("--dialects", type=int, nargs="+", help="only these L2_Dialect ids")
     ap.add_argument("--max-samples", type=int, default=MAX_SAMPLES)
+    ap.add_argument("--retry-empty", action="store_true",
+                    help="re-ask CALST for samples cached as an empty word list")
     ap.add_argument("--out", type=Path, help=f"manifest path (default {OUT_FILE}; "
                     "required, and different, for a partial run)")
     args = ap.parse_args(argv)
@@ -660,7 +704,7 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("a partial run (--exercises/--limit/--dialects/--max-samples) needs an --out "
                  "other than the default manifest")
 
-    c = Client()
+    c = Client(retry_empty=args.retry_empty)
     offered = discover_dialects(c)
     print("dialects offered: " + ", ".join(f"{d['dialect_id']}={d['name']}" for d in offered))
     dialects = offered

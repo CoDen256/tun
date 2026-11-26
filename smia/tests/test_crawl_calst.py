@@ -100,6 +100,78 @@ def test_empty_parse_is_a_failure_with_id_type_and_body_head():
     assert "Calst.SomethingNew" in r["error"]  # body head kept as a hint
 
 
+# ─────────── an empty word list is this dialect's answer, not a failure ───────────
+# CALST serves `wordList:[]` for an exercise a dialect has no recordings of
+# (2026-11-26 crawl: 293 pronunciation-contrast exercises outside Oslo).
+
+def test_a_present_but_empty_word_list_is_data_not_a_parse_failure():
+    body = (FIX / "empty_wordlist.html").read_text()
+    words, variables, errors = cc.parse_words(body)
+    assert (words, errors) == ([], [])
+    assert variables == ["VocabExerciseData"]  # the shape WAS understood
+
+
+def test_empty_word_list_yields_status_empty_in_one_sample():
+    c = FakeClient([(FIX / "empty_wordlist.html").read_text()])
+    r = cc.sample_exercise(c, EX, cc.OSLO)
+    assert (r["status"], r["pool_size"], r["samples"]) == ("empty", 0, 1)
+    assert "error" not in r
+    assert len(c.calls) == 1  # settled; never retried
+
+
+def test_empty_sample_is_cached_but_a_shapeless_one_is_not(tmp_path):
+    empty = {"status": 200, "location": None, "body": (FIX / "empty_wordlist.html").read_text()}
+    shapeless = {"status": 200, "location": None, "body": (FIX / "no_wordlist.html").read_text()}
+    assert cc.is_good_sample(empty) and cc.is_empty_sample(empty)
+    assert not cc.is_good_sample(shapeless) and not cc.is_empty_sample(shapeless)
+
+
+def test_empty_does_not_fail_the_run_and_is_counted_separately(tmp_path):
+    other = {**EX, "exercise_id": 935, "appearances": [{"title": "2 syllables"}]}
+
+    class Mixed(FakeClient):
+        def request(self, method, path, data=None, *, dialect=1, sample=None, accept=None):
+            self.calls.append((method, path, dict(data or {}), dialect, sample))
+            body = (FIX / ("empty_wordlist.html" if data["ExerciseId"] == 935
+                           else "las_vocab.html")).read_text()
+            return {"status": 200, "location": None, "body": body}
+
+    code, report, doc = _run(tmp_path, Mixed([]), [EX, other])
+    assert code == 0  # an empty dialect never fails the run
+    assert "failures: 0" in report
+    assert doc["failures"] == []
+    assert "empty 1" in report and "empty = CALST served a word list with no words" in report
+    assert [e["exercise_id"] for e in doc["exercises"]] == [947, 935]
+    statuses = {d["status"] for e in doc["exercises"] if e["exercise_id"] == 935
+                for d in e["dialects"]}
+    assert statuses == {"empty"}
+
+
+def test_retry_empty_ignores_a_cached_empty_sample(tmp_path):
+    body = (FIX / "empty_wordlist.html").read_text()
+    calls = []
+
+    class Resp:
+        status_code, headers, text = 200, {}, body
+        def __init__(self): calls.append(1)
+
+    for retry_empty, expected in ((False, 0), (True, 1)):
+        c = cc.Client(cache_dir=tmp_path, retry_empty=retry_empty)
+        c._fetch = lambda *a, **k: Resp()
+        c._sleep = lambda: None
+        calls.clear()
+        rec = c.request("POST", "/Exercises/Details", DATA, sample=1, accept=cc.is_good_sample)
+        if not retry_empty:  # first pass populates the cache
+            assert len(calls) == 1
+            c2 = cc.Client(cache_dir=tmp_path, retry_empty=False)
+            c2._fetch = lambda *a, **k: Resp()
+            c2._sleep = lambda: None
+            calls.clear()
+            rec = c2.request("POST", "/Exercises/Details", DATA, sample=1, accept=cc.is_good_sample)
+        assert cc.is_empty_sample(rec)
+        assert len(calls) == expected, f"retry_empty={retry_empty}"
+
+
 # ─────────────────────────── sampling ───────────────────────────
 
 def test_only_las_is_requested():
