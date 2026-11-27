@@ -50,7 +50,7 @@ build after it (which it already does: package 1 is archived).
 | Package | Status | Change(s) |
 |---------|--------|-----------|
 | Hover translate fixes | archived | `hover-translate/openspec/changes/capture-and-tooltip-ux` |
-| Sizing, click-to-capture, audio page | building | `hover-translate/openspec/changes/sizing-and-surface-fixes` |
+| Sizing, click-to-capture, audio page | archived | `hover-translate/openspec/changes/sizing-and-surface-fixes` |
 
 ### Build prompts
 
