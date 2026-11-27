@@ -168,8 +168,18 @@ scheme level by the test automation, so none of this was observed:
    `stopPropagation()`, so Escape no longer also exits YouTube fullscreen
    while the surface is up — confirm that is what you want.
 
-**H2 — unresolved, and possibly a real failure.** The fallback state could not
-be induced. The tester stopped `smia-backend` and the tooltip resolved
+**H2 — unresolved, but NOT failing** *(narrowed 2026-11-27)*. The fallback
+state could not be induced. Re-checked during the NRK work: a hovered word
+renders the **normal** matrix shape — one band per language, each with its own
+`google` provider row, and **no `.tt-fb` tag and no `.tt-foot` strip**. The
+fallback path collapses to a single marked row instead, so the absence of a
+marker here means the fallback was never taken, not that the marker is
+broken. The extension is reaching a working smia; it simply is not the local
+gateway (still zero requests logged there). So the T2 rehoming is unproven
+rather than suspect — induce the fallback against whichever host Settings
+actually names, and confirm the strip appears.
+
+Original note follows. The fallback state could not be induced. The tester stopped `smia-backend` and the tooltip resolved
 *identically* via a provider labelled `google`, and the gateway logged **zero**
 requests from the extension across the whole session (only the tester's own
 curls). So every tooltip observed appears to have come from the bundled local
