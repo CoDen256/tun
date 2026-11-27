@@ -16,6 +16,7 @@ We could mint every C31000...C31999 card beforehand, without any content, define
 But is it worth it? is it just trying to make everything perfect? 
 [bug] fix filmot youtube clip parsing shadow/phonexa lab works somehow?, why not filmot?, btw shadow yt-dlp not working currently, but it did work properly before.
 [idea] cut the git repo, cut the size of pygmalion audio
+[bug] builder should not build anything, unless there is new cards/occurences anything
 
 ### Builder bugs, not manually added
 projects: mjolnir

@@ -17,7 +17,7 @@ cd hover-translate
 npm run stage:chrome:dev   # rebuilds extension + popup, re-stages staging/chrome
 ```
 
-Load `hover-translate/staging/chrome` unpacked, or reload it in
+Load `../../../hover-translate/staging/chrome` unpacked, or reload it in
 `chrome://extensions` if already loaded — **a reload is required**, content
 script CSS/manifest changes don't pick up on a page refresh alone.
 
